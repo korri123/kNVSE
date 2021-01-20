@@ -6,6 +6,7 @@
 
 class TESAmmo;
 class TESObjectWEAP;
+struct AnimData;
 
 // Straight from OBSE. Needs to be debugged ! ! ! 
 // This is used all over the game code to manage actors and occassionally other objects.
@@ -223,7 +224,7 @@ public:
 	virtual void	Unk_6B(void);
 	virtual void	Unk_6C(void);
 	virtual void	Unk_6D(void);
-	virtual void	Unk_6E(void);
+	virtual AnimData*	GetAnimData(void);
 	virtual void	Unk_6F(void);
 	virtual void	Unk_70(void);
 	virtual void	Unk_71(void);

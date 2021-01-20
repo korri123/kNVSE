@@ -62,6 +62,8 @@
     <ClCompile Include="..\nvse\nvse\printf.cpp">
       <Filter>nvse</Filter>
     </ClCompile>
+    <ClCompile Include="hooks.cpp" />
+    <ClCompile Include="commands_animation.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">
@@ -118,7 +120,14 @@
     <ClInclude Include="..\nvse\nvse\CommandTable.h">
       <Filter>nvse</Filter>
     </ClInclude>
-    <ClInclude Include="..\nvse\nvse\GameScript.h" />
+    <ClInclude Include="..\nvse\nvse\GameScript.h">
+      <Filter>nvse</Filter>
+    </ClInclude>
+    <ClInclude Include="hooks.h" />
+    <ClInclude Include="commands_animation.h" />
+    <ClInclude Include="..\nvse\nvse\GameProcess.h">
+      <Filter>nvse</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

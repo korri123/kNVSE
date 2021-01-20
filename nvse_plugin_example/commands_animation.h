@@ -1,4 +1,5 @@
 #pragma once
+
 #include "CommandTable.h"
 #include "GameForms.h"
 #include "GameObjects.h"
@@ -63,18 +64,18 @@ enum eAnimSequence
 namespace GameFuncs
 {
 	inline auto* PlayIdle = reinterpret_cast<void(__thiscall*)(void*, TESIdleForm*, Actor*, int, int)>(0x497F20);
-	inline auto* ConstructAnimIdle = reinterpret_cast<void*(__thiscall*)(AnimIdle*, TESIdleForm*, eAnimSequence, int /*three*/, MobileObject*, bool,
-	                                                                     AnimData*)>(0x4965D0);
+	inline auto* ConstructAnimIdle = reinterpret_cast<void* (__thiscall*)(AnimIdle*, TESIdleForm*, eAnimSequence, int, MobileObject*, bool,
+		AnimData*)>(0x4965D0);
 	inline auto* PlayAnimation = reinterpret_cast<void(__thiscall*)(AnimData*, UInt32, int flags, int loopRange, eAnimSequence)>(0x494740);
-	inline auto* LoadKFModel = reinterpret_cast<KFModel*(__thiscall*)(ModelLoader*, const char*)>(0x4471C0);
+	inline auto* LoadKFModel = reinterpret_cast<KFModel * (__thiscall*)(ModelLoader*, const char*)>(0x4471C0);
 	inline auto* BSAnimGroupSequence_Init = reinterpret_cast<void(__thiscall*)(BSAnimGroupSequence*, TESAnimGroup*, BSAnimGroupSequence*)>(0x4EE9F0);
-	inline auto* KFModel_Init = reinterpret_cast<void(__thiscall*)(KFModel* alloc, const char* filePath, char* bsStream)>(0x43B640);
+	inline auto* KFModel_Init = reinterpret_cast<void(__thiscall*)(KFModel * alloc, const char* filePath, char* bsStream)>(0x43B640);
 	inline auto* GetFilePtr = reinterpret_cast<BSFile * (__cdecl*)(const char* path, int const_0, int const_negative_1, int const_1)>(0xAFDF20); // add Meshes in front!
 	inline auto* BSStream_SetFileAndName = reinterpret_cast<bool(__thiscall*)(char* bsStreamBuf, const char* fileName, BSFile*)>(0xC3A8A0);
 	inline auto* BSStream_Init = reinterpret_cast<char* (__thiscall*)(char* bsStream)>(0x43CFD0);
 	inline auto* GetAnims = reinterpret_cast<tList<char>*(__thiscall*)(TESObjectREFR*, int)>(0x566970);
 	inline auto* LoadAnimation = reinterpret_cast<bool(__thiscall*)(AnimData*, KFModel*, bool)>(0x490500);
-	inline auto* MorphToSequence = reinterpret_cast<BSAnimGroupSequence* (__thiscall*)(AnimData*, BSAnimGroupSequence*, int, int)>(0x4949A0);
+	inline auto* MorphToSequence = reinterpret_cast<BSAnimGroupSequence * (__thiscall*)(AnimData*, BSAnimGroupSequence*, int, int)>(0x4949A0);
 }
 
 using WeaponAnimMap = std::unordered_map<UInt32, BSAnimGroupSequence*>;
@@ -93,6 +94,6 @@ static ParamInfo kParams_SetAnimationPath[5] =
 	{	"string",	kParamType_String,	1	},  // path
 };
 
-DEFINE_CMD(ForcePlayIdle, "", true, kParams_OneForm)
-DEFINE_CMD(SetWeaponAnimationPath, "", false, kParams_SetAnimationPath)
-DEFINE_CMD(SetActorAnimationPath, "", false, kParams_SetAnimationPath)
+DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 1, kParams_OneForm)
+DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, 5, kParams_SetAnimationPath)
+DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", false, 5, kParams_SetAnimationPath)

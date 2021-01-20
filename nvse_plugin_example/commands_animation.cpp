@@ -15,7 +15,7 @@ bool Cmd_ForcePlayIdle_Execute(COMMAND_ARGS)
 	*result = 0;
 	TESForm* form = nullptr;
 	auto* actor = reinterpret_cast<Actor*>(thisObj);
-	if (!ExtractArgs(EXTRACT_ARGS, &form) || !actor->IsActor() || !actor->baseProcess) 
+	if (!ExtractArgs(EXTRACT_ARGS, &form) || !actor->IsActor() || !actor->baseProcess)
 		return true;
 	auto* idle = DYNAMIC_CAST(form, TESForm, TESIdleForm);
 	if (!idle)
@@ -91,7 +91,7 @@ KFModel* LoadAnimation(const char* path, AnimData* animData)
 	char bsStream[1492] = { 0 };
 	auto pathStr = FormatString("Meshes\\%s", path);
 	std::replace(pathStr.begin(), pathStr.end(), '/', '\\');
-	
+
 	auto* file = GameFuncs::GetFilePtr(pathStr.c_str(), 0, -1, 1);
 	if (file)
 	{
@@ -114,7 +114,7 @@ WeaponAnimMap g_weaponAnimMaps[static_cast<int>(AnimType::kAnimType_Max) - 1];
 
 WeaponAnimMap& GetWeaponAnimMap(AnimType a)
 {
-	return g_weaponAnimMaps[static_cast<int>(a)-1];
+	return g_weaponAnimMaps[static_cast<int>(a) - 1];
 }
 
 // Per ref ID there are animation variants per group ID
@@ -197,7 +197,7 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 	try
 	{
 		auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
-		auto* animData = firstPerson ? (*g_thePlayer)->firstPersonAnimData : (*g_thePlayer)->GetAnimData();
+		auto* animData = firstPerson ? (*g_thePlayer)->firstPersonAnimData : (*g_thePlayer)->baseProcess->GetAnimData();
 		SetOverrideAnimation(weapon->refID, path, animGroup, map, animData, enable);
 		*result = 1;
 	}
@@ -210,7 +210,6 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 
 bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 {
-
 	*result = 0;
 	TESForm* actorForm = nullptr;
 	auto animGroup = 0;
@@ -230,7 +229,8 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	try
 	{
 		auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
-		auto* animData = firstPerson ? (*g_thePlayer)->firstPersonAnimData : actor->GetAnimData();
+
+		auto* animData = firstPerson ? (*g_thePlayer)->firstPersonAnimData : actor->baseProcess->GetAnimData();
 		SetOverrideAnimation(actorForm->refID, path, animGroup, map, animData, enable);
 
 		*result = 1;

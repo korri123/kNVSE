@@ -589,7 +589,10 @@ public:
 	ValidBip01Names						* playerVB01N;					// 68C
 	AnimData*							firstPersonAnimData;				// 690 ExtraDataAnim::Data
 	NiNode								* playerNode;					// 694 used as node if unk64A is true
-	UInt32								unk698[(0x6A8-0x698) >> 2];		// 698
+	UInt32								unk698;		// 698
+	UInt32								unk69C;		// 698
+	AnimData*							thirdPersonAnimData;		// 698
+	UInt32								unk6A4;		// 698
 	TESTopic							* topic;						// 6A8
 	UInt32								unk6AC[3];						// 6AC
 	TESQuest							* quest;						// 6B8

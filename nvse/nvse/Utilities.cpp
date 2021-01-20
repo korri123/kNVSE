@@ -645,7 +645,7 @@ const char* GetModName(Script* script)
 	}
 	return modName;
 }
-#if NVSE_CORE
+
 void ShowRuntimeError(Script* script, const char* fmt, ...)
 {
 	va_list args;
@@ -678,11 +678,9 @@ void ShowRuntimeError(Script* script, const char* fmt, ...)
 	Console_Print(errorHeader);
 	_MESSAGE(errorHeader);
 
-	PluginManager::Dispatch_Message(0, NVSEMessagingInterface::kMessage_RuntimeScriptError, errorMsg, 4, NULL);
-
 	va_end(args);
 }
-#endif
+
 #endif
 
 std::string FormatString(const char* fmt, ...)
