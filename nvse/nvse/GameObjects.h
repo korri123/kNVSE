@@ -587,7 +587,7 @@ public:
 	UInt8								unk0681[3];						// 681
 	UInt32								unk684[(0x68C - 0x684) >> 2];	// 684
 	ValidBip01Names						* playerVB01N;					// 68C
-	ExtraAnim::Animation				* extraAnimation;				// 690 ExtraDataAnim::Data
+	AnimData*							firstPersonAnimData;				// 690 ExtraDataAnim::Data
 	NiNode								* playerNode;					// 694 used as node if unk64A is true
 	UInt32								unk698[(0x6A8-0x698) >> 2];		// 698
 	TESTopic							* topic;						// 6A8

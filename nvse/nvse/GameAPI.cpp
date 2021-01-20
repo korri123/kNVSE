@@ -881,7 +881,7 @@ UInt32 ScriptEventList::ResetAllVariables()
 	return numVars;
 }
 
-ScriptEventList::Var * ScriptEventList::GetVariable(UInt32 id)
+ScriptEventList::Var * ScriptEventList:: GetVariable(UInt32 id)
 {
 	for(VarEntry * entry = m_vars; entry; entry = entry->next)
 		if(entry->var && entry->var->id == id)

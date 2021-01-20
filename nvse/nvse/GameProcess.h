@@ -849,15 +849,42 @@ public:
 	//Unk0254*				contains lastTarget at 0x04;	// 0254
 };
 // MiddleHighProcess has 21B virtual func
-
-// HighProcess: 	// something in wrd2EC and unk2F0, Unk039C count the actor targeting the player (in the player process).
-	// Byt0410[6] presence of data in Unk03F8[6], referenced during StopCombat, Byt413, Byt0420, Unk0413, Unk041C
-
-	////virtual void	Unk_21C();
-	////virtual void	Unk_21D();
-class AnimSequenceBase;
-
 // 100+
+
+class AnimIdle : public NiRefObject
+{
+	UInt32 unk008;
+	UInt32 unk00C;
+	UInt32 unk010;
+	UInt32 sequenceID;
+	BSAnimGroupSequence* unk018;
+	NiRefObject* unk01C[2];
+	NiRefObject* unk024[2];
+	TESIdleForm* idleForm;
+	UInt32 unk030;
+	Actor* actor;
+};
+STATIC_ASSERT(sizeof(AnimIdle) == 0x38);
+
+
+class AnimSequenceBase
+{
+public:
+	virtual void Destroy(bool doFree);
+	virtual void AddAnimGroupSequence(BSAnimGroupSequence* sequence, int unused);
+	virtual bool RemoveAnimGroupSequence(BSAnimGroupSequence* sequence, int unused);
+	virtual bool IsSingle();
+	virtual BSAnimGroupSequence* GetSequenceByIndex(int index);
+	virtual BSAnimGroupSequence* GetSequenceByAnimGroup(TESAnimGroup* group);
+	virtual signed int GetIndexOfSequenceName(const char* name);
+};
+
+// 08
+class AnimSequenceMultiple : public AnimSequenceBase
+{
+	DList<BSAnimGroupSequence>* anims; // 04
+};
+
 struct AnimData
 {
 	struct Unk124
@@ -882,41 +909,45 @@ struct AnimData
 	Actor* actor;				// 004
 	NiNode* nSceneRoot;		// 008
 	NiNode* nBip01;			// 00C
-	UInt32							unk010;				// 010
-	float							flt014;				// 014
-	float							flt018;				// 018
-	UInt32							unk01C;				// 01C
-	float							flt020;				// 020
-	UInt32							unk024;				// 024
+	NiPoint3						pt010;				// 010
+	NiPoint3						pt01C;				// 01C
 	NiNode* nPelvis;			// 028
 	NiNode* nBip01Copy;		// 02C
 	NiNode* nLForearm;			// 030
 	NiNode* nHead;				// 034
 	NiNode* nWeapon;			// 038
-	UInt32							unk03C[2];			// 03C
+	NiNode* UNUSED03C;			// 03C
+	NiNode* UNUSED040;			// 040
 	NiNode* nNeck1;			// 044
-	UInt32							unk048[5];			// 048
+	float							unk048;				// 048
+	UInt16							groupIDs[8];		// 04C
 	SInt32							sequenceState1[8];	// 05C
 	SInt32							sequenceState2[8];	// 07C
-	UInt32							unk09C[12];			// 09C
-	float							flt0CC;				// 0CC
-	float							flt0D0;				// 0D0
+	UInt16							unk09C[8];			// 09C
+	UInt32							unk0AC[8];			// 0AC
+	UInt8							byte0CC;			// 0CC
+	UInt8							byte0CD;			// 0CD
+	UInt8							byte0CE;			// 0CE
+	UInt8							byte0CF;			// 0CF
+	float							timePassed;			// 0D0
 	UInt32							unk0D4;				// 0D4
 	NiControllerManager* unk0D8;			// 0D8
-	NiTPointerMap<AnimSequenceBase>* unk0DC;			// 0DC
+	NiTPointerMap<AnimSequenceBase>* mapAnimSequenceBase;// 0DC
 	BSAnimGroupSequence* animSequence[8];	// 0E0
 	BSAnimGroupSequence* animSeq100;		// 100
-	UInt32							unk104;				// 104
-	UInt32							unk108;				// 108
-	float							flt10C;				// 10C
-	float							flt110;				// 110
-	float							flt114;				// 114
-	float							flt118;				// 118
-	float							flt11C;				// 11C
-	UInt8							byte120;			// 120
-	UInt8							byte121;			// 121
-	UInt16							word122;			// 122
-	Unk124* unk124;			// 124
-	Unk128* unk128;			// 128
+	tList<void>						animationCloneList104;
+	float movementSpeedMult;
+	float rateOfFire;
+	float turboSpeedMult;
+	float weaponReloadSpeed;
+	float equipSpeed;
+	UInt8 byte120;
+	UInt8 byte121;
+	UInt16 unk122;
+	AnimIdle* idleAnim;
+	AnimIdle* idleAnimQueued;
+	NiNode* node12C;
+	NiNode* node130;
+	tList<void> list134;
 };
-STATIC_ASSERT(sizeof(AnimData) == 0x12C);
+STATIC_ASSERT(sizeof(AnimData) == 0x13C);

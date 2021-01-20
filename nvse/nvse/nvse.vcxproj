@@ -442,6 +442,9 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug CS|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release CS|Win32'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="Commands_Animation.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug CS|Win32'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="Commands_Array.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug CS|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release CS|Win32'">true</ExcludedFromBuild>
@@ -645,6 +648,7 @@
     <ClInclude Include="..\Algohol\paramTypes.h" />
     <ClInclude Include="ArrayVar.h" />
     <ClInclude Include="commands_Algohol.h" />
+    <ClInclude Include="Commands_Animation.h" />
     <ClInclude Include="Commands_Array.h" />
     <ClInclude Include="Commands_Console.h" />
     <ClInclude Include="Commands_Factions.h" />

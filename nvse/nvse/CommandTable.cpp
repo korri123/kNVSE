@@ -33,6 +33,7 @@
 #include "Commands_Array.h"
 #include "Commands_String.h"
 #include "Commands_Algohol.h"
+#include "Commands_Animation.h"
 
 CommandTable g_consoleCommands;
 CommandTable g_scriptCommands;
@@ -853,6 +854,13 @@ void ImportConsoleCommand(const char * name)
 
 bool Cmd_tcmd_Execute(COMMAND_ARGS)
 {
+	auto* player = LookupFormByID(0x14);
+	auto* playerRef = DYNAMIC_CAST(player, TESForm, TESObjectREFR);
+	auto* list = GameFuncs::GetAnims(playerRef, 0xC);
+	for (auto iter = list->Begin(); !iter.End(); ++iter)
+	{
+		_MESSAGE("ANIM %s", iter.Get());
+	}
 	return true;
 }
 
@@ -883,6 +891,8 @@ void CommandTable::AddDebugCommands()
 	ADD_CMD(tcmd3);
 
 	ADD_CMD(DumpDocs);
+
+	ADD_CMD(ForcePlayIdle);
 }
 
 void CommandTable::AddCommandsV1()
@@ -1593,6 +1603,9 @@ void CommandTable::AddCommandsV5()
 	ADD_CMD_RET(GetClass, kRetnType_Form);
 	ADD_CMD_RET(GetNameOfClass, kRetnType_String);
 	ADD_CMD(ShowLevelUpMenu);
+
+	ADD_CMD(SetWeaponAnimationPath);
+	ADD_CMD(SetActorAnimationPath);
 }
 
 namespace PluginAPI

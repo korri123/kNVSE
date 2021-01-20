@@ -254,6 +254,7 @@ public:
 // 014
 class KFModel
 {
+public:
 	const char			* path;					// 000
 	BSAnimGroupSequence	* controllerSequence;	// 004
 	TESAnimGroup		* animGroup;			// 008

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GameForms.h"
 #include "NiTypes.h"
 #include "GameTypes.h"
 #include "Utilities.h"
@@ -840,6 +841,46 @@ public:
 	UInt32	numFaces;		// 06C
 };
 
+// 0C
+class NiInterpolator : public NiObject
+{
+public:
+	NiInterpolator();
+	~NiInterpolator();
+
+	virtual void	Unk_23(void);
+	virtual void	Unk_24(void);
+	virtual void	Unk_25(void);
+	virtual void	Unk_26(void);
+	virtual void	Unk_27(void);
+	virtual void	Unk_28(void);
+	virtual void	Unk_29(void);
+	virtual void	Unk_2A(void);
+	virtual void	Unk_2B(void);
+	virtual void	Unk_2C(void);
+	virtual void	Unk_2D(void);
+	virtual void	Unk_2E(void);
+	virtual void	Unk_2F(void);
+	virtual void	Unk_30(void);
+	virtual void	Unk_31(void);
+	virtual void	Unk_32(void);
+	virtual void	Unk_33(void);
+	virtual void	Unk_34(void);
+	virtual void	Unk_35(void);
+	virtual void	Unk_36(void);
+
+	float		flt08;		// 08
+};
+
+class NiMultiTargetTransformController;
+class NiBlendInterpolator;
+
+struct NiFixedString
+{
+	char* data;
+};
+
+
 // 068
 class NiControllerSequence : public NiObject
 {
@@ -888,30 +929,56 @@ public:
 		UInt8		pad0E[2];	// 0E
 	};
 
-	char				* filePath;		// 008
-	UInt32				arraySize;		// 00C
-	UInt32				unk010;			// 010
-	Unk014				* unk014;		// 014
-	Unk018				* unk018;		// 018
-	float				weight;			// 01C
-	NiTextKeyExtraData	* unk020;		// 020
-	UInt32				cycleType;		// 024
-	float				freq;			// 028
-	float				begin;			// 02C
-	float				end;			// 030
-	float				last;			// 034
-	float				weightLast;		// 038
-	float				lastScaled;		// 03C
-	NiControllerManager * controllerMgr;	// 040
-	UInt32				state;			// 044
-	float				offset;			// 048
-	float				start;			// 04C - offset * -1?
-	float				end2;			// 050
-	UInt32				unk054;			// 054
-	UInt32				unk058;			// 058
-	char				* accumRoot;	// 05C - bone? (seen "Bip01")
-	NiNode				* niNode060;	// 060
-	NiStringPalette		* unk064;		// 064
+	struct ControlledBlock
+	{
+		NiInterpolator* interpolator;
+		NiMultiTargetTransformController* multiTargetCtrl;
+		NiBlendInterpolator* blendInterpolator;
+		unsigned __int8 blendIdx;
+		UInt8 byte0D;
+		UInt8 gap0E[2];
+	};
+
+	struct IDTag
+	{
+		NiFixedString m_kAVObjectName;
+		NiFixedString m_kPropertyType;
+		NiFixedString m_kCtlrType;
+		NiFixedString m_kCtlrID;
+		NiFixedString m_kInterpolatorID;
+	};
+
+
+	const char* sequenceName;
+	UInt32 numControlledBlocks;
+	UInt32 arrayGrowBy;
+	NiControllerSequence::ControlledBlock* controlledBlocks;
+	NiControllerSequence::IDTag* IDTagArray;
+	float seqWeight;
+	NiTextKeyExtraData* textKeyData;
+	UInt32 cycleType;
+	float frequency;
+	float beginKeyTime;
+	float endKeyTime;
+	float lastTime;
+	float weightedLastTime;
+	float lastScaledTime;
+	NiControllerManager* owner;
+	UInt32 state;
+	float offset;
+	float startTime;
+	float endTime;
+	float destFrame;
+	NiControllerSequence* partnerSequence;
+	const char* accumRootName;
+	UInt32 node60_maybeAccumRoot;
+	UInt32 unk64;
+	SInt16 wrd68;
+	UInt16 wrd6A;
+	UInt32 unk6C;
+	UInt16 wrd70;
+	UInt8 hasHashHashAtStartOfNodeName;
+	UInt8 byte73;
 };
 
 // 06C
@@ -923,11 +990,19 @@ public:
 
 	TESAnimGroup		* animGroup;	//068
 };
+STATIC_ASSERT(sizeof(BSAnimGroupSequence) == 0x78);
+
+const auto s = sizeof(BSAnimGroupSequence);
 
 class NiNode;
 
+struct NiPoint3
+{
+	float x, y, z;
+};
+
 // 02C+
-class TESAnimGroup
+class TESAnimGroup : NiRefObject
 {
 public:
 	// derived from NiRefObject
@@ -1194,26 +1269,36 @@ public:
 		UInt32		unk08[7];			// 08
 	};
 
-	//void**	vtbl			//000
-	UInt8		unk004;			//004
-	UInt8		unk005[3];
-	UInt8		animGroup;		//008 init'ed to word arg in c'tor
-	UInt8		unk009;			//009 does what?
-	UInt16		unk00A;
-	UInt32		numFrames;		//00C count of group frames (Start, Detach, Attack, End, etc)
-	float		** frameData;	//010 pointer to float array of group frame times (size numFrames)
-	UInt32		unk014;			//014
-	UInt32		unk018;			//018
-	UInt32		unk01C;			//01C
-	UInt8		unk020;			//020
-	UInt8		unk021;
-	UInt8		pad022[2];
-	UInt32		unk024;			//024
-	void		* unk028;		//028
+	struct __declspec(align(4)) AnimGroupSound
+	{
+		float unk00;
+		UInt8 soundID;
+		UInt8 gap05[3];
+		UInt32 unk08;
+		TESSound* sound;
+	};
+
+
+	UInt8 byte08[8];
+	UInt16 groupID;
+	UInt8 unk12[1];
+	UInt32 numKeys;
+	float* keyTimes;
+	NiPoint3 moveVector;
+	UInt8 leftOrRight_whichFootToSwitch;
+	UInt8 blend;
+	UInt8 blendIn;
+	UInt8 blendOut;
+	UInt8 decal;
+	UInt8 gap2D[3];
+	char* parentRootNode;
+	UInt32 numPtr38s;
+	AnimGroupSound* ptr38;
 
 	static const char* StringForAnimGroupCode(UInt32 groupCode);
 	static UInt32 AnimGroupForString(const char* groupName);
 };
+STATIC_ASSERT(sizeof(TESAnimGroup) == 0x3C);
 
 void DumpAnimGroups(void);
 
@@ -1439,3 +1524,5 @@ public:
 	void					* textureEffectData;		// 48 seen TextureEffectData< BSSahderLightingProperty >, init'd to RefNiObject
 };	// Alloc'd to 6C, 68 is RefNiObject, 60 is Init'd to 1.0, 64 also
 	// 4C is byte, Init'd to 0 for non player, otherwize = Player.1stPersonSkeleton.Flags0030.Bit0 is null
+
+

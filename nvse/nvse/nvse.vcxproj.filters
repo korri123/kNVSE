@@ -232,6 +232,9 @@
     <ClCompile Include="ScriptTokenCache.cpp">
       <Filter>internals</Filter>
     </ClCompile>
+    <ClCompile Include="Commands_Animation.cpp">
+      <Filter>commands</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Algohol\algMath.h">
@@ -463,6 +466,9 @@
     </ClInclude>
     <ClInclude Include="rewrites.h">
       <Filter>lib\jip</Filter>
+    </ClInclude>
+    <ClInclude Include="Commands_Animation.h">
+      <Filter>commands</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

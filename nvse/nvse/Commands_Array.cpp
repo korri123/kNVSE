@@ -672,7 +672,7 @@ bool Cmd_ar_List_Execute(COMMAND_ARGS)
 {
 	ArrayVar *arr = g_ArrayMap.Create(kDataType_Numeric, true, scriptObj->GetModIndex());
 	*result = (int)arr->ID();
-
+	
 	ExpressionEvaluator eval(PASS_COMMAND_ARGS);
 	if (eval.ExtractArgs())
 	{

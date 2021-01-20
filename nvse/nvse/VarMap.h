@@ -84,11 +84,17 @@ protected:
 	{
 		UInt32 id = 1;
 		::EnterCriticalSection(&cs);
-
+		int debug = 0;
 		if (!availableIDs.Empty())
+		{
+			debug = 1;
 			id = availableIDs.PopFirst();
+		}
 		else if (!usedIDs.Empty())
+		{
+			debug = 2;
 			id = usedIDs.LastKey() + 1;
+		}
 		::LeaveCriticalSection(&cs);
 		return id;
 	}
