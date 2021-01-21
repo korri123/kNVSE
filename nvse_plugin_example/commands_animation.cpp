@@ -86,7 +86,7 @@ bool ReadFile(char* bsStream, const char* path, BSFile* file)
 	}
 }
 
-KFModel* LoadAnimation(const char* path, AnimData* animData)
+KFModel* LoadAnimation(const char* path, AnimData* animData, UInt32 animGroup = 0)
 {
 	char bsStream[1492] = { 0 };
 	auto pathStr = FormatString("Meshes\\%s", path);
@@ -103,7 +103,9 @@ KFModel* LoadAnimation(const char* path, AnimData* animData)
 		auto* kfModel = static_cast<KFModel*>(FormHeap_Allocate(sizeof(KFModel)));
 		memset(kfModel, 0xCD, sizeof(KFModel));
 		GameFuncs::KFModel_Init(kfModel, path, bsStream);
-		//kfModel->animGroup->groupID = 0xF5; // first free id, make sure not to overwrite any slots
+		if (animGroup)
+			kfModel->animGroup->groupID = animGroup;
+		kfModel->animGroup->groupID = 0xF5; // first free id, make sure not to overwrite any slots
 		GameFuncs::LoadAnimation(animData, kfModel, true);
 		return kfModel;
 	}
@@ -117,15 +119,28 @@ WeaponAnimMap& GetWeaponAnimMap(AnimType a)
 	return g_weaponAnimMaps[static_cast<int>(a) - 1];
 }
 
+struct SavedAnim
+{
+	KFModel* model;
+	AnimSequenceSingle* single;
+
+
+	SavedAnim(KFModel* model, AnimSequenceSingle* single)
+		: model(model),
+		  single(single)
+	{
+	}
+};
+
 // Per ref ID there are animation variants per group ID
-using AnimOverrideMap = std::unordered_map<UInt32, std::unordered_map<UInt32, std::vector<KFModel*>>>;
+using AnimOverrideMap = std::unordered_map<UInt32, std::unordered_map<UInt32, std::vector<SavedAnim>>>;
 AnimOverrideMap g_refWeaponAnimGroupThirdPersonMap;
 AnimOverrideMap g_refWeaponAnimGroupFirstPersonMap;
 
 AnimOverrideMap g_refActorAnimGroupThirdPersonMap;
 AnimOverrideMap g_refActorAnimGroupFirstPersonMap;
 
-BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 refId, UInt32 animGroupId)
+SavedAnim* GetAnimationFromMap(AnimOverrideMap& map, UInt32 refId, UInt32 animGroupId)
 {
 	const auto mapIter = map.find(refId);
 	if (mapIter != map.end())
@@ -133,24 +148,47 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 refId, UIn
 		const auto animationsIter = mapIter->second.find(animGroupId);
 		if (animationsIter != mapIter->second.end())
 		{
-			const auto& animations = animationsIter->second;
-			return !animations.empty() ? animations.at(GetRandomUInt(animations.size()))->controllerSequence : nullptr;
+			auto& animations = animationsIter->second;
+			return !animations.empty() ? &animations.at(GetRandomUInt(animations.size())) : nullptr;
 		}
 	}
 	return nullptr;
 }
 
-
 BSAnimGroupSequence* GetWeaponAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson)
 {
 	auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
-	return GetAnimationFromMap(map, refId, animGroupId);
+	auto* result = GetAnimationFromMap(map, refId, animGroupId);
+	if (result)
+		return result->model->controllerSequence;
+	return nullptr;
 }
 
 BSAnimGroupSequence* GetActorAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson)
 {
 	auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
-	return GetAnimationFromMap(map, refId, animGroupId);
+	auto* result = GetAnimationFromMap(map, refId, animGroupId);
+	if (result)
+		return result->model->controllerSequence;
+	return nullptr;
+}
+
+AnimSequenceSingle* GetWeaponAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson)
+{
+	auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
+	auto* result = GetAnimationFromMap(map, refId, animGroupId);
+	if (result)
+		return result->single;
+	return nullptr;
+}
+
+AnimSequenceSingle* GetActorAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson)
+{
+	auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
+	auto* result = GetAnimationFromMap(map, refId, animGroupId);
+	if (result)
+		return result->single;
+	return nullptr;
 }
 
 void SetOverrideAnimation(UInt32 refId, const std::string& path, UInt32 animGroup, AnimOverrideMap& map, AnimData* animData, bool enable)
@@ -163,16 +201,20 @@ void SetOverrideAnimation(UInt32 refId, const std::string& path, UInt32 animGrou
 		for (auto& pathIter : paths)
 		{
 			auto* kfModel = LoadAnimation(pathIter.c_str(), animData);
+			auto* single = (AnimSequenceSingle*)animData->mapAnimSequenceBase->Lookup(kfModel->animGroup->groupID);
 			if (kfModel)
-				animations.push_back(kfModel);
+				animations.emplace_back(kfModel, single);
 			else
 				throw std::exception(FormatString("Cannot resolve file '%s'", pathIter.c_str()).c_str());
 		}
 	}
 	else
 	{
-		for (auto* anim : animations)
-			FormHeap_Free(anim);
+		for (auto& anim : animations)
+		{
+			FormHeap_Free(anim.model);
+			FormHeap_Free(anim.single);
+		}
 
 		animations.clear();
 		animGroupMap.erase(animGroup);

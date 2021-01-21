@@ -3,11 +3,7 @@
 #include "commands_animation.h"
 #include "hooks.h"
 
-//NoGore is unsupported in this fork
-
-#ifndef RegisterScriptCommand
 #define RegisterScriptCommand(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name);
-#endif
 
 IDebugLog		gLog("kNVSE.log");
 
@@ -21,8 +17,7 @@ const CommandInfo* g_TFC;
 #if RUNTIME
 NVSEScriptInterface* g_script;
 #endif
-// This is a message handler for nvse events
-// With this, plugins can listen to messages such as whenever the game loads
+
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 }

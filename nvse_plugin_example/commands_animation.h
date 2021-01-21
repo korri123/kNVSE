@@ -84,6 +84,8 @@ WeaponAnimMap& GetWeaponAnimMap(AnimType a);
 
 BSAnimGroupSequence* GetWeaponAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson);
 BSAnimGroupSequence* GetActorAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson);
+AnimSequenceSingle* GetWeaponAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
+AnimSequenceSingle* GetActorAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
 
 static ParamInfo kParams_SetAnimationPath[5] =
 {

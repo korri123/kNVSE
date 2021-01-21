@@ -880,6 +880,14 @@ public:
 	virtual signed int GetIndexOfSequenceName(const char* name);
 };
 
+class AnimSequenceSingle : public AnimSequenceBase
+{
+public:
+	BSAnimGroupSequence* anim;
+};
+
+
+
 // 08
 class AnimSequenceMultiple : public AnimSequenceBase
 {

@@ -5,6 +5,89 @@
 #include "SafeWrite.h"
 
 
+/****************************************EXPERIMENTAL*********************************************/
+
+
+std::unordered_map<void*, AnimData*> g_animDataMap;
+
+void __fastcall ReplaceAnimation(void* map, UInt32 animGroupId, AnimSequenceBase** base)
+{
+	const auto animDataIter = g_animDataMap.find(map);
+	if (animDataIter != g_animDataMap.end())
+	{
+		auto* animData = animDataIter->second;
+		if (animData && animData->actor)
+		{
+			const auto animGroupMinor = static_cast<UInt8>(animGroupId);
+			auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
+			const auto firstPerson = animData == (*g_thePlayer)->firstPersonAnimData;
+			if (weaponInfo && weaponInfo->weapon)
+			{
+				auto* anim = GetWeaponAnimationSingle(weaponInfo->weapon->refID, animGroupMinor, firstPerson);
+				if (anim)
+				{
+					*base = anim;
+					return;
+				}
+			}
+			auto* actorAnim = GetActorAnimationSingle(animData->actor->refID, animGroupMinor, firstPerson);
+			if (actorAnim)
+			{
+				*base = actorAnim;
+			}
+		}
+	}
+}
+
+	__declspec(naked) void ReplaceAnimHook()
+	{
+		__asm
+		{
+			mov ecx, [ebp + 0x4]
+			cmp ecx, 0x49062B // loadanimation
+			jz goBack
+			
+			push eax
+			mov ecx, [ebp + 0xC] // AnimSequenceBase **a3
+			push ecx
+			movzx edx, [ebp + 0x8] // animgroupId
+			mov ecx, [ebp - 0xC]
+			call ReplaceAnimation
+			pop eax
+			//original asm
+		goBack:
+			mov esp, ebp
+			pop ebp
+			ret 8
+		}
+	}
+
+
+
+void __fastcall SaveAnimDataMap(AnimData* animData)
+{
+	g_animDataMap[animData->mapAnimSequenceBase] = animData;
+}
+
+__declspec(naked) void AnimDataMapHook()
+{
+	static auto returnAddress = 0x490537;
+	static auto fn_GetAnimGroup = 0x5585E0;
+	__asm
+	{
+		push ecx
+		mov ecx, [ebp - 0x90]
+		call SaveAnimDataMap
+		pop ecx
+		call fn_GetAnimGroup
+		jmp returnAddress
+	}
+}
+
+
+
+/****************************************\\EXPERIMENTAL\\*********************************************/
+
 void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph)
 {
 	if (animData && animData->actor)
@@ -29,6 +112,8 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 	}
 }
 
+
+
 __declspec(naked) void AnimationHook()
 {
 	static auto fn_AnimDataContainsAnimSequence = 0x498EA0;
@@ -49,5 +134,8 @@ __declspec(naked) void AnimationHook()
 
 void ApplyHooks()
 {
-	WriteRelJump(0x4949D0, UInt32(AnimationHook));
+	//WriteRelJump(0x4949D0, UInt32(AnimationHook));
+
+	WriteRelJump(0x490532, UInt32(AnimDataMapHook));
+	WriteRelJump(0x49C3FF, UInt32(ReplaceAnimHook));
 }
