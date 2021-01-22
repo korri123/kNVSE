@@ -103,9 +103,9 @@ KFModel* LoadAnimation(const char* path, AnimData* animData, UInt32 animGroup = 
 		auto* kfModel = static_cast<KFModel*>(FormHeap_Allocate(sizeof(KFModel)));
 		memset(kfModel, 0xCD, sizeof(KFModel));
 		GameFuncs::KFModel_Init(kfModel, path, bsStream);
+		//kfModel->animGroup->groupID = 0xF5; // first free id, make sure not to overwrite any slots
 		if (animGroup)
 			kfModel->animGroup->groupID = animGroup;
-		kfModel->animGroup->groupID = 0xF5; // first free id, make sure not to overwrite any slots
 		GameFuncs::LoadAnimation(animData, kfModel, true);
 		return kfModel;
 	}
@@ -200,7 +200,7 @@ void SetOverrideAnimation(UInt32 refId, const std::string& path, UInt32 animGrou
 		auto paths = GetAnimationVariantPaths(path);
 		for (auto& pathIter : paths)
 		{
-			auto* kfModel = LoadAnimation(pathIter.c_str(), animData);
+			auto* kfModel = LoadAnimation(pathIter.c_str(), animData, animGroup);
 			auto* single = (AnimSequenceSingle*)animData->mapAnimSequenceBase->Lookup(kfModel->animGroup->groupID);
 			if (kfModel)
 				animations.emplace_back(kfModel, single);

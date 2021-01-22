@@ -43,9 +43,9 @@ void __fastcall ReplaceAnimation(void* map, UInt32 animGroupId, AnimSequenceBase
 	{
 		__asm
 		{
-			mov ecx, [ebp + 0x4]
-			cmp ecx, 0x49062B // loadanimation
-			jz goBack
+			//mov ecx, [ebp + 0x4]
+			//cmp ecx, 0x49062B // loadanimation
+			//jz goBack
 			
 			push eax
 			mov ecx, [ebp + 0xC] // AnimSequenceBase **a3
@@ -107,7 +107,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		auto* actorAnim = GetActorAnimation(animData->actor->refID, animGroupMinor, firstPerson);
 		if (actorAnim)
 		{
-			*toMorph = actorAnim;
+		//	*toMorph = actorAnim;
 		}
 	}
 }
@@ -134,8 +134,8 @@ __declspec(naked) void AnimationHook()
 
 void ApplyHooks()
 {
-	//WriteRelJump(0x4949D0, UInt32(AnimationHook));
+	WriteRelJump(0x4949D0, UInt32(AnimationHook));
 
-	WriteRelJump(0x490532, UInt32(AnimDataMapHook));
-	WriteRelJump(0x49C3FF, UInt32(ReplaceAnimHook));
+	//WriteRelJump(0x490532, UInt32(AnimDataMapHook));
+	//WriteRelJump(0x49C3FF, UInt32(ReplaceAnimHook));
 }
