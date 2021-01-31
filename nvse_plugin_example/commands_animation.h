@@ -5,6 +5,25 @@
 #include "GameObjects.h"
 #include "GameProcess.h"
 #include "ParamInfos.h"
+struct SavedAnim
+{
+	KFModel* model;
+	AnimSequenceSingle* single;
+	UInt32 animGroup;
+
+	SavedAnim(KFModel* model, AnimSequenceSingle* single, UInt32 animGroup)
+		: model(model),
+		single(single),
+		animGroup(animGroup)
+	{
+	}
+};
+
+struct Anims
+{
+	std::vector<SavedAnim> anims;
+	bool enabled = true;
+};
 
 enum class AnimType
 {
@@ -78,24 +97,30 @@ namespace GameFuncs
 	inline auto* MorphToSequence = reinterpret_cast<BSAnimGroupSequence * (__thiscall*)(AnimData*, BSAnimGroupSequence*, int, int)>(0x4949A0);
 }
 
-using WeaponAnimMap = std::unordered_map<UInt32, BSAnimGroupSequence*>;
-
-WeaponAnimMap& GetWeaponAnimMap(AnimType a);
-
 BSAnimGroupSequence* GetWeaponAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson);
 BSAnimGroupSequence* GetActorAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson);
-AnimSequenceSingle* GetWeaponAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
-AnimSequenceSingle* GetActorAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
+SavedAnim* GetWeaponAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
+SavedAnim* GetActorAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
 
-static ParamInfo kParams_SetAnimationPath[5] =
+static ParamInfo kParams_SetWeaponAnimationPath[5] =
 {
-	{	"form",	kParamType_AnyForm,	0	}, // weapon
-	{	"int",	kParamType_Integer,	0	}, // animGroup
-	{	"int",	kParamType_Integer,	0	}, // firstPerson
-	{	"int",	kParamType_Integer,	0	}, // enable or disable
-	{	"string",	kParamType_String,	1	},  // path
+	{	"weapon",	kParamType_AnyForm,	0	}, // weapon
+	{	"anim group",	kParamType_Integer,	0	}, // animGroup
+	{	"first person",	kParamType_Integer,	0	}, // firstPerson
+	{	"enable",	kParamType_Integer,	0	}, // enable or disable
+	{	"animation path",	kParamType_String,	1	},  // path
+};
+
+static ParamInfo kParams_SetActorAnimationPath[5] =
+{
+	{	"anim group",	kParamType_Integer,	0	}, // animGroup
+	{	"anim group hands",	kParamType_Integer,	0	}, // animGroup hands
+	{	"first person",	kParamType_Integer,	0	}, // firstPerson
+	{	"enable",	kParamType_Integer,	0	}, // enable or disable
+	{	"animation path",	kParamType_String,	1	},  // path
 };
 
 DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 1, kParams_OneForm)
-DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, 5, kParams_SetAnimationPath)
-DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", false, 5, kParams_SetAnimationPath)
+DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof(kParams_SetWeaponAnimationPath) / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
+DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", true, sizeof(kParams_SetActorAnimationPath) / sizeof(ParamInfo), kParams_SetActorAnimationPath)
+

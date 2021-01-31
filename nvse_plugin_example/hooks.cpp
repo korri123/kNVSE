@@ -5,9 +5,9 @@
 #include "SafeWrite.h"
 
 
-/****************************************EXPERIMENTAL*********************************************/
+#define EXPERIMENTAL 0
 
-
+#if EXPERIMENTAL
 std::unordered_map<void*, AnimData*> g_animDataMap;
 
 void __fastcall ReplaceAnimation(void* map, UInt32 animGroupId, AnimSequenceBase** base)
@@ -26,7 +26,7 @@ void __fastcall ReplaceAnimation(void* map, UInt32 animGroupId, AnimSequenceBase
 				auto* anim = GetWeaponAnimationSingle(weaponInfo->weapon->refID, animGroupMinor, firstPerson);
 				if (anim)
 				{
-					*base = anim;
+					*base = anim->single;
 					return;
 				}
 			}
@@ -87,7 +87,8 @@ __declspec(naked) void AnimDataMapHook()
 
 
 /****************************************\\EXPERIMENTAL\\*********************************************/
-
+/****************************************EXPERIMENTAL*********************************************/
+#endif
 void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph)
 {
 	if (animData && animData->actor)
@@ -104,10 +105,11 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 				return;
 			}
 		}
-		auto* actorAnim = GetActorAnimation(animData->actor->refID, animGroupMinor, firstPerson);
+		//_MESSAGE("ANIM %X", animGroupId);
+		auto* actorAnim = GetActorAnimation(animData->actor->refID, animGroupId, firstPerson);
 		if (actorAnim)
 		{
-		//	*toMorph = actorAnim;
+			*toMorph = actorAnim;
 		}
 	}
 }
@@ -136,6 +138,8 @@ void ApplyHooks()
 {
 	WriteRelJump(0x4949D0, UInt32(AnimationHook));
 
-	//WriteRelJump(0x490532, UInt32(AnimDataMapHook));
-	//WriteRelJump(0x49C3FF, UInt32(ReplaceAnimHook));
+#if EXPERIMENTAL
+	WriteRelJump(0x490532, UInt32(AnimDataMapHook));
+	WriteRelJump(0x49C3FF, UInt32(ReplaceAnimHook));
+#endif
 }

@@ -1,4 +1,4 @@
-LIBRARY	"nvse_plugin_example"
+LIBRARY	"kNVSE"
 EXPORTS
 NVSEPlugin_Query
 NVSEPlugin_Load
