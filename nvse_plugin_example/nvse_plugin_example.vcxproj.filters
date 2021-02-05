@@ -64,6 +64,7 @@
     </ClCompile>
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="commands_animation.cpp" />
+    <ClCompile Include="file_animations.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">
@@ -128,6 +129,8 @@
     <ClInclude Include="..\nvse\nvse\GameProcess.h">
       <Filter>nvse</Filter>
     </ClInclude>
+    <ClInclude Include="utility.h" />
+    <ClInclude Include="file_animations.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

@@ -2,7 +2,11 @@
 #include "nvse/CommandTable.h"
 #include "commands_animation.h"
 #include "hooks.h"
-
+#include "utility.h"
+#include <filesystem>
+#include "file_animations.h"
+#include "GameData.h"
+#include "GameRTTI.h"
 #define RegisterScriptCommand(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name);
 
 IDebugLog		gLog("kNVSE.log");
@@ -20,6 +24,19 @@ NVSEScriptInterface* g_script;
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
+	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
+	{
+		LoadFileAnimPaths();
+	}
+	else if (msg->type == NVSEMessagingInterface::kMessage_LoadGame)
+	{
+		static auto doOnce = false;
+		if (!doOnce)
+		{
+			LoadFileAnimations();
+			doOnce = true;
+		}
+	}
 }
 
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
@@ -70,11 +87,10 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_nvseInterface = (NVSEInterface*)nvse;
 	g_messagingInterface = (NVSEMessagingInterface*)nvse->QueryInterface(kInterface_Messaging);
 	g_messagingInterface->RegisterListener(g_pluginHandle, "NVSE", MessageHandler);
-#if RUNTIME
 	g_script = (NVSEScriptInterface*)nvse->QueryInterface(kInterface_Script);
-#endif
+	
 	nvse->SetOpcodeBase(0x3920);
-
+	
 	RegisterScriptCommand(ForcePlayIdle);
 	RegisterScriptCommand(SetWeaponAnimationPath);
 	RegisterScriptCommand(SetActorAnimationPath);

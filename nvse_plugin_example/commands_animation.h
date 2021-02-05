@@ -10,11 +10,13 @@ struct SavedAnim
 	KFModel* model;
 	AnimSequenceSingle* single;
 	UInt32 animGroup;
+	std::string path;
 
-	SavedAnim(KFModel* model, AnimSequenceSingle* single, UInt32 animGroup)
+	SavedAnim(KFModel* model, AnimSequenceSingle* single, UInt32 animGroup, std::string path)
 		: model(model),
 		single(single),
-		animGroup(animGroup)
+		animGroup(animGroup),
+		path(std::move(path))
 	{
 	}
 };
@@ -25,37 +27,20 @@ struct Anims
 	bool enabled = true;
 };
 
-enum class AnimType
+enum AnimHandTypes
 {
-	kAnimType_Null,
-	kAnimType_AttackFirstPerson,
-	kAnimType_AttackFirstPersonIS,
-	kAnimType_AttackThirdPerson,
-	kAnimType_AttackThirdPersonUp,
-	kAnimType_AttackThirdPersonDown,
-	kAnimType_AttackThirdPersonIS,
-	kAnimType_AttackThirdPersonISUp,
-	kAnimType_AttackThirdPersonISDown,
-	kAnimType_AimFirstPerson,
-	kAnimType_AimFirstPersonIS,
-	kAnimType_AimThirdPerson,
-	kAnimType_AimThirdPersonUp,
-	kAnimType_AimThirdPersonDown,
-	kAnimType_AimThirdPersonIS,
-	kAnimType_AimThirdPersonISUp,
-	kAnimType_AimThirdPersonISDown,
-	kAnimType_ReloadFirstPerson,
-	kAnimType_ReloadThirdPerson,
-	kAnimType_ReloadStartFirstPerson,
-	kAnimType_ReloadStartThirdPerson,
-	kAnimType_EquipFirstPerson,
-	kAnimType_EquipThirdPerson,
-	kAnimType_UnequipFirstPerson,
-	kAnimType_UnequipThirdPerson,
-	kAnimType_JamFirstPerson,
-	kAnimType_JamThirdPerson,
-	kAnimType_Max,
-
+	kAnim_H2H = 0,
+	kAnim_1HM,
+	kAnim_2HM,
+	kAnim_1HP,
+	kAnim_2HR,
+	kAnim_2HA,
+	kAnim_2HH,
+	kAnim_2HL,
+	kAnim_1GT,
+	kAnim_1MD,
+	kAnim_1LM,
+	kAnim_Max,
 };
 
 class AnimGroupType
@@ -102,19 +87,16 @@ BSAnimGroupSequence* GetActorAnimation(UInt32 refId, UInt32 animGroupId, bool fi
 SavedAnim* GetWeaponAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
 SavedAnim* GetActorAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
 
-static ParamInfo kParams_SetWeaponAnimationPath[5] =
+static ParamInfo kParams_SetWeaponAnimationPath[] =
 {
 	{	"weapon",	kParamType_AnyForm,	0	}, // weapon
-	{	"anim group",	kParamType_Integer,	0	}, // animGroup
 	{	"first person",	kParamType_Integer,	0	}, // firstPerson
 	{	"enable",	kParamType_Integer,	0	}, // enable or disable
 	{	"animation path",	kParamType_String,	1	},  // path
 };
 
-static ParamInfo kParams_SetActorAnimationPath[5] =
+static ParamInfo kParams_SetActorAnimationPath[] =
 {
-	{	"anim group",	kParamType_Integer,	0	}, // animGroup
-	{	"anim group hands",	kParamType_Integer,	0	}, // animGroup hands
 	{	"first person",	kParamType_Integer,	0	}, // firstPerson
 	{	"enable",	kParamType_Integer,	0	}, // enable or disable
 	{	"animation path",	kParamType_String,	1	},  // path
@@ -124,3 +106,5 @@ DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 1, kParams_OneForm)
 DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof(kParams_SetWeaponAnimationPath) / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
 DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", true, sizeof(kParams_SetActorAnimationPath) / sizeof(ParamInfo), kParams_SetActorAnimationPath)
 
+void OverrideActorAnimation(Actor* actor, const std::string& path, bool firstPerson);
+void OverrideWeaponAnimation(TESObjectWEAP* weapon, const std::string& path, bool firstPerson);

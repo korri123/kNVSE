@@ -350,6 +350,7 @@
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release GECK|Win32'">
       </ForcedIncludeFiles>
     </ClCompile>
+    <ClCompile Include="file_animations.cpp" />
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
@@ -375,7 +376,9 @@
     <ClInclude Include="..\nvse\nvse\Utilities.h" />
     <ClInclude Include="..\nvse\nvse\utility.h" />
     <ClInclude Include="commands_animation.h" />
+    <ClInclude Include="file_animations.h" />
     <ClInclude Include="hooks.h" />
+    <ClInclude Include="utility.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

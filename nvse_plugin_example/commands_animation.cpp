@@ -102,33 +102,25 @@ bool ReadFile(char* bsStream, const char* path, BSFile* file)
 
 static ModelLoader** g_modelLoader = reinterpret_cast<ModelLoader**>(0x011C3B3C);
 
-KFModel* LoadAnimation(const std::string& path, AnimData* animData, UInt32 animGroup = 0)
+KFModel* LoadAnimation(const std::string& path, AnimData* animData, UInt32& animGroup)
 {
 	auto pathStr = FormatString("Meshes\\%s", path.c_str());
 	std::replace(pathStr.begin(), pathStr.end(), '/', '\\');
 
 	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
-	if (kfModel)
+	if (kfModel && kfModel->animGroup && animData)
 	{
+		animGroup = kfModel->animGroup->groupID;
 		static std::unordered_set<KFModel*> s_loaded;
 		if (s_loaded.find(kfModel) == s_loaded.end())
 		{
-			if (animGroup)
-			{
-				kfModel->animGroup->groupID = animGroup;
-				auto* single = (AnimSequenceSingle*)animData->mapAnimSequenceBase->Lookup(animGroup);
-				//auto movVec = single->anim->animGroup->moveVector;
-				GameFuncs::LoadAnimation(animData, kfModel, false);
-			}
-			else
-			{
-				kfModel->animGroup->groupID = 0x2;
-				GameFuncs::LoadAnimation(animData, kfModel, false);
-			}
+			kfModel->animGroup->groupID = 0x2;
+			GameFuncs::LoadAnimation(animData, kfModel, false);
 			s_loaded.emplace(kfModel);
 		}
+		return kfModel;
 	}
-	return kfModel;
+	return nullptr;
 }
 
 SavedAnim* GetAnimationFromMap(AnimOverrideMap& map, UInt32 refId, UInt32 animGroupId)
@@ -160,11 +152,9 @@ BSAnimGroupSequence* GetActorAnimation(UInt32 refId, UInt32 animGroupId, bool fi
 {
 	auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
 	auto* result = GetAnimationFromMap(map, refId, animGroupId);
-	if (result)
-		return result->model->controllerSequence;
-	result = GetAnimationFromMap(map, refId, animGroupId & 0xFF + 0xFF00);
-	if (result) // any hand
-		return result->model->controllerSequence;
+	//if (result)
+	//	return result->single->anim;
+	
 	return nullptr;
 }
 
@@ -186,44 +176,55 @@ SavedAnim* GetActorAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstP
 	return nullptr;
 }
 
-void SetOverrideAnimation(UInt32 refId, const std::string& path, UInt32 animGroup, AnimOverrideMap& map, AnimData* animData, bool enable)
+void SetOverrideAnimation(const UInt32 refId, const std::string& path, AnimOverrideMap& map, AnimData* animData, bool enable)
 {
-	auto& animGroupMap = map[refId];
-	auto& animations = animGroupMap[animGroup];
-	if (enable)
+	auto paths = GetAnimationVariantPaths(path);
+	for (auto& pathIter : paths)
 	{
-		animations.enabled = true;
-		if (animations.anims.empty())
+		UInt32 realAnimGroupId;
+		auto* kfModel = LoadAnimation(pathIter, animData, realAnimGroupId);
+		if (kfModel && kfModel->animGroup)
 		{
-			auto paths = GetAnimationVariantPaths(path);
-			for (auto& pathIter : paths)
+			auto* single = animData->mapAnimSequenceBase->Lookup(kfModel->animGroup->groupID);
+			auto& animGroupMap = map[refId];
+			auto& animations = animGroupMap[realAnimGroupId];
+			if (enable)
 			{
-				auto* kfModel = LoadAnimation(pathIter, animData);
-				if (kfModel)
-				{
-					auto* single = static_cast<AnimSequenceSingle*>(animData->mapAnimSequenceBase->Lookup(kfModel->animGroup->groupID));
-					animations.anims.emplace_back(kfModel, single, animGroup);
-				}
-				else
-					throw std::exception(FormatString("Cannot resolve file '%s'", pathIter.c_str()).c_str());
+				animations.enabled = true;
+				animations.anims.emplace_back(kfModel, (AnimSequenceSingle*)single, kfModel->animGroup->groupID);
 			}
+			else
+				animations.enabled = false;
 		}
+		else
+			throw std::exception(FormatString("Cannot resolve file '%s'", pathIter.c_str()).c_str());
 	}
-	else
-	{
-		animations.enabled = false;
-	}
+}
+
+void OverrideActorAnimation(Actor* actor, const std::string& path, bool firstPerson)
+{
+	auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
+	if (firstPerson && actor != *g_thePlayer)
+		throw std::exception("Cannot apply first person animations on actors other than player!");
+	auto* animData = firstPerson ? (*g_thePlayer)->firstPersonAnimData : actor->baseProcess->GetAnimData();
+	SetOverrideAnimation(actor->refID, path, map, animData, true);
+}
+
+void OverrideWeaponAnimation(TESObjectWEAP* weapon, const std::string& path, bool firstPerson)
+{
+	auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
+	auto* animData = firstPerson ? (*g_thePlayer)->firstPersonAnimData : (*g_thePlayer)->baseProcess->GetAnimData();
+	SetOverrideAnimation(weapon->refID, path, map, animData, true);
 }
 
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
 	TESForm* weaponForm = nullptr;
-	auto animGroup = 0;
 	auto firstPerson = 0;
 	auto enable = 0;
 	char path[0x1000];
-	if (!ExtractArgs(EXTRACT_ARGS, &weaponForm, &animGroup, &firstPerson, &enable, &path))
+	if (!ExtractArgs(EXTRACT_ARGS, &weaponForm, &firstPerson, &enable, &path))
 		return true;
 	if (!weaponForm)
 		return true;
@@ -232,9 +233,7 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 		return true;
 	try
 	{
-		auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
-		auto* animData = firstPerson ? (*g_thePlayer)->firstPersonAnimData : (*g_thePlayer)->baseProcess->GetAnimData();
-		SetOverrideAnimation(weapon->refID, path, animGroup, map, animData, enable);
+		OverrideWeaponAnimation(weapon, path, firstPerson);
 		*result = 1;
 	}
 	catch (std::exception& e)
@@ -248,33 +247,19 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
-	auto animGroup = 0;
-	auto hands = 0;
 	auto firstPerson = 0;
 	auto enable = 0;
 	char path[0x1000];
-	if (!ExtractArgs(EXTRACT_ARGS, &animGroup, &hands, &firstPerson, &enable, &path))
+	if (!ExtractArgs(EXTRACT_ARGS, &firstPerson, &enable, &path))
 		return true;
 	if (!thisObj)
 		return true;
 	auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
 	if (!actor)
 		return true;
-
-	if (firstPerson && actor != *g_thePlayer)
-		return true;
 	try
 	{
-		auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
-		
-		auto* animData = firstPerson ? (*g_thePlayer)->firstPersonAnimData : actor->baseProcess->GetAnimData();
-		UInt32 animGroupId;
-		if (hands == -1)
-			animGroupId = 0xFF00 + animGroup;
-		else
-			animGroupId = hands * 0x100 + animGroup;
-		SetOverrideAnimation(actor->refID, path, animGroupId, map, animData, enable);
-
+		OverrideActorAnimation(actor, path, firstPerson);
 		*result = 1;
 	}
 	catch (std::exception& e)
@@ -286,6 +271,7 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 
 // SetWeaponAnimationPath WeapNV9mmPistol 32 1 1 "characters\_male\idleanims\weapons\pistol_1hpAttackRight.kf"
 // SetActorAnimationPath player 7 0 1 "characters\_male\idleanims\sprint\Haughty.kf"
+// SetWeaponAnimationPath WeapNV9mmPistol 24 1 1 "characters\_male\idleanims\weapons\1hpEquip.kf"
 
 
 

@@ -105,8 +105,9 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 				return;
 			}
 		}
-		//_MESSAGE("ANIM %X", animGroupId);
-		auto* actorAnim = GetActorAnimation(animData->actor->refID, animGroupId, firstPerson);
+		// NPCs animGroupId contains 0x8000 for some reason
+		const auto actorAnimGroupId = animGroupId & 0xFFF;
+		auto* actorAnim = GetActorAnimation(animData->actor->refID, actorAnimGroupId, firstPerson);
 		if (actorAnim)
 		{
 			*toMorph = actorAnim;
