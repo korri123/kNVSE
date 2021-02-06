@@ -8,30 +8,6 @@
 
 std::vector<FileAnimation> g_fileAnimations;
 
-void LoadFileAnimations()
-{
-	for (const auto& anim : g_fileAnimations)
-	{
-		try
-		{
-			switch (anim.type) {
-			case FileAnimType::Weapon:
-				OverrideWeaponAnimation((TESObjectWEAP*)anim.form, anim.path, anim.firstPerson);
-				break;
-			case FileAnimType::Actor:
-				OverrideActorAnimation((Actor*)anim.form, anim.path, anim.firstPerson);
-				break;
-			default:;
-			}
-		}
-		catch (std::exception& e)
-		{
-			Log(FormatString("Error loading animation %s: %s", anim.path.c_str(), e.what()));
-		}
-		
-	}
-}
-
 void LoadPathsForForm(const std::filesystem::path& path, TESForm* form)
 {
 	for (const auto& pair : {std::make_pair("\\_male", false), std::make_pair("\\_1stperson", true)})
@@ -44,15 +20,26 @@ void LoadPathsForForm(const std::filesystem::path& path, TESForm* form)
 				auto type = FileAnimType::Null;
 				const auto fullPath = iter->path().string();
 				auto str = fullPath.substr(fullPath.find("AnimGroupOverride\\"));
-				if (DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
-					type = FileAnimType::Weapon;
-				else if (DYNAMIC_CAST(form, TESForm, Actor))
-					type = FileAnimType::Actor;
-				if (type != FileAnimType::Null)
-					g_fileAnimations.emplace_back(form, str, pair.second, type);
-				else
-					Log(FormatString("Form %X is neither a weapon or actor!", form->refID));
+				Log("Loading " + str + "...");
+				try
+				{
+					if (DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
+						OverrideWeaponAnimation((TESObjectWEAP*)form, str, pair.second, true);
+					else if (DYNAMIC_CAST(form, TESForm, Actor))
+						OverrideActorAnimation((Actor*)form, str, pair.second, true);
+					else
+						Log(FormatString("Form %X is neither a weapon or actor!", form->refID));
+				}
+				catch (std::exception& e)
+				{
+					Log(FormatString("AnimGroupOverride Error: %s", e.what()));
+				}
+				
 			}
+		}
+		else
+		{
+			Log("Could not detect path " + iterPath);
 		}
 	}
 }
@@ -61,6 +48,7 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 {
 	for (std::filesystem::directory_iterator iter(path), end; iter != end; ++iter)
 	{
+		Log(iter->path().string() + " found 0");
 		if (iter->is_directory())
 		{
 			const auto& iterPath = iter->path();
@@ -83,11 +71,16 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 			}
 			catch (std::exception&) {}
 		}
+		else
+		{
+			Log("Skipping as path is not a directory...");
+		}
 	}
 }
 
 void LoadFileAnimPaths()
 {
+	Log("Loading file anims");
 	const auto dir = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride)";
 	if (std::filesystem::exists(dir))
 	{
@@ -95,6 +88,7 @@ void LoadFileAnimPaths()
 		{
 			if (iter->is_directory())
 			{
+				Log(iter->path().string() + " found");
 				const auto& path = iter->path();
 				const auto* mod = DataHandler::Get()->LookupModByName(path.filename().string().c_str());
 				if (mod)
@@ -107,5 +101,9 @@ void LoadFileAnimPaths()
 				}
 			}
 		}
+	}
+	else
+	{
+		Log(dir + " does not exist.");
 	}
 }

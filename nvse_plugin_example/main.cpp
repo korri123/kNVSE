@@ -28,15 +28,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	{
 		LoadFileAnimPaths();
 	}
-	else if (msg->type == NVSEMessagingInterface::kMessage_LoadGame)
-	{
-		static auto doOnce = false;
-		if (!doOnce)
-		{
-			LoadFileAnimations();
-			doOnce = true;
-		}
-	}
 }
 
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
@@ -83,6 +74,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 
 bool NVSEPlugin_Load(const NVSEInterface* nvse)
 {
+	_MESSAGE("Load");
 	g_pluginHandle = nvse->GetPluginHandle();
 	g_nvseInterface = (NVSEInterface*)nvse;
 	g_messagingInterface = (NVSEMessagingInterface*)nvse->QueryInterface(kInterface_Messaging);

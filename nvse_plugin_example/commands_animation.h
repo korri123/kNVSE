@@ -7,16 +7,9 @@
 #include "ParamInfos.h"
 struct SavedAnim
 {
-	KFModel* model;
-	AnimSequenceSingle* single;
-	UInt32 animGroup;
 	std::string path;
 
-	SavedAnim(KFModel* model, AnimSequenceSingle* single, UInt32 animGroup, std::string path)
-		: model(model),
-		single(single),
-		animGroup(animGroup),
-		path(std::move(path))
+	SavedAnim(std::string path) : path(std::move(path))
 	{
 	}
 };
@@ -24,7 +17,6 @@ struct SavedAnim
 struct Anims
 {
 	std::vector<SavedAnim> anims;
-	bool enabled = true;
 };
 
 enum AnimHandTypes
@@ -82,10 +74,8 @@ namespace GameFuncs
 	inline auto* MorphToSequence = reinterpret_cast<BSAnimGroupSequence * (__thiscall*)(AnimData*, BSAnimGroupSequence*, int, int)>(0x4949A0);
 }
 
-BSAnimGroupSequence* GetWeaponAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson);
-BSAnimGroupSequence* GetActorAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson);
-SavedAnim* GetWeaponAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
-SavedAnim* GetActorAnimationSingle(UInt32 refId, UInt32 animGroupId, bool firstPerson);
+BSAnimGroupSequence* GetWeaponAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson, AnimData* animData);
+BSAnimGroupSequence* GetActorAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson, AnimData* animData);
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {
@@ -106,5 +96,5 @@ DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 1, kParams_OneForm)
 DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof(kParams_SetWeaponAnimationPath) / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
 DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", true, sizeof(kParams_SetActorAnimationPath) / sizeof(ParamInfo), kParams_SetActorAnimationPath)
 
-void OverrideActorAnimation(Actor* actor, const std::string& path, bool firstPerson);
-void OverrideWeaponAnimation(TESObjectWEAP* weapon, const std::string& path, bool firstPerson);
+void OverrideActorAnimation(Actor* actor, const std::string& path, bool firstPerson, bool enable);
+void OverrideWeaponAnimation(TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable);
