@@ -3,6 +3,7 @@
 #include "GameObjects.h"
 #include "commands_animation.h"
 #include "SafeWrite.h"
+#include "utility.h"
 
 
 #define EXPERIMENTAL 0
@@ -91,16 +92,19 @@ __declspec(naked) void AnimDataMapHook()
 #endif
 void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph)
 {
+	_MESSAGE("%s %X", (*toMorph)->sequenceName, animGroupId);
+	if (_stricmp((*toMorph)->sequenceName, "Characters\\_1stPerson\\2haattackloopis.kf") == 0)
+		_MESSAGE("");
 	if (animData && animData->actor)
 	{
-		const auto animGroupMinor = static_cast<UInt8>(animGroupId);
 		auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
 		const auto firstPerson = animData == (*g_thePlayer)->firstPersonAnimData;
 		if (weaponInfo && weaponInfo->weapon)
 		{
-			auto* anim = GetWeaponAnimation(weaponInfo->weapon->refID, animGroupMinor, firstPerson, animData);
+			auto* anim = GetWeaponAnimation(weaponInfo->weapon->refID, animGroupId, firstPerson, animData);
 			if (anim)
 			{
+				anim->animGroup->groupID = animGroupId;
 				*toMorph = anim;
 				return;
 			}
@@ -110,6 +114,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		auto* actorAnim = GetActorAnimation(animData->actor->refID, actorAnimGroupId, firstPerson, animData);
 		if (actorAnim)
 		{
+			//actorAnim->animGroup->groupID = animGroupId;
 			*toMorph = actorAnim;
 		}
 	}
@@ -135,10 +140,30 @@ __declspec(naked) void AnimationHook()
 	}
 }
 
+void __fastcall ResetGroupId(BSAnimGroupSequence* sequence)
+{
+	if (sequence && sequence->animGroup)
+		sequence->animGroup->groupID = 0xF5;
+}
+
+__declspec(naked) void ResetGroupIdHook()
+{
+	__asm
+	{
+		push eax
+		mov ecx, [ebp + 0x8]
+		call ResetGroupId
+		pop eax
+		mov esp, ebp
+		pop ebp
+		ret 0xC
+	}
+}
+
 void ApplyHooks()
 {
 	WriteRelJump(0x4949D0, UInt32(AnimationHook));
-
+	//WriteRelJump(0x49544D, UInt32(ResetGroupIdHook));
 #if EXPERIMENTAL
 	WriteRelJump(0x490532, UInt32(AnimDataMapHook));
 	WriteRelJump(0x49C3FF, UInt32(ReplaceAnimHook));

@@ -35,9 +35,9 @@ bool Cmd_ForcePlayIdle_Execute(COMMAND_ARGS)
 	auto* idle = DYNAMIC_CAST(form, TESForm, TESIdleForm);
 	if (!idle)
 		return true;
-	SafeWrite8(0x497FA7 + 1, 1);
+	//SafeWrite8(0x497FA7 + 1, 1);
 	GameFuncs::PlayIdle(actor->GetAnimData(), idle, actor, idle->data.groupFlags & 0x3F, 3);
-	SafeWrite8(0x497FA7 + 1, 0);
+	//SafeWrite8(0x497FA7 + 1, 0);
 	*result = 1;
 	return true;
 }
@@ -152,7 +152,7 @@ int GetAnimGroupId(const std::string& path)
 {
 	UInt32 animGroupId;
 	static std::unordered_map<std::string, UInt16> s_animGroupIds;
-	auto iter = s_animGroupIds.find(path);
+	const auto iter = s_animGroupIds.find(path);
 	if (iter != s_animGroupIds.end())
 	{
 		animGroupId = iter->second;
@@ -184,12 +184,17 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 		{
 			if (GameFuncs::LoadKFModel(*g_modelLoader, pathIter.c_str()))
 			{
+				Log(FormatString("\tOverrode AnimGroup %X with path %s", groupId, pathIter.c_str()));
 				std::replace(path.begin(), path.end(), '/', '\\');
 				animations.anims.emplace_back(path);
 			}
 			else
-				Log(FormatString("Failed to load animation variant '%s'", pathIter.c_str()));
+				Log(FormatString("\tFailed to load animation variant '%s'", pathIter.c_str()));
 		}
+	}
+	else
+	{
+		Log(FormatString("\tCleared animations for anim group %X", groupId));
 	}
 	
 }
@@ -209,6 +214,11 @@ void OverrideWeaponAnimation(TESObjectWEAP* weapon, const std::string& path, boo
 	
 }
 
+void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)
+{
+	Log(FormatString("Script %s %X from mod %s has called %s on form %s %X", scriptObj->GetName(), scriptObj->refID, GetModName(scriptObj), funcName.c_str(), form->GetName(), form->refID));
+}
+
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
@@ -225,6 +235,7 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 		return true;
 	try
 	{
+		LogScript(scriptObj, weapon, "SetWeaponAnimationPath");
 		OverrideWeaponAnimation(weapon, path, firstPerson, enable);
 		*result = 1;
 	}
@@ -234,7 +245,6 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 	}
 	return true;
 }
-
 
 bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 {
@@ -251,12 +261,13 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 		return true;
 	try
 	{
+		LogScript(scriptObj, actor, "SetActorAnimationPath");
 		OverrideActorAnimation(actor, path, firstPerson, enable);
 		*result = 1;
 	}
 	catch (std::exception& e)
 	{
-		ShowRuntimeError(scriptObj, "SetWeaponAnimationPath: %s", e.what());
+		ShowRuntimeError(scriptObj, "\tSetWeaponAnimationPath: %s", e.what());
 	}
 	return true;
 }

@@ -48,7 +48,7 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 {
 	for (std::filesystem::directory_iterator iter(path), end; iter != end; ++iter)
 	{
-		Log(iter->path().string() + " found 0");
+		Log("" + iter->path().string());
 		if (iter->is_directory())
 		{
 			const auto& iterPath = iter->path();
@@ -56,7 +56,8 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 			{
 				char* p;
 				const auto id = strtoul(iterPath.filename().string().c_str(), &p, 16);
-				if (*p == 0) {
+				if (*p == 0) 
+				{
 					const auto formId = id + (mod->modIndex << 24);
 					auto* form = LookupFormByID(formId);
 					if (form)
@@ -67,6 +68,10 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 					{
 						Log(FormatString("kNVSE Animation: Form %X not found!", formId));
 					}
+				}
+				else
+				{
+					Log(FormatString("Path %s could not be converted to a form ID number! it needs to be in hexadecimal form without mod index", iterPath.filename().string().c_str()));
 				}
 			}
 			catch (std::exception&) {}

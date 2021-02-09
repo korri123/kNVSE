@@ -670,7 +670,7 @@ void ShowRuntimeError(Script* script, const char* fmt, ...)
 	if (g_warnedScripts.Insert(script->refID))
 	{
 		char message[512];
-		snprintf(message, sizeof(message), "%s: NVSE error (see console print)", GetModName(script));
+		snprintf(message, sizeof(message), "%s: kNVSE error (see console print)", GetModName(script));
 		if (!IsConsoleMode())
 			QueueUIMessage(message, 0, reinterpret_cast<const char*>(0x1049638), nullptr, 2.5F, false);
 	}
