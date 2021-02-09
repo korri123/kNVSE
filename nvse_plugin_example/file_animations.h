@@ -24,4 +24,3 @@ struct FileAnimation
 extern std::vector<FileAnimation> g_fileAnimations;
 
 void LoadFileAnimPaths();
-void LoadFileAnimations();

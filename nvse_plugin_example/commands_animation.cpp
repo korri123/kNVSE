@@ -1,15 +1,12 @@
-#include "Commands_Animation.h"
+#include "commands_animation.h"
 
 #include <algorithm>
 #include <unordered_set>
-
-
 
 #include "GameForms.h"
 #include "GameAPI.h"
 #include "GameObjects.h"
 #include "GameRTTI.h"
-#include "SafeWrite.h"
 #include "utility.h"
 #include "common/IDirectoryIterator.h"
 
@@ -22,8 +19,6 @@ AnimOverrideMap g_refWeaponAnimGroupFirstPersonMap;
 
 AnimOverrideMap g_refActorAnimGroupThirdPersonMap;
 AnimOverrideMap g_refActorAnimGroupFirstPersonMap;
-
-AnimOverrideMap g_oldAnimations;
 
 bool Cmd_ForcePlayIdle_Execute(COMMAND_ARGS)
 {
@@ -85,20 +80,6 @@ std::vector<std::string> GetAnimationVariantPaths(const std::string& kfFilePath)
 		}
 	}
 	return result;
-}
-
-
-bool ReadFile(char* bsStream, const char* path, BSFile* file)
-{
-	__try
-	{
-		GameFuncs::BSStream_SetFileAndName(bsStream, path, file);
-		return true;
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		return false;
-	}
 }
 
 static ModelLoader** g_modelLoader = reinterpret_cast<ModelLoader**>(0x011C3B3C);

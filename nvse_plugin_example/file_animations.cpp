@@ -48,7 +48,7 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 {
 	for (std::filesystem::directory_iterator iter(path), end; iter != end; ++iter)
 	{
-		Log("" + iter->path().string());
+		Log("Loading form ID " + iter->path().string());
 		if (iter->is_directory())
 		{
 			const auto& iterPath = iter->path();
