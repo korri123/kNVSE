@@ -6,46 +6,52 @@
 #include "commands_animation.h"
 #include "file_animations.h"
 
-std::vector<FileAnimation> g_fileAnimations;
 
-void LoadPathsForForm(const std::filesystem::path& path, TESForm* form)
+template <typename T>
+void LoadPathsForType(const std::filesystem::path& path, T identifier, bool firstPerson)
 {
+	for (std::filesystem::recursive_directory_iterator iter(path), end; iter != end; ++iter)
+	{
+		const auto fullPath = iter->path().string();
+		auto str = fullPath.substr(fullPath.find("AnimGroupOverride\\"));
+		Log("Loading animation path " + str + "...");
+		try
+		{
+			if constexpr (std::is_same<T, TESObjectWEAP*>())
+				OverrideWeaponAnimation(identifier, str, firstPerson, true);
+			else if constexpr (std::is_same<T, Actor*>())
+				OverrideActorAnimation(identifier, str, firstPerson, true);
+			else if constexpr (std::is_same<T, UInt8>())
+				OverrideModIndexWeaponAnimation(identifier, str, firstPerson, true);
+		}
+		catch (std::exception& e)
+		{
+			Log(FormatString("AnimGroupOverride Error: %s", e.what()));
+		}
+	}
+}
+
+template <typename T>
+bool LoadPathsForPOV(const std::filesystem::path& path, T identifier)
+{
+	auto success = false;
 	for (const auto& pair : {std::make_pair("\\_male", false), std::make_pair("\\_1stperson", true)})
 	{
 		auto iterPath = path.string() + std::string(pair.first);
 		if (std::filesystem::exists(iterPath))
 		{
-			for (std::filesystem::recursive_directory_iterator iter(iterPath), end; iter != end; ++iter)
-			{
-				auto type = FileAnimType::Null;
-				const auto fullPath = iter->path().string();
-				auto str = fullPath.substr(fullPath.find("AnimGroupOverride\\"));
-				Log("Loading " + str + "...");
-				try
-				{
-					if (DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
-						OverrideWeaponAnimation((TESObjectWEAP*)form, str, pair.second, true);
-					else if (DYNAMIC_CAST(form, TESForm, Actor))
-						OverrideActorAnimation((Actor*)form, str, pair.second, true);
-					else
-						Log(FormatString("Form %X is neither a weapon or actor!", form->refID));
-				}
-				catch (std::exception& e)
-				{
-					Log(FormatString("AnimGroupOverride Error: %s", e.what()));
-				}
-				
-			}
+			LoadPathsForType(iterPath, identifier, pair.second);
+			success = true;
 		}
 		else
-		{
 			Log("Could not detect path " + iterPath);
-		}
 	}
+	return success;
 }
 
 void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 {
+	LoadPathsForPOV(path, mod->modIndex);
 	for (std::filesystem::directory_iterator iter(path), end; iter != end; ++iter)
 	{
 		Log("Loading form ID " + iter->path().string());
@@ -54,24 +60,26 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 			const auto& iterPath = iter->path();
 			try
 			{
+				const auto& folderName = iterPath.filename().string();
 				char* p;
-				const auto id = strtoul(iterPath.filename().string().c_str(), &p, 16);
+				const auto id = strtoul(folderName.c_str(), &p, 16) & 0x00FFFFFF;
 				if (*p == 0) 
 				{
 					const auto formId = id + (mod->modIndex << 24);
 					auto* form = LookupFormByID(formId);
 					if (form)
 					{
-						LoadPathsForForm(iterPath, form);
+						if (const auto* weapon = DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
+							LoadPathsForPOV(iterPath, weapon);
+						else if (const auto* actor = DYNAMIC_CAST(form, TESForm, Actor))
+							LoadPathsForPOV(iterPath, actor);
+						else
+							Log(FormatString("Unsupported form type for %X", form->refID));
 					}
 					else
 					{
 						Log(FormatString("kNVSE Animation: Form %X not found!", formId));
 					}
-				}
-				else
-				{
-					Log(FormatString("Path %s could not be converted to a form ID number! it needs to be in hexadecimal form without mod index", iterPath.filename().string().c_str()));
 				}
 			}
 			catch (std::exception&) {}

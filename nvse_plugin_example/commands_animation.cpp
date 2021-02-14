@@ -20,6 +20,9 @@ AnimOverrideMap g_refWeaponAnimGroupFirstPersonMap;
 AnimOverrideMap g_refActorAnimGroupThirdPersonMap;
 AnimOverrideMap g_refActorAnimGroupFirstPersonMap;
 
+AnimOverrideMap g_refModIdxWeaponThirdPersonMap;
+AnimOverrideMap g_refModIdxWeaponFirstPersonMap;
+
 bool Cmd_ForcePlayIdle_Execute(COMMAND_ARGS)
 {
 	*result = 0;
@@ -117,16 +120,23 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 refId, UIn
 	return nullptr;
 }
 
-BSAnimGroupSequence* GetWeaponAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson, AnimData* animData)
+BSAnimGroupSequence* GetWeaponAnimation(TESObjectWEAP* weapon, UInt32 animGroupId, bool firstPerson, AnimData* animData)
 {
 	auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
-	return GetAnimationFromMap(map, refId, animGroupId, animData);
+	if (auto* result = GetAnimationFromMap(map, weapon->refID, animGroupId, animData))
+		return result;
+	auto& modIdxMap = firstPerson ? g_refModIdxWeaponFirstPersonMap : g_refModIdxWeaponThirdPersonMap;
+	return GetAnimationFromMap(modIdxMap, weapon->GetModIndex(), animGroupId, animData);
 }
 
-BSAnimGroupSequence* GetActorAnimation(UInt32 refId, UInt32 animGroupId, bool firstPerson, AnimData* animData)
+BSAnimGroupSequence* GetActorAnimation(Actor* actor, UInt32 animGroupId, bool firstPerson, AnimData* animData)
 {
 	auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
-	return GetAnimationFromMap(map, refId, animGroupId, animData);
+	if (auto* result = GetAnimationFromMap(map, actor->refID, animGroupId, animData))
+		return result;
+	if (auto* baseForm = actor->baseForm)
+		return GetAnimationFromMap(map, baseForm->refID, animGroupId, animData);
+	return nullptr;
 }
 
 int GetAnimGroupId(const std::string& path)
@@ -192,7 +202,12 @@ void OverrideWeaponAnimation(TESObjectWEAP* weapon, const std::string& path, boo
 {
 	auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
 	SetOverrideAnimation(weapon->refID, path, map, enable);
-	
+}
+
+void OverrideModIndexWeaponAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable)
+{
+	auto& map = firstPerson ? g_refModIdxWeaponFirstPersonMap : g_refModIdxWeaponThirdPersonMap;
+	SetOverrideAnimation(modIdx, path, map, enable);
 }
 
 void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)
