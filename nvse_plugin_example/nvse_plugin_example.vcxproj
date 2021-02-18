@@ -148,6 +148,8 @@
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention />
       <TargetMachine>MachineX86</TargetMachine>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <OptimizeReferences>false</OptimizeReferences>
     </Link>
     <PostBuildEvent>
       <Message>Installing DLL...</Message>
@@ -353,6 +355,7 @@
     <ClCompile Include="file_animations.cpp" />
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="utility_knvse.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\CommandTable.h" />
@@ -378,6 +381,7 @@
     <ClInclude Include="commands_animation.h" />
     <ClInclude Include="file_animations.h" />
     <ClInclude Include="hooks.h" />
+    <ClInclude Include="json.h" />
     <ClInclude Include="utility.h" />
   </ItemGroup>
   <ItemGroup>

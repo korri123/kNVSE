@@ -10,18 +10,10 @@
 #include "utility.h"
 #include "common/IDirectoryIterator.h"
 
-
-
 // Per ref ID there are animation variants per group ID
 using AnimOverrideMap = std::unordered_map<UInt32, std::unordered_map<UInt32, Anims>>;
-AnimOverrideMap g_refWeaponAnimGroupThirdPersonMap;
-AnimOverrideMap g_refWeaponAnimGroupFirstPersonMap;
-
-AnimOverrideMap g_refActorAnimGroupThirdPersonMap;
-AnimOverrideMap g_refActorAnimGroupFirstPersonMap;
-
-AnimOverrideMap g_refModIdxWeaponThirdPersonMap;
-AnimOverrideMap g_refModIdxWeaponFirstPersonMap;
+AnimOverrideMap g_animGroupThirdPersonMap;
+AnimOverrideMap g_animGroupFirstPersonMap;
 
 bool Cmd_ForcePlayIdle_Execute(COMMAND_ARGS)
 {
@@ -68,7 +60,6 @@ std::vector<std::string> GetAnimationVariantPaths(const std::string& kfFilePath)
 		throw std::exception("Animation file does not end with .KF");
 	}
 	std::vector<std::string> result;
-	result.push_back(kfFilePath);
 	for (IDirectoryIterator iter(FormatString("Data\\Meshes\\%s", folderPath.c_str()).c_str()); !iter.Done(); iter.Next())
 	{
 		std::string iterExtension;
@@ -99,15 +90,26 @@ KFModel* LoadAnimation(const std::string& path, AnimData* animData)
 	return nullptr;
 }
 
-BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 refId, UInt32 animGroupId, AnimData* animData)
+BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32 animGroupId, AnimData* animData, const char* prevPath = nullptr)
 {
-	const auto mapIter = map.find(refId);
+	const auto mapIter = map.find(id);
 	if (mapIter != map.end())
 	{
 		const auto animationsIter = mapIter->second.find(animGroupId);
 		if (animationsIter != mapIter->second.end())
 		{
 			auto& animations = animationsIter->second;
+			if (prevPath)
+			{
+				if (animations.gender == Anims::Gender::Female && !FindStringCI(prevPath, "\\female\\"))
+					return nullptr;
+				if (animations.gender == Anims::Gender::Male && !FindStringCI(prevPath, "\\male\\"))
+					return nullptr;
+				if (animations.hurt == Anims::HurtState::Hurt && !FindStringCI(prevPath, "\\hurt\\"))
+					return nullptr;
+				if (animations.hurt == Anims::HurtState::NoHurt && FindStringCI(prevPath, "\\hurt\\"))
+					return nullptr;
+			}
 			if (!animations.anims.empty())
 			{
 				auto& savedAnim = animations.anims.at(GetRandomUInt(animations.anims.size()));
@@ -120,23 +122,27 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 refId, UIn
 	return nullptr;
 }
 
-BSAnimGroupSequence* GetWeaponAnimation(TESObjectWEAP* weapon, UInt32 animGroupId, bool firstPerson, AnimData* animData)
+AnimOverrideMap& GetMap(bool firstPerson)
 {
-	auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
-	if (auto* result = GetAnimationFromMap(map, weapon->refID, animGroupId, animData))
-		return result;
-	auto& modIdxMap = firstPerson ? g_refModIdxWeaponFirstPersonMap : g_refModIdxWeaponThirdPersonMap;
-	return GetAnimationFromMap(modIdxMap, weapon->GetModIndex(), animGroupId, animData);
+	return firstPerson ? g_animGroupFirstPersonMap : g_animGroupThirdPersonMap;
 }
 
-BSAnimGroupSequence* GetActorAnimation(Actor* actor, UInt32 animGroupId, bool firstPerson, AnimData* animData)
+BSAnimGroupSequence* GetWeaponAnimation(TESObjectWEAP* weapon, UInt32 animGroupId, bool firstPerson, AnimData* animData)
 {
-	auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
-	if (auto* result = GetAnimationFromMap(map, actor->refID, animGroupId, animData))
+	auto& map = GetMap(firstPerson);
+	if (auto* result = GetAnimationFromMap(map, weapon->refID, animGroupId, animData))
+		return result;
+	return GetAnimationFromMap(map, weapon->GetModIndex(), animGroupId, animData);
+}
+
+BSAnimGroupSequence* GetActorAnimation(Actor* actor, UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath)
+{
+	auto& map = GetMap(firstPerson);
+	if (auto* result = GetAnimationFromMap(map, actor->refID, animGroupId, animData, prevPath))
 		return result;
 	if (auto* baseForm = actor->baseForm)
-		return GetAnimationFromMap(map, baseForm->refID, animGroupId, animData);
-	return nullptr;
+		return GetAnimationFromMap(map, baseForm->refID, animGroupId, animData, prevPath);
+	return GetAnimationFromMap(map, actor->GetModIndex(), animGroupId, animData, prevPath);
 }
 
 int GetAnimGroupId(const std::string& path)
@@ -160,54 +166,61 @@ int GetAnimGroupId(const std::string& path)
 	return animGroupId;
 }
 
-void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable)
+void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, bool append)
 {
+	std::replace(path.begin(), path.end(), '/', '\\');
 	const auto groupId = GetAnimGroupId(path);
 	if (groupId == -1)
 		throw std::exception(FormatString("Cannot resolve file '%s'", path.c_str()).c_str());
 	auto& animGroupMap = map[refId];
 	auto& animations = animGroupMap[groupId];
-	animations.anims.clear();
+	if (!append)
+		animations.anims.clear();
+	if (FindStringCI(path, R"(\male\)"))
+		animations.gender = Anims::Gender::Male;
+	else if (FindStringCI(path, R"(\female\)"))
+		animations.gender = Anims::Gender::Female;
+	if (FindStringCI(path, R"(\hurt\)"))
+		animations.hurt = Anims::HurtState::Hurt;
+	else if (FindStringCI(path, R"(\nohurt\)"))
+		animations.hurt = Anims::HurtState::NoHurt;
+	
 	if (enable)
 	{
-		auto paths = GetAnimationVariantPaths(path);
-		for (auto& pathIter : paths)
+		if (GameFuncs::LoadKFModel(*g_modelLoader, path.c_str()))
 		{
-			if (GameFuncs::LoadKFModel(*g_modelLoader, pathIter.c_str()))
-			{
-				Log(FormatString("\tOverrode AnimGroup %X with path %s", groupId, pathIter.c_str()));
-				std::replace(path.begin(), path.end(), '/', '\\');
-				animations.anims.emplace_back(path);
-			}
-			else
-				Log(FormatString("\tFailed to load animation variant '%s'", pathIter.c_str()));
+			Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s", groupId, refId, path.c_str()));
+			animations.anims.emplace_back(path);
 		}
+		else
+			Log(FormatString("Failed to load animation variant '%s'", path.c_str()));
 	}
-	else
+	else if (!animations.anims.empty())
 	{
-		Log(FormatString("\tCleared animations for anim group %X", groupId));
+		animations.anims.clear();
+		Log(FormatString("Cleared animations for anim group %X", groupId));
 	}
-	
+	Log("");
 }
 
-void OverrideActorAnimation(Actor* actor, const std::string& path, bool firstPerson, bool enable)
+void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append)
 {
-	auto& map = firstPerson ? g_refActorAnimGroupFirstPersonMap : g_refActorAnimGroupThirdPersonMap;
+	auto& map = GetMap(firstPerson);
 	if (firstPerson && actor != *g_thePlayer)
 		throw std::exception("Cannot apply first person animations on actors other than player!");
-	SetOverrideAnimation(actor->refID, path, map, enable);
+	SetOverrideAnimation(actor->refID, path, map, enable, append);
 }
 
-void OverrideWeaponAnimation(TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable)
+void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append)
 {
-	auto& map = firstPerson ? g_refWeaponAnimGroupFirstPersonMap : g_refWeaponAnimGroupThirdPersonMap;
-	SetOverrideAnimation(weapon->refID, path, map, enable);
+	auto& map = GetMap(firstPerson);
+	SetOverrideAnimation(weapon->refID, path, map, enable, append);
 }
 
-void OverrideModIndexWeaponAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable)
+void OverrideModIndexAnimation(const UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append)
 {
-	auto& map = firstPerson ? g_refModIdxWeaponFirstPersonMap : g_refModIdxWeaponThirdPersonMap;
-	SetOverrideAnimation(modIdx, path, map, enable);
+	auto& map = GetMap(firstPerson);
+	SetOverrideAnimation(modIdx, path, map, enable, append);
 }
 
 void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)
@@ -232,7 +245,15 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 	try
 	{
 		LogScript(scriptObj, weapon, "SetWeaponAnimationPath");
-		OverrideWeaponAnimation(weapon, path, firstPerson, enable);
+		OverrideWeaponAnimation(weapon, path, firstPerson, enable, false);
+		if (enable)
+		{
+			auto paths = GetAnimationVariantPaths(path);
+			for (auto& pathIter : paths)
+			{
+				OverrideWeaponAnimation(weapon, pathIter, firstPerson, true, true);
+			}
+		}
 		*result = 1;
 	}
 	catch (std::exception& e)
@@ -258,19 +279,27 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	try
 	{
 		LogScript(scriptObj, actor, "SetActorAnimationPath");
-		OverrideActorAnimation(actor, path, firstPerson, enable);
+		OverrideActorAnimation(actor, path, firstPerson, enable, false);
+		if (enable)
+		{
+			auto paths = GetAnimationVariantPaths(path);
+			for (auto& pathIter : paths)
+			{
+				OverrideActorAnimation(actor, pathIter, firstPerson, true, true);
+			}
+		}
 		*result = 1;
 	}
 	catch (std::exception& e)
 	{
-		ShowRuntimeError(scriptObj, "\tSetWeaponAnimationPath: %s", e.what());
+		ShowRuntimeError(scriptObj, "SetWeaponAnimationPath: %s", e.what());
 	}
 	return true;
 }
 
 // SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\pistol_1hpAttackRight.kf"
 // SetActorAnimationPath player 0 1 "characters\_male\idleanims\sprint\Haughty.kf"
-// SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\1hpEquip.kf"
+// SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\pistol.kf"
 
 
 

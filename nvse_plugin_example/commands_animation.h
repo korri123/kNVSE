@@ -16,6 +16,11 @@ struct SavedAnim
 
 struct Anims
 {
+	enum class Gender { None, Male, Female };
+	enum class HurtState { None, Hurt, NoHurt };
+	Gender gender = Gender::None;
+	HurtState hurt = HurtState::None;
+	
 	std::vector<SavedAnim> anims;
 };
 
@@ -75,7 +80,7 @@ namespace GameFuncs
 }
 
 BSAnimGroupSequence* GetWeaponAnimation(TESObjectWEAP* weapon, UInt32 animGroupId, bool firstPerson, AnimData* animData);
-BSAnimGroupSequence* GetActorAnimation(Actor* actor, UInt32 animGroupId, bool firstPerson, AnimData* animData);
+BSAnimGroupSequence* GetActorAnimation(Actor* actor, UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath);
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {
@@ -96,6 +101,6 @@ DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 1, kParams_OneForm)
 DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof(kParams_SetWeaponAnimationPath) / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
 DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", true, sizeof(kParams_SetActorAnimationPath) / sizeof(ParamInfo), kParams_SetActorAnimationPath)
 
-void OverrideActorAnimation(Actor* actor, const std::string& path, bool firstPerson, bool enable);
-void OverrideWeaponAnimation(TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable);
-void OverrideModIndexWeaponAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable);
+void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append);
+void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append);
+void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append);

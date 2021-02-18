@@ -33,15 +33,25 @@ inline std::string ReplaceAll(std::string str, const std::string& from, const st
 /// Try to find in the Haystack the Needle - ignore case
 inline bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle)
 {
-	auto it = std::search(
+	const auto it = std::search(
 		strHaystack.begin(), strHaystack.end(),
 		strNeedle.begin(), strNeedle.end(),
 		[](char ch1, char ch2) { return std::toupper(ch1) == std::toupper(ch2); }
 	);
-	return (it != strHaystack.end());
+	return it != strHaystack.end();
 }
 
 inline void Log(const std::string& msg)
 {
 	_MESSAGE(msg.c_str());
 }
+
+inline int HexStringToInt(const std::string& str)
+{
+	char* p;
+	const auto id = strtoul(str.c_str(), &p, 16);
+	if (*p == 0)
+		return id;
+	return -1;
+}
+

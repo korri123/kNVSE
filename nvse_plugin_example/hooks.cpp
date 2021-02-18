@@ -13,8 +13,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		const auto firstPerson = animData == (*g_thePlayer)->firstPersonAnimData;
 		if (weaponInfo && weaponInfo->weapon)
 		{
-			auto* anim = GetWeaponAnimation(weaponInfo->weapon, animGroupId, firstPerson, animData);
-			if (anim)
+			if (auto* anim = GetWeaponAnimation(weaponInfo->weapon, animGroupId, firstPerson, animData))
 			{
 				anim->animGroup->groupID = animGroupId;
 				*toMorph = anim;
@@ -23,7 +22,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		}
 		// NPCs animGroupId contains 0x8000 for some reason
 		const auto actorAnimGroupId = animGroupId & 0xFFF;
-		if (auto* actorAnim = GetActorAnimation(animData->actor, actorAnimGroupId, firstPerson, animData))
+		if (auto* actorAnim = GetActorAnimation(animData->actor, actorAnimGroupId, firstPerson, animData, (*toMorph)->sequenceName))
 		{
 			//actorAnim->animGroup->groupID = animGroupId;
 			*toMorph = actorAnim;

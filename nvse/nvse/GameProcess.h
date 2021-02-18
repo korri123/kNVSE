@@ -944,7 +944,7 @@ struct AnimData
 	NiTPointerMap<AnimSequenceBase>* mapAnimSequenceBase;// 0DC
 	BSAnimGroupSequence* animSequence[8];	// 0E0
 	BSAnimGroupSequence* animSeq100;		// 100
-	tList<void>						animationCloneList104;
+	tList<KFModel>	loadingAnims;
 	float movementSpeedMult;
 	float rateOfFire;
 	float turboSpeedMult;
