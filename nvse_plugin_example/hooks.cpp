@@ -22,7 +22,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		}
 		// NPCs animGroupId contains 0x8000 for some reason
 		const auto actorAnimGroupId = animGroupId & 0xFFF;
-		if (auto* actorAnim = GetActorAnimation(animData->actor, actorAnimGroupId, firstPerson, animData, (*toMorph)->sequenceName))
+		if (auto* actorAnim = GetActorAnimation(animData->actor, actorAnimGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
 		{
 			//actorAnim->animGroup->groupID = animGroupId;
 			*toMorph = actorAnim;
