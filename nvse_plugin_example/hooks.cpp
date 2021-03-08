@@ -11,6 +11,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 	{
 		auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
 		const auto firstPerson = animData == (*g_thePlayer)->firstPersonAnimData;
+		
 		if (weaponInfo && weaponInfo->weapon)
 		{
 			if (auto* anim = GetWeaponAnimation(weaponInfo->weapon, animGroupId, firstPerson, animData))

@@ -1,6 +1,7 @@
 #include "commands_animation.h"
 
 #include <algorithm>
+#include <stack>
 #include <unordered_set>
 
 #include "GameForms.h"
@@ -10,8 +11,8 @@
 #include "utility.h"
 #include "common/IDirectoryIterator.h"
 
-// Per ref ID there are animation variants per group ID
-using AnimOverrideMap = std::unordered_map<UInt32, std::unordered_map<UInt32, Anims>>;
+// Per ref ID there is a stack of animation variants per group ID
+using AnimOverrideMap = std::unordered_map<UInt32, std::unordered_map<UInt32, AnimStacks>>;
 AnimOverrideMap g_animGroupThirdPersonMap;
 AnimOverrideMap g_animGroupFirstPersonMap;
 
@@ -95,27 +96,46 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32
 	const auto mapIter = map.find(id);
 	if (mapIter != map.end())
 	{
-		const auto animationsIter = mapIter->second.find(animGroupId);
-		if (animationsIter != mapIter->second.end())
+		const auto stacksIter = mapIter->second.find(animGroupId);
+		if (stacksIter != mapIter->second.end())
 		{
-			auto& animations = animationsIter->second;
+			auto animCustom = AnimCustom::None;
 			if (prevPath)
 			{
-				if (animations.gender == Anims::Gender::Female && !FindStringCI(prevPath, "\\female\\"))
-					return nullptr;
-				if (animations.gender == Anims::Gender::Male && !FindStringCI(prevPath, "\\male\\"))
-					return nullptr;
-				if (animations.hurt == Anims::HurtState::Hurt && !FindStringCI(prevPath, "\\hurt\\"))
-					return nullptr;
-				if (animations.hurt == Anims::HurtState::NoHurt && FindStringCI(prevPath, "\\hurt\\"))
-					return nullptr;
+				if (FindStringCI(prevPath, R"(\male\)"))
+					animCustom = AnimCustom::Male;
+				else if (FindStringCI(prevPath, R"(\female\)"))
+					animCustom = AnimCustom::Female;
+				else if (FindStringCI(prevPath, R"(\hurt\)"))
+					animCustom = AnimCustom::Hurt;
 			}
-			if (!animations.anims.empty())
+			else if (auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
 			{
-				auto& savedAnim = animations.anims.at(GetRandomUInt(animations.anims.size()));
-				const auto* model = LoadAnimation(savedAnim.path, animData);
-				if (model)
-					return model->controllerSequence;
+				auto* xData = weaponInfo->GetExtraData();
+				auto* modFlags = static_cast<ExtraWeaponModFlags*>(xData->GetByType(kExtraData_WeaponModFlags));
+				if (modFlags && modFlags->flags)
+				{
+					if (modFlags->flags & 1 && !stacksIter->second.mod1Anims.empty())
+						animCustom = AnimCustom::Mod1;
+					if (modFlags->flags & 2 && !stacksIter->second.mod2Anims.empty())
+						animCustom = AnimCustom::Mod2;
+					if (modFlags->flags & 4 && !stacksIter->second.mod3Anims.empty())
+						animCustom = AnimCustom::Mod3;
+				}
+			}
+
+			auto& stack = stacksIter->second.Get(animCustom);
+			if (!stack.empty())
+			{
+				auto& anims = stack.back();
+				if (!anims.anims.empty())
+				{
+					// pick random variant
+					auto& savedAnim = anims.anims.at(GetRandomUInt(stack.size()));
+					const auto* model = LoadAnimation(savedAnim, animData);
+					if (model)
+						return model->controllerSequence;
+				}
 			}
 		}
 	}
@@ -160,47 +180,70 @@ int GetAnimGroupId(const std::string& path)
 		if (kfModel && kfModel->animGroup)
 			animGroupId = kfModel->animGroup->groupID;
 		else
+		{
+			if (kfModel && !kfModel->animGroup)
+				Log("KF file is missing AnimGroup data!");
 			return -1;
+		}
 		s_animGroupIds[path] = animGroupId;
 	}
 	return animGroupId;
 }
+
 
 void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, bool append)
 {
 	std::replace(path.begin(), path.end(), '/', '\\');
 	const auto groupId = GetAnimGroupId(path);
 	if (groupId == -1)
-		throw std::exception(FormatString("Cannot resolve file '%s'", path.c_str()).c_str());
+		throw std::exception(FormatString("Failed to resolve file '%s'", path.c_str()).c_str());
 	auto& animGroupMap = map[refId];
-	auto& animations = animGroupMap[groupId];
-	if (!append)
-		animations.anims.clear();
+	auto& stacks = animGroupMap[groupId];
+
+	// condition based animations
+	auto animCustom = AnimCustom::None;
 	if (FindStringCI(path, R"(\male\)"))
-		animations.gender = Anims::Gender::Male;
+		animCustom = AnimCustom::Male;
 	else if (FindStringCI(path, R"(\female\)"))
-		animations.gender = Anims::Gender::Female;
-	if (FindStringCI(path, R"(\hurt\)"))
-		animations.hurt = Anims::HurtState::Hurt;
-	else if (FindStringCI(path, R"(\nohurt\)"))
-		animations.hurt = Anims::HurtState::NoHurt;
+		animCustom = AnimCustom::Female;
+	else if (FindStringCI(path, R"(\hurt\)"))
+		animCustom = AnimCustom::Hurt;
+	else if (FindStringCI(path, R"(\mod1\)"))
+		animCustom = AnimCustom::Mod1;
+	else if (FindStringCI(path, R"(\mod2\)"))
+		animCustom = AnimCustom::Mod2;
+	else if (FindStringCI(path, R"(\mod3\)"))
+		animCustom = AnimCustom::Mod3;
+
+	auto& stack = stacks.Get(animCustom);
+	const auto findFn = [&](const SavedAnims& a)
+	{
+		for (const auto& s : a.anims)
+			if (_stricmp(path.c_str(), s.c_str()) == 0)
+				return true;
+		return false;
+	};
 	
-	if (enable)
+	if (!enable)
 	{
-		if (GameFuncs::LoadKFModel(*g_modelLoader, path.c_str()))
-		{
-			Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s", groupId, refId, path.c_str()));
-			animations.anims.emplace_back(path);
-		}
-		else
-			Log(FormatString("Failed to load animation variant '%s'", path.c_str()));
+		// remove from stack
+		const auto iter = std::remove_if(stack.begin(), stack.end(), findFn);
+		stack.erase(iter, stack.end());
+		return;
 	}
-	else if (!animations.anims.empty())
+	// check if stack already contains path
+	if (const auto iter = std::find_if(stack.begin(), stack.end(), findFn); iter != stack.end())
 	{
-		animations.anims.clear();
-		Log(FormatString("Cleared animations for anim group %X", groupId));
+		// move iter to the top of stack
+		std::rotate(iter, iter + 1, stack.end());
+		return;
 	}
-	Log("");
+	if (!append || stack.empty())
+		stack.emplace_back();
+
+	auto& anims = stack.back();
+	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.c_str()));
+	anims.anims.emplace_back(path);
 }
 
 void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append)
@@ -297,7 +340,8 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	return true;
 }
 
-// SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\pistol_1hpAttackRight.kf"
+// SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\1hpAttackRight.kf"
+// SetWeaponAnimationPath WeapNVHuntingShotgun 1 1 "characters\_male\idleanims\weapons\2hrAttack7.kf"
 // SetActorAnimationPath player 0 1 "characters\_male\idleanims\sprint\Haughty.kf"
 // SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\pistol.kf"
 

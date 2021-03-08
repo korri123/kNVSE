@@ -5,24 +5,42 @@
 #include "GameObjects.h"
 #include "GameProcess.h"
 #include "ParamInfos.h"
-struct SavedAnim
+struct SavedAnims
 {
-	std::string path;
+	std::vector<std::string> anims;
+};
 
-	SavedAnim(std::string path) : path(std::move(path))
+enum class AnimCustom
+{
+	None, Male, Female, Hurt, Mod1, Mod2, Mod3
+};
+
+
+struct AnimStacks
+{
+	std::vector<SavedAnims> anims;
+	std::vector<SavedAnims> maleAnims;
+	std::vector<SavedAnims> femaleAnims;
+	std::vector<SavedAnims> hurtAnims;
+	std::vector<SavedAnims> mod1Anims;
+	std::vector<SavedAnims> mod2Anims;
+	std::vector<SavedAnims> mod3Anims;
+
+	std::vector<SavedAnims>& Get(const AnimCustom custom)
 	{
+		switch (custom) { case AnimCustom::None: return anims;
+		case AnimCustom::Male: return maleAnims;
+		case AnimCustom::Female: return femaleAnims;
+		case AnimCustom::Hurt: return hurtAnims;
+		case AnimCustom::Mod1: return mod1Anims;
+		case AnimCustom::Mod2: return mod2Anims;
+		case AnimCustom::Mod3: return mod3Anims;
+		default: break;
+		}
+		return anims;
 	}
 };
 
-struct Anims
-{
-	enum class Gender { None, Male, Female };
-	enum class HurtState { None, Hurt, NoHurt };
-	Gender gender = Gender::None;
-	HurtState hurt = HurtState::None;
-	
-	std::vector<SavedAnim> anims;
-};
 
 enum AnimHandTypes
 {
@@ -38,15 +56,6 @@ enum AnimHandTypes
 	kAnim_1MD,
 	kAnim_1LM,
 	kAnim_Max,
-};
-
-class AnimGroupType
-{
-public:
-	BSAnimGroupSequence* firstPerson = nullptr;
-	BSAnimGroupSequence* thirdPerson = nullptr;
-	BSAnimGroupSequence* thirdPersonUp = nullptr;
-	BSAnimGroupSequence* thirdPersonDown = nullptr;
 };
 
 enum eAnimSequence
