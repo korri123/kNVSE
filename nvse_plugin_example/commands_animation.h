@@ -5,6 +5,7 @@
 #include "GameObjects.h"
 #include "GameProcess.h"
 #include "ParamInfos.h"
+
 struct SavedAnims
 {
 	std::vector<std::string> anims;
@@ -40,7 +41,6 @@ struct AnimStacks
 		return anims;
 	}
 };
-
 
 enum AnimHandTypes
 {
@@ -96,19 +96,27 @@ static ParamInfo kParams_SetWeaponAnimationPath[] =
 	{	"weapon",	kParamType_AnyForm,	0	}, // weapon
 	{	"first person",	kParamType_Integer,	0	}, // firstPerson
 	{	"enable",	kParamType_Integer,	0	}, // enable or disable
-	{	"animation path",	kParamType_String,	1	},  // path
+	{	"animation path",	kParamType_String,	0	},  // path
 };
 
 static ParamInfo kParams_SetActorAnimationPath[] =
 {
 	{	"first person",	kParamType_Integer,	0	}, // firstPerson
 	{	"enable",	kParamType_Integer,	0	}, // enable or disable
-	{	"animation path",	kParamType_String,	1	},  // path
+	{	"animation path",	kParamType_String,	0	},  // path
+};
+
+static ParamInfo kParams_PlayAnimationPath[] =
+{
+	{"path", kParamType_String, 0},
+	{"anim type", kParamType_Integer, 0},
+	{"first person", kParamType_Integer, 0}
 };
 
 DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 1, kParams_OneForm)
-DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof(kParams_SetWeaponAnimationPath) / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
-DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", true, sizeof(kParams_SetActorAnimationPath) / sizeof(ParamInfo), kParams_SetActorAnimationPath)
+DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof kParams_SetWeaponAnimationPath / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
+DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", true, sizeof kParams_SetActorAnimationPath / sizeof(ParamInfo), kParams_SetActorAnimationPath)
+DEFINE_COMMAND_PLUGIN(PlayAnimationPath, "", true, sizeof kParams_PlayAnimationPath / sizeof(ParamInfo), kParams_PlayAnimationPath)
 
 void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append);

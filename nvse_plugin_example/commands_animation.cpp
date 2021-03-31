@@ -8,6 +8,7 @@
 #include "GameAPI.h"
 #include "GameObjects.h"
 #include "GameRTTI.h"
+#include "SafeWrite.h"
 #include "utility.h"
 #include "common/IDirectoryIterator.h"
 
@@ -26,9 +27,9 @@ bool Cmd_ForcePlayIdle_Execute(COMMAND_ARGS)
 	auto* idle = DYNAMIC_CAST(form, TESForm, TESIdleForm);
 	if (!idle)
 		return true;
-	//SafeWrite8(0x497FA7 + 1, 1);
+	SafeWrite8(0x497FA7 + 1, 1);
 	GameFuncs::PlayIdle(actor->GetAnimData(), idle, actor, idle->data.groupFlags & 0x3F, 3);
-	//SafeWrite8(0x497FA7 + 1, 0);
+	SafeWrite8(0x497FA7 + 1, 0);
 	*result = 1;
 	return true;
 }
@@ -85,8 +86,8 @@ KFModel* LoadAnimation(const std::string& path, AnimData* animData)
 	if (kfModel && kfModel->animGroup && animData)
 	{
 		kfModel->animGroup->groupID = 0xF5; // use a free anim group slot
-		GameFuncs::LoadAnimation(animData, kfModel, false);
-		return kfModel;
+		if (GameFuncs::LoadAnimation(animData, kfModel, false))
+			return kfModel;
 	}
 	return nullptr;
 }
@@ -339,6 +340,54 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	}
 	return true;
 }
+
+bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+	char path[0x400];
+	auto firstPerson = -1;
+	auto type = -1;
+	
+	if (!ExtractArgs(EXTRACT_ARGS, &path, &type, &firstPerson))
+		return true;
+
+	if (type < 0)
+		return true;
+
+	if (thisObj != *g_thePlayer && firstPerson)
+	{
+		Log("Can't play first person animation on an actor that's not the player");
+		return true;
+	}
+
+	auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
+	if (!actor)
+		return true;
+
+	auto* animData = actor->baseProcess->GetAnimData();
+	if (firstPerson)
+		animData = (*g_thePlayer)->firstPersonAnimData;
+
+	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path);
+
+	if (!kfModel)
+		return true;
+
+	if (!GameFuncs::LoadAnimation(animData, kfModel, false))
+		return true;
+	
+	const auto animGroup = 0xFE;
+	GameFuncs::MorphToSequence(animData, kfModel->controllerSequence, animGroup, type);
+	
+	*result = 1;
+	return true;
+}
+
+//bool Cmd_GetPlayingAnimationPath_Execute(COMMAND_ARGS)
+//{
+//	int type
+//}
+
 
 // SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\1hpAttackRight.kf"
 // SetWeaponAnimationPath WeapNVHuntingShotgun 1 1 "characters\_male\idleanims\weapons\2hrAttack7.kf"

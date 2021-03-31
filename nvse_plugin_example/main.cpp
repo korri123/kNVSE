@@ -7,6 +7,7 @@
 #include "file_animations.h"
 #include "GameData.h"
 #include "GameRTTI.h"
+#include "SafeWrite.h"
 #define RegisterScriptCommand(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name);
 
 IDebugLog		gLog("kNVSE.log");
@@ -21,6 +22,8 @@ const CommandInfo* g_TFC;
 #if RUNTIME
 NVSEScriptInterface* g_script;
 #endif
+
+bool isEditor = false;
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
@@ -63,6 +66,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 
 	else
 	{
+		isEditor = true;
 		if (nvse->editorVersion < CS_VERSION_1_4_0_518)
 		{
 			_ERROR("incorrect editor version (got %08X need at least %08X)", nvse->editorVersion, CS_VERSION_1_4_0_518);
@@ -86,6 +90,14 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	RegisterScriptCommand(ForcePlayIdle);
 	RegisterScriptCommand(SetWeaponAnimationPath);
 	RegisterScriptCommand(SetActorAnimationPath);
+	RegisterScriptCommand(PlayAnimationPath);
 	ApplyHooks();
+
+	if (!isEditor)
+	{
+		char buf[] = { 0xEB, 0xE };
+		SafeWriteBuf(0x9EA0C8, buf, 2); // jmp 0x9EA0D8
+	}
+	
 	return true;
 }
