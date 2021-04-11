@@ -32,6 +32,8 @@ void LoadPathsForType(const std::filesystem::path& path, const T identifier, boo
 				OverrideModIndexAnimation(identifier, str, firstPerson, true, append);
 			else if constexpr (std::is_same<T, const BGSListForm*>::value)
 				LoadPathsForList(identifier, path, firstPerson);
+			else if constexpr (std::is_same<T, const TESRace*>::value)
+				OverrideRaceAnimation(identifier, str, firstPerson, true, append);
 			else
 				static_assert(false);
 		}
@@ -100,6 +102,8 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 							LoadPathsForPOV(iterPath, actor);
 						else if (const auto* list = DYNAMIC_CAST(form, TESForm, BGSListForm))
 							LoadPathsForPOV(iterPath, list);
+						else if (const auto* race = DYNAMIC_CAST(form, TESForm, TESRace))
+							LoadPathsForPOV(iterPath, race);
 						else
 							Log(FormatString("Unsupported form type for %X", form->refID));
 					}

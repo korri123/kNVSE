@@ -85,13 +85,18 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
 	if (kfModel && kfModel->animGroup && animData)
 	{
-		InterlockedIncrement(&kfModel->refCount);
 		kfModel->animGroup->groupID = 0xF5; // use a free anim group slot
+
+		// delete an animation if it's already using up our slot
+		if (auto* seqBase = animData->mapAnimSequenceBase->Lookup(0xF5))
+		{
+			seqBase->Destroy(true);
+			GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, 0xF5);
+		}
 		if (GameFuncs::LoadAnimation(animData, kfModel, false))
 		{
 			//return kfModel->controllerSequence;
-			AnimSequenceBase* base = nullptr;
-			if (GameFuncs::NiTPointerMap_Lookup(animData->mapAnimSequenceBase, 0xF5, &base))
+			if (auto* base = animData->mapAnimSequenceBase->Lookup(0xF5))
 			{
 				BSAnimGroupSequence* seq = nullptr;
 				if (base && ((seq = base->GetSequenceByIndex(0))))
@@ -190,6 +195,9 @@ BSAnimGroupSequence* GetActorAnimation(Actor* actor, UInt32 animGroupId, bool fi
 		return result;
 	if (auto* baseForm = actor->baseForm)
 		return GetAnimationFromMap(map, baseForm->refID, animGroupId, animData, prevPath);
+	TESNPC* npc = nullptr; TESRace* race = nullptr;
+	if (((npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC))) && ((race = npc->race.race)))
+		return GetAnimationFromMap(map, race->refID, animGroupId, animData, prevPath);
 	return GetAnimationFromMap(map, actor->GetModIndex(), animGroupId, animData, prevPath);
 }
 
@@ -296,6 +304,12 @@ void OverrideModIndexAnimation(const UInt8 modIdx, const std::string& path, bool
 	SetOverrideAnimation(modIdx, path, map, enable, append);
 }
 
+void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append)
+{
+	auto& map = GetMap(firstPerson);
+	SetOverrideAnimation(race->refID, path, map, enable, append);
+}
+
 void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)
 {
 	Log(FormatString("Script %s %X from mod %s has called %s on form %s %X", scriptObj->GetName(), scriptObj->refID, GetModName(scriptObj), funcName.c_str(), form->GetName(), form->refID));
@@ -342,7 +356,8 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	auto firstPerson = 0;
 	auto enable = 0;
 	char path[0x1000];
-	if (!ExtractArgs(EXTRACT_ARGS, &firstPerson, &enable, &path))
+	int playImmediately = 0;
+	if (!ExtractArgs(EXTRACT_ARGS, &firstPerson, &enable, &path, &playImmediately))
 		return true;
 	if (!thisObj)
 		return true;
@@ -361,10 +376,12 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 			{
 				OverrideActorAnimation(actor, pathIter, firstPerson, true, true);
 			}
-			if (auto* animData = actor->GetAnimData())
+			if (playImmediately)
 			{
-				//auto* ptr = GameFuncs::PlayAnimGroup(animData, groupId, 1, 0, -1);
-				//Console_Print("%X", (unsigned int)ptr);
+				if (auto* animData = actor->GetAnimData())
+				{
+					GameFuncs::PlayAnimGroup(animData, groupId, 1, 0, -1);
+				}
 			}
 		}
 		*result = 1;
