@@ -80,15 +80,33 @@ std::vector<std::string> GetAnimationVariantPaths(const std::string& kfFilePath)
 
 static ModelLoader** g_modelLoader = reinterpret_cast<ModelLoader**>(0x011C3B3C);
 
-KFModel* LoadAnimation(const std::string& path, AnimData* animData)
+BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 {
 	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
 	if (kfModel && kfModel->animGroup && animData)
 	{
+		InterlockedIncrement(&kfModel->refCount);
 		kfModel->animGroup->groupID = 0xF5; // use a free anim group slot
 		if (GameFuncs::LoadAnimation(animData, kfModel, false))
-			return kfModel;
+		{
+			//return kfModel->controllerSequence;
+			AnimSequenceBase* base = nullptr;
+			if (GameFuncs::NiTPointerMap_Lookup(animData->mapAnimSequenceBase, 0xF5, &base))
+			{
+				BSAnimGroupSequence* seq = nullptr;
+				if (base && ((seq = base->GetSequenceByIndex(0))))
+				{
+					return seq;
+				}
+				DebugPrint("Map returned null anim");
+			}
+			else
+			{
+				DebugPrint("Failed to lookup anim");
+			}
+		}
 	}
+	DebugPrint("Failed to load KF Model " + path);
 	return nullptr;
 }
 
@@ -142,9 +160,9 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32
 					// pick random variant
 					const auto rand = GetRandomUInt(anims.anims.size());
 					auto& savedAnim = anims.anims.at(rand);
-					const auto* model = LoadAnimation(savedAnim, animData);
-					if (model)
-						return model->controllerSequence;
+					auto* anim = LoadAnimation(savedAnim, animData);
+					if (anim)
+						return anim;
 				}
 			}
 		}
@@ -201,10 +219,12 @@ int GetAnimGroupId(const std::string& path)
 }
 
 
-void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, bool append)
+void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, bool append, int* outGroupId = nullptr)
 {
 	std::replace(path.begin(), path.end(), '/', '\\');
 	const auto groupId = GetAnimGroupId(path);
+	if (outGroupId)
+		*outGroupId = groupId;
 	if (groupId == -1)
 		throw std::exception(FormatString("Failed to resolve file '%s'", path.c_str()).c_str());
 	auto& animGroupMap = map[refId];
@@ -256,12 +276,12 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	anims.anims.emplace_back(path);
 }
 
-void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append)
+void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, int* outGroupId)
 {
 	auto& map = GetMap(firstPerson);
 	if (firstPerson && actor != *g_thePlayer)
 		throw std::exception("Cannot apply first person animations on actors other than player!");
-	SetOverrideAnimation(actor->refID, path, map, enable, append);
+	SetOverrideAnimation(actor->refID, path, map, enable, append, outGroupId);
 }
 
 void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append)
@@ -332,13 +352,19 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	try
 	{
 		LogScript(scriptObj, actor, "SetActorAnimationPath");
-		OverrideActorAnimation(actor, path, firstPerson, enable, false);
+		int groupId;
+		OverrideActorAnimation(actor, path, firstPerson, enable, false, &groupId);
 		if (enable)
 		{
 			auto paths = GetAnimationVariantPaths(path);
 			for (auto& pathIter : paths)
 			{
 				OverrideActorAnimation(actor, pathIter, firstPerson, true, true);
+			}
+			if (auto* animData = actor->GetAnimData())
+			{
+				//auto* ptr = GameFuncs::PlayAnimGroup(animData, groupId, 1, 0, -1);
+				//Console_Print("%X", (unsigned int)ptr);
 			}
 		}
 		*result = 1;
@@ -400,7 +426,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 
 // SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\1hpAttackRight.kf"
 // SetWeaponAnimationPath WeapNVHuntingShotgun 1 1 "characters\_male\idleanims\weapons\2hrAttack7.kf"
-// SetActorAnimationPath player 0 1 "characters\_male\idleanims\sprint\Haughty.kf"
+// SetActorAnimationPath 0 1 "characters\_male\idleanims\sprint\Haughty.kf"
 // SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\pistol.kf"
 
 

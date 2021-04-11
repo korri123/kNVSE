@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <string>
+#include "GameAPI.h"
 
 inline std::string GetCurPath()
 {
@@ -55,3 +56,10 @@ inline int HexStringToInt(const std::string& str)
 	return -1;
 }
 
+inline void DebugPrint(const std::string& str)
+{
+#if _DEBUG
+	Console_Print(str.c_str());
+#endif
+	Log(str);
+}

@@ -259,7 +259,7 @@ public:
 	BSAnimGroupSequence	* controllerSequence;	// 004
 	TESAnimGroup		* animGroup;			// 008
 	UInt32				unk0C;					// 00C
-	UInt32				unk10;					// 010
+	UInt32				refCount;				// 010
 };
 
 // 30
