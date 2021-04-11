@@ -50,19 +50,7 @@ void LogForm(const TESForm* form)
 	Log(FormatString("Detected in-game form %X %s %s", form->refID, form->GetName(), form->GetFullName() ? form->GetFullName()->name.CStr() : "<no name>"));
 }
 
-void LoadPathsForList(const BGSListForm* listForm, const std::filesystem::path& path, bool firstPerson)
-{
-	for (auto iter = listForm->list.Begin(); !iter.End(); ++iter)
-	{
-		LogForm(*iter);
-		if (const auto* weapon = DYNAMIC_CAST(*iter, TESForm, TESObjectWEAP))
-			LoadPathsForType(path, weapon, firstPerson);
-		else if (const auto* actor = DYNAMIC_CAST(*iter, TESForm, Actor))
-			LoadPathsForType(path, actor, firstPerson);
-		else
-			Log(FormatString("Unsupported type for list item %X", iter->refID));
-	}
-}
+
 
 template <typename T>
 void LoadPathsForPOV(const std::filesystem::path& path, const T identifier)
@@ -72,6 +60,34 @@ void LoadPathsForPOV(const std::filesystem::path& path, const T identifier)
 		auto iterPath = path.string() + std::string(pair.first);
 		if (std::filesystem::exists(iterPath))
 			LoadPathsForType(iterPath, identifier, pair.second);
+	}
+}
+
+bool LoadForForm(const std::filesystem::path& iterPath, const TESForm* form)
+{
+	LogForm(form);
+	if (const auto* weapon = DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
+		LoadPathsForPOV(iterPath, weapon);
+	else if (const auto* actor = DYNAMIC_CAST(form, TESForm, Actor))
+		LoadPathsForPOV(iterPath, actor);
+	else if (const auto* list = DYNAMIC_CAST(form, TESForm, BGSListForm))
+		LoadPathsForPOV(iterPath, list);
+	else if (const auto* race = DYNAMIC_CAST(form, TESForm, TESRace))
+		LoadPathsForPOV(iterPath, race);
+	else
+	{
+		Log(FormatString("Unsupported form type for %X", form->refID));
+		return false;
+	}
+	return true;
+}
+
+void LoadPathsForList(const BGSListForm* listForm, const std::filesystem::path& path, bool firstPerson)
+{
+	for (auto iter = listForm->list.Begin(); !iter.End(); ++iter)
+	{
+		LogForm(*iter);
+		LoadForForm(path, *iter);
 	}
 }
 
@@ -95,17 +111,7 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 					auto* form = LookupFormByID(formId);
 					if (form)
 					{
-						LogForm(form);
-						if (const auto* weapon = DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
-							LoadPathsForPOV(iterPath, weapon);
-						else if (const auto* actor = DYNAMIC_CAST(form, TESForm, Actor))
-							LoadPathsForPOV(iterPath, actor);
-						else if (const auto* list = DYNAMIC_CAST(form, TESForm, BGSListForm))
-							LoadPathsForPOV(iterPath, list);
-						else if (const auto* race = DYNAMIC_CAST(form, TESForm, TESRace))
-							LoadPathsForPOV(iterPath, race);
-						else
-							Log(FormatString("Unsupported form type for %X", form->refID));
+						LoadForForm(iterPath, form);
 					}
 					else
 					{
@@ -138,7 +144,7 @@ std::unordered_map<std::string, std::filesystem::path> g_jsonFolders;
 
 void HandleJson(const std::filesystem::path& path)
 {
-	Log("Reading from JSON file " + path.string());
+	Log("\nReading from JSON file " + path.string());
 	
 	try
 	{
@@ -186,8 +192,8 @@ void HandleJson(const std::filesystem::path& path)
 	}
 	catch (nlohmann::json::exception& e)
 	{
-		Log(FormatString("JSON error: %s", e.what()));
-		Console_Print("[%s] There was an error parsing JSON for AnimGroupOverride. Check kNVSE.log for more info.", path.filename().string().c_str());
+		Log("The JSON is incorrectly formatted! It will not be applied.");
+		Log(FormatString("JSON error: %s\n", e.what()));
 	}
 	
 }
@@ -199,21 +205,8 @@ void LoadJsonEntries()
 		Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		if (auto path = g_jsonFolders.find(entry.folderName); path != g_jsonFolders.end())
 		{
-			if (const auto* weapon = DYNAMIC_CAST(entry.form, TESForm, TESObjectWEAP))
-			{
-				LoadPathsForPOV(path->second, weapon);
-			}
-			else if (const auto* actor = DYNAMIC_CAST(entry.form, TESForm, Actor))
-			{
-				LoadPathsForPOV(path->second, actor);
-			}
-			else
-			{
-				Log("JSON form error: form is neither weapon or actor");
-				continue;
-			}
-			Log(FormatString("Loaded from JSON folder %s to form %X", path->second.string().c_str(), entry.form->refID));
-
+			if (!LoadForForm(path->second, entry.form))
+				Log(FormatString("Loaded from JSON folder %s to form %X", path->second.string().c_str(), entry.form->refID));
 		}
 		else
 			Log("Error: Could not find path to " + entry.folderName + " which appeared in a JSON file");

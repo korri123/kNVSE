@@ -8,6 +8,7 @@
 
 struct SavedAnims
 {
+	int order = -1;
 	std::vector<std::string> anims;
 };
 
@@ -74,7 +75,7 @@ enum eAnimSequence
 	kSequence_Death = 0x14,
 };
 
-using GameAnimMap = NiTPointerMap<BSAnimGroupSequence*>;
+using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
 namespace GameFuncs
 {
 	inline auto* PlayIdle = reinterpret_cast<void(__thiscall*)(void*, TESIdleForm*, Actor*, int, int)>(0x497F20);

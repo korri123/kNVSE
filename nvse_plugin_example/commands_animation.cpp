@@ -1,9 +1,8 @@
 #include "commands_animation.h"
 
 #include <algorithm>
-#include <stack>
 #include <unordered_set>
-
+#include <filesystem>
 #include "GameForms.h"
 #include "GameAPI.h"
 #include "GameObjects.h"
@@ -13,7 +12,23 @@
 #include "common/IDirectoryIterator.h"
 
 // Per ref ID there is a stack of animation variants per group ID
-using AnimOverrideMap = std::unordered_map<UInt32, std::unordered_map<UInt32, AnimStacks>>;
+class AnimOverrideStruct
+{
+public:
+	std::unordered_map<UInt32, AnimStacks> stacks;
+	GameAnimMap* map = nullptr;
+
+	~AnimOverrideStruct()
+	{
+		if (map)
+		{
+			map->~NiTPointerMap<AnimSequenceBase>();
+			FormHeap_Free(map);
+		}
+	}
+};
+
+using AnimOverrideMap = std::unordered_map<UInt32, AnimOverrideStruct>;
 AnimOverrideMap g_animGroupThirdPersonMap;
 AnimOverrideMap g_animGroupFirstPersonMap;
 
@@ -96,7 +111,6 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 		const auto groupId = kfModel->animGroup->groupID;
 		
 		// delete an animation if it's already using up our slot
-
 		//if (GameFuncs::LoadAnimation(animData, kfModel, false)) return kfModel->controllerSequence;
 		auto* seqBase = animData->mapAnimSequenceBase->Lookup(groupId);
 		if (seqBase)
@@ -130,13 +144,26 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 	return nullptr;
 }
 
+BSAnimGroupSequence* LoadCustomAnimation(const std::string& path, AnimData* animData, GameAnimMap*& customMap)
+{
+	if (!customMap)
+	{
+		customMap = CreateGameAnimMap();
+	}
+	auto* defaultMap = animData->mapAnimSequenceBase;
+	animData->mapAnimSequenceBase = customMap;
+	auto* result = LoadAnimation(path, animData);
+	animData->mapAnimSequenceBase = defaultMap;
+	return result;
+}
+
 BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32 animGroupId, AnimData* animData, const char* prevPath = nullptr)
 {
 	const auto mapIter = map.find(id);
 	if (mapIter != map.end())
 	{
-		const auto stacksIter = mapIter->second.find(animGroupId);
-		if (stacksIter != mapIter->second.end())
+		const auto stacksIter = mapIter->second.stacks.find(animGroupId);
+		if (stacksIter != mapIter->second.stacks.end())
 		{
 			auto animCustom = AnimCustom::None;
 			std::vector<SavedAnims>* stack = nullptr;
@@ -177,10 +204,20 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32
 				auto& anims = stack->back();
 				if (!anims.anims.empty())
 				{
-					// pick random variant
-					const auto rand = GetRandomUInt(anims.anims.size());
-					auto& savedAnim = anims.anims.at(rand);
-					auto* anim = LoadAnimation(savedAnim, animData);
+					std::string* savedAnim;
+					if (anims.order == -1)
+					{
+						// pick random variant
+						const auto rand = GetRandomUInt(anims.anims.size());
+						savedAnim = &anims.anims.at(rand);
+					}
+					else
+					{
+						// ordered
+						savedAnim = &anims.anims.at(anims.order++ % anims.anims.size());
+					}
+
+					auto* anim = LoadCustomAnimation(*savedAnim, animData, mapIter->second.map);
 					if (anim)
 						return anim;
 				}
@@ -251,7 +288,7 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	if (groupId == -1)
 		throw std::exception(FormatString("Failed to resolve file '%s'", path.c_str()).c_str());
 	auto& animGroupMap = map[refId];
-	auto& stacks = animGroupMap[groupId];
+	auto& stacks = animGroupMap.stacks[groupId];
 
 	// condition based animations
 	auto animCustom = AnimCustom::None;
@@ -297,6 +334,15 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	auto& anims = stack.back();
 	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.c_str()));
 	anims.anims.emplace_back(path);
+
+	const auto realPath = std::filesystem::path(path);
+	if (FindStringCI(realPath.filename().string(), "_order_"))
+	{
+		anims.order = 0;
+		// sort alphabetically
+		std::sort(anims.anims.begin(), anims.anims.end(), [&](const std::string& a, const std::string& b) {return a < b; });
+		Log("Detected _order_ in file name; animation variants for this anim group will be played sequentially");
+	}
 }
 
 void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, int* outGroupId)
