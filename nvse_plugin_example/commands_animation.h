@@ -13,33 +13,35 @@ struct SavedAnims
 
 enum class AnimCustom
 {
-	None, Male, Female, Hurt, Mod1, Mod2, Mod3
+	None, Male, Female, Mod1, Mod2, Mod3, Hurt
 };
-
 
 struct AnimStacks
 {
 	std::vector<SavedAnims> anims;
 	std::vector<SavedAnims> maleAnims;
 	std::vector<SavedAnims> femaleAnims;
-	std::vector<SavedAnims> hurtAnims;
 	std::vector<SavedAnims> mod1Anims;
 	std::vector<SavedAnims> mod2Anims;
 	std::vector<SavedAnims> mod3Anims;
 
-	std::vector<SavedAnims>& Get(const AnimCustom custom)
+	std::vector<SavedAnims> hurtAnims;
+
+
+	std::vector<SavedAnims>& GetCustom(const AnimCustom custom)
 	{
 		switch (custom) { case AnimCustom::None: return anims;
 		case AnimCustom::Male: return maleAnims;
 		case AnimCustom::Female: return femaleAnims;
-		case AnimCustom::Hurt: return hurtAnims;
 		case AnimCustom::Mod1: return mod1Anims;
 		case AnimCustom::Mod2: return mod2Anims;
 		case AnimCustom::Mod3: return mod3Anims;
-		default: break;
+		case AnimCustom::Hurt: return hurtAnims;
+		default: ;
 		}
 		return anims;
 	}
+
 };
 
 enum AnimHandTypes

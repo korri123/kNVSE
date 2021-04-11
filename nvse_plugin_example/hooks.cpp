@@ -4,28 +4,38 @@
 #include "commands_animation.h"
 #include "SafeWrite.h"
 #include "utility.h"
+#include "GameAPI.h"
 
 void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph)
 {
 	if (animData && animData->actor)
 	{
+#if _DEBUG
+		if (*toMorph && animData->actor->GetFullName() && animData->actor != (*g_thePlayer))
+			Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
+#endif
 		auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
 		const auto firstPerson = animData == (*g_thePlayer)->firstPersonAnimData;
-		
+		auto changeId = false; // required to get around a weird bug
+		const auto animGroupMinor = animGroupId & 0xFF;
+		if (animGroupMinor >= TESAnimGroup::kAnimGroup_Aim && animGroupMinor <= TESAnimGroup::kAnimGroup_JamZ)
+		{
+			changeId = true;
+		}
 		if (weaponInfo && weaponInfo->weapon)
 		{
 			if (auto* anim = GetWeaponAnimation(weaponInfo->weapon, animGroupId, firstPerson, animData))
 			{
-				anim->animGroup->groupID = animGroupId;
+				if (changeId)
+					anim->animGroup->groupID = animGroupId;
 				*toMorph = anim;
 				return;
 			}
 		}
-		// NPCs animGroupId contains 0x8000 for some reason
-		const auto actorAnimGroupId = animGroupId & 0xFFF;
-		if (auto* actorAnim = GetActorAnimation(animData->actor, actorAnimGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
+		if (auto* actorAnim = GetActorAnimation(animData->actor, animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
 		{
-			//actorAnim->animGroup->groupID = animGroupId;
+			if (changeId)
+				actorAnim->animGroup->groupID = animGroupId;
 			*toMorph = actorAnim;
 		}
 	}

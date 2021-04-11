@@ -101,6 +101,8 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32
 		if (stacksIter != mapIter->second.end())
 		{
 			auto animCustom = AnimCustom::None;
+			std::vector<SavedAnims>* stack = nullptr;
+			bool exclusiveAnim = false;
 			if (prevPath)
 			{
 				if (FindStringCI(prevPath, R"(\male\)"))
@@ -108,9 +110,12 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32
 				else if (FindStringCI(prevPath, R"(\female\)"))
 					animCustom = AnimCustom::Female;
 				else if (FindStringCI(prevPath, R"(\hurt\)"))
+				{
+					exclusiveAnim = true; // don't want hurt anim fall-backing to normal animation
 					animCustom = AnimCustom::Hurt;
+				}
 			}
-			else if (auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
+			if (auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
 			{
 				auto* xData = weaponInfo->GetExtraData();
 				auto* modFlags = static_cast<ExtraWeaponModFlags*>(xData->GetByType(kExtraData_WeaponModFlags));
@@ -124,15 +129,19 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32
 						animCustom = AnimCustom::Mod3;
 				}
 			}
+			if (animCustom != AnimCustom::None)
+				stack = &stacksIter->second.GetCustom(animCustom);
+			if (!stack || stack->empty() && !exclusiveAnim)
+				stack = &stacksIter->second.GetCustom(AnimCustom::None);
 
-			auto& stack = stacksIter->second.Get(animCustom);
-			if (!stack.empty())
+			if (!stack->empty())
 			{
-				auto& anims = stack.back();
+				auto& anims = stack->back();
 				if (!anims.anims.empty())
 				{
 					// pick random variant
-					auto& savedAnim = anims.anims.at(GetRandomUInt(stack.size()));
+					const auto rand = GetRandomUInt(anims.anims.size());
+					auto& savedAnim = anims.anims.at(rand);
 					const auto* model = LoadAnimation(savedAnim, animData);
 					if (model)
 						return model->controllerSequence;
@@ -216,7 +225,7 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	else if (FindStringCI(path, R"(\mod3\)"))
 		animCustom = AnimCustom::Mod3;
 
-	auto& stack = stacks.Get(animCustom);
+	auto& stack = stacks.GetCustom(animCustom);
 	const auto findFn = [&](const SavedAnims& a)
 	{
 		for (const auto& s : a.anims)
