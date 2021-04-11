@@ -80,25 +80,40 @@ std::vector<std::string> GetAnimationVariantPaths(const std::string& kfFilePath)
 
 static ModelLoader** g_modelLoader = reinterpret_cast<ModelLoader**>(0x011C3B3C);
 
+GameAnimMap* CreateGameAnimMap()
+{
+	// see 0x48F9F1
+	auto* alloc = static_cast<GameAnimMap*>(FormHeap_Allocate(0x10));
+	return GameFuncs::NiTPointerMap_Init(alloc, 0x65);
+}
+
 BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 {
 	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
 	if (kfModel && kfModel->animGroup && animData)
 	{
-		kfModel->animGroup->groupID = 0xF5; // use a free anim group slot
-
+		//kfModel->animGroup->groupID = 0xF5; // use a free anim group slot
+		const auto groupId = kfModel->animGroup->groupID;
+		
 		// delete an animation if it's already using up our slot
-		if (auto* seqBase = animData->mapAnimSequenceBase->Lookup(0xF5))
+
+		//if (GameFuncs::LoadAnimation(animData, kfModel, false)) return kfModel->controllerSequence;
+		auto* seqBase = animData->mapAnimSequenceBase->Lookup(groupId);
+		if (seqBase)
 		{
+			auto* anim = seqBase->GetSequenceByIndex(0);
+			if (anim && _stricmp(anim->sequenceName, path.c_str()) == 0)
+			{
+				return anim;
+			}
 			seqBase->Destroy(true);
-			GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, 0xF5);
+			GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, groupId);
 		}
 		if (GameFuncs::LoadAnimation(animData, kfModel, false))
 		{
-			//return kfModel->controllerSequence;
-			if (auto* base = animData->mapAnimSequenceBase->Lookup(0xF5))
+			if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 			{
-				BSAnimGroupSequence* seq = nullptr;
+				BSAnimGroupSequence* seq;
 				if (base && ((seq = base->GetSequenceByIndex(0))))
 				{
 					return seq;

@@ -11,7 +11,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 	if (animData && animData->actor)
 	{
 #if _DEBUG
-		if (*toMorph && animData->actor->GetFullName() && animData->actor != (*g_thePlayer))
+		if (*toMorph && animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
 			Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
 #endif
 		auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
