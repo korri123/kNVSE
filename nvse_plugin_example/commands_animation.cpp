@@ -16,16 +16,6 @@ class AnimOverrideStruct
 {
 public:
 	std::unordered_map<UInt32, AnimStacks> stacks;
-	GameAnimMap* map = nullptr;
-
-	~AnimOverrideStruct()
-	{
-		if (map)
-		{
-			map->~NiTPointerMap<AnimSequenceBase>();
-			FormHeap_Free(map);
-		}
-	}
 };
 
 using AnimOverrideMap = std::unordered_map<UInt32, AnimOverrideStruct>;
@@ -123,6 +113,7 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 			seqBase->Destroy(true);
 			GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, groupId);
 		}
+
 		if (GameFuncs::LoadAnimation(animData, kfModel, false))
 		{
 			if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
@@ -144,12 +135,13 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 	return nullptr;
 }
 
-BSAnimGroupSequence* LoadCustomAnimation(const std::string& path, AnimData* animData, GameAnimMap*& customMap)
+std::unordered_map<UInt32, GameAnimMap*> customMaps;
+
+BSAnimGroupSequence* LoadCustomAnimation(const std::string& path, AnimData* animData)
 {
+	auto*& customMap = customMaps[animData->actor->refID];
 	if (!customMap)
-	{
 		customMap = CreateGameAnimMap();
-	}
 	auto* defaultMap = animData->mapAnimSequenceBase;
 	animData->mapAnimSequenceBase = customMap;
 	auto* result = LoadAnimation(path, animData);
@@ -217,7 +209,7 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32
 						savedAnim = &anims.anims.at(anims.order++ % anims.anims.size());
 					}
 
-					auto* anim = LoadCustomAnimation(*savedAnim, animData, mapIter->second.map);
+					auto* anim = LoadCustomAnimation(*savedAnim, animData);
 					if (anim)
 						return anim;
 				}

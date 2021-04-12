@@ -25,12 +25,27 @@ NVSEScriptInterface* g_script;
 
 bool isEditor = false;
 
+extern std::unordered_map<AnimData*, GameAnimMap*> customMaps;
+
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
 	{
 		LoadFileAnimPaths();
 	}
+#if 0
+	else if (msg->type == NVSEMessagingInterface::kMessage_LoadGame)
+	{
+		for (auto& pair : customMaps)
+		{
+			auto& map = pair.second;
+			map->~NiTPointerMap<AnimSequenceBase>();
+			FormHeap_Free(map);
+			map = nullptr;
+		}
+		customMaps.clear();
+	}
+#endif
 }
 
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
@@ -40,7 +55,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 	// fill out the info structure
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "kNVSE";
-	info->version = 2;
+	info->version = 3;
 
 	// version checks
 	if (nvse->nvseVersion < NVSE_VERSION_INTEGER)

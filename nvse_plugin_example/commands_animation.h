@@ -17,6 +17,8 @@ enum class AnimCustom
 	None, Male, Female, Mod1, Mod2, Mod3, Hurt
 };
 
+using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
+
 struct AnimStacks
 {
 	std::vector<SavedAnims> anims;
@@ -27,7 +29,6 @@ struct AnimStacks
 	std::vector<SavedAnims> mod3Anims;
 
 	std::vector<SavedAnims> hurtAnims;
-
 
 	std::vector<SavedAnims>& GetCustom(const AnimCustom custom)
 	{
@@ -75,7 +76,7 @@ enum eAnimSequence
 	kSequence_Death = 0x14,
 };
 
-using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
+
 namespace GameFuncs
 {
 	inline auto* PlayIdle = reinterpret_cast<void(__thiscall*)(void*, TESIdleForm*, Actor*, int, int)>(0x497F20);
@@ -132,3 +133,14 @@ void OverrideActorAnimation(const Actor* actor, const std::string& path, bool fi
 void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append);
+
+/*
+   ~AnimStacks()
+	{
+		if (map)
+		{
+			map->~NiTPointerMap<AnimSequenceBase>();
+			FormHeap_Free(map);
+		}
+	}
+ */
