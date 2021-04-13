@@ -55,7 +55,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 	// fill out the info structure
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "kNVSE";
-	info->version = 3;
+	info->version = 4;
 
 	// version checks
 	if (nvse->nvseVersion < NVSE_VERSION_INTEGER)

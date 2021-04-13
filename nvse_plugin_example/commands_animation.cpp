@@ -32,9 +32,9 @@ bool Cmd_ForcePlayIdle_Execute(COMMAND_ARGS)
 	auto* idle = DYNAMIC_CAST(form, TESForm, TESIdleForm);
 	if (!idle)
 		return true;
-	SafeWrite8(0x497FA7 + 1, 1);
+	//SafeWrite8(0x497FA7 + 1, 1);
 	GameFuncs::PlayIdle(actor->GetAnimData(), idle, actor, idle->data.groupFlags & 0x3F, 3);
-	SafeWrite8(0x497FA7 + 1, 0);
+	//SafeWrite8(0x497FA7 + 1, 0);
 	*result = 1;
 	return true;
 }
@@ -135,11 +135,11 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 	return nullptr;
 }
 
-std::unordered_map<UInt32, GameAnimMap*> customMaps;
+std::unordered_map<AnimData*, GameAnimMap*> customMaps;
 
 BSAnimGroupSequence* LoadCustomAnimation(const std::string& path, AnimData* animData)
 {
-	auto*& customMap = customMaps[animData->actor->refID];
+	auto*& customMap = customMaps[animData];
 	if (!customMap)
 		customMap = CreateGameAnimMap();
 	auto* defaultMap = animData->mapAnimSequenceBase;
@@ -159,7 +159,7 @@ BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32
 		{
 			auto animCustom = AnimCustom::None;
 			std::vector<SavedAnims>* stack = nullptr;
-			bool exclusiveAnim = false;
+			auto exclusiveAnim = false;
 			if (prevPath)
 			{
 				if (FindStringCI(prevPath, R"(\male\)"))
@@ -234,15 +234,18 @@ BSAnimGroupSequence* GetWeaponAnimation(TESObjectWEAP* weapon, UInt32 animGroupI
 
 BSAnimGroupSequence* GetActorAnimation(Actor* actor, UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath)
 {
+	BSAnimGroupSequence* result;
 	auto& map = GetMap(firstPerson);
-	if (auto* result = GetAnimationFromMap(map, actor->refID, animGroupId, animData, prevPath))
+	if ((result = GetAnimationFromMap(map, actor->refID, animGroupId, animData, prevPath)))
 		return result;
-	if (auto* baseForm = actor->baseForm)
-		return GetAnimationFromMap(map, baseForm->refID, animGroupId, animData, prevPath);
+	if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData, prevPath))))
+		return result;
 	TESNPC* npc = nullptr; TESRace* race = nullptr;
-	if (((npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC))) && ((race = npc->race.race)))
-		return GetAnimationFromMap(map, race->refID, animGroupId, animData, prevPath);
-	return GetAnimationFromMap(map, actor->GetModIndex(), animGroupId, animData, prevPath);
+	if (((npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC))) && ((race = npc->race.race)) && ((result = GetAnimationFromMap(map, race->refID, animGroupId, animData, prevPath))))
+		return result;
+	if ((result = GetAnimationFromMap(map, actor->GetModIndex(), animGroupId, animData, prevPath)))
+		return result;
+	return nullptr;
 }
 
 int GetAnimGroupId(const std::string& path)
