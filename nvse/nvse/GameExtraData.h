@@ -281,7 +281,7 @@ enum {
 
 #define GetByTypeCast(xDataList, Type) DYNAMIC_CAST(xDataList.GetByType(kExtraData_ ## Type), BSExtraData, Extra ## Type)
 extern char * GetExtraDataValue(BSExtraData* traverse);
-extern char * GetExtraDataName(UInt8 ExtraDataType);
+extern const char * GetExtraDataName(UInt8 ExtraDataType);
 
 // 014
 class ExtraAction : public BSExtraData
@@ -437,13 +437,7 @@ class ExtraDataListInEntryDataListMatcher
 public:
 	ExtraDataListInEntryDataListMatcher(ExtraDataList* match) : m_toMatch(match) { }
 
-	bool Accept(ExtraContainerChanges::EntryData* match)
-	{
-		if (match && match->extendData)
-			return match->extendData->GetIndexOf(ExtraDataListInExtendDataListMatcher(m_toMatch))>=0;
-		else
-			return false;
-	}
+	bool Accept(ExtraContainerChanges::EntryData* match);
 };
 
 // Finds an ExtendDataList in an EntryDataList

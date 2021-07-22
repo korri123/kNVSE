@@ -42,11 +42,11 @@ ScriptEventList* TESObjectREFR::GetEventList() const
 	return 0;
 }
 
-PlayerCharacter** g_thePlayer = (PlayerCharacter **)0x011DEA3C;
+PlayerCharacter* g_thePlayer = nullptr;
 
 PlayerCharacter* PlayerCharacter::GetSingleton()
 {
-	return *g_thePlayer;
+	return *(PlayerCharacter **)0x011DEA3C;
 }
 
 QuestObjectiveTargets* PlayerCharacter::GetCurrentQuestObjectiveTargets()
@@ -76,7 +76,7 @@ bool TESObjectREFR::IsMapMarker()
 // Less worse version as used by some modders 
 bool PlayerCharacter::SetSkeletonPath_v1c(const char* newPath)
 {
-	if (!bThirdPerson) {
+	if (!thirdPersonConsistent) {
 		// ###TODO: enable in first person
 		return false;
 	}
@@ -91,7 +91,7 @@ bool TESObjectREFR::Update3D_v1c()
 	UInt8 kPlayerUpdate3DpatchFrom = 0x0B6;
 	UInt8 kPlayerUpdate3DpatchTo = 0x0EB;
 
-	if (this == *g_thePlayer) {
+	if (this == g_thePlayer) {
 		// Lets try to allow unloading the player3D never the less...
 		SafeWrite8(kPlayerUpdate3Dpatch, kPlayerUpdate3DpatchTo);
 	}
@@ -104,7 +104,7 @@ bool TESObjectREFR::Update3D_v1c()
 // Current basically not functioning version, but should show some progress in the end.. I hope
 bool PlayerCharacter::SetSkeletonPath(const char* newPath)
 {
-	if (!bThirdPerson) {
+	if (!thirdPersonConsistent) {
 		// ###TODO: enable in first person
 		return false;
 	}
@@ -161,10 +161,10 @@ bool PlayerCharacter::SetSkeletonPath(const char* newPath)
 
 bool TESObjectREFR::Update3D()
 {
-	if (this == *g_thePlayer) {
+	if (this == g_thePlayer) {
 #ifdef _DEBUG
 		TESModel* model = DYNAMIC_CAST(baseForm, TESForm, TESModel);
-		return (*g_thePlayer)->SetSkeletonPath(model->GetModelPath());
+		return (g_thePlayer)->SetSkeletonPath(model->GetModelPath());
 #else
 		// Lets try to allow unloading the player3D never the less...
 		SafeWrite8(kPlayerUpdate3Dpatch, kPlayerUpdate3DpatchTo);

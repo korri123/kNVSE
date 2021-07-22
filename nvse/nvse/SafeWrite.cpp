@@ -27,7 +27,7 @@ void SafeWrite32(UInt32 addr, UInt32 data)
 	VirtualProtect((void *)addr, 4, oldProtect, &oldProtect);
 }
 
-void SafeWriteBuf(UInt32 addr, void * data, UInt32 len)
+void SafeWriteBuf(UInt32 addr, const char* data, UInt32 len)
 {
 	UInt32	oldProtect;
 

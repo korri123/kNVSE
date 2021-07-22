@@ -4,12 +4,49 @@
 #include "GameForms.h"
 #include "GameObjects.h"
 #include "GameProcess.h"
+#include "game_types.h"
 #include "ParamInfos.h"
+
+using AnimList = std::vector<std::string>;
+
+enum QueuedIdleFlags
+{
+  kIdleFlag_FireWeapon = 0x1,
+  kIdleFlag_Reload = 0x2,
+  kIdleFlag_CrippledLimb = 0x10,
+  kIdleFlag_Death = 0x20,
+  kIdleFlag_ForcedIdle = 0x80,
+  kIdleFlag_HandGrip = 0x100,
+  kIdleFlag_Activate = 0x400,
+  kIdleFlag_StandingLayingDownChange = 0x800,
+  kIdleFlag_EquipOrUnequip = 0x4000,
+  kIdleFlag_AimWeapon = 0x10000,
+  kIdleFlag_AttackEjectEaseInFollowThrough = 0x20000,
+  kIdleFlag_SomethingAnimatingReloadLoop = 0x40000,
+};
+
+struct BurstFireData
+{
+	AnimData* animData;
+	BSAnimGroupSequence* anim;
+	std::size_t index;
+	std::vector<NiTextKey*> hitKeys;
+	float timePassed;
+};
+
+struct AnimTime
+{
+	float time = 0;
+	bool finished = false;
+};
+
+extern std::map<BSAnimGroupSequence*, AnimTime> g_firstPersonAnimTimes;
 
 struct SavedAnims
 {
 	int order = -1;
-	std::vector<std::string> anims;
+	AnimList anims;
+	Script* conditionScript = nullptr;
 };
 
 enum class AnimCustom
@@ -39,12 +76,19 @@ struct AnimStacks
 		case AnimCustom::Mod2: return mod2Anims;
 		case AnimCustom::Mod3: return mod3Anims;
 		case AnimCustom::Hurt: return hurtAnims;
-		default: ;
 		}
 		return anims;
 	}
 
 };
+
+struct BurstState
+{
+	int index = 0;
+	BurstState() = default;
+};
+
+extern std::unordered_map<BSAnimGroupSequence*, BurstState> burstFireAnims;
 
 enum AnimHandTypes
 {
@@ -77,6 +121,7 @@ enum eAnimSequence
 };
 
 
+
 namespace GameFuncs
 {
 	inline auto* PlayIdle = reinterpret_cast<void(__thiscall*)(void*, TESIdleForm*, Actor*, int, int)>(0x497F20);
@@ -95,11 +140,34 @@ namespace GameFuncs
 	inline auto* PlayAnimGroup = reinterpret_cast<BSAnimGroupSequence * (__thiscall*)(AnimData*, int, int, int, int)>(0x494740);
 	inline auto* NiTPointerMap_Lookup = reinterpret_cast<bool (__thiscall*)(void*, int, AnimSequenceBase**)>(0x49C390);
 	inline auto* NiTPointerMap_RemoveKey = reinterpret_cast<bool(__thiscall*)(void*, UInt16)>(0x49C250);
-	inline auto* NiTPointerMap_Init = reinterpret_cast<GameAnimMap *(__thiscall*)(GameAnimMap*, int numBuckets)>(0x49C050);
+	inline auto* NiTPointerMap_Init = reinterpret_cast<GameAnimMap * (__thiscall*)(GameAnimMap*, int numBuckets)>(0x49C050);
+
+	// Multiple "Hit" per anim
+	inline auto* AnimData_GetSequenceOffsetPlusTimePassed = reinterpret_cast<float (__thiscall*)(AnimData*, BSAnimGroupSequence*)>(0x493800);
+	inline auto* TESAnimGroup_GetTimeForAction = reinterpret_cast<double (__thiscall*)(TESAnimGroup*, UInt32)>(0x5F3780);
+	inline auto* Actor_SetAnimActionAndSequence = reinterpret_cast<void (__thiscall*)(Actor*, Decoding::AnimAction, BSAnimGroupSequence*)>(0x8A73E0);
+	inline auto* AnimData_GetAnimSequenceElement = reinterpret_cast<BSAnimGroupSequence* (__thiscall*)(AnimData*, eAnimSequence a2)>(0x491040);
+	
+	
 }
 
-BSAnimGroupSequence* GetWeaponAnimation(TESObjectWEAP* weapon, UInt32 animGroupId, bool firstPerson, AnimData* animData);
-BSAnimGroupSequence* GetActorAnimation(Actor* actor, UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath);
+enum SequenceState1
+{
+	kSeqState_Start = 0x0,
+	kSeqState_Hit = 0x1,
+	kSeqState_Eject = 0x2,
+	kSeqState_Unk3 = 0x3,
+	kSeqState_End = 0x4,
+};
+
+enum PlayerAnimDataType
+{
+  kPlayerAnimData_3rd = 0x0,
+  kPlayerAnimData_1st = 0x1,
+};
+
+
+BSAnimGroupSequence* GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath);
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {
@@ -114,7 +182,8 @@ static ParamInfo kParams_SetActorAnimationPath[] =
 	{	"first person",	kParamType_Integer,	0	}, // firstPerson
 	{	"enable",	kParamType_Integer,	0	}, // enable or disable
 	{	"animation path",	kParamType_String,	0	},  // path
-	{ "play immediately", kParamType_Integer, 1 }
+	{ "play immediately", kParamType_Integer, 1 },
+	{"condition", kParamType_AnyForm, 1},
 };
 
 static ParamInfo kParams_PlayAnimationPath[] =
@@ -124,16 +193,26 @@ static ParamInfo kParams_PlayAnimationPath[] =
 	{"first person", kParamType_Integer, 0}
 };
 
-DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 1, kParams_OneForm)
-DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof kParams_SetWeaponAnimationPath / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
-DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", true, sizeof kParams_SetActorAnimationPath / sizeof(ParamInfo), kParams_SetActorAnimationPath)
-DEFINE_COMMAND_PLUGIN(PlayAnimationPath, "", true, sizeof kParams_PlayAnimationPath / sizeof(ParamInfo), kParams_PlayAnimationPath)
+static ParamInfo kParams_SetAnimationPathCondition[] =
+{
+	{"path", kParamType_String, 0},
+	{"condition", kParamType_AnyForm, 0},
+};
 
-void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, int* outGroupId = nullptr);
+DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 2, kParams_OneForm_OneOptionalInt)
+DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof kParams_SetWeaponAnimationPath / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
+DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", false, sizeof kParams_SetActorAnimationPath / sizeof(ParamInfo), kParams_SetActorAnimationPath)
+DEFINE_COMMAND_PLUGIN(PlayAnimationPath, "", true, sizeof kParams_PlayAnimationPath / sizeof(ParamInfo), kParams_PlayAnimationPath)
+DEFINE_COMMAND_PLUGIN(kNVSEReset, "", false, 0, nullptr)
+DEFINE_COMMAND_PLUGIN(ForceStopIdle, "", true, 1, kParams_OneOptionalInt)
+
+
+void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, int* outGroupId = nullptr, Script* conditionScript = nullptr);
 void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append);
 
+float GetTimePassed();
 /*
    ~AnimStacks()
 	{
@@ -144,3 +223,5 @@ void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool fi
 		}
 	}
  */
+
+bool IsCustomAnim(BSAnimGroupSequence* sequence);

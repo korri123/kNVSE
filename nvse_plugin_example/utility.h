@@ -2,64 +2,37 @@
 #include <algorithm>
 #include <string>
 #include "GameAPI.h"
+#include "SafeWrite.h"
+#include "GameProcess.h"
+#include "GameObjects.h"
 
-inline std::string GetCurPath()
-{
-	char path[MAX_PATH];
-	GetCurrentDirectory(MAX_PATH, path);
-	return path;
-}
+std::string GetCurPath();
 
-inline std::string GetScriptsDir()
-{
-	return GetCurPath() + "\\Data\\Scripts";
-}
+bool ends_with(std::string const& value, std::string const& ending);
 
-
-inline bool ends_with(std::string const& value, std::string const& ending)
-{
-	if (ending.size() > value.size()) return false;
-	return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
-}
-
-inline std::string ReplaceAll(std::string str, const std::string& from, const std::string& to) {
-	size_t start_pos = 0;
-	while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
-		str.replace(start_pos, from.length(), to);
-		start_pos += to.length(); // Handles case where 'to' is a substring of 'from'
-	}
-	return str;
-}
+std::string ReplaceAll(std::string str, const std::string& from, const std::string& to);
 
 /// Try to find in the Haystack the Needle - ignore case
-inline bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle)
-{
-	const auto it = std::search(
-		strHaystack.begin(), strHaystack.end(),
-		strNeedle.begin(), strNeedle.end(),
-		[](char ch1, char ch2) { return std::toupper(ch1) == std::toupper(ch2); }
-	);
-	return it != strHaystack.end();
-}
+bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle);
 
-inline void Log(const std::string& msg)
-{
-	_MESSAGE(msg.c_str());
-}
+void Log(const std::string& msg);
 
-inline int HexStringToInt(const std::string& str)
-{
-	char* p;
-	const auto id = strtoul(str.c_str(), &p, 16);
-	if (*p == 0)
-		return id;
-	return -1;
-}
+int HexStringToInt(const std::string& str);
 
-inline void DebugPrint(const std::string& str)
+void DebugPrint(const std::string& str);
+
+// if player is in third person, returns true if anim data is the first person and vice versa
+bool IsPlayersOtherAnimData(AnimData* animData);
+
+AnimData* GetThirdPersonAnimData(AnimData* animData);
+
+void PatchPause(UInt32 ptr);
+
+template <typename T>
+bool In(const T& t, std::initializer_list<T> l)
 {
-#if _DEBUG
-	Console_Print(str.c_str());
-#endif
-	Log(str);
+	for (auto i : l)
+		if (l == t)
+			return true;
+	return false;
 }

@@ -9,7 +9,6 @@
 #include <fstream>
 #include <utility>
 
-void LoadPathsForList(const BGSListForm* listForm, const std::filesystem::path& path, bool firstPerson);
 
 template <typename T>
 void LoadPathsForType(const std::filesystem::path& path, const T identifier, bool firstPerson)
@@ -30,8 +29,6 @@ void LoadPathsForType(const std::filesystem::path& path, const T identifier, boo
 				OverrideActorAnimation(identifier, str, firstPerson, true, append);
 			else if constexpr (std::is_same<T, UInt8>::value)
 				OverrideModIndexAnimation(identifier, str, firstPerson, true, append);
-			else if constexpr (std::is_same<T, const BGSListForm*>::value)
-				LoadPathsForList(identifier, path, firstPerson);
 			else if constexpr (std::is_same<T, const TESRace*>::value)
 				OverrideRaceAnimation(identifier, str, firstPerson, true, append);
 			else
@@ -63,6 +60,8 @@ void LoadPathsForPOV(const std::filesystem::path& path, const T identifier)
 	}
 }
 
+void LoadPathsForList(const std::filesystem::path& path, const BGSListForm* listForm);
+
 bool LoadForForm(const std::filesystem::path& iterPath, const TESForm* form)
 {
 	LogForm(form);
@@ -71,7 +70,7 @@ bool LoadForForm(const std::filesystem::path& iterPath, const TESForm* form)
 	else if (const auto* actor = DYNAMIC_CAST(form, TESForm, Actor))
 		LoadPathsForPOV(iterPath, actor);
 	else if (const auto* list = DYNAMIC_CAST(form, TESForm, BGSListForm))
-		LoadPathsForPOV(iterPath, list);
+		LoadPathsForList(iterPath, list);
 	else if (const auto* race = DYNAMIC_CAST(form, TESForm, TESRace))
 		LoadPathsForPOV(iterPath, race);
 	else
@@ -82,7 +81,7 @@ bool LoadForForm(const std::filesystem::path& iterPath, const TESForm* form)
 	return true;
 }
 
-void LoadPathsForList(const BGSListForm* listForm, const std::filesystem::path& path, bool firstPerson)
+void LoadPathsForList(const std::filesystem::path& path, const BGSListForm* listForm)
 {
 	for (auto iter = listForm->list.Begin(); !iter.End(); ++iter)
 	{
@@ -140,12 +139,11 @@ struct JSONEntry
 };
 
 std::vector<JSONEntry> g_jsonEntries;
-std::unordered_map<std::string, std::filesystem::path> g_jsonFolders;
+// std::unordered_map<std::string, std::filesystem::path> g_jsonFolders;
 
 void HandleJson(const std::filesystem::path& path)
 {
 	Log("\nReading from JSON file " + path.string());
-	
 	try
 	{
 		std::ifstream i(path);
@@ -203,17 +201,11 @@ void LoadJsonEntries()
 	for (const auto& entry : g_jsonEntries)
 	{
 		Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
-		if (auto path = g_jsonFolders.find(entry.folderName); path != g_jsonFolders.end())
-		{
-			if (!LoadForForm(path->second, entry.form))
-				Log(FormatString("Loaded from JSON folder %s to form %X", path->second.string().c_str(), entry.form->refID));
-		}
-		else
-			Log("Error: Could not find path to " + entry.folderName + " which appeared in a JSON file");
-		
+		const auto path = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride\)" + entry.folderName; 
+		if (!LoadForForm(path, entry.form))
+			Log(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
 	}
 	g_jsonEntries.clear();
-	g_jsonFolders.clear();
 }
 
 void LoadFileAnimPaths()
@@ -238,7 +230,6 @@ void LoadFileAnimPaths()
 					Log(FormatString("Mod with name %s is not loaded!", fileName.string().c_str()));
 				else if (_stricmp(fileName.string().c_str(), "_male") != 0 && _stricmp(fileName.string().c_str(), "_1stperson") != 0)
 				{
-					g_jsonFolders.emplace(path.filename().string(), path);
 					Log("Found anim folder " + fileName.string() + " which can be used in JSON");
 				}
 			}

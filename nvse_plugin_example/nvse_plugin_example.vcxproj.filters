@@ -133,6 +133,8 @@
     <ClInclude Include="utility.h" />
     <ClInclude Include="file_animations.h" />
     <ClInclude Include="json.h" />
+    <ClInclude Include="game_types.h" />
+    <ClInclude Include="MemoizedMap.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

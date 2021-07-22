@@ -6,6 +6,8 @@
 #include "GameTypes.h"
 #include "GameBSExtraData.h"
 
+#define IS_ID(form, type) (form->typeID == kFormType_##type)
+
 enum FormType 
 {
 	kFormType_None = 0,					// 00

@@ -563,11 +563,20 @@ public:
 
 	// lotsa data
 
-	UInt32								unk1C8[(0x244-0x1C8) >> 2];		// 1C8	0224 is a package of type 1C, 208 could be a DialogPackage, 206 questObjectiveTargets is valid
-	float								unk244[0x4D];					// 244	have to be a set of ActorValue
-	float								unk378[0x4D];					// 378	have to be a set of ActorValue
-	UInt32								unk4AC;							// 4AC
-	float								unk4B0[0x4D];					// 4B0	have to be a set of ActorValue
+	UInt32								unk1C8[17];				// 1C8	208 could be a DialogPackage
+	void* unk20C;				// 20C
+	tList<ActiveEffect>* activeEffects;			// 210
+	UInt32								unk214[2];				// 214
+	void* unk21C;				// 21C
+	UInt32								unk220[8];				// 220	224 is a package of type 1C
+	bool								showQuestItems;			// 240
+	UInt8								byte241;				// 241
+	UInt8								byte242;				// 242
+	UInt8								byte243;				// 243
+	float								unk244[77];				// 244	have to be a set of ActorValue
+	float								permAVMods[77];			// 378	have to be a set of ActorValue
+	float								flt4AC;					// 4AC
+	float								actorValues4B0[77];		// 4B0	have to be a set of ActorValue
 	BGSNote								* note;							// 5E4
 	UInt32								unk574;							// 5E8
 	ImageSpaceModifierInstanceDOF		* unk5EC;						// 5EC
@@ -575,23 +584,55 @@ public:
 	ImageSpaceModifierInstanceDRB		* unk5F4;						// 5F4
 	UInt32								unk5F8;							// 5F8
 	tList<Actor>						teammates;						// 5FC
-	UInt32								unk604[(0x648 - 0x604) >> 2];	// 604
-	UInt8								unk648;							// 648
+	TESObjectREFR* lastExteriorDoor;		// 604
+	UInt8								isPlayingAttackSound;	// 608
+	UInt8								pad609[3];				// 609
+	tList<void>* actionList;			// 60C
+	tList<void>* casinoDataList;		// 610
+	tList<void>* caravanCards1;			// 614
+	tList<void>* caravanCards2;			// 618
+	UInt32								unk61C[6];				// 61C
+	void* ptr634;				// 634	bhkMouseSpringAction when there's a grabbed reference
+	TESObjectREFR* grabbedRef;			// 638
+	UInt32								unk63C;					// 63C
+	UInt32								unk640;					// 640
+	float								grabbedWeight;			// 644
+
+	bool								thirdPersonCacheValue;							// 648
 	UInt8								unk649;							// 649
-	bool								unk64A;							// 64A	= not FirstPerson
+	bool								isInThirdPerson;				// 64A	= not FirstPerson -- Gets weirdly changed as a hack and thirdPersonCacheValue stores real value
 	UInt8								unk64B;							// 64B
-	bool								bThirdPerson;					// 64C
-	UInt8								unk64D[3];	
-	UInt32								unk650[(0x680 - 0x650) >> 2];	// 650 
+	bool								thirdPersonConsistent;					// 64C
+	UInt8								byte64D;				// 64D
+	UInt8								byte64E;				// 64E
+	bool								isUsingScope;			// 64F
+	UInt8								byte650;				// 650
+	bool								alwaysRun;				// 651
+	bool								autoMove;				// 652
+	UInt8								byte653;				// 653
+	UInt32								sleepHours;				// 654
+	UInt8								isResting;				// 658	Something to do with SleepDeprivation; see 0x969DCF
+	UInt8								byte659;				// 659
+	UInt8								byte65A;				// 65A
+	UInt8								byte65B;				// 65B
+	UInt32								unk65C[4];				// 65C
+	UInt8								byte66C;				// 66C
+	UInt8								byte66D;				// 66D
+	UInt8								byte66E;				// 66E
+	UInt8								byte66F;				// 66F
+	float								worldFOV;				// 670
+	float								firstPersonFOV;			// 674
+	float								flt678;					// 678
+	UInt32								unk67C;					// 67C
 	UInt8								disabledControlFlags;			// 680 kControlFlag_xxx
 	UInt8								unk0681[3];						// 681
-	UInt32								unk684[(0x68C - 0x684) >> 2];	// 684
+	UInt32								unk684[2];				// 684
 	ValidBip01Names						* playerVB01N;					// 68C
 	AnimData*							firstPersonAnimData;				// 690 ExtraDataAnim::Data
 	NiNode								* playerNode;					// 694 used as node if unk64A is true
 	UInt32								unk698;		// 698
 	UInt32								unk69C;		// 698
-	AnimData*							thirdPersonAnimData;		// 698
+	AnimData*							unkNotTpsAniMData;		// 698
 	UInt32								unk6A4;		// 698
 	TESTopic							* topic;						// 6A8
 	UInt32								unk6AC[3];						// 6AC
@@ -624,7 +665,7 @@ public:
 		// D68 counts the Teammates.
 		// D74: 96 bytes that are cleared when the 3D is cleared.
 
-	bool IsThirdPerson() { return bThirdPerson ? true : false; }
+	bool IsThirdPerson() { return thirdPersonConsistent; }
 	UInt32 GetMovementFlags() { return actorMover->Unk_08(); }	// 11: IsSwimming, 9: IsSneaking, 8: IsRunning, 7: IsWalking, 0: keep moving
 	bool IsPlayerSwimming() { return (GetMovementFlags()  >> 11) & 1; }
 
@@ -634,11 +675,12 @@ public:
 	static void UpdateHead(void);
 	QuestObjectiveTargets* GetCurrentQuestObjectiveTargets();
 };
+STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);
 
-extern PlayerCharacter** g_thePlayer;
+extern PlayerCharacter* g_thePlayer;
 
 STATIC_ASSERT(offsetof(PlayerCharacter, ragDollController) == 0x0AC);
 STATIC_ASSERT(offsetof(PlayerCharacter, questObjectiveList) == 0x6BC);
-STATIC_ASSERT(offsetof(PlayerCharacter, bThirdPerson) == 0x64C);
+STATIC_ASSERT(offsetof(PlayerCharacter, thirdPersonConsistent) == 0x64C);
 STATIC_ASSERT(offsetof(PlayerCharacter, actorMover) == 0x190);
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);

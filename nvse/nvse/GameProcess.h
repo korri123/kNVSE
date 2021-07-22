@@ -167,7 +167,7 @@ public:
 	virtual void	Unk_33(void);
 	virtual void	Unk_34(void);
 	virtual void	Unk_35(void);
-	virtual void	Unk_36(void);
+	virtual void	StopIdle(Actor*);
 	virtual void	Unk_37(void);
 	virtual void	Unk_38(void);
 	virtual void	Unk_39(void);
@@ -363,12 +363,12 @@ public:
 	virtual void	Unk_F6();
 	virtual void	Unk_F7();
 	virtual void	Unk_F8();
-	virtual void	Unk_F9();
-	virtual void	Unk_FA();
-	virtual void	Unk_FB();
+	virtual SInt16	GetCurrentAnimAction();
+	virtual BSAnimGroupSequence* GetCurrentSequence();
+	virtual void	SetCurrentActionAndSequence();
 	virtual void	Unk_FC();
 	virtual void	Unk_FD();
-	virtual void	Unk_FE();
+	virtual bool	IsReadyForAnim();
 	virtual void	Unk_FF();
 	virtual void	Unk_100();
 	virtual void	Unk_101();
@@ -502,11 +502,11 @@ public:
 	virtual void	Unk_181();
 	virtual void	Unk_182();
 	virtual void	Unk_183();
-	virtual void	Unk_184();
-	virtual void	Unk_185();
-	virtual void	Unk_186();
-	virtual void	Unk_187();
-	virtual void	Unk_188();
+	virtual void	GetFadeType();
+	virtual void	SetQueuedIdleFlag(UInt32 flag);
+	virtual UInt32	GetQueuedIdleFlags();
+	virtual void	ResetQueuedIdleFlags();
+	virtual void	UnsetQueuedIdleFlag();
 	virtual void	Unk_189();
 	virtual void	Unk_18A();
 	virtual void	Unk_18B();
@@ -568,8 +568,8 @@ public:
 	virtual void	Unk_1C3();
 	virtual void	Unk_1C4();
 	virtual void	Unk_1C5();
-	virtual void	Unk_1C6();
-	virtual void	Unk_1C7();
+	virtual TESIdleForm* GetQueuedIdleForm();
+	virtual void	SetQueuedIdleForm(TESIdleForm*);
 	virtual void	Unk_1C8();
 	virtual void	Unk_1C9();
 	virtual void	Unk_1CA();
@@ -849,11 +849,11 @@ public:
 
 	//Unk0254*				contains lastTarget at 0x04;	// 0254
 };
-// MiddleHighProcess has 21B virtual func
-// 100+
+
 
 class AnimIdle : public NiRefObject
 {
+public:
 	UInt32 unk008;
 	UInt32 unk00C;
 	UInt32 unk010;
