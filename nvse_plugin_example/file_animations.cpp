@@ -31,6 +31,8 @@ void LoadPathsForType(const std::filesystem::path& path, const T identifier, boo
 				OverrideModIndexAnimation(identifier, str, firstPerson, true, append);
 			else if constexpr (std::is_same<T, const TESRace*>::value)
 				OverrideRaceAnimation(identifier, str, firstPerson, true, append);
+			else if constexpr (std::is_same<T, const TESForm*>::value)
+				OverrideFormAnimation(identifier, str, firstPerson, true, append);
 			else
 				static_assert(false);
 		}
@@ -46,8 +48,6 @@ void LogForm(const TESForm* form)
 {
 	Log(FormatString("Detected in-game form %X %s %s", form->refID, form->GetName(), form->GetFullName() ? form->GetFullName()->name.CStr() : "<no name>"));
 }
-
-
 
 template <typename T>
 void LoadPathsForPOV(const std::filesystem::path& path, const T identifier)
@@ -74,10 +74,7 @@ bool LoadForForm(const std::filesystem::path& iterPath, const TESForm* form)
 	else if (const auto* race = DYNAMIC_CAST(form, TESForm, TESRace))
 		LoadPathsForPOV(iterPath, race);
 	else
-	{
-		Log(FormatString("Unsupported form type for %X", form->refID));
-		return false;
-	}
+		LoadPathsForPOV(iterPath, form);
 	return true;
 }
 

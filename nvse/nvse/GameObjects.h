@@ -505,6 +505,7 @@ public:
 	UInt8								unk1B1;							// 1B1
 	UInt8								unk1B2[2];						// 1B2
 
+	TESActorBase* GetActorBase();
 	// OBSE: unk1 looks like quantity, usu. 1; ignored for ammo (equips entire stack). In NVSE, pretty much always forced internally to 1 
 	// OBSE: itemExtraList is NULL as the container changes entry is not resolved before the call
 	// NVSE: Default values are those used by the vanilla script functions.

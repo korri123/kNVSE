@@ -211,6 +211,7 @@ void OverrideActorAnimation(const Actor* actor, const std::string& path, bool fi
 void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append);
+void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, bool append);
 
 float GetTimePassed();
 /*

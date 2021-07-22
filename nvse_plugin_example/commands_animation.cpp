@@ -362,38 +362,37 @@ BSAnimGroupSequence* GetActorAnimation(UInt32 animGroupId, bool firstPerson, Ani
 	auto& map = GetMap(firstPerson);
 	auto* actor = animData->actor;
 	auto& modIndexMap = GetModIndexMap(firstPerson);
-	// weapon form ID
-	if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon)
+	BSAnimGroupSequence* modIndexResult = nullptr;
+	const auto getFormAnimation = [&](TESForm* form)
 	{
-		auto* weapon = weaponInfo->weapon;
-		if (weapon)
-		{
-			if ((result = GetAnimationFromMap(map, weapon->refID, animGroupId, animData, prevPath)))
-				return result;
-			// weapon mod index
-			if ((result = GetAnimationFromMap(modIndexMap, weapon->GetModIndex(), animGroupId, animData, prevPath)))
-				return result;
-		}
-	}
+		BSAnimGroupSequence* lResult;
+		if ((lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData, prevPath)))
+			return lResult;
+		// mod index
+		if (!modIndexResult)
+			modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData, prevPath);
+		return static_cast<BSAnimGroupSequence*>(nullptr);
+	};
+	// weapon form ID
+	if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon && (result = getFormAnimation(weaponInfo->weapon)))
+		return result;
 	// actor ref ID
-	if ((result = GetAnimationFromMap(map, actor->refID, animGroupId, animData, prevPath)))
+	if ((result = getFormAnimation(actor)))
 		return result;
 	// base form ID
 	if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData, prevPath))))
 		return result;
 	// race form ID
 	TESNPC* npc; TESRace* race;
-	if (((npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC))) && ((race = npc->race.race)))
-	{
-		if ((result = GetAnimationFromMap(map, race->refID, animGroupId, animData, prevPath)))
-			return result;
-		// race mod index
-		if ((result = GetAnimationFromMap(modIndexMap, race->GetModIndex(), animGroupId, animData, prevPath)))
-			return result;
-	}
-	// mod index
-	if ((result = GetAnimationFromMap(modIndexMap, actor->GetModIndex(), animGroupId, animData, prevPath)))
+	if (((npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC))) && ((race = npc->race.race)) && (result = getFormAnimation(race)))
 		return result;
+	// creature
+	TESCreature* creature;
+	if ((creature = static_cast<TESCreature*>(actor->GetActorBase())) && IS_ID(creature, Creature) && (result = getFormAnimation(creature)))
+		return result;
+	// mod index (set in getFormAnimation if exists)
+	if (modIndexResult)
+		return modIndexResult;
 	// non-form ID dependent animations (global replacers)
 	if (!firstPerson && ((result = PickAnimation(g_globalAnimOverrides, animGroupId, animData, prevPath))))
 		return result;
@@ -503,10 +502,15 @@ void OverrideActorAnimation(const Actor* actor, const std::string& path, bool fi
 	SetOverrideAnimation(actor ? actor->refID : -1, path, map, enable, append, outGroupId, conditionScript);
 }
 
-void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append)
+void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, bool append)
 {
 	auto& map = GetMap(firstPerson);
-	SetOverrideAnimation(weapon->refID, path, map, enable, append);
+	SetOverrideAnimation(form->refID, path, map, enable, append);
+}
+
+void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append)
+{
+	OverrideFormAnimation(weapon, path, firstPerson, enable, append);
 }
 
 void OverrideModIndexAnimation(const UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append)
@@ -517,8 +521,7 @@ void OverrideModIndexAnimation(const UInt8 modIdx, const std::string& path, bool
 
 void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append)
 {
-	auto& map = GetMap(firstPerson);
-	SetOverrideAnimation(race->refID, path, map, enable, append);
+	OverrideFormAnimation(race, path, firstPerson, enable, append);
 }
 
 float GetTimePassed()

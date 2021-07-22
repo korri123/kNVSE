@@ -771,8 +771,8 @@ public:
 	ExtraLeveledCreature();
 	virtual ~ExtraLeveledCreature();
 
-	TESForm	* baseForm;	// 00C
-	TESForm	* form;		// 010
+	TESActorBase* baseForm;	// 00C
+	TESActorBase* actorBase;		// 010
 };
 
 STATIC_ASSERT(sizeof(ExtraLeveledCreature) == 0x14);
