@@ -9,14 +9,19 @@
 #include "GameAPI.h"
 #include "nitypes.h"
 
-AnimationContext g_animationHookContext(nullptr);
-
+AnimationContext g_animationHookContext;
+bool g_startedAnimation = false;
+BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer)
 {
+#if _DEBUG
+	auto& groupInfo = g_animGroupInfos[animGroupId & 0xFF];
+	auto* curSeq = animData->animSequence[groupInfo.sequenceType];
+#endif
 	g_animationHookContext = AnimationContext(basePointer);
 	if (animData && animData->actor)
 	{
-#if _DEBUG
+#if 0
 		if (*toMorph && animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
 			Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
 		auto* highProcess = (Decoding::HighProcess*) animData->actor->baseProcess;
@@ -27,7 +32,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		if (auto* anim = GetActorAnimation(animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
 		{
 			*toMorph = anim;
-#if _DEBUG
+#if 0
 			if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
 				Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
 #endif		
@@ -130,10 +135,40 @@ __declspec(naked) void IsPlayerReadyForAnimHook()
 	}
 }
 
+void DecreaseAttackTimer()
+{
+	auto* p = static_cast<Decoding::HighProcess*>(g_thePlayer->baseProcess);
+	if (!g_lastLoopSequence)
+		return p->ResetAttackLoopTimer(false);
+	if (g_startedAnimation)
+	{
+		p->time1D4 = g_lastLoopSequence->endKeyTime - g_lastLoopSequence->startTime; // start time is actually curTime
+		g_startedAnimation = false;
+	}
+	const auto oldTime = p->time1D4;
+	p->DecreaseAttackLoopShootTime(g_thePlayer);
+	if (p->time1D4 >= oldTime)
+	{
+		p->time1D4 = 0;
+		g_lastLoopSequence = nullptr;
+	}
+}
+
+__declspec(naked) void EndAttackLoopHook()
+{
+	const static auto retnAddr = 0x941E64;
+	__asm
+	{
+		call DecreaseAttackTimer
+		jmp retnAddr
+	}
+}
+
 void ApplyHooks()
 {
-	WriteRelJump(0x4949D0, reinterpret_cast<UInt32>(AnimationHook));
+	WriteRelJump(0x4949D0, AnimationHook);
 
 	SafeWrite32(0x1087C5C, reinterpret_cast<UInt32>(IsPlayerReadyForAnim));
-	
+
+	WriteRelJump(0x941E4C, EndAttackLoopHook);
 }

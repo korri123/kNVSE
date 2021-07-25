@@ -1278,15 +1278,17 @@ public:
 		auto idMinor = groupID & 0xFF;
 		return idMinor >= kAnimGroup_ReloadWStart && idMinor <= kAnimGroup_ReloadZ;
 	}
-
-	
 	
 	// 24
-	struct AnimGroupInfo {
-		const char	* name;				// 00
-		UInt8		sequenceType;		// 04
-		UInt8		pad[3];
-		UInt32		unk08[7];			// 08
+	struct AnimGroupInfo
+	{
+		const char* name;
+		bool supportsVariants;
+		UInt8 pad[3];
+		UInt32 sequenceType;
+		UInt32 keyType;
+		UInt32 unk10;
+		UInt32 unk14[4];
 	};
 
 	struct __declspec(align(4)) AnimGroupSound

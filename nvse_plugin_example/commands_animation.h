@@ -1,11 +1,15 @@
 #pragma once
 
+#include <span>
+
 #include "CommandTable.h"
 #include "GameForms.h"
 #include "GameObjects.h"
 #include "GameProcess.h"
 #include "game_types.h"
 #include "ParamInfos.h"
+
+extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
 
 using AnimList = std::vector<std::string>;
 
@@ -51,7 +55,7 @@ struct SavedAnims
 
 enum class AnimCustom
 {
-	None, Male, Female, Mod1, Mod2, Mod3, Hurt
+	None, Male, Female, Mod1, Mod2, Mod3, Hurt, Human, Max
 };
 
 using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
@@ -66,6 +70,7 @@ struct AnimStacks
 	std::vector<SavedAnims> mod3Anims;
 
 	std::vector<SavedAnims> hurtAnims;
+	std::vector<SavedAnims> humanAnims;
 
 	std::vector<SavedAnims>& GetCustom(const AnimCustom custom)
 	{
@@ -76,6 +81,7 @@ struct AnimStacks
 		case AnimCustom::Mod2: return mod2Anims;
 		case AnimCustom::Mod3: return mod3Anims;
 		case AnimCustom::Hurt: return hurtAnims;
+		case AnimCustom::Human: return humanAnims;
 		}
 		return anims;
 	}

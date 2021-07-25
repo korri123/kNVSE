@@ -197,7 +197,12 @@ namespace Decoding
 		MagicTarget* magicTarget1BC;	// 1BC
 		AnimData* animData;			// 1C0
 		BSAnimGroupSequence* animSequence[3];	// 1C4
-		UInt32								unk1D0[3];			// 1D0
+		float angle1D0;
+		float time1D4;
+		UInt8 byte1D8;
+		UInt8 isUsingAutomaticWeapon;
+		UInt8 bGetAttacked;
+		UInt8 gap1DB;
 		NiNode* limbNodes[15];		// 1DC
 		NiNode* unk218;			// 218
 		NiNode* unk21C;			// 21C

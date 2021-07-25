@@ -15,6 +15,9 @@
 #include "utility.h"
 #include "common/IDirectoryIterator.h"
 #include "PluginAPI.h"
+#include "stack_allocator.h"
+
+std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<TESAnimGroup::AnimGroupInfo*>(0x11977D8), 245 };
 
 // Per ref ID there is a stack of animation variants per group ID
 class AnimOverrideStruct
@@ -224,8 +227,12 @@ std::map<BSAnimGroupSequence*, AnimTime> g_firstPersonAnimTimes;
 void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence)
 {
 	std::span textKeys{ sequence->textKeyData->m_pKeys, sequence->textKeyData->m_uiNumKeys };
+	const auto hasKey = [&](const char* keyText)
+	{
+		return std::ranges::any_of(textKeys, [&](NiTextKey& key) {return _stricmp(key.m_kText.data, keyText) == 0; });
+	};
 
-	if (sequence->animGroup->IsAttack() && std::ranges::any_of(textKeys, [](NiTextKey& key) {return _stricmp(key.m_kText.data, "burstFire") == 0;}))
+	if (sequence->animGroup->IsAttack() && hasKey("burstFire"))
 	{
 		std::vector<NiTextKey*> hitKeys;
 		bool skippedFirst = false;
@@ -247,15 +254,25 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence)
 			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0);
 		}
 	}
-	if (animData == g_thePlayer->firstPersonAnimData && std::ranges::any_of(textKeys, [](NiTextKey& key) {return _stricmp(key.m_kText.data, "respectEndKey") == 0;}))
-		g_firstPersonAnimTimes[sequence] = AnimTime();
-	if (std::ranges::any_of(textKeys, [](NiTextKey& key) {return _stricmp(key.m_kText.data, "interruptLoop") == 0; }))
+	if (animData == g_thePlayer->firstPersonAnimData && hasKey("respectEndKey"))
 	{
-		*reinterpret_cast<UInt8*>(&g_animationHookContext.GroupID()) = kAnimGroup_AttackLoopIS;
+		g_firstPersonAnimTimes[sequence] = AnimTime();
+		//Console_Print("kNVSE: Applied respectEndKey");
+	}
+	if (hasKey("interruptLoop"))
+	{
+		*reinterpret_cast<UInt8*>(g_animationHookContext.groupID) = kAnimGroup_AttackLoopIS;
 		if (animData == g_thePlayer->firstPersonAnimData)
 		{
 			g_thePlayer->baseProcess->GetAnimData()->groupIDs[kSequence_Weapon] = kAnimGroup_AttackLoopIS;
 		}
+		//Console_Print("kNVSE: Applied interruptLoop");
+		g_lastLoopSequence = sequence;
+		g_startedAnimation = true;
+	}
+	if (hasKey("noBlend"))
+	{
+		g_animationHookContext.animData->noBlend120 = true;
 	}
 }
 
@@ -264,19 +281,20 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 	if (const auto stacksIter = overrides.stacks.find(animGroupId); stacksIter != overrides.stacks.end())
 	{
 		auto* actor = animData->actor;
-		auto animCustom = AnimCustom::None;
 		std::vector<SavedAnims>* stack = nullptr;
-		auto exclusiveAnim = false;
+		StackVector<AnimCustom, static_cast<size_t>(AnimCustom::Max)> animCustomStack;
+		if (actor == g_thePlayer || DYNAMIC_CAST(actor->baseProcess, Actor, TESNPC))
+			animCustomStack->push_back(AnimCustom::Human);
 		if (prevPath)
 		{
 			if (FindStringCI(prevPath, R"(\male\)"))
-				animCustom = AnimCustom::Male;
+				animCustomStack->push_back(AnimCustom::Male);
 			else if (FindStringCI(prevPath, R"(\female\)"))
-				animCustom = AnimCustom::Female;
+				animCustomStack->push_back(AnimCustom::Female);
 			else if (FindStringCI(prevPath, R"(\hurt\)"))
 			{
-				exclusiveAnim = true; // don't want hurt anim fall-backing to normal animation
-				animCustom = AnimCustom::Hurt;
+				animCustomStack->clear(); // don't want hurt anim fall-backing to normal animation
+				animCustomStack->push_back(AnimCustom::Hurt);
 			}
 		}
 		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
@@ -286,16 +304,21 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 			if (modFlags && modFlags->flags)
 			{
 				if (modFlags->flags & 1 && !stacksIter->second.mod1Anims.empty())
-					animCustom = AnimCustom::Mod1;
+					animCustomStack->push_back(AnimCustom::Mod1);
 				if (modFlags->flags & 2 && !stacksIter->second.mod2Anims.empty())
-					animCustom = AnimCustom::Mod2;
+					animCustomStack->push_back(AnimCustom::Mod2);
 				if (modFlags->flags & 4 && !stacksIter->second.mod3Anims.empty())
-					animCustom = AnimCustom::Mod3;
+					animCustomStack->push_back(AnimCustom::Mod3);
 			}
 		}
-		if (animCustom != AnimCustom::None)
-			stack = &stacksIter->second.GetCustom(animCustom);
-		if (!stack || stack->empty() && !exclusiveAnim)
+		while (!animCustomStack->empty())
+		{
+			stack = &stacksIter->second.GetCustom(animCustomStack->back());
+			if (!stack->empty())
+				break;
+			animCustomStack->pop_back();
+		}
+		if (!stack || stack->empty())
 			stack = &stacksIter->second.GetCustom(AnimCustom::None);
 
 		if (!stack->empty())
@@ -390,6 +413,10 @@ BSAnimGroupSequence* GetActorAnimation(UInt32 animGroupId, bool firstPerson, Ani
 	TESCreature* creature;
 	if ((creature = static_cast<TESCreature*>(actor->GetActorBase())) && IS_ID(creature, Creature) && (result = getFormAnimation(creature)))
 		return result;
+	
+	// equipped TODO
+	
+	
 	// mod index (set in getFormAnimation if exists)
 	if (modIndexResult)
 		return modIndexResult;
@@ -424,7 +451,6 @@ int GetAnimGroupId(const std::string& path)
 	return animGroupId;
 }
 
-
 void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, bool append, int* outGroupId = nullptr, Script* conditionScript = nullptr)
 {
 	std::ranges::replace(path, '/', '\\');
@@ -439,7 +465,9 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 
 	// condition based animations
 	auto animCustom = AnimCustom::None;
-	if (FindStringCI(path, R"(\male\)"))
+	if (FindStringCI(path, R"(\human\)"))
+		animCustom = AnimCustom::Human;
+	else if (FindStringCI(path, R"(\male\)"))
 		animCustom = AnimCustom::Male;
 	else if (FindStringCI(path, R"(\female\)"))
 		animCustom = AnimCustom::Female;

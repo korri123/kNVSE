@@ -383,8 +383,8 @@ public:
 	virtual void	Unk_10A();
 	virtual void	Unk_10B();
 	virtual void	Unk_10C();
-	virtual void	Unk_10D();
-	virtual void	Unk_10E();
+	virtual void	ResetAttackLoopTimer(bool setToFull);
+	virtual void	DecreaseAttackLoopShootTime(Actor*);
 	virtual void	Unk_10F();
 	virtual void	Unk_110();
 	virtual void	Unk_111();
@@ -950,7 +950,7 @@ struct AnimData
 	float turboSpeedMult;
 	float weaponReloadSpeed;
 	float equipSpeed;
-	UInt8 byte120;
+	bool noBlend120;
 	UInt8 byte121;
 	UInt16 unk122;
 	AnimIdle* idleAnim;
