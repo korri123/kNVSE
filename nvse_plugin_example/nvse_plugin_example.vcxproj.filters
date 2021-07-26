@@ -136,6 +136,7 @@
     <ClInclude Include="game_types.h" />
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="stack_allocator.h" />
+    <ClInclude Include="SimpleINILibrary.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

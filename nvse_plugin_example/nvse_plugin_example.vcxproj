@@ -384,6 +384,7 @@
     <ClInclude Include="json.h" />
     <ClInclude Include="game_types.h" />
     <ClInclude Include="MemoizedMap.h" />
+    <ClInclude Include="SimpleINILibrary.h" />
     <ClInclude Include="stack_allocator.h" />
     <ClInclude Include="utility.h" />
   </ItemGroup>

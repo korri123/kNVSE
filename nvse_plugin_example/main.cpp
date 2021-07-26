@@ -14,6 +14,8 @@
 #include "game_types.h"
 #include <set>
 
+#include "SimpleINILibrary.h"
+
 #define RegisterScriptCommand(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name);
 
 IDebugLog		gLog("kNVSE.log");
@@ -33,6 +35,7 @@ NVSEScriptInterface* g_script;
 
 bool isEditor = false;
 extern std::list<BurstFireData> g_burstFireQueue;
+extern std::list<BurstFireData> g_callScriptOnKey;
 
 void HandleAnimTimes()
 {
@@ -75,12 +78,15 @@ void HandleBurstFire()
 				iter = g_burstFireQueue.erase(iter);
 				continue;
 			}
-			
-			const auto ammoCount = static_cast<Decoding::MiddleHighProcess*>(animData->actor->baseProcess)->ammoInfo->countDelta;
-			if (ammoCount == weap->weapon->clipRounds.clipRounds)
+
+			if (auto* ammoInfo = static_cast<Decoding::MiddleHighProcess*>(animData->actor->baseProcess)->ammoInfo)
 			{
-				iter = g_burstFireQueue.erase(iter);
-				continue;
+				const auto ammoCount = ammoInfo->countDelta;
+				if (ammoCount == weap->weapon->clipRounds.clipRounds)
+				{
+					iter = g_burstFireQueue.erase(iter);
+					continue;
+				}
 			}
 			// fires
 			animData->actor->baseProcess->SetQueuedIdleFlag(kIdleFlag_FireWeapon);
@@ -131,12 +137,16 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 	// fill out the info structure
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "kNVSE";
-	info->version = 5;
+	info->version = 6;
 
 	// version checks
-	if (nvse->nvseVersion < NVSE_VERSION_INTEGER)
+	if (nvse->nvseVersion < PACKED_NVSE_VERSION)
 	{
-		_ERROR("NVSE version too old (got %08X expected at least %08X)", nvse->nvseVersion, NVSE_VERSION_INTEGER);
+		const auto str = FormatString("kNVSE: NVSE version too old (got %X expected at least %X). Plugin will NOT load! Install the latest version here: https://github.com/xNVSE/NVSE/releases/", nvse->nvseVersion, PACKED_NVSE_VERSION);
+#if !_DEBUG
+		ShowErrorMessageBox(str.c_str());
+#endif
+		_ERROR(str.c_str());
 		return false;
 	}
 
@@ -167,10 +177,8 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 	return true;
 }
 
-void FixIdleAnimStrafe()
-{
-	SafeWriteBuf(0x9EA0C8, "\xEB\xE", 2); // jmp 0x9EA0D8
-}
+
+int g_logLevel = 0;
 
 bool NVSEPlugin_Load(const NVSEInterface* nvse)
 {
@@ -200,8 +208,6 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 		return true;
 	}
 
-	FixIdleAnimStrafe();
 	ApplyHooks();
-	
 	return true;
 }

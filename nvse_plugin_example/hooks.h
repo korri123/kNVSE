@@ -1,5 +1,4 @@
 #pragma once
-
 struct AnimData;
 class BSAnimGroupSequence;
 enum AnimGroupID : UInt8;
@@ -10,10 +9,10 @@ struct AnimationContext
 
 	AnimationContext() = default;
 
-	explicit AnimationContext(UInt8* basePointer): basePointer(basePointer), groupID(reinterpret_cast<AnimGroupID*>(basePointer + 0xC)), animData(*reinterpret_cast<AnimData**>(basePointer - 0x5C))
+	explicit AnimationContext(UInt8* basePointer): basePointer(basePointer), groupID(reinterpret_cast<UInt32*>(basePointer + 0xC)), animData(*reinterpret_cast<AnimData**>(basePointer - 0x5C))
 	{
 	}
-	AnimGroupID* groupID = nullptr;
+	UInt32* groupID = nullptr;
 	AnimData* animData = nullptr;
 
 };

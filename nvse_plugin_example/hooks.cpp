@@ -8,10 +8,13 @@
 #include "SafeWrite.h"
 #include "GameAPI.h"
 #include "nitypes.h"
+#include "SimpleINILibrary.h"
+#include "utility.h"
 
 AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
+
 void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer)
 {
 #if _DEBUG
@@ -164,11 +167,57 @@ __declspec(naked) void EndAttackLoopHook()
 	}
 }
 
+int AnimErrorLogHook(const char* fmt, ...)
+{
+	va_list	args;
+	va_start(args, fmt);
+	char buf[0x400];
+	vsprintf_s(buf, sizeof buf, fmt, args);
+	DebugPrint(FormatString("GAME: %s", buf));
+	va_end(args);
+
+	return 0;
+}
+
+UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 groupID, bool noRecurse)
+{
+	const auto defaultRet = [&]()
+	{
+		return ThisStdCall<UInt16>(0x495740, animData, groupID, noRecurse);
+	};
+	auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
+	if (!weaponInfo)
+		return defaultRet();
+	const auto fullGroupId = ThisStdCall<UInt16>(0x897910, animData->actor, groupID, weaponInfo, false, animData);
+	if (fullGroupId == 0xFF)
+		return defaultRet();
+	return fullGroupId;
+}
+
+void FixIdleAnimStrafe()
+{
+	SafeWriteBuf(0x9EA0C8, "\xEB\xE", 2); // jmp 0x9EA0D8
+}
+
 void ApplyHooks()
 {
+	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
+	CSimpleIniA ini;
+	ini.SetUnicode();
+	const auto errVal = ini.LoadFile(iniPath.c_str());
+	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
+
 	WriteRelJump(0x4949D0, AnimationHook);
 
 	SafeWrite32(0x1087C5C, reinterpret_cast<UInt32>(IsPlayerReadyForAnim));
 
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
+
+	if (ini.GetOrCreate("General", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
+		WriteRelCall(0x8BABCA, LoopingReloadFixHook);
+
+	if (ini.GetOrCreate("General", "bFixIdleStrafing", 1, "; allow player to strafe/turn sideways mid idle animation"))
+		FixIdleAnimStrafe();
+	
+	ini.SaveFile(iniPath.c_str(), false);
 }

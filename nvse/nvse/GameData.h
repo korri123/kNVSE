@@ -296,6 +296,7 @@ public:
 	UInt8 GetModIndex(const char* modName);
 	UInt8 GetActiveModCount() const;
 	const char* GetNthModName(UInt32 modIndex);
+	void DisableAssignFormIDs(bool shouldAsssign);
 
 	MEMBER_FN_PREFIX(DataHandler);
 #if RUNTIME

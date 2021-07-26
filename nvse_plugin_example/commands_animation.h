@@ -38,6 +38,12 @@ struct BurstFireData
 	float timePassed;
 };
 
+struct CallScriptKeyData
+{
+	std::vector<NiTextKey*> hitKeys;
+	float timePassed = 0;
+};
+
 struct AnimTime
 {
 	float time = 0;
@@ -46,11 +52,21 @@ struct AnimTime
 
 extern std::map<BSAnimGroupSequence*, AnimTime> g_firstPersonAnimTimes;
 
+enum class AnimKeySetting
+{
+	NotChecked, NotSet, Set 
+};
+
 struct SavedAnims
 {
 	int order = -1;
 	AnimList anims;
 	Script* conditionScript = nullptr;
+	AnimKeySetting hasBurstFire{};
+	AnimKeySetting hasRespectEndKey{};
+	AnimKeySetting hasInterruptLoop{};
+	AnimKeySetting hasNoBlend{};
+	AnimKeySetting hasCallScript{};
 };
 
 enum class AnimCustom
@@ -246,3 +262,5 @@ float GetTimePassed();
  */
 
 bool IsCustomAnim(BSAnimGroupSequence* sequence);
+
+BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);

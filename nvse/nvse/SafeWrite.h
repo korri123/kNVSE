@@ -13,7 +13,14 @@ void WriteRelJump(UInt32 jumpSrc, T jumpTgt)
 	SafeWrite8(jumpSrc, 0xE9);
 	SafeWrite32(jumpSrc + 1, reinterpret_cast<UInt32>(jumpTgt) - jumpSrc - 1 - 4);
 }
+
 void WriteRelCall(UInt32 jumpSrc, UInt32 jumpTgt);
+
+template <typename T>
+void WriteRelCall(UInt32 jumpSrc, T jumpTgt)
+{
+	WriteRelCall(jumpSrc, reinterpret_cast<UInt32>(jumpTgt));
+}
 
 // 6 bytes
 void WriteRelJnz(UInt32 jumpSrc, UInt32 jumpTgt);

@@ -151,6 +151,14 @@ bool IsCustomAnim(BSAnimGroupSequence* sequence)
 	return g_customAnims.contains(sequence);
 }
 
+BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID)
+{
+	auto* seqBase = animData->mapAnimSequenceBase->Lookup(groupID);
+	if (seqBase)
+		return seqBase->GetSequenceByIndex(0);
+	return nullptr;
+}
+
 BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 {
 	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
@@ -223,17 +231,33 @@ std::string* HandleAimUpDownRandomness(UInt32 animGroupId, AnimList& anims)
 }
 
 std::list<BurstFireData> g_burstFireQueue;
+std::list<BurstFireData> g_callScriptOnKey;
+
 std::map<BSAnimGroupSequence*, AnimTime> g_firstPersonAnimTimes;
 
-void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence)
+enum class KeyCheckType
+{
+	KeyEquals, KeyStartsWith
+};
+void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, SavedAnims& ctx)
 {
 	std::span textKeys{ sequence->textKeyData->m_pKeys, sequence->textKeyData->m_uiNumKeys };
-	const auto hasKey = [&](const char* keyText)
+	const auto anyOfEquals = [&](const char* keyText)
 	{
 		return std::ranges::any_of(textKeys, [&](NiTextKey& key) {return _stricmp(key.m_kText.data, keyText) == 0; });
 	};
+	const auto hasKey = [&](const char* keyText, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
+	{
+		if (setting == AnimKeySetting::Set)
+			return true;
+		if (setting == AnimKeySetting::NotSet)
+			return false;
+		const auto result = anyOfEquals(keyText);
+		setting = result ? AnimKeySetting::Set : AnimKeySetting::NotSet;
+		return result;
+	};
 
-	if (sequence->animGroup->IsAttack() && hasKey("burstFire"))
+	if (sequence->animGroup->IsAttack() && hasKey("burstFire", ctx.hasBurstFire))
 	{
 		std::vector<NiTextKey*> hitKeys;
 		bool skippedFirst = false;
@@ -255,12 +279,12 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence)
 			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0);
 		}
 	}
-	if (animData == g_thePlayer->firstPersonAnimData && hasKey("respectEndKey"))
+	if (animData == g_thePlayer->firstPersonAnimData && hasKey("respectEndKey", ctx.hasRespectEndKey))
 	{
 		g_firstPersonAnimTimes[sequence] = AnimTime();
 		//Console_Print("kNVSE: Applied respectEndKey");
 	}
-	if (hasKey("interruptLoop"))
+	if (hasKey("interruptLoop", ctx.hasInterruptLoop))
 	{
 		*reinterpret_cast<UInt8*>(g_animationHookContext.groupID) = kAnimGroup_AttackLoopIS;
 		if (animData == g_thePlayer->firstPersonAnimData)
@@ -271,7 +295,7 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence)
 		g_lastLoopSequence = sequence;
 		g_startedAnimation = true;
 	}
-	if (hasKey("noBlend"))
+	if (hasKey("noBlend", ctx.hasNoBlend))
 	{
 		g_animationHookContext.animData->noBlend120 = true;
 	}
@@ -284,19 +308,21 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 		auto* actor = animData->actor;
 		std::vector<SavedAnims>* stack = nullptr;
 		StackVector<AnimCustom, static_cast<size_t>(AnimCustom::Max)> animCustomStack;
-		if (actor == g_thePlayer || DYNAMIC_CAST(actor->baseProcess, Actor, TESNPC))
+		auto* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
+		if (actor == g_thePlayer || npc)
 			animCustomStack->push_back(AnimCustom::Human);
-		if (prevPath)
+		auto exclusiveAnim = false;
+		if (npc)
 		{
-			if (FindStringCI(prevPath, R"(\male\)"))
+			if (npc && !npc->baseData.IsFemale())
 				animCustomStack->push_back(AnimCustom::Male);
-			else if (FindStringCI(prevPath, R"(\female\)"))
+			else
 				animCustomStack->push_back(AnimCustom::Female);
-			else if (FindStringCI(prevPath, R"(\hurt\)"))
-			{
-				animCustomStack->clear(); // don't want hurt anim fall-backing to normal animation
-				animCustomStack->push_back(AnimCustom::Hurt);
-			}
+		}
+		if (prevPath && FindStringCI(prevPath, R"(\hurt\)"))
+		{
+			exclusiveAnim = true;
+			animCustomStack->push_back(AnimCustom::Hurt);
 		}
 		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
 		{
@@ -319,40 +345,39 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 				break;
 			animCustomStack->pop_back();
 		}
-		if (!stack || stack->empty())
+		if ((!stack || stack->empty()) && !exclusiveAnim)
 			stack = &stacksIter->second.GetCustom(AnimCustom::None);
 
-		if (!stack->empty())
+		if (stack && !stack->empty())
 		{
 			auto& ctx = stack->back();
-			auto& [order, anims, conditionScript] = ctx;
-			if (conditionScript)
+			if (ctx.conditionScript)
 			{
 				NVSEArrayVarInterface::Element result;
-				if (!g_script->CallFunction(conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
+				if (!g_script->CallFunction(ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
 					return nullptr;
 			}
-			if (!anims.empty())
+			if (!ctx.anims.empty())
 			{
 				std::string* savedAnimPath;
-				if (order == -1)
+				if (ctx.order == -1)
 				{
 					// Make sure that Aim, AimUp and AimDown all use the same index
-					if (auto* path = HandleAimUpDownRandomness(animGroupId, anims))
+					if (auto* path = HandleAimUpDownRandomness(animGroupId, ctx.anims))
 						savedAnimPath = path;
 					else
 						// pick random variant
-						savedAnimPath = &anims.at(GetRandomUInt(anims.size()));
+						savedAnimPath = &ctx.anims.at(GetRandomUInt(ctx.anims.size()));
 				}
 				else
 				{
 					// ordered
-					savedAnimPath = &anims.at(order++ % anims.size());
+					savedAnimPath = &ctx.anims.at(ctx.order++ % ctx.anims.size());
 				}
 
 				if (auto* anim = LoadCustomAnimation(*savedAnimPath, animData); anim)
 				{
-					HandleExtraOperations(animData, anim);
+					HandleExtraOperations(animData, anim, ctx);
 					return anim;
 				}
 			}
