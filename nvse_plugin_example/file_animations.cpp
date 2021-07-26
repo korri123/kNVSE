@@ -39,7 +39,7 @@ void LoadPathsForType(const std::filesystem::path& path, const T identifier, boo
 		}
 		catch (std::exception& e)
 		{
-			Log(FormatString("AnimGroupOverride Error: %s", e.what()));
+			DebugPrint(FormatString("AnimGroupOverride Error: %s", e.what()));
 		}
 		append = true;
 	}
@@ -112,7 +112,7 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 					}
 					else
 					{
-						Log(FormatString("kNVSE Animation: Form %X not found!", formId));
+						DebugPrint(FormatString("Form %X not found!", formId));
 					}
 				}
 			}
@@ -155,7 +155,7 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 	auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition, &buffer);
 	if (!result)
 	{
-		Log("Failed to compile condition script");
+		DebugPrint("Failed to compile condition script");
 		condition = nullptr;
 	}
 	buffer.scriptText = nullptr;
@@ -171,7 +171,7 @@ void HandleJson(const std::filesystem::path& path)
 		const auto formId = HexStringToInt(formIdStr);
 		if (formId == -1)
 		{
-			Log("Form field was incorrectly formatted, got " + formIdStr);
+			DebugPrint("Form field was incorrectly formatted, got " + formIdStr);
 		}
 		return formId;
 	};
@@ -186,7 +186,7 @@ void HandleJson(const std::filesystem::path& path)
 			{
 				if (!elem.is_object())
 				{
-					Log("JSON error: expected object with mod, form and folder fields");
+					DebugPrint("JSON error: expected object with mod, form and folder fields");
 					continue;
 				}
 				auto modName = elem["mod"].get<std::string>();
@@ -229,12 +229,12 @@ void HandleJson(const std::filesystem::path& path)
 			}
 		}
 		else
-			Log(path.string() + " does not start as a JSON array");
+			DebugPrint(path.string() + " does not start as a JSON array");
 	}
 	catch (nlohmann::json::exception& e)
 	{
-		Log("The JSON is incorrectly formatted! It will not be applied.");
-		Log(FormatString("JSON error: %s\n", e.what()));
+		DebugPrint("The JSON is incorrectly formatted! It will not be applied.");
+		DebugPrint(FormatString("JSON error: %s\n", e.what()));
 	}
 	
 }
@@ -272,7 +272,7 @@ void LoadFileAnimPaths()
 				if (mod)
 					LoadModAnimPaths(path, mod);
 				else if (_stricmp(fileName.extension().string().c_str(), ".esp") == 0 || _stricmp(fileName.extension().string().c_str(), ".esm") == 0)
-					Log(FormatString("Mod with name %s is not loaded!", fileName.string().c_str()));
+					DebugPrint(FormatString("Mod with name %s is not loaded!", fileName.string().c_str()));
 				else if (_stricmp(fileName.string().c_str(), "_male") != 0 && _stricmp(fileName.string().c_str(), "_1stperson") != 0)
 				{
 					Log("Found anim folder " + fileName.string() + " which can be used in JSON");

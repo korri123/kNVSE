@@ -51,7 +51,7 @@ int HexStringToInt(const std::string& str)
 void DebugPrint(const std::string& str)
 {
 #if _DEBUG
-	Console_Print(str.c_str());
+	Console_Print("kNVSE: %s", str.c_str());
 #endif
 	Log(str);
 }

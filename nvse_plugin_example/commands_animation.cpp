@@ -444,7 +444,7 @@ int GetAnimGroupId(const std::string& path)
 		else
 		{
 			if (kfModel && !kfModel->animGroup)
-				Log("KF file is missing AnimGroup data!");
+				DebugPrint("KF file is missing AnimGroup data!");
 			return -1;
 		}
 		s_animGroupIds[path] = animGroupId;
