@@ -610,7 +610,7 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
-	auto firstPerson = false;
+	int firstPerson = false;
 	auto enable = 0;
 	char path[0x1000];
 	int playImmediately = 0;
