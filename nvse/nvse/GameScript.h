@@ -147,6 +147,8 @@ public:
 
 	tList<VariableInfo>* GetVars();
 	tList<RefVariable>* GetRefList();
+	static Script* CreateScript();
+	void DeleteScript() const;
 };
 
 STATIC_ASSERT(sizeof(Script) == SCRIPT_SIZE);
@@ -231,6 +233,9 @@ struct ScriptBuffer
 		kEditor = 0,
 		kGameConsole = 1,
 	};
+
+	ScriptBuffer();
+	~ScriptBuffer();
 
 	char			* scriptText;		// 000
 	UInt32			textOffset;			// 004 

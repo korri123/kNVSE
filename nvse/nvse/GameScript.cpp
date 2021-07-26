@@ -112,6 +112,17 @@ tList<Script::RefVariable>* Script::GetRefList()
 
 #if RUNTIME
 
+Script* Script::CreateScript()
+{
+	auto* buf = FormHeap_Allocate(sizeof Script);
+	return ThisStdCall<Script*>(0x5AA0F0, buf);
+}
+
+void Script::DeleteScript() const
+{
+	ThisStdCall(0x5AA170, this, false);
+}
+
 void Script::RefVariable::Resolve(ScriptEventList * eventList)
 {
 	if(varIdx && eventList)
@@ -448,6 +459,16 @@ bool ScriptLineBuffer::Write16(UInt16 buf)
 bool ScriptLineBuffer::WriteByte(UInt8 buf)
 {
 	return Write(&buf, sizeof(UInt8));
+}
+
+ScriptBuffer::ScriptBuffer()
+{
+	ThisStdCall(0x5AE490, this);
+}
+
+ScriptBuffer::~ScriptBuffer()
+{
+	ThisStdCall(0x5AE5C0, this);
 }
 
 bool ScriptLineBuffer::WriteFloat(double buf)

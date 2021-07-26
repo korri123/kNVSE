@@ -10,6 +10,7 @@
 #include <utility>
 
 
+
 template <typename T>
 void LoadPathsForType(const std::filesystem::path& path, const T identifier, bool firstPerson)
 {
@@ -128,9 +129,10 @@ struct JSONEntry
 {
 	const std::string folderName;
 	const TESForm* form;
+	Script* conditionScript;
 
-	JSONEntry(std::string folderName, const TESForm* form)
-		: folderName(std::move(folderName)), form(form)
+	JSONEntry(std::string folderName, const TESForm* form, Script* script)
+		: folderName(std::move(folderName)), form(form), conditionScript(script)
 	{
 	}
 };
@@ -138,9 +140,41 @@ struct JSONEntry
 std::vector<JSONEntry> g_jsonEntries;
 // std::unordered_map<std::string, std::filesystem::path> g_jsonFolders;
 
+Script* CompileConditionScript(const std::string& condString, const std::string& folderName)
+{
+	ScriptBuffer buffer;
+	auto* condition = Script::CreateScript();
+	auto scriptName = FormatString("kNVSE_%sConditionScript", folderName.c_str());
+	std::string scriptSource;
+	if (!FindStringCI(condString, "SetFunctionValue"))
+		scriptSource = FormatString("scn %s\r\nbegin function{}\r\nSetFunctionValue (%s)\r\nend\r\n", scriptName.c_str(), condString.c_str());
+	else
+		scriptSource = FormatString("scn %s\r\nbegin function{}\r\n%s\r\nend\r\n", scriptName.c_str(), condString.c_str());
+	buffer.scriptText = scriptSource.data();
+	auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
+	auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition, &buffer);
+	if (!result)
+	{
+		Log("Failed to compile condition script");
+		condition = nullptr;
+	}
+	buffer.scriptText = nullptr;
+	condition->text = nullptr;
+	return condition;
+}
+
 void HandleJson(const std::filesystem::path& path)
 {
 	Log("\nReading from JSON file " + path.string());
+	const auto strToFormID = [](const std::string& formIdStr)
+	{
+		const auto formId = HexStringToInt(formIdStr);
+		if (formId == -1)
+		{
+			Log("Form field was incorrectly formatted, got " + formIdStr);
+		}
+		return formId;
+	};
 	try
 	{
 		std::ifstream i(path);
@@ -156,30 +190,42 @@ void HandleJson(const std::filesystem::path& path)
 					continue;
 				}
 				auto modName = elem["mod"].get<std::string>();
-				auto formIdStr = elem["form"].get<std::string>();
-				auto folder = elem["folder"].get<std::string>();
 				const auto* mod = DataHandler::Get()->LookupModByName(modName.c_str());
 				if (!mod)
 				{
 					Log("Mod name " + modName + " was not found");
 					continue;
 				}
-				auto formId = HexStringToInt(formIdStr);
-				if (formId == -1)
-				{
-					Log("Form field was incorrectly formatted, got " + formIdStr);
+				const auto& folder = elem["folder"].get<std::string>();
+
+				auto& formElem = elem["form"];
+				std::vector<int> formIds;
+				if (formElem.is_array())
+					std::ranges::transform(formElem, std::back_inserter(formIds), [&](auto& i) {return strToFormID(i.template get<std::string>()); });
+				else
+					formIds.push_back(strToFormID(formElem.get<std::string>()));
+				if (std::ranges::find(formIds, -1) != formIds.end())
 					continue;
-				}
-				formId = (mod->modIndex << 24) + (formId & 0x00FFFFFF);
-				auto* form = LookupFormByID(formId);
-				if (!form)
+				Script* condition = nullptr;
+				if (elem.contains("condition"))
 				{
-					Log(FormatString("Form %X was not found", formId));
-					continue;
+					const auto& condStr = elem["condition"].get<std::string>();
+					condition = CompileConditionScript(condStr, folder);
+					Log("Compiled condition script " + condStr + " successfully");
 				}
-				LogForm(form);
-				Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
-				g_jsonEntries.emplace_back(folder, form);
+				for (auto formId : formIds)
+				{
+					formId = (mod->modIndex << 24) + (formId & 0x00FFFFFF);
+					auto* form = LookupFormByID(formId);
+					if (!form)
+					{
+						Log(FormatString("Form %X was not found", formId));
+						continue;
+					}
+					LogForm(form);
+					Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
+					g_jsonEntries.emplace_back(folder, form, condition);
+				}
 			}
 		}
 		else
@@ -197,10 +243,12 @@ void LoadJsonEntries()
 {
 	for (const auto& entry : g_jsonEntries)
 	{
+		g_jsonContext.script = entry.conditionScript;
 		Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		const auto path = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride\)" + entry.folderName; 
 		if (!LoadForForm(path, entry.form))
 			Log(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
+		g_jsonContext.Reset();
 	}
 	g_jsonEntries.clear();
 }

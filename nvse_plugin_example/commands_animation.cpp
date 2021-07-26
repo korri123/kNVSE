@@ -18,6 +18,7 @@
 #include "stack_allocator.h"
 
 std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<TESAnimGroup::AnimGroupInfo*>(0x11977D8), 245 };
+JSONAnimContext g_jsonContext;
 
 // Per ref ID there is a stack of animation variants per group ID
 class AnimOverrideStruct
@@ -328,7 +329,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 			if (conditionScript)
 			{
 				NVSEArrayVarInterface::Element result;
-				if (!g_script->CallFunction(conditionScript, actor, nullptr, &result, 1) || result.Number() == 0.0)
+				if (!g_script->CallFunction(conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
 					return nullptr;
 			}
 			if (!anims.empty())
@@ -453,6 +454,8 @@ int GetAnimGroupId(const std::string& path)
 
 void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, bool append, int* outGroupId = nullptr, Script* conditionScript = nullptr)
 {
+	if (!conditionScript && g_jsonContext.script)
+		conditionScript = g_jsonContext.script;
 	std::ranges::replace(path, '/', '\\');
 	const auto groupId = GetAnimGroupId(path);
 	if (outGroupId)

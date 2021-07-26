@@ -94,6 +94,20 @@ struct BurstState
 	BurstState() = default;
 };
 
+struct JSONAnimContext
+{
+	Script* script;
+
+	void Reset()
+	{
+		memset(this, 0, sizeof JSONAnimContext);
+	}
+
+	JSONAnimContext() { Reset(); }
+};
+
+extern JSONAnimContext g_jsonContext;
+
 extern std::unordered_map<BSAnimGroupSequence*, BurstState> burstFireAnims;
 
 enum AnimHandTypes
