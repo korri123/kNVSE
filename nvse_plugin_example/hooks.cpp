@@ -265,7 +265,14 @@ void FixIdleAnimStrafe()
 
 void __fastcall FixBlendMult()
 {
-	*g_animationHookContext.blendAmount /= GetAnimMult(g_animationHookContext.animData, *g_animationHookContext.groupID);
+	const auto mult = GetAnimMult(g_animationHookContext.animData, *g_animationHookContext.groupID);
+	if (mult > 1.0f)
+	{
+		*g_animationHookContext.blendAmount /= mult;
+#if _DEBUG
+		Console_Print("applied mult %g, %g >> %g", mult, (*g_animationHookContext.blendAmount *= mult), *g_animationHookContext.blendAmount);
+#endif
+	}
 }
 
 HOOK BlendMultHook()
