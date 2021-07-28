@@ -47,10 +47,15 @@ struct CallScriptKeyData
 struct AnimTime
 {
 	float time = 0;
-	bool finished = false;
+	bool finishedEndKey = false;
+	bool respectEndKey = false;
+	bool callScript = false;
+	std::vector<std::pair<Script*, float>> scripts;
+	AnimData* animData = nullptr;
+	UInt32 scriptStage = 0;
 };
 
-extern std::map<BSAnimGroupSequence*, AnimTime> g_firstPersonAnimTimes;
+extern std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
 
 enum class AnimKeySetting
 {
@@ -156,7 +161,28 @@ enum eAnimSequence
 	kSequence_Death = 0x14,
 };
 
-
+enum AnimAction
+{
+	kAnimAction_None = 0xFFFFFFFF,
+	kAnimAction_Equip_Weapon = 0x0,
+	kAnimAction_Unequip_Weapon = 0x1,
+	kAnimAction_Attack = 0x2,
+	kAnimAction_Attack_Eject = 0x3,
+	kAnimAction_Attack_Follow_Through = 0x4,
+	kAnimAction_Attack_Throw = 0x5,
+	kAnimAction_Attack_Throw_Attach = 0x6,
+	kAnimAction_Block = 0x7,
+	kAnimAction_Recoil = 0x8,
+	kAnimAction_Reload = 0x9,
+	kAnimAction_Stagger = 0xA,
+	kAnimAction_Dodge = 0xB,
+	kAnimAction_Wait_For_Lower_Body_Anim = 0xC,
+	kAnimAction_Wait_For_Special_Idle = 0xD,
+	kAnimAction_Force_Script_Anim = 0xE,
+	kAnimAction_ReloadLoopStart = 0xF,
+	kAnimAction_ReloadLoopEnd = 0x10,
+	kAnimAction_ReloadLoop = 0x11,
+};
 
 namespace GameFuncs
 {
@@ -249,18 +275,9 @@ void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool first
 void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, bool append);
 
-float GetTimePassed();
-/*
-   ~AnimStacks()
-	{
-		if (map)
-		{
-			map->~NiTPointerMap<AnimSequenceBase>();
-			FormHeap_Free(map);
-		}
-	}
- */
+float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 
 bool IsCustomAnim(BSAnimGroupSequence* sequence);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
+float GetAnimMult(AnimData* animData, UInt8 animGroupID);

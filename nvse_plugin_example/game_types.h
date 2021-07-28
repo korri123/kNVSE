@@ -378,22 +378,6 @@ namespace Decoding
 		TESForm* type;
 	};
 
-	inline __declspec(naked) ContChangesEntry* __fastcall Actor_GetAmmoInfo(Actor*, void* _)
-	{
-		__asm
-		{
-			mov		eax, [ecx+0x68]
-			test	eax, eax
-			jz		done
-			cmp		dword ptr [eax+0x28], 1
-			ja		retnNULL
-			mov		eax, [eax+0x118]
-			retn
-		retnNULL:
-			xor		eax, eax
-		done:
-			retn
-		}
-	}
 
 }
+

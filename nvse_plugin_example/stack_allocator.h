@@ -3,8 +3,8 @@
 template<std::size_t Size = 256>
 class bumping_memory_resource {
 public:
-    char buffer[Size];
     char* _ptr;
+    char buffer[Size];
 
     explicit bumping_memory_resource()
         : _ptr(&buffer[0]) {}
@@ -20,10 +20,12 @@ public:
 
 template <typename T, typename Resource = bumping_memory_resource<256>>
 class bumping_allocator {
+public:
     Resource* _res;
 
-public:
     using value_type = T;
+
+    bumping_allocator(){}
 
     explicit bumping_allocator(Resource& res)
         : _res(&res) {}
@@ -60,6 +62,36 @@ public:
         internalVector_.reserve(Size);
 	}
 
+    StackVector(const StackVector& other) :
+		allocator_(resource_),
+		internalVector_(other.internalVector_, allocator_)
+    {
+    }
+
+    StackVector& operator=(const StackVector& other)
+    {
+	    if (this == &other)
+		    return *this;
+        resource_._ptr = resource_.buffer;
+        internalVector_ = std::vector(other.internalVector_, allocator_);
+        return *this;
+    }
+
     InternalVector* operator->() { return &internalVector_; }
     const InternalVector* operator->() const { return &internalVector_; }
+
+    InternalVector& operator*() { return internalVector_; }
+    const InternalVector& operator*() const { return internalVector_; }
 };
+
+template <size_t Size, typename T, typename S, typename F>
+StackVector<T*, Size> Filter(const S& s, F&& f)
+{
+    StackVector<T*, Size> vec;
+	for (auto &i : s)
+	{
+        if (f(i))
+            vec->emplace_back(&i);
+	}
+    return vec;
+}

@@ -35,16 +35,27 @@ NVSEScriptInterface* g_script;
 
 bool isEditor = false;
 extern std::list<BurstFireData> g_burstFireQueue;
-extern std::list<BurstFireData> g_callScriptOnKey;
 
 void HandleAnimTimes()
 {
-	auto iter = g_firstPersonAnimTimes.begin();
-	while (iter != g_firstPersonAnimTimes.end())
+	auto iter = g_timeTrackedAnims.begin();
+	while (iter != g_timeTrackedAnims.end())
 	{
-		iter->second.time += GetTimePassed();
-		if (iter->second.time >= iter->first->endKeyTime)
-			iter->second.finished = true;
+		auto& data = iter->second;
+		auto& time = data.time;
+		time += GetTimePassed(iter->second.animData, iter->first->animGroup->groupID);
+		if (data.respectEndKey && time >= iter->first->endKeyTime && !data.finishedEndKey)
+			iter->second.finishedEndKey = true;
+
+		if (data.callScript && data.scriptStage < data.scripts.size())
+		{
+			auto& p = data.scripts.at(data.scriptStage);
+			if (time > p.second)
+			{
+				g_script->CallFunction(p.first, data.animData->actor, nullptr, nullptr, 0);
+				++data.scriptStage;
+			}
+		}
 		++iter;
 	}
 }
@@ -52,17 +63,26 @@ void HandleAnimTimes()
 void HandleBurstFire()
 {
 	auto iter = g_burstFireQueue.begin();
+	const auto erase = [&]()
+	{
+		iter = g_burstFireQueue.erase(iter);
+	};
 	while (iter != g_burstFireQueue.end())
 	{
 		auto& [animData, anim, index, hitKeys, timePassed] = *iter;
-		timePassed += GetTimePassed();
 		auto* currentAnim = animData->animSequence[kSequence_Weapon];
-		if (currentAnim != anim)
+		auto* weap = animData->actor->baseProcess->GetWeaponInfo();
+		if (!weap || !weap->weapon)
 		{
-			iter = g_burstFireQueue.erase(iter);
+			erase();
 			continue;
 		}
-		Console_Print("%s", currentAnim->sequenceName);
+		timePassed += GetTimePassed(animData, anim->animGroup->groupID);
+		if (currentAnim != anim)
+		{
+			erase();
+			continue;
+		}
 		if (timePassed <= anim->animGroup->keyTimes[kSeqState_Hit] || IsPlayersOtherAnimData(animData))
 		{
 			// first hit handled by engine
@@ -72,31 +92,26 @@ void HandleBurstFire()
 		}
 		if (timePassed > hitKeys.at(index)->m_fTime)
 		{
-			auto* weap = animData->actor->baseProcess->GetWeaponInfo();
-			if (!weap || !weap->weapon)
-			{
-				iter = g_burstFireQueue.erase(iter);
-				continue;
-			}
 
 			if (auto* ammoInfo = static_cast<Decoding::MiddleHighProcess*>(animData->actor->baseProcess)->ammoInfo)
 			{
 				const auto ammoCount = ammoInfo->countDelta;
 				if (ammoCount == weap->weapon->clipRounds.clipRounds)
 				{
-					iter = g_burstFireQueue.erase(iter);
+					erase();
 					continue;
 				}
 			}
 			// fires
-			animData->actor->baseProcess->SetQueuedIdleFlag(kIdleFlag_FireWeapon);
-			ThisStdCall(0x8BA600, animData->actor); //Actor::HandleQueuedIdleFlags
+			//animData->actor->baseProcess->SetQueuedIdleFlag(kIdleFlag_FireWeapon);
+			//ThisStdCall(0x8BA600, animData->actor); //Actor::HandleQueuedIdleFlags
+			animData->actor->FireWeapon();
 			++index;	
 		}
 		if (index < hitKeys.size())
 			++iter;
 		else
-			iter = g_burstFireQueue.erase(iter);
+			erase();
 	}
 	
 }
@@ -140,7 +155,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 	info->version = 6;
 
 	// version checks
-	if (nvse->nvseVersion < PACKED_NVSE_VERSION)
+	if (!nvse->isEditor && nvse->nvseVersion < PACKED_NVSE_VERSION)
 	{
 		const auto str = FormatString("kNVSE: NVSE version too old (got %X expected at least %X). Plugin will NOT load! Install the latest version here: https://github.com/xNVSE/NVSE/releases/", nvse->nvseVersion, PACKED_NVSE_VERSION);
 #if !_DEBUG

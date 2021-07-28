@@ -958,5 +958,8 @@ struct AnimData
 	NiNode* node12C;
 	NiNode* node130;
 	tList<void> list134;
+
+	AnimGroupID GetNextAttackGroupID() const;
+
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);

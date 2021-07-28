@@ -15,7 +15,7 @@ AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 
-void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer)
+bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer)
 {
 #if _DEBUG
 	auto& groupInfo = g_animGroupInfos[animGroupId & 0xFF];
@@ -32,6 +32,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		auto* currAction = &highProcess->currentAction;
 #endif
 		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
+
 		if (auto* anim = GetActorAnimation(animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
 		{
 			*toMorph = anim;
@@ -41,6 +42,7 @@ void __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 #endif		
 		}
 	}
+	return true;
 }
 
 __declspec(naked) void AnimationHook()
@@ -57,9 +59,17 @@ __declspec(naked) void AnimationHook()
 		mov edx, [ebp + 0xC] // animGroupId
 		mov ecx, [ebp - 0x5C] // animData
 		call HandleAnimationChange
+		test al, al
+		jz prematureReturn
 		pop ecx
 		call fn_AnimDataContainsAnimSequence
 		jmp returnAddress
+	prematureReturn:
+		add esp, 4
+		mov eax, 0
+		mov esp, ebp
+		pop ebp
+		ret 0xC
 	}
 }
 
@@ -79,15 +89,27 @@ bool __fastcall IsPlayerReadyForAnim(Decoding::HighProcess* highProcess)
 	if (!currentAnim || !currentAnim->animGroup)
 		// shouldn't happen
 		return defaultReturn();
-	const auto iter = g_firstPersonAnimTimes.find(currentAnim);
-	if (iter == g_firstPersonAnimTimes.end())
-		return defaultReturn();
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
 	if (animData3rd->idleAnim && (animData3rd->idleAnim->idleForm->flags & 1) != 0)
 		return false;
-	auto* current3rdPersonAnim = animData3rd->animSequence[kSequence_LeftArm];
+	auto iter = g_timeTrackedAnims.find(currentAnim);
+	auto* curr3rdWeapAnim = animData3rd->animSequence[kSequence_Weapon];
+	bool animTooShort = false;
+	if (iter == g_timeTrackedAnims.end())
+	{
+		// 1st person finished if anim is shorter
+		iter = std::ranges::find_if(g_timeTrackedAnims, [&](auto& p) {return p.first->animGroup->groupID == curr3rdWeapAnim->animGroup->groupID; });
+		if (iter == g_timeTrackedAnims.end())
+		{
+			return defaultReturn();
+		}
+		animTooShort = true;
+	}
+	if (!iter->second.respectEndKey)
+		return defaultReturn();
 	UInt16 thirdPersonGroupID;
-	if (current3rdPersonAnim && current3rdPersonAnim->animGroup && ((thirdPersonGroupID = current3rdPersonAnim->animGroup->groupID)) 
+	auto* leftArm3rdAnim = animData3rd->animSequence[kSequence_LeftArm];
+	if (leftArm3rdAnim && leftArm3rdAnim->animGroup && ((thirdPersonGroupID = leftArm3rdAnim->animGroup->groupID)) 
 		&& (thirdPersonGroupID == kAnimGroup_PipBoy || thirdPersonGroupID == kAnimGroup_PipBoyChild))
 		return false;
 	if (ThisStdCall<bool>(0x967AE0, g_thePlayer)) // PlayerCharacter::HasPipboyOpen
@@ -95,7 +117,21 @@ bool __fastcall IsPlayerReadyForAnim(Decoding::HighProcess* highProcess)
 	const auto usingRangedWeapon = CdeclCall<bool>(0x9A96C0, g_thePlayer);
 	if (!usingRangedWeapon)
 		return defaultReturn();
-	return iter->second.finished;
+	if (iter->second.finishedEndKey)
+	{
+		if (reinterpret_cast<UInt32>(_ReturnAddress()) == 0x9420E6 && animTooShort)
+		{
+			const auto groupID = iter->first->animGroup->groupID;
+			const auto nextSequenceKey = (groupID & 0xFF00) + static_cast<UInt16>(animData3rd->GetNextAttackGroupID());
+			auto* anim3rdPersonCounterpart = GetGameAnimation(animData3rd, nextSequenceKey);
+			if (!anim3rdPersonCounterpart)
+				return defaultReturn();
+			ThisStdCall(0x8A73E0, g_thePlayer, kAnimAction_Attack, anim3rdPersonCounterpart); // SetAnimActionAndSequence
+			g_thePlayer->FireWeapon();
+		}
+		return true;
+	}
+	return false;
 #if 0
 	if (currentAnim->animGroup->IsAim())
 		return true;
@@ -185,6 +221,7 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 gr
 	{
 		return ThisStdCall<UInt16>(0x495740, animData, groupID, noRecurse);
 	};
+	groupID = groupID & 0xFF; // prevent swimming animation if crouched and reloading
 	auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
 	if (!weaponInfo)
 		return defaultRet();
@@ -194,9 +231,53 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 gr
 	return fullGroupId;
 }
 
+bool __fastcall IsCustomAnimKey(const char* key)
+{
+	const static auto customKeys = { "noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire" };
+	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
+}
+
+__declspec(naked) void KeyStringCrashFixHook()
+{
+	const static auto retnAddr = 0x5F3D14;
+	const static auto strCpy = 0x406D30;
+	const static auto skipDest = 0x5F3BF1;
+	__asm
+	{
+		call strCpy
+		add esp, 0xC
+		lea ecx, [ebp-0x3A4]
+		call IsCustomAnimKey
+		test al, al
+		jnz skip
+		jmp retnAddr
+	skip:
+		jmp skipDest
+	}
+}
+
 void FixIdleAnimStrafe()
 {
 	SafeWriteBuf(0x9EA0C8, "\xEB\xE", 2); // jmp 0x9EA0D8
+}
+
+#define HOOK __declspec(naked) void
+
+void __fastcall FixBlendMult()
+{
+	*g_animationHookContext.blendAmount /= GetAnimMult(g_animationHookContext.animData, *g_animationHookContext.groupID);
+}
+
+HOOK BlendMultHook()
+{
+	const static auto hookedCall = 0xA328B0;
+	const static auto retnAddr = 0x4951D7;
+	__asm
+	{
+		call hookedCall
+		call FixBlendMult
+		jmp retnAddr
+	}
 }
 
 void ApplyHooks()
@@ -208,16 +289,23 @@ void ApplyHooks()
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
 
 	WriteRelJump(0x4949D0, AnimationHook);
+	WriteRelJump(0x5F3D0C, KeyStringCrashFixHook);
 
 	SafeWrite32(0x1087C5C, reinterpret_cast<UInt32>(IsPlayerReadyForAnim));
 
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
 
 	if (ini.GetOrCreate("General", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
+	{
 		WriteRelCall(0x8BABCA, LoopingReloadFixHook);
+		WriteRelCall(0x948CEC, LoopingReloadFixHook); // part of cancelling looping reload after shooting
+	}
 
 	if (ini.GetOrCreate("General", "bFixIdleStrafing", 1, "; allow player to strafe/turn sideways mid idle animation"))
 		FixIdleAnimStrafe();
+
+	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
+		WriteRelJump(0x4951D2, BlendMultHook);
 	
 	ini.SaveFile(iniPath.c_str(), false);
 }

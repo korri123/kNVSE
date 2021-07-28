@@ -66,6 +66,7 @@
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="file_animations.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
+    <ClCompile Include="game_types.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">

@@ -473,7 +473,9 @@ public:
 	virtual void		Unk_134(void);
 	virtual void		Unk_135(void);
 	virtual void		Unk_136(void);
-	
+	void FireWeapon();
+	TESObjectWEAP* GetWeaponForm() const;
+
 	MagicCaster			magicCaster;			// 088
 	MagicTarget			magicTarget;			// 094
 	ActorValueOwner		avOwner;				// 0A4
@@ -485,7 +487,9 @@ public:
 	UInt8								unk104;							// 104 Is in combat
 	UInt8								pad105[3];						// 105
 	UInt32								lifeState;						// 108 saved as byte HasHealth = 1 or 2, optionally 6
-	UInt32								unk10C[(0x140-0x10C) >> 2];		// 10B 12C is an array (of combat targets ?)
+	UInt32 unk10C;
+	UInt32 animGroupId110;
+	UInt32								unk114[(0x140-0x114) >> 2];		// 10B 12C is an array (of combat targets ?)
 	UInt32								unk140;							// 140 looks like a flag. Bit31 used while checking if non essential can take damage
 	UInt8                               unk144;							// 144
 	UInt8                               unk145;							// 145 Has to do with package evaluation
@@ -516,7 +520,6 @@ public:
 	ExtraContainerDataArray	GetEquippedEntryDataList();
 	ExtraContainerExtendDataArray GetEquippedExtendDataList();
 };
-
 STATIC_ASSERT(offsetof(Actor, magicCaster) == 0x088);
 
 class Character : public Actor

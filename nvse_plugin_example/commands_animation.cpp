@@ -233,26 +233,32 @@ std::string* HandleAimUpDownRandomness(UInt32 animGroupId, AnimList& anims)
 std::list<BurstFireData> g_burstFireQueue;
 std::list<BurstFireData> g_callScriptOnKey;
 
-std::map<BSAnimGroupSequence*, AnimTime> g_firstPersonAnimTimes;
+std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
 
 enum class KeyCheckType
 {
 	KeyEquals, KeyStartsWith
 };
+
 void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, SavedAnims& ctx)
 {
 	std::span textKeys{ sequence->textKeyData->m_pKeys, sequence->textKeyData->m_uiNumKeys };
-	const auto anyOfEquals = [&](const char* keyText)
-	{
-		return std::ranges::any_of(textKeys, [&](NiTextKey& key) {return _stricmp(key.m_kText.data, keyText) == 0; });
-	};
 	const auto hasKey = [&](const char* keyText, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
 	{
 		if (setting == AnimKeySetting::Set)
 			return true;
 		if (setting == AnimKeySetting::NotSet)
 			return false;
-		const auto result = anyOfEquals(keyText);
+		auto result = false;
+		switch (type)
+		{
+		case KeyCheckType::KeyEquals: 
+			result = ra::any_of(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.data, keyText) == 0));
+			break;
+		case KeyCheckType::KeyStartsWith:
+			result = ra::any_of(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.data, keyText)));
+			break;
+		}
 		setting = result ? AnimKeySetting::Set : AnimKeySetting::NotSet;
 		return result;
 	};
@@ -281,8 +287,10 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, Sa
 	}
 	if (animData == g_thePlayer->firstPersonAnimData && hasKey("respectEndKey", ctx.hasRespectEndKey))
 	{
-		g_firstPersonAnimTimes[sequence] = AnimTime();
-		//Console_Print("kNVSE: Applied respectEndKey");
+		auto animTime = AnimTime();
+		animTime.respectEndKey = true;
+		animTime.animData = g_thePlayer->firstPersonAnimData;
+		g_timeTrackedAnims[sequence] = animTime;
 	}
 	if (hasKey("interruptLoop", ctx.hasInterruptLoop))
 	{
@@ -291,13 +299,36 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, Sa
 		{
 			g_thePlayer->baseProcess->GetAnimData()->groupIDs[kSequence_Weapon] = kAnimGroup_AttackLoopIS;
 		}
-		//Console_Print("kNVSE: Applied interruptLoop");
 		g_lastLoopSequence = sequence;
 		g_startedAnimation = true;
 	}
 	if (hasKey("noBlend", ctx.hasNoBlend))
 	{
 		g_animationHookContext.animData->noBlend120 = true;
+	}
+	if (hasKey("Script:", ctx.hasCallScript, KeyCheckType::KeyStartsWith))
+	{
+		auto iter = g_timeTrackedAnims.find(sequence);
+		if (iter == g_timeTrackedAnims.end())
+			iter = g_timeTrackedAnims.emplace().first;
+		iter->second.scriptStage = 0;
+		if (!iter->second.callScript)
+		{
+			iter->second.callScript = true;
+			iter->second.animData = animData;
+			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey & key, StartsWith(key.m_kText.data, "Script:")));
+			auto scriptPairs = MapTo<std::pair<Script*, float>>(*keys, [&](NiTextKey* key)
+			{
+				const auto str = StripSpace(key->m_kText.data);
+				const auto edid = str.substr(str.find_first_of(':')+1);
+				auto* form = GetFormByID(edid.c_str());
+				if (!form || !IS_ID(form, Script))
+					DebugPrint(FormatString("Text key contains invalid script %s", edid.c_str()));
+				return std::make_pair(static_cast<Script*>(form), key->m_fTime);
+			});
+			if (!ra::any_of(scriptPairs, _L(auto& p, p.first == nullptr || !IS_ID(p.first, Script))))
+				iter->second.scripts = std::move(scriptPairs);
+		}
 	}
 }
 
@@ -580,12 +611,42 @@ void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool fi
 	OverrideFormAnimation(race, path, firstPerson, enable, append);
 }
 
-float GetTimePassed()
+float GetAnimMult(AnimData* animData, UInt8 animGroupID)
+{
+	if (animGroupID < kAnimGroup_Forward || animGroupID > kAnimGroup_TurnRight)
+	{
+		if (animGroupID == kAnimGroup_Equip || animGroupID == kAnimGroup_Unequip)
+		{
+			return animData->equipSpeed;
+		}
+		if (animGroupID < kAnimGroup_Equip || animGroupID > kAnimGroup_Counter)
+		{
+			if (animGroupID >= kAnimGroup_ReloadA && animGroupID <= kAnimGroup_ReloadZ)
+			{
+				return animData->weaponReloadSpeed;
+			}
+		}
+		else
+		{
+			return animData->rateOfFire;
+		}
+	}
+	else
+	{
+		return animData->movementSpeedMult;
+	}
+	return 1.0f;
+}
+
+float GetTimePassed(AnimData* animData, UInt8 animGroupID)
 {
 	const auto isMenuMode = CdeclCall<bool>(0x702360);
 	if (isMenuMode)
 		return 0.0;
-	return g_timeGlobal->secondsPassed * static_cast<float>(ThisStdCall<double>(0x9C8CC0, (void*)0x11F2250));
+	auto result = g_timeGlobal->secondsPassed * static_cast<float>(ThisStdCall<double>(0x9C8CC0, reinterpret_cast<void*>(0x11F2250)));
+	if (animData)
+		result *= GetAnimMult(animData, animGroupID);
+	return result;
 }
 
 void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)

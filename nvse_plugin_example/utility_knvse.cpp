@@ -78,3 +78,20 @@ void PatchPause(UInt32 ptr)
 {
 	SafeWriteBuf(ptr, "\xEB\xFE", 2);
 }
+
+std::string& ToLower(std::string&& data)
+{
+	ra::transform(data, data.begin(),[](const unsigned char c) { return std::tolower(c); });
+	return data;
+}
+
+std::string& StripSpace(std::string&& data)
+{
+	std::erase_if(data, isspace);
+	return data;
+}
+
+bool StartsWith(const char* left, const char* right)
+{
+	return ToLower(left).starts_with(ToLower(right));
+}

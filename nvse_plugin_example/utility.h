@@ -37,3 +37,35 @@ bool In(const T& t, std::initializer_list<T> l)
 			return true;
 	return false;
 }
+
+#define _L(x, y) [&](x) {return y;}
+
+namespace ra = std::ranges;
+
+std::string& ToLower(std::string&& data);
+std::string& StripSpace(std::string&& data);
+
+bool StartsWith(const char* left, const char* right);
+
+template <typename T, typename S, typename F>
+std::vector<T*> Filter(const S& s, const F& f)
+{
+	std::vector<T*> vec;
+	for (auto& i : s)
+	{
+		if (f(i))
+			vec->push_back(&i);
+	}
+	return vec;
+}
+
+template <typename T, typename V, typename F>
+std::vector<T> MapTo(const V& v, const F& f)
+{
+	std::vector<T> vec;
+	for (auto& i : v)
+	{
+		vec.emplace_back(f(i));
+	}
+	return vec;
+}
