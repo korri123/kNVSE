@@ -94,7 +94,6 @@ bool __fastcall IsPlayerReadyForAnim(Decoding::HighProcess* highProcess)
 		return false;
 	auto iter = g_timeTrackedAnims.find(currentAnim);
 	auto* curr3rdWeapAnim = animData3rd->animSequence[kSequence_Weapon];
-	bool animTooShort = false;
 	if (iter == g_timeTrackedAnims.end())
 	{
 		// 1st person finished if anim is shorter
@@ -103,7 +102,6 @@ bool __fastcall IsPlayerReadyForAnim(Decoding::HighProcess* highProcess)
 		{
 			return defaultReturn();
 		}
-		animTooShort = true;
 	}
 	if (!iter->second.respectEndKey)
 		return defaultReturn();
@@ -119,15 +117,14 @@ bool __fastcall IsPlayerReadyForAnim(Decoding::HighProcess* highProcess)
 		return defaultReturn();
 	if (iter->second.finishedEndKey)
 	{
-		if (reinterpret_cast<UInt32>(_ReturnAddress()) == 0x9420E6 && animTooShort)
+		if (reinterpret_cast<UInt32>(_ReturnAddress()) == 0x9420E6 && GameFuncs::GetControlState(Decoding::ControlCode::Attack, Decoding::IsDXKeyState::IsPressed))
 		{
 			const auto groupID = iter->first->animGroup->groupID;
 			const auto nextSequenceKey = (groupID & 0xFF00) + static_cast<UInt16>(animData3rd->GetNextAttackGroupID());
 			auto* anim3rdPersonCounterpart = GetGameAnimation(animData3rd, nextSequenceKey);
 			if (!anim3rdPersonCounterpart)
 				return defaultReturn();
-			ThisStdCall(0x8A73E0, g_thePlayer, kAnimAction_Attack, anim3rdPersonCounterpart); // SetAnimActionAndSequence
-			g_thePlayer->FireWeapon();
+			GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, Decoding::AnimAction::kAnimAction_Attack, anim3rdPersonCounterpart);
 		}
 		return true;
 	}
@@ -239,19 +236,20 @@ bool __fastcall IsCustomAnimKey(const char* key)
 
 __declspec(naked) void KeyStringCrashFixHook()
 {
-	const static auto retnAddr = 0x5F3D14;
-	const static auto strCpy = 0x406D30;
+	const static auto retnAddr = 0x5F4454;
 	const static auto skipDest = 0x5F3BF1;
+	const static auto this8addr = 0x413F40;
 	__asm
 	{
-		call strCpy
-		add esp, 0xC
-		lea ecx, [ebp-0x3A4]
+		call this8addr
+		push eax
 		call IsCustomAnimKey
 		test al, al
 		jnz skip
+		pop eax
 		jmp retnAddr
 	skip:
+		add esp, 4
 		jmp skipDest
 	}
 }
@@ -270,7 +268,7 @@ void __fastcall FixBlendMult()
 	{
 		*g_animationHookContext.blendAmount /= mult;
 #if _DEBUG
-		Console_Print("applied mult %g, %g >> %g", mult, (*g_animationHookContext.blendAmount *= mult), *g_animationHookContext.blendAmount);
+		//Console_Print("applied mult %g, %g >> %g", mult, (*g_animationHookContext.blendAmount *= mult), *g_animationHookContext.blendAmount);
 #endif
 	}
 }
@@ -296,7 +294,7 @@ void ApplyHooks()
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
 
 	WriteRelJump(0x4949D0, AnimationHook);
-	WriteRelJump(0x5F3D0C, KeyStringCrashFixHook);
+	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 
 	SafeWrite32(0x1087C5C, reinterpret_cast<UInt32>(IsPlayerReadyForAnim));
 

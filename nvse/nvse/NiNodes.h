@@ -877,7 +877,13 @@ class NiBlendInterpolator;
 
 struct NiFixedString
 {
+private:
 	char* data;
+public:
+	const char* CStr()
+	{
+		return data ? data : "";
+	}
 };
 
 

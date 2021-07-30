@@ -146,17 +146,19 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 	DataHandler::Get()->DisableAssignFormIDs(true);
 	auto* condition = Script::CreateScript();
 	DataHandler::Get()->DisableAssignFormIDs(false);
-	const auto scriptName = FormatString("kNVSE_%sConditionScript", folderName.c_str());
 	std::string scriptSource;
 	if (!FindStringCI(condString, "SetFunctionValue"))
-		scriptSource = FormatString("scn %s\r\nbegin function{}\r\nSetFunctionValue (%s)\r\nend\r\n", scriptName.c_str(), condString.c_str());
+		scriptSource = FormatString("begin function{}\r\nSetFunctionValue (%s)\r\nend\r\n", condString.c_str());
 	else
 	{
 		auto condStr = ReplaceAll(condString, "%r", "\r\n");
 		condStr = ReplaceAll(condStr, "%R", "\r\n");
-		scriptSource = FormatString("scn %s\r\nbegin function{}\r\n%s\r\nend\r\n", scriptName.c_str(), condStr.c_str());
+		scriptSource = FormatString("begin function{}\r\n%s\r\nend\r\n", condStr.c_str());
 	}
 	buffer.scriptText = scriptSource.data();
+	buffer.partialScript = true;
+	*buffer.scriptData = 0x1D;
+	buffer.dataOffset = 4;
 	auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
 	auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition, &buffer);
 	if (!result)
@@ -263,6 +265,7 @@ void LoadFileAnimPaths()
 {
 	Log("Loading file anims");
 	const auto dir = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride)";
+	const auto then = std::chrono::system_clock::now();
 	if (std::filesystem::exists(dir))
 	{
 		for (std::filesystem::directory_iterator iter(dir.c_str()), end; iter != end; ++iter)
@@ -295,4 +298,7 @@ void LoadFileAnimPaths()
 		Log(dir + " does not exist.");
 	}
 	LoadJsonEntries();
+	const auto now = std::chrono::system_clock::now();
+	const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(now - then);
+	DebugPrint(FormatString("Loaded file animations in %d ms", diff.count()));
 }

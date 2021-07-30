@@ -11,6 +11,7 @@
 #include "GameObjects.h"
 #include "GameRTTI.h"
 #include "hooks.h"
+#include "MemoizedMap.h"
 #include "SafeWrite.h"
 #include "utility.h"
 #include "common/IDirectoryIterator.h"
@@ -253,10 +254,10 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, Sa
 		switch (type)
 		{
 		case KeyCheckType::KeyEquals: 
-			result = ra::any_of(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.data, keyText) == 0));
+			result = ra::any_of(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.CStr(), keyText) == 0));
 			break;
 		case KeyCheckType::KeyStartsWith:
-			result = ra::any_of(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.data, keyText)));
+			result = ra::any_of(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), keyText)));
 			break;
 		}
 		setting = result ? AnimKeySetting::Set : AnimKeySetting::NotSet;
@@ -269,7 +270,7 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, Sa
 		bool skippedFirst = false;
 		for (auto& key : textKeys)
 		{
-			if (_stricmp(key.m_kText.data, "hit") == 0)
+			if (_stricmp(key.m_kText.CStr(), "hit") == 0)
 			{
 				if (!skippedFirst)
 				{
@@ -316,10 +317,10 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, Sa
 		{
 			iter->second.callScript = true;
 			iter->second.animData = animData;
-			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey & key, StartsWith(key.m_kText.data, "Script:")));
+			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey & key, StartsWith(key.m_kText.CStr(), "Script:")));
 			auto scriptPairs = MapTo<std::pair<Script*, float>>(*keys, [&](NiTextKey* key)
 			{
-				const auto str = StripSpace(key->m_kText.data);
+				const auto str = StripSpace(key->m_kText.CStr());
 				const auto edid = str.substr(str.find_first_of(':')+1);
 				auto* form = GetFormByID(edid.c_str());
 				if (!form || !IS_ID(form, Script))
@@ -483,29 +484,42 @@ BSAnimGroupSequence* GetActorAnimation(UInt32 animGroupId, bool firstPerson, Ani
 	return nullptr;
 }
 
+MemoizedMap<const char*, UInt32> s_animGroupNameToIDMap;
+
 int GetAnimGroupId(const std::string& path)
 {
-	UInt32 animGroupId;
-	static std::unordered_map<std::string, UInt16> s_animGroupIds;
-	const auto iter = s_animGroupIds.find(path);
-	if (iter != s_animGroupIds.end())
+	int moveType = 0;
+	int animHandType = 0;
+	int isPowerArmor = 0;
+	CdeclCall(0x5F38D0, path.c_str(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
+
+	char bsStream[1492];
+	auto pathStr = FormatString("Meshes\\%s", path.c_str());
+	std::ranges::replace(pathStr, '/', '\\');
+
+	auto* file = GameFuncs::GetFilePtr(pathStr.c_str(), 0, -1, 1);
+	if (file)
 	{
-		animGroupId = iter->second;
-	}
-	else
-	{
-		auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
-		if (kfModel && kfModel->animGroup)
-			animGroupId = kfModel->animGroup->groupID;
-		else
+		GameFuncs::BSStream_Init(bsStream);
+		if (!GameFuncs::BSStream_SetFileAndName(bsStream, pathStr.c_str(), file))
+			throw std::exception(FormatString("Failure parsing file data of '%s'", pathStr.c_str()).c_str());
+		NiRefObject* ref;
+		ThisStdCall(0x633C90, &ref, 0); // NiRefObject__NiRefObject
+		CdeclCall(0xA35700, bsStream, 0, &ref); // Read from file
+		auto* anim = static_cast<NiControllerSequence*>(ref);
+		auto groupId = s_animGroupNameToIDMap.Get(anim->sequenceName, [](const char* name)
 		{
-			if (kfModel && !kfModel->animGroup)
-				DebugPrint("KF file is missing AnimGroup data!");
+			const auto iter = ra::find_if(g_animGroupInfos, _L(TESAnimGroup::AnimGroupInfo & i, _stricmp(i.name, name) == 0));
+			if (iter == g_animGroupInfos.end())
+				return -1;
+			return iter - g_animGroupInfos.begin();
+		});
+		if (groupId == -1)
 			return -1;
-		}
-		s_animGroupIds[path] = animGroupId;
+		ref->Destructor(true);
+		return groupId + (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8);
 	}
-	return animGroupId;
+	return -1;
 }
 
 void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, bool append, int* outGroupId = nullptr, Script* conditionScript = nullptr)

@@ -1,6 +1,7 @@
 #include "game_types.h"
 
 #include "commands_animation.h"
+#include "GameOSDepend.h"
 #include "GameProcess.h"
 
 AnimGroupID AnimData::GetNextAttackGroupID() const
@@ -46,4 +47,36 @@ TESObjectWEAP* Actor::GetWeaponForm() const
 	if (!weaponInfo)
 		return nullptr;
 	return weaponInfo->weapon;
+}
+
+OSInputGlobals** g_inputGlobals = reinterpret_cast<OSInputGlobals**>(0x11F35CC);
+
+
+UInt32 GetControl(UInt32 whichControl, Decoding::ControlType type)
+{
+	auto* globs = *g_inputGlobals;
+
+	if (whichControl >= globs->kMaxControlBinds)
+		return 0xFF;
+
+	UInt32	result;
+
+	switch (type)
+	{
+	case Decoding::kControlType_Keyboard:
+		result = globs->keyBinds[whichControl];
+		break;
+	case Decoding::kControlType_Mouse:
+		result = globs->mouseBinds[whichControl];
+		if (result != 0xFF) result += 0x100;
+		break;
+	case Decoding::kControlType_Joystick:
+		result = globs->joystickBinds[whichControl];
+		break;
+	default:
+		result = 0xFF;
+		break;
+	}
+
+	return result;
 }

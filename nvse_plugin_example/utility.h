@@ -39,6 +39,7 @@ bool In(const T& t, std::initializer_list<T> l)
 }
 
 #define _L(x, y) [&](x) {return y;}
+#define _VL(x, y)[&]x {return y;} // variable parenthesis lambda
 
 namespace ra = std::ranges;
 

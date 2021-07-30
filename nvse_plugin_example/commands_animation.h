@@ -8,6 +8,7 @@
 #include "GameProcess.h"
 #include "game_types.h"
 #include "ParamInfos.h"
+#include "utility.h"
 
 extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
 
@@ -210,7 +211,8 @@ namespace GameFuncs
 	inline auto* Actor_SetAnimActionAndSequence = reinterpret_cast<void (__thiscall*)(Actor*, Decoding::AnimAction, BSAnimGroupSequence*)>(0x8A73E0);
 	inline auto* AnimData_GetAnimSequenceElement = reinterpret_cast<BSAnimGroupSequence* (__thiscall*)(AnimData*, eAnimSequence a2)>(0x491040);
 	
-	
+	inline auto GetControlState = _VL((Decoding::ControlCode code, Decoding::IsDXKeyState state), ThisStdCall<int>(0xA24660, *g_inputGlobals, code, state));
+	inline auto SetControlHeld = _VL((int key), ThisStdCall<int>(0xA24280, *g_inputGlobals, key));
 }
 
 enum SequenceState1

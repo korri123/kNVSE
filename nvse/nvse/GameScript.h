@@ -242,9 +242,9 @@ struct ScriptBuffer
 	RuntimeMode		runtimeMode;		// 008
 	String			scriptName;			// 00C
 	UInt32			errorCode;			// 014
-	UInt16			unk018;				// 018
-	UInt16			unk01A;				// 01A
-	UInt32			curLineNumber;		// 01C 
+	bool			partialScript;		// 018
+	UInt8			pad019[3];			// 019
+	UInt32			curLineNumber;		// 01C
 	UInt8			* scriptData;		// 020 pointer to 0x4000-byte array
 	UInt32			dataOffset;			// 024
 	UInt32			unk028;				// 028

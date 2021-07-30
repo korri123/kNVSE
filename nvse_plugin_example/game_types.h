@@ -1,8 +1,53 @@
 #pragma once
 #include "GameObjects.h"
+#include "GameOSDepend.h"
 
 namespace Decoding
 {
+	enum class ControlCode
+	{
+		Forward = 0x0,
+		Backward = 0x1,
+		Left = 0x2,
+		Right = 0x3,
+		Attack = 0x4,
+		Activate = 0x5,
+		Aim = 0x6,
+		ReadyItem = 0x7,
+		Crouch = 0x8,
+		Run = 0x9,
+		AlwaysRun = 0xA,
+		AutoMove = 0xB,
+		Jump = 0xC,
+		TogglePOV = 0xD,
+		MenuMode = 0xE,
+		Rest = 0xF,
+		VATS_ = 0x10,
+		Hotkey1 = 0x11,
+		AmmoSwap = 0x12,
+		Hotkey3 = 0x13,
+		Hotkey4 = 0x14,
+		Hotkey5 = 0x15,
+		Hotkey6 = 0x16,
+		Hotkey7 = 0x17,
+		Hotkey8 = 0x18,
+		QuickSave = 0x19,
+		QuickLoad = 0x1A,
+		Grab = 0x1B,
+		Escape = 0x1C,
+		Console = 0x1D,
+		Screenshot = 0x1E,
+	};
+
+	enum class IsDXKeyState
+	{
+		IsHeld = 0x0,
+		IsPressed = 0x1,
+		IsDepressed = 0x2,
+		IsChanged = 0x3,
+	};
+
+
 	struct PackageInfo
 	{
 		TESPackage* package;		// 00
@@ -378,6 +423,93 @@ namespace Decoding
 		TESForm* type;
 	};
 
+	struct OSInputGlobals
+	{
+		enum
+		{
+			kFlag_HasJoysticks = 1 << 0,
+			kFlag_HasMouse = 1 << 1,
+			kFlag_HasKeyboard = 1 << 2,
+			kFlag_BackgroundMouse = 1 << 3,
+		};
+
+		enum
+		{
+			kMaxControlBinds = 0x1C,
+		};
+		UInt8 isControllerDisabled;
+		UInt8 byte0001;
+		UInt8 byte0002;
+		UInt8 byte0003;
+		UInt32 flags;
+		void* directInput;
+		UInt32 unk000C;
+		UInt32 unk0010;
+		UInt32 unk0014;
+		UInt32 unk0018;
+		UInt32 unk001C;
+		UInt32 unk0020;
+		UInt32 unk0024;
+		UInt32 unk0028;
+		void* unk002C;
+		void* unk0030;
+		UInt32 unk0034[320];
+		UInt32 unk534[1264];
+		UInt32 unk18F4;
+		UInt8 currKeyStates[256];
+		UInt8 lastKeyStates[256];
+		UInt32 unk1AF8;
+		UInt32 unk1AFC;
+		UInt32 unk1B00;
+		UInt32 unk1B04;
+		UInt32 numMouseButtons;
+		UInt32 unk1B0C;
+		UInt32 unk1B10;
+		UInt32 unk1B14;
+		UInt32 unk1B18;
+		UInt32 unk1B1C;
+		UInt32 unk1B20;
+		int xDelta;
+		int yDelta;
+		int mouseWheelScroll;
+		UInt8 currButtonStates[8];
+		int lastxDelta;
+		int lastyDelta;
+		int lastMouseWheelScroll;
+		UInt8 lastButtonStates[8];
+		UInt32 swapLeftRightMouseButtons;
+		UInt8 mouseSensitivity;
+		UInt8 byte1B51;
+		UInt8 byte1B52;
+		UInt8 byte1B53;
+		UInt32 doubleClickTime;
+		UInt8 buttonStates1B58[8];
+		UInt32 unk1B60[8];
+		UInt32* controllerVibration;
+		UInt32 unk1B84;
+		UInt8 isControllerEnabled;
+		UInt8 byte1B89;
+		UInt8 byte1B8A;
+		UInt8 byte1B8B;
+		UInt32 unk1B8C;
+		UInt8 byte1B90;
+		UInt8 byte1B91;
+		UInt16 overrideFlags;
+		UInt8 keyBinds[28];
+		UInt8 mouseBinds[28];
+		UInt8 joystickBinds[28];
+		UInt8 controllerBinds[28];
+	};
+
+	enum ControlType
+	{
+		kControlType_Keyboard,
+		kControlType_Mouse,
+		kControlType_Joystick
+	};
+
 
 }
 
+extern OSInputGlobals** g_inputGlobals;
+UInt32 GetControl(UInt32 whichControl, Decoding::ControlType type);
