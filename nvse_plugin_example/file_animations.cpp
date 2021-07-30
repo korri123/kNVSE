@@ -155,6 +155,7 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 		condStr = ReplaceAll(condStr, "%R", "\r\n");
 		scriptSource = FormatString("begin function{}\r\n%s\r\nend\r\n", condStr.c_str());
 	}
+	buffer.scriptName.Set(("kNVSEConditionScript_" + folderName).c_str());
 	buffer.scriptText = scriptSource.data();
 	buffer.partialScript = true;
 	*buffer.scriptData = 0x1D;

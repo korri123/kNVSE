@@ -129,36 +129,7 @@ bool __fastcall IsPlayerReadyForAnim(Decoding::HighProcess* highProcess)
 		return true;
 	}
 	return false;
-#if 0
-	if (currentAnim->animGroup->IsAim())
-		return true;
-	
-	const auto groupID = currentAnim->animGroup->groupID & 0xFF;
-	if (groupID == kAnimGroup_AttackLoop || groupID == kAnimGroup_AttackLoopIS)
-		return defaultReturn();
 
-	if (usingRangedWeapon)
-	{
-		if (currentAnim->animGroup->IsAttack() || currentAnim->animGroup->IsReload())
-			return false;
-		return true;
-	}
-	else
-	{
-		// melee
-#if 0
-		const auto timePassed = GameFuncs::AnimData_GetSequenceOffsetPlusTimePassed(Player()->firstPersonAnimData, currentAnim);
-		std::span timeKeys{currentAnim->textKeyData->m_pKeys, currentAnim->textKeyData->m_uiNumKeys};
-		const auto iter = std::ranges::find_if(timeKeys, [&](NiTextKey& key) { return _stricmp(key.m_kText.data, "a") == 0; });
-		if (iter == timeKeys.end())
-			return Player()->baseProcess->IsReadyForAnim();
-		auto endTime = iter->m_fTime;;
-		if (timePassed >= endTime)
-#endif
-		return defaultReturn();
-	}
-	return false;
-#endif
 }
 
 __declspec(naked) void IsPlayerReadyForAnimHook()

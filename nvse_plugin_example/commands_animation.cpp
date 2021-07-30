@@ -484,7 +484,7 @@ BSAnimGroupSequence* GetActorAnimation(UInt32 animGroupId, bool firstPerson, Ani
 	return nullptr;
 }
 
-MemoizedMap<const char*, UInt32> s_animGroupNameToIDMap;
+MemoizedMap<const char*, int> s_animGroupNameToIDMap;
 
 int GetAnimGroupId(const std::string& path)
 {
@@ -507,8 +507,14 @@ int GetAnimGroupId(const std::string& path)
 		ThisStdCall(0x633C90, &ref, 0); // NiRefObject__NiRefObject
 		CdeclCall(0xA35700, bsStream, 0, &ref); // Read from file
 		auto* anim = static_cast<NiControllerSequence*>(ref);
-		auto groupId = s_animGroupNameToIDMap.Get(anim->sequenceName, [](const char* name)
+		const auto groupId = s_animGroupNameToIDMap.Get(anim->sequenceName, [](const char* name)
 		{
+			std::string alt;
+			if (auto* underscorePos = strchr(name,'_'))
+			{
+				alt = std::string(name, underscorePos - name);
+				name = alt.c_str();
+			}
 			const auto iter = ra::find_if(g_animGroupInfos, _L(TESAnimGroup::AnimGroupInfo & i, _stricmp(i.name, name) == 0));
 			if (iter == g_animGroupInfos.end())
 				return -1;
