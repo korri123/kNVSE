@@ -5,6 +5,10 @@
 #include "GameExtraData.h"
 #include "GameProcess.h"
 
+namespace Decoding {
+	class HighProcess;
+}
+
 class TESObjectCELL;
 struct ScriptEventList;
 class ActiveEffect;
@@ -678,6 +682,7 @@ public:
 	bool SetSkeletonPath_v1c(const char* newPath);	// Less worse version as used by some modders
 	static void UpdateHead(void);
 	QuestObjectiveTargets* GetCurrentQuestObjectiveTargets();
+	Decoding::HighProcess* GetHighProcess();
 };
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);
 

@@ -2550,6 +2550,7 @@ class TESObjectWEAP : public TESBoundObject
 public:
 	TESObjectWEAP();
 	~TESObjectWEAP();
+	bool IsMeleeWeapon() const;
 
 	enum EWeaponType {
 		kWeapType_HandToHandMelee = 0,

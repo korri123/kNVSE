@@ -38,52 +38,84 @@ extern std::list<BurstFireData> g_burstFireQueue;
 
 void HandleAnimTimes()
 {
-	auto iter = g_timeTrackedAnims.begin();
-	while (iter != g_timeTrackedAnims.end())
+	for (auto iter = g_timeTrackedAnims.begin(); iter != g_timeTrackedAnims.end(); ++iter)
 	{
-		auto& data = iter->second;
-		auto& time = data.time;
-		time += GetTimePassed(iter->second.animData, iter->first->animGroup->groupID);
-		if (data.respectEndKey && time >= iter->first->endKeyTime && !data.finishedEndKey)
-			iter->second.finishedEndKey = true;
+		auto& animTime = iter->second;
+		auto* anim = iter->first;
+		auto& time = animTime.time;
+		time += GetTimePassed(animTime.animData, anim->animGroup->groupID);
 
-		if (data.callScript && data.scriptStage < data.scripts.size())
+		if (animTime.respectEndKey)
 		{
-			auto& p = data.scripts.at(data.scriptStage);
-			if (time > p.second)
+			const auto revert3rdPersonAnimTimes = [&]()
 			{
-				g_script->CallFunction(p.first, data.animData->actor, nullptr, nullptr, 0);
-				++data.scriptStage;
+				animTime.anim3rdCounterpart->animGroup->numKeys = animTime.numThirdPersonKeys;
+				animTime.anim3rdCounterpart->animGroup->keyTimes = animTime.thirdPersonKeys;
+				animTime.povState = POVSwitchState::POV3rd;
+			};
+			if (time >= anim->endKeyTime && !animTime.finishedEndKey)
+			{
+				revert3rdPersonAnimTimes();
+				animTime.finishedEndKey = true;
+			}
+			else
+			{
+				if (animTime.povState == POVSwitchState::NotSet)
+				{
+					const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
+					auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
+					if (!anim3rd || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
+						anim3rd = anim->Get3rdPersonCounterpart();
+					if (!anim3rd)
+						continue;
+					animTime.anim3rdCounterpart = anim3rd;
+					animTime.numThirdPersonKeys = anim3rd->animGroup->numKeys;
+					animTime.thirdPersonKeys = anim3rd->animGroup->keyTimes;
+				}
+				if (g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV3rd)
+				{
+					revert3rdPersonAnimTimes();
+				}
+				else if (!g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV1st)
+				{
+					animTime.anim3rdCounterpart->animGroup->numKeys = anim->animGroup->numKeys;
+					animTime.anim3rdCounterpart->animGroup->keyTimes = anim->animGroup->keyTimes;
+					animTime.povState = POVSwitchState::POV1st;
+				}
 			}
 		}
-		++iter;
+		if (animTime.callScript && animTime.scriptStage < animTime.scripts.size())
+		{
+			auto& p = animTime.scripts.at(animTime.scriptStage);
+			if (time > p.second)
+			{
+				g_script->CallFunction(p.first, animTime.animData->actor, nullptr, nullptr, 0);
+				++animTime.scriptStage;
+			}
+		}
 	}
 }
 
 void HandleBurstFire()
 {
 	auto iter = g_burstFireQueue.begin();
-	const auto erase = [&]()
-	{
-		iter = g_burstFireQueue.erase(iter);
-	};
 	while (iter != g_burstFireQueue.end())
 	{
-		auto& [animData, anim, index, hitKeys, timePassed] = *iter;
+		auto& [animData, anim, index, hitKeys, timePassed, shouldEject] = *iter;
 		auto* currentAnim = animData->animSequence[kSequence_Weapon];
 		auto* weap = animData->actor->baseProcess->GetWeaponInfo();
-		if (!weap || !weap->weapon)
+		auto* weapon = weap ? weap->weapon : nullptr;
+		const auto erase = [&]()
 		{
-			erase();
-			continue;
-		}
+			iter = g_burstFireQueue.erase(iter);
+		};
 		timePassed += GetTimePassed(animData, anim->animGroup->groupID);
 		if (currentAnim != anim)
 		{
 			erase();
 			continue;
 		}
-		if (timePassed <= anim->animGroup->keyTimes[kSeqState_Hit] || IsPlayersOtherAnimData(animData))
+		if (timePassed <= anim->animGroup->keyTimes[kSeqState_HitOrDetach])
 		{
 			// first hit handled by engine
 			// don't want duplicated shootings
@@ -96,24 +128,59 @@ void HandleBurstFire()
 			if (auto* ammoInfo = static_cast<Decoding::MiddleHighProcess*>(animData->actor->baseProcess)->ammoInfo)
 			{
 				const auto ammoCount = ammoInfo->countDelta;
-				if (ammoCount == weap->weapon->clipRounds.clipRounds)
+				const bool* godMode = reinterpret_cast<bool*>(0x11E07BA);
+				if (weapon && (ammoCount == 0 || ammoCount == weapon->clipRounds.clipRounds) && !godMode)
 				{
 					erase();
 					continue;
 				}
 			}
-			// fires
-			//animData->actor->baseProcess->SetQueuedIdleFlag(kIdleFlag_FireWeapon);
-			//ThisStdCall(0x8BA600, animData->actor); //Actor::HandleQueuedIdleFlags
-			animData->actor->FireWeapon();
-			++index;	
+			++index;
+			if (!IsPlayersOtherAnimData(animData))
+			{
+				animData->actor->FireWeapon();
+				if (weapon && GameFuncs::IsDoingAttackAnimation(animData->actor) && !weapon->IsMeleeWeapon() && !weapon->IsAutomatic())
+				{
+					// eject
+					animData->actor->baseProcess->SetQueuedIdleFlag(kIdleFlag_AttackEjectEaseInFollowThrough);
+					GameFuncs::HandleQueuedAnimFlags(animData->actor);
+				}
+			}
 		}
+		
 		if (index < hitKeys.size())
 			++iter;
 		else
 			erase();
 	}
 	
+}
+
+void HandleMorph()
+{
+	
+	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
+	auto* animData1st = g_thePlayer->firstPersonAnimData;
+	auto* highProcess = g_thePlayer->GetHighProcess();
+	auto* curWeaponAnim = animData3rd->animSequence[kSequence_Weapon];
+	if (!curWeaponAnim || !curWeaponAnim->animGroup->IsAttackIS() || highProcess->isAiming)
+		return;
+	auto* weapon = g_thePlayer->GetWeaponForm();
+	if (!weapon)
+		return;
+	const auto curGroupId = curWeaponAnim->animGroup->groupID;
+	const UInt16 hipfireId = curGroupId - 3;
+	for (auto* animData : {animData3rd, animData1st})
+	{
+		auto* hipfireAnim = GetGameAnimation(animData, hipfireId);
+		auto* sourceAnim = animData->animSequence[kSequence_Weapon];
+		animData->animSequence[kSequence_Weapon] = hipfireAnim;
+		animData->groupIDs[kSequence_Weapon] = hipfireId;
+		const auto duration = sourceAnim->endKeyTime - sourceAnim->startTime;
+		const auto result = GameFuncs::ActivateSequence(nullptr, sourceAnim, hipfireAnim, duration, 0, true, hipfireAnim->seqWeight, nullptr);
+		int i = 0;
+	}
+	highProcess->SetCurrentActionAndSequence(hipfireId, animData3rd->animSequence[kSequence_Weapon]);
 }
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
@@ -123,26 +190,17 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		g_thePlayer = *(PlayerCharacter **)0x011DEA3C;
 		LoadFileAnimPaths();
 	}
-#if 1
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{
-		HandleBurstFire();
-		HandleAnimTimes();
-	}
-#endif
-#if 0
-	else if (msg->type == NVSEMessagingInterface::kMessage_LoadGame)
-	{
-		for (auto& pair : customMaps)
+		const auto isMenuMode = CdeclCall<bool>(0x702360);
+		if (!isMenuMode)
 		{
-			auto& map = pair.second;
-			map->~NiTPointerMap<AnimSequenceBase>();
-			FormHeap_Free(map);
-			map = nullptr;
+			HandleBurstFire();
+			HandleAnimTimes();
+			//HandleMorph();
 		}
-		customMaps.clear();
 	}
-#endif
+
 }
 
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)

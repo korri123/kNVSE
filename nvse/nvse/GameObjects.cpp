@@ -54,6 +54,11 @@ QuestObjectiveTargets* PlayerCharacter::GetCurrentQuestObjectiveTargets()
 	return (QuestObjectiveTargets *)ThisStdCall(s_PlayerCharacter_GetCurrentQuestTargets, this);
 }
 
+Decoding::HighProcess* PlayerCharacter::GetHighProcess()
+{
+	return reinterpret_cast<Decoding::HighProcess*>(baseProcess);
+}
+
 TESContainer* TESObjectREFR::GetContainer()
 {
 	if (IsActor())

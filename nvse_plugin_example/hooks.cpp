@@ -96,12 +96,17 @@ bool __fastcall IsPlayerReadyForAnim(Decoding::HighProcess* highProcess)
 	auto* curr3rdWeapAnim = animData3rd->animSequence[kSequence_Weapon];
 	if (iter == g_timeTrackedAnims.end())
 	{
-		// 1st person finished if anim is shorter
-		iter = std::ranges::find_if(g_timeTrackedAnims, [&](auto& p) {return p.first->animGroup->groupID == curr3rdWeapAnim->animGroup->groupID; });
-		if (iter == g_timeTrackedAnims.end())
+		if (curr3rdWeapAnim && curr3rdWeapAnim->animGroup)
 		{
-			return defaultReturn();
+			// 1st person finished if anim is shorter
+			iter = std::ranges::find_if(g_timeTrackedAnims, [&](auto& p) {return p.first->animGroup->groupID == curr3rdWeapAnim->animGroup->groupID; });
+			if (iter == g_timeTrackedAnims.end())
+			{
+				return defaultReturn();
+			}
 		}
+		else
+			return defaultReturn();
 	}
 	if (!iter->second.respectEndKey)
 		return defaultReturn();
@@ -214,6 +219,7 @@ __declspec(naked) void KeyStringCrashFixHook()
 	{
 		call this8addr
 		push eax
+		mov ecx, [ebp-0x3B8]
 		call IsCustomAnimKey
 		test al, al
 		jnz skip
@@ -256,6 +262,23 @@ HOOK BlendMultHook()
 	}
 }
 
+bool __fastcall ProlongedAimFix(UInt8* basePointer)
+{
+	const auto keyType = *reinterpret_cast<UInt32*>(basePointer - 0xC);
+	auto* actor = *reinterpret_cast<Actor**>(basePointer - 0x30);
+	if (actor != g_thePlayer)
+		return keyType == kAnimKeyType_LoopingSequenceOrAim;
+	auto* process = g_thePlayer->GetHighProcess();
+	return keyType == kAnimKeyType_Attack && !process->isAiming || keyType == kAnimKeyType_LoopingSequenceOrAim;
+}
+
+JMP_HOOK(0x8BB96A, ProlongedAimFix, 0x8BB974, {
+	_A lea ecx, [ebp]
+	_A call ProlongedAimFix
+	_A cmp al, 1
+	_A jmp retnAddr
+})
+
 void ApplyHooks()
 {
 	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
@@ -267,7 +290,7 @@ void ApplyHooks()
 	WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 
-	SafeWrite32(0x1087C5C, reinterpret_cast<UInt32>(IsPlayerReadyForAnim));
+	//SafeWrite32(0x1087C5C, reinterpret_cast<UInt32>(IsPlayerReadyForAnim));
 
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
 
@@ -282,6 +305,12 @@ void ApplyHooks()
 
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelJump(0x4951D2, BlendMultHook);
+
+	/*if (ini.GetOrCreate("General", "bFixAimAfterShooting", 1, "; stops the player from being stuck in irons sight aim mode after shooting a weapon while aiming"))
+	{
+		APPLY_JMP(ProlongedAimFix);
+		SafeWriteBuf(0x491275, "\xEB\x0B", 2);
+	}*/
 	
 	ini.SaveFile(iniPath.c_str(), false);
 }

@@ -12,8 +12,6 @@
 
 extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
 
-using AnimList = std::vector<std::string>;
-
 enum QueuedIdleFlags
 {
   kIdleFlag_FireWeapon = 0x1,
@@ -37,6 +35,7 @@ struct BurstFireData
 	std::size_t index;
 	std::vector<NiTextKey*> hitKeys;
 	float timePassed;
+	bool shouldEject = false;
 };
 
 struct CallScriptKeyData
@@ -45,6 +44,10 @@ struct CallScriptKeyData
 	float timePassed = 0;
 };
 
+enum class POVSwitchState
+{
+	NotSet, POV3rd, POV1st
+};
 struct AnimTime
 {
 	float time = 0;
@@ -54,6 +57,10 @@ struct AnimTime
 	std::vector<std::pair<Script*, float>> scripts;
 	AnimData* animData = nullptr;
 	UInt32 scriptStage = 0;
+	BSAnimGroupSequence* anim3rdCounterpart = nullptr;
+	POVSwitchState povState = POVSwitchState::NotSet;
+	UInt32 numThirdPersonKeys = 0;
+	float *thirdPersonKeys = nullptr;
 };
 
 extern std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
@@ -63,21 +70,44 @@ enum class AnimKeySetting
 	NotChecked, NotSet, Set 
 };
 
-struct SavedAnims
+struct AnimPath
 {
-	int order = -1;
-	AnimList anims;
-	Script* conditionScript = nullptr;
+	std::string path;
 	AnimKeySetting hasBurstFire{};
 	AnimKeySetting hasRespectEndKey{};
 	AnimKeySetting hasInterruptLoop{};
 	AnimKeySetting hasNoBlend{};
 	AnimKeySetting hasCallScript{};
+	bool partialReload = false;
+
+};
+
+struct SavedAnims
+{
+	int order = -1;
+	std::vector<AnimPath> anims;
+	Script* conditionScript = nullptr;
 };
 
 enum class AnimCustom
 {
 	None, Male, Female, Mod1, Mod2, Mod3, Hurt, Human, Max
+};
+
+enum AnimKeyTypes
+{
+	kAnimKeyType_ClampSequence = 0x0,
+	kAnimKeyType_LoopingSequenceOrAim = 0x1,
+	kAnimKeyType_SpecialIdle = 0x2,
+	kAnimKeyType_Equip = 0x3,
+	kAnimKeyType_Unequip = 0x4,
+	kAnimKeyType_Attack = 0x5,
+	kAnimKeyType_PowerAttackOrPipboy = 0x6,
+	kAnimKeyType_AttackThrow = 0x7,
+	kAnimKeyType_PlaceMine = 0x8,
+	kAnimKeyType_SpinAttack = 0x9,
+	kAnimKeyType_LoopingReload = 0xA,
+	kAnimKeyType_MAX = 0xB,
 };
 
 using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
@@ -185,6 +215,8 @@ enum AnimAction
 	kAnimAction_ReloadLoop = 0x11,
 };
 
+#define THISCALL(address, returnType, ...) reinterpret_cast<returnType(__thiscall*)(__VA_ARGS__)>(address)
+
 namespace GameFuncs
 {
 	inline auto* PlayIdle = reinterpret_cast<void(__thiscall*)(void*, TESIdleForm*, Actor*, int, int)>(0x497F20);
@@ -213,13 +245,19 @@ namespace GameFuncs
 	
 	inline auto GetControlState = _VL((Decoding::ControlCode code, Decoding::IsDXKeyState state), ThisStdCall<int>(0xA24660, *g_inputGlobals, code, state));
 	inline auto SetControlHeld = _VL((int key), ThisStdCall<int>(0xA24280, *g_inputGlobals, key));
+
+	inline auto IsDoingAttackAnimation = THISCALL(0x894900, bool, Actor* actor);
+	inline auto HandleQueuedAnimFlags = THISCALL(0x8BA600, void, Actor* actor);
+
+	inline auto ActivateSequence = THISCALL(0xA2E280, bool, NiControllerManager* manager, NiControllerSequence* source, NiControllerSequence* destination, float blend, int priority, bool startOver, float morphWeight, NiControllerSequence* pkTimeSyncSeq);
+	inline auto MorphSequence = THISCALL(0xA351D0, bool, NiControllerSequence *source, NiControllerSequence *pkDestSequence, float fDuration, int iPriority, float fSourceWeight, float fDestWeight);
 }
 
 enum SequenceState1
 {
 	kSeqState_Start = 0x0,
-	kSeqState_Hit = 0x1,
-	kSeqState_Eject = 0x2,
+	kSeqState_HitOrDetach = 0x1,
+	kSeqState_EjectOrUnequipEnd = 0x2,
 	kSeqState_Unk3 = 0x3,
 	kSeqState_End = 0x4,
 };
@@ -283,3 +321,4 @@ bool IsCustomAnim(BSAnimGroupSequence* sequence);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
 float GetAnimMult(AnimData* animData, UInt8 animGroupID);
+bool IsAnimGroupReload(UInt8 animGroupId);

@@ -70,3 +70,29 @@ std::vector<T> MapTo(const V& v, const F& f)
 	}
 	return vec;
 }
+
+#define SIMPLE_HOOK(address, name, retnOffset) \
+static constexpr auto kAddr_#name = address; \
+__declspec(naked) void Hook_#name() \
+{ \
+	const static auto retnAddr = (address) + (retnOffset); \
+	__asm\
+	{\
+		mov ecx, ebp \
+		call Handle#name \
+		jmp retnAddress \
+	} \
+}
+
+#define JMP_HOOK(address, name, retnAddress, ...) \
+static constexpr auto kAddr_##name = address; \
+__declspec(naked) void Hook_##name() \
+{ \
+	const static auto retnAddr = retnAddress; \
+	__asm \
+		__VA_ARGS__ \
+} \
+
+#define APPLY_JMP(name) WriteRelJump(kAddr_##name, Hook_##name)
+
+#define _A __asm

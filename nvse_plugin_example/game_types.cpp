@@ -38,7 +38,7 @@ void Actor::FireWeapon()
 {
 	animGroupId110 = static_cast<UInt32>(GetAnimData()->GetNextAttackGroupID());
 	this->baseProcess->SetQueuedIdleFlag(kIdleFlag_FireWeapon);
-	ThisStdCall(0x8BA600, this); //Actor::HandleQueuedIdleFlags
+	GameFuncs::HandleQueuedAnimFlags(this); //Actor::HandleQueuedIdleFlags
 }
 
 TESObjectWEAP* Actor::GetWeaponForm() const
@@ -79,4 +79,17 @@ UInt32 GetControl(UInt32 whichControl, Decoding::ControlType type)
 	}
 
 	return result;
+}
+
+bool TESObjectWEAP::IsMeleeWeapon() const
+{
+	return this->eWeaponType >= 0 && this->eWeaponType <= 2;
+}
+
+BSAnimGroupSequence* BSAnimGroupSequence::Get3rdPersonCounterpart() const
+{
+	auto* animData = g_thePlayer->baseProcess->GetAnimData();
+	if (auto* base = animData->mapAnimSequenceBase->Lookup(this->animGroup->groupID))
+		return base->GetSequenceByIndex(0);
+	return nullptr;
 }

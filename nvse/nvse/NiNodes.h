@@ -880,7 +880,7 @@ struct NiFixedString
 private:
 	char* data;
 public:
-	const char* CStr()
+	const char* CStr() const
 	{
 		return data ? data : "";
 	}
@@ -995,6 +995,8 @@ public:
 	~BSAnimGroupSequence();
 
 	TESAnimGroup		* animGroup;	//068
+
+	BSAnimGroupSequence* Get3rdPersonCounterpart() const;
 };
 STATIC_ASSERT(sizeof(BSAnimGroupSequence) == 0x78);
 
@@ -1273,6 +1275,9 @@ public:
 		return ThisStdCall(0x4937E0, this);
 	}
 
+	bool IsAttackIS();
+
+
 	bool IsAim()
 	{
 		auto idMinor = groupID & 0xFF;
@@ -1296,6 +1301,8 @@ public:
 		UInt32 unk10;
 		UInt32 unk14[4];
 	};
+
+	TESAnimGroup::AnimGroupInfo* GetGroupInfo() const;
 
 	struct __declspec(align(4)) AnimGroupSound
 	{

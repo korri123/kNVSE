@@ -215,7 +215,7 @@ BSAnimGroupSequence* LoadCustomAnimation(const std::string& path, AnimData* anim
 extern NVSEScriptInterface* g_script;
 
 // Make sure that Aim, AimUp and AimDown all use the same index
-std::string* HandleAimUpDownRandomness(UInt32 animGroupId, AnimList& anims)
+AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
 {
 	UInt32 baseId;
 	if (const auto animGroupMinor = animGroupId & 0xFF; animGroupMinor >= kAnimGroup_Aim && animGroupMinor <= kAnimGroup_AimISDown && (baseId = kAnimGroup_Aim)
@@ -223,16 +223,15 @@ std::string* HandleAimUpDownRandomness(UInt32 animGroupId, AnimList& anims)
 		|| animGroupMinor >= kAnimGroup_PlaceMine && animGroupMinor <= kAnimGroup_AttackThrow8ISDown && (baseId = kAnimGroup_PlaceMine))
 	{
 		static unsigned int s_lastRandomId = 0;
-		if ((animGroupMinor - baseId) % 3 == 0 || s_lastRandomId >= anims.size())
-			s_lastRandomId = GetRandomUInt(anims.size());
+		if ((animGroupMinor - baseId) % 3 == 0 || s_lastRandomId >= anims.anims.size())
+			s_lastRandomId = GetRandomUInt(anims.anims.size());
 
-		return &anims.at(s_lastRandomId);
+		return &anims.anims.at(s_lastRandomId);
 	}
 	return nullptr;
 }
 
 std::list<BurstFireData> g_burstFireQueue;
-std::list<BurstFireData> g_callScriptOnKey;
 
 std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
 
@@ -241,7 +240,7 @@ enum class KeyCheckType
 	KeyEquals, KeyStartsWith
 };
 
-void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, SavedAnims& ctx)
+void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, AnimPath& ctx)
 {
 	std::span textKeys{ sequence->textKeyData->m_pKeys, sequence->textKeyData->m_uiNumKeys };
 	const auto hasKey = [&](const char* keyText, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
@@ -311,13 +310,13 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, Sa
 	{
 		auto iter = g_timeTrackedAnims.find(sequence);
 		if (iter == g_timeTrackedAnims.end())
-			iter = g_timeTrackedAnims.emplace().first;
+			iter = g_timeTrackedAnims.emplace(sequence, AnimTime()).first;
 		iter->second.scriptStage = 0;
 		if (!iter->second.callScript)
 		{
 			iter->second.callScript = true;
 			iter->second.animData = animData;
-			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey & key, StartsWith(key.m_kText.CStr(), "Script:")));
+			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey& key, StartsWith(key.m_kText.CStr(), "Script:")));
 			auto scriptPairs = MapTo<std::pair<Script*, float>>(*keys, [&](NiTextKey* key)
 			{
 				const auto str = StripSpace(key->m_kText.CStr());
@@ -331,6 +330,24 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, Sa
 				iter->second.scripts = std::move(scriptPairs);
 		}
 	}
+}
+
+AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor)
+{
+	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+	auto* weapon = actor->GetWeaponForm();
+	if (!weapon || !ammoInfo)
+		return nullptr;
+	StackVector<AnimPath*, 0x100> reloads;
+	if (ammoInfo->count == 0 || ammoInfo->count == weapon->clipRounds.clipRounds)
+		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, !p.partialReload));
+	else
+		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, p.partialReload));
+	if (reloads->empty())
+		return nullptr;
+	if (ctx.order == -1)
+		return reloads->at(GetRandomUInt(reloads->size()));
+	return reloads->at(ctx.order++ % reloads->size());
 }
 
 BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGroupId, AnimData* animData, const char* prevPath = nullptr)
@@ -391,11 +408,16 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 			}
 			if (!ctx.anims.empty())
 			{
-				std::string* savedAnimPath;
-				if (ctx.order == -1)
+				AnimPath* savedAnimPath = nullptr;
+				if (IsAnimGroupReload(static_cast<UInt8>(animGroupId)) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
+				{
+					if (auto* path = GetPartialReload(ctx, actor))
+						savedAnimPath = path;
+				}
+				else if (ctx.order == -1)
 				{
 					// Make sure that Aim, AimUp and AimDown all use the same index
-					if (auto* path = HandleAimUpDownRandomness(animGroupId, ctx.anims))
+					if (auto* path = HandleAimUpDownRandomness(animGroupId, ctx))
 						savedAnimPath = path;
 					else
 						// pick random variant
@@ -407,9 +429,12 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 					savedAnimPath = &ctx.anims.at(ctx.order++ % ctx.anims.size());
 				}
 
-				if (auto* anim = LoadCustomAnimation(*savedAnimPath, animData); anim)
+				if (!savedAnimPath)
+					return nullptr;
+				
+				if (auto* anim = LoadCustomAnimation(savedAnimPath->path, animData); anim)
 				{
-					HandleExtraOperations(animData, anim, ctx);
+					HandleExtraOperations(animData, anim, *savedAnimPath);
 					return anim;
 				}
 			}
@@ -562,7 +587,7 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	auto& stack = stacks.GetCustom(animCustom);
 	const auto findFn = [&](const SavedAnims& a)
 	{
-		return std::ranges::any_of(a.anims, [&](const std::string& s) { return _stricmp(path.c_str(), s.c_str()) == 0; });
+		return std::ranges::any_of(a.anims, [&](const auto& s) { return _stricmp(path.c_str(), s.path.c_str()) == 0; });
 	};
 	
 	if (!enable)
@@ -584,7 +609,7 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 
 	auto& anims = stack.back();
 	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.c_str()));
-	anims.anims.emplace_back(path);
+	auto& lastAnim = anims.anims.emplace_back(path);
 	if (conditionScript)
 	{
 		Log("Got a condition script, this animation will now only fire under this condition!");
@@ -596,8 +621,13 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	{
 		anims.order = 0;
 		// sort alphabetically
-		std::ranges::sort(anims.anims, [&](const std::string& a, const std::string& b) {return a < b; });
+		std::ranges::sort(anims.anims, [&](const auto& a, const auto& b) {return a.path < b.path; });
 		Log("Detected _order_ in filename; animation variants for this anim group will be played sequentially");
+	}
+	if (FindStringCI(realPath.filename().string(), "_partial"))
+	{
+		lastAnim.partialReload = true;
+		Log("Partial reload detected");
 	}
 }
 
@@ -612,7 +642,7 @@ void OverrideActorAnimation(const Actor* actor, const std::string& path, bool fi
 void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, bool append)
 {
 	auto& map = GetMap(firstPerson);
-	SetOverrideAnimation(form->refID, path, map, enable, append);
+	SetOverrideAnimation(form ? form->refID : -1, path, map, enable, append);
 }
 
 void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append)
@@ -656,6 +686,11 @@ float GetAnimMult(AnimData* animData, UInt8 animGroupID)
 		return animData->movementSpeedMult;
 	}
 	return 1.0f;
+}
+
+bool IsAnimGroupReload(UInt8 animGroupId)
+{
+	return animGroupId >= kAnimGroup_ReloadWStart && animGroupId <= kAnimGroup_ReloadZ;
 }
 
 float GetTimePassed(AnimData* animData, UInt8 animGroupID)

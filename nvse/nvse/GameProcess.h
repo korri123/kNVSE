@@ -365,7 +365,7 @@ public:
 	virtual void	Unk_F8();
 	virtual SInt16	GetCurrentAnimAction();
 	virtual BSAnimGroupSequence* GetCurrentSequence();
-	virtual void	SetCurrentActionAndSequence();
+	virtual void	SetCurrentActionAndSequence(UInt16 animGroupId, BSAnimGroupSequence* sequence);
 	virtual void	Unk_FC();
 	virtual void	Unk_FD();
 	virtual bool	IsReadyForAnim();

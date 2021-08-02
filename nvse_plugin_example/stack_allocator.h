@@ -85,7 +85,7 @@ public:
 };
 
 template <size_t Size, typename T, typename S, typename F>
-StackVector<T*, Size> Filter(const S& s, F&& f)
+StackVector<T*, Size> Filter(S& s, F&& f)
 {
     StackVector<T*, Size> vec;
 	for (auto &i : s)

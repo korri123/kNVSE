@@ -24,7 +24,9 @@ void LoadPathsForType(const std::filesystem::path& path, const T identifier, boo
 		Log("Loading animation path " + str + "...");
 		try
 		{
-			if constexpr (std::is_same<T, const TESObjectWEAP*>::value)
+			if constexpr (std::is_same<T, nullptr_t>::value)
+				OverrideFormAnimation(nullptr, str, false, true, append);
+			else if constexpr (std::is_same<T, const TESObjectWEAP*>::value)
 				OverrideWeaponAnimation(identifier, str, firstPerson, true, append);
 			else if constexpr (std::is_same<T, const Actor*>::value)
 				OverrideActorAnimation(identifier, str, firstPerson, true, append);
@@ -198,42 +200,52 @@ void HandleJson(const std::filesystem::path& path)
 					DebugPrint("JSON error: expected object with mod, form and folder fields");
 					continue;
 				}
-				auto modName = elem["mod"].get<std::string>();
-				const auto* mod = DataHandler::Get()->LookupModByName(modName.c_str());
-				if (!mod)
+				auto modName = elem.contains("mod") ? elem["mod"].get<std::string>() : "";
+				const auto* mod = !modName.empty() ? DataHandler::Get()->LookupModByName(modName.c_str()) : nullptr;
+				if (!mod && !modName.empty())
 				{
 					Log("Mod name " + modName + " was not found");
 					continue;
 				}
 				const auto& folder = elem["folder"].get<std::string>();
-
-				auto& formElem = elem["form"];
 				std::vector<int> formIds;
-				if (formElem.is_array())
-					std::ranges::transform(formElem, std::back_inserter(formIds), [&](auto& i) {return strToFormID(i.template get<std::string>()); });
-				else
-					formIds.push_back(strToFormID(formElem.get<std::string>()));
-				if (std::ranges::find(formIds, -1) != formIds.end())
-					continue;
+				auto* formElem = elem.contains("form") ? &elem["form"] : nullptr;
+				if (formElem)
+				{
+					if (formElem->is_array())
+						std::ranges::transform(*formElem, std::back_inserter(formIds), [&](auto& i) {return strToFormID(i.template get<std::string>()); });
+					else
+						formIds.push_back(strToFormID(formElem->get<std::string>()));
+					if (std::ranges::find(formIds, -1) != formIds.end())
+						continue;
+				}
 				Script* condition = nullptr;
 				if (elem.contains("condition"))
 				{
 					const auto& condStr = elem["condition"].get<std::string>();
 					condition = CompileConditionScript(condStr, folder);
-					Log("Compiled condition script " + condStr + " successfully");
+					if (condition)
+						Log("Compiled condition script " + condStr + " successfully");
 				}
-				for (auto formId : formIds)
+				if (mod && !formIds.empty())
 				{
-					formId = (mod->modIndex << 24) + (formId & 0x00FFFFFF);
-					auto* form = LookupFormByID(formId);
-					if (!form)
+					for (auto formId : formIds)
 					{
-						Log(FormatString("Form %X was not found", formId));
-						continue;
+						formId = (mod->modIndex << 24) + (formId & 0x00FFFFFF);
+						auto* form = LookupFormByID(formId);
+						if (!form)
+						{
+							Log(FormatString("Form %X was not found", formId));
+							continue;
+						}
+						LogForm(form);
+						Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
+						g_jsonEntries.emplace_back(folder, form, condition);
 					}
-					LogForm(form);
-					Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
-					g_jsonEntries.emplace_back(folder, form, condition);
+				}
+				else
+				{
+					g_jsonEntries.emplace_back(folder, nullptr, condition);
 				}
 			}
 		}
@@ -253,9 +265,14 @@ void LoadJsonEntries()
 	for (const auto& entry : g_jsonEntries)
 	{
 		g_jsonContext.script = entry.conditionScript;
-		Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
-		const auto path = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride\)" + entry.folderName; 
-		if (!LoadForForm(path, entry.form))
+		if (entry.form)
+			Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
+		else
+			Log("JSON: Loading animations for global override in path " + entry.folderName);
+		const auto path = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride\)" + entry.folderName;
+		if (!entry.form) // global
+			LoadPathsForPOV(path, nullptr);
+		else if (!LoadForForm(path, entry.form))
 			Log(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
 		g_jsonContext.Reset();
 	}

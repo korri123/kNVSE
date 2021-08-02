@@ -4,6 +4,17 @@
 
 namespace Decoding
 {
+	enum AnimState
+	{
+		kAnimState_Inactive = 0x0,
+		kAnimState_Animating = 0x1,
+		kAnimState_EaseIn = 0x2,
+		kAnimState_EaseOut = 0x3,
+		kAnimState_TransSource = 0x4,
+		kAnimState_TransDest = 0x5,
+		kAnimState_MorphSource = 0x6,
+	};
+
 	enum class ControlCode
 	{
 		Forward = 0x0,
