@@ -52,35 +52,6 @@ TESObjectWEAP* Actor::GetWeaponForm() const
 OSInputGlobals** g_inputGlobals = reinterpret_cast<OSInputGlobals**>(0x11F35CC);
 
 
-UInt32 GetControl(UInt32 whichControl, Decoding::ControlType type)
-{
-	auto* globs = *g_inputGlobals;
-
-	if (whichControl >= globs->kMaxControlBinds)
-		return 0xFF;
-
-	UInt32	result;
-
-	switch (type)
-	{
-	case Decoding::kControlType_Keyboard:
-		result = globs->keyBinds[whichControl];
-		break;
-	case Decoding::kControlType_Mouse:
-		result = globs->mouseBinds[whichControl];
-		if (result != 0xFF) result += 0x100;
-		break;
-	case Decoding::kControlType_Joystick:
-		result = globs->joystickBinds[whichControl];
-		break;
-	default:
-		result = 0xFF;
-		break;
-	}
-
-	return result;
-}
-
 bool TESObjectWEAP::IsMeleeWeapon() const
 {
 	return this->eWeaponType >= 0 && this->eWeaponType <= 2;
@@ -92,4 +63,47 @@ BSAnimGroupSequence* BSAnimGroupSequence::Get3rdPersonCounterpart() const
 	if (auto* base = animData->mapAnimSequenceBase->Lookup(this->animGroup->groupID))
 		return base->GetSequenceByIndex(0);
 	return nullptr;
+}
+
+
+bool TESAnimGroup::IsAttackIS()
+{
+	const auto idMinor = static_cast<AnimGroupID>(groupID & 0xFF);
+	switch (idMinor)
+	{
+	case kAnimGroup_AttackLeftIS: break;
+	case kAnimGroup_AttackRightIS: break;
+	case kAnimGroup_Attack3IS: break;
+	case kAnimGroup_Attack4IS: break;
+	case kAnimGroup_Attack5IS: break;
+	case kAnimGroup_Attack6IS: break;
+	case kAnimGroup_Attack7IS: break;
+	case kAnimGroup_Attack8IS: break;
+	case kAnimGroup_AttackLoopIS: break;
+	case kAnimGroup_AttackSpinIS: break;
+	case kAnimGroup_AttackSpin2IS: break;
+	case kAnimGroup_PlaceMineIS: break;
+	case kAnimGroup_PlaceMine2IS: break;
+	case kAnimGroup_AttackThrowIS: break;
+	case kAnimGroup_AttackThrow2IS: break;
+	case kAnimGroup_AttackThrow3IS: break;
+	case kAnimGroup_AttackThrow4IS: break;
+	case kAnimGroup_AttackThrow5IS: break;
+	case kAnimGroup_Attack9IS: break;
+	case kAnimGroup_AttackThrow6IS: break;
+	case kAnimGroup_AttackThrow7IS: break;
+	case kAnimGroup_AttackThrow8IS: break;
+	default: return false;
+	}
+	return true;
+}
+
+TESAnimGroup::AnimGroupInfo* GetGroupInfo(UInt8 groupId)
+{
+	return &g_animGroupInfos[groupId];
+}
+
+TESAnimGroup::AnimGroupInfo* TESAnimGroup::GetGroupInfo() const
+{
+	return ::GetGroupInfo(groupID);
 }

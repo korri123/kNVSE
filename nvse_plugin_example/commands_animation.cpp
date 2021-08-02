@@ -234,6 +234,7 @@ AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
 std::list<BurstFireData> g_burstFireQueue;
 
 std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
+std::map<SavedAnims*, SavedAnimsTime> g_timeTrackedGroups;
 
 enum class KeyCheckType
 {
@@ -287,10 +288,12 @@ void HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 	}
 	if (animData == g_thePlayer->firstPersonAnimData && hasKey("respectEndKey", ctx.hasRespectEndKey))
 	{
-		auto animTime = AnimTime();
+		auto& animTime = g_timeTrackedAnims[sequence];
+		animTime.time = 0;
+		animTime.povState = POVSwitchState::NotSet;
 		animTime.respectEndKey = true;
 		animTime.animData = g_thePlayer->firstPersonAnimData;
-		g_timeTrackedAnims[sequence] = animTime;
+		animTime.finishedEndKey = false;
 	}
 	if (hasKey("interruptLoop", ctx.hasInterruptLoop))
 	{
@@ -350,13 +353,14 @@ AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor)
 	return reloads->at(ctx.order++ % reloads->size());
 }
 
-BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGroupId, AnimData* animData, const char* prevPath = nullptr)
+BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, const char* prevPath = nullptr)
 {
-	if (const auto stacksIter = overrides.stacks.find(animGroupId); stacksIter != overrides.stacks.end())
+	if (const auto stacksIter = overrides.stacks.find(groupId); stacksIter != overrides.stacks.end())
 	{
 		auto* actor = animData->actor;
 		std::vector<SavedAnims>* stack = nullptr;
 		StackVector<AnimCustom, static_cast<size_t>(AnimCustom::Max)> animCustomStack;
+		auto& animStacks = stacksIter->second;
 		auto* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
 		if (actor == g_thePlayer || npc)
 			animCustomStack->push_back(AnimCustom::Human);
@@ -379,29 +383,39 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 			auto* modFlags = static_cast<ExtraWeaponModFlags*>(xData->GetByType(kExtraData_WeaponModFlags));
 			if (modFlags && modFlags->flags)
 			{
-				if (modFlags->flags & 1 && !stacksIter->second.mod1Anims.empty())
+				if (modFlags->flags & 1 && !animStacks.mod1Anims.empty())
 					animCustomStack->push_back(AnimCustom::Mod1);
-				if (modFlags->flags & 2 && !stacksIter->second.mod2Anims.empty())
+				if (modFlags->flags & 2 && !animStacks.mod2Anims.empty())
 					animCustomStack->push_back(AnimCustom::Mod2);
-				if (modFlags->flags & 4 && !stacksIter->second.mod3Anims.empty())
+				if (modFlags->flags & 4 && !animStacks.mod3Anims.empty())
 					animCustomStack->push_back(AnimCustom::Mod3);
 			}
 		}
 		while (!animCustomStack->empty())
 		{
-			stack = &stacksIter->second.GetCustom(animCustomStack->back());
+			stack = &animStacks.GetCustom(animCustomStack->back());
 			if (!stack->empty())
 				break;
 			animCustomStack->pop_back();
 		}
 		if ((!stack || stack->empty()) && !exclusiveAnim)
-			stack = &stacksIter->second.GetCustom(AnimCustom::None);
+			stack = &animStacks.GetCustom(AnimCustom::None);
 
 		if (stack && !stack->empty())
 		{
 			auto& ctx = stack->back();
+			const auto initAnimTime = [&]()
+			{
+				auto& animTime = g_timeTrackedGroups[&ctx];
+				animTime.animData = animData;
+				animTime.groupId = groupId;
+				animTime.time = 0;
+				return &animTime;
+			};
+			SavedAnimsTime* animsTime = nullptr;
 			if (ctx.conditionScript)
 			{
+				animsTime = initAnimTime(); // init'd here so conditions can activate despite not being overridden
 				NVSEArrayVarInterface::Element result;
 				if (!g_script->CallFunction(ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
 					return nullptr;
@@ -409,7 +423,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 			if (!ctx.anims.empty())
 			{
 				AnimPath* savedAnimPath = nullptr;
-				if (IsAnimGroupReload(static_cast<UInt8>(animGroupId)) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
+				if (IsAnimGroupReload(static_cast<UInt8>(groupId)) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
 				{
 					if (auto* path = GetPartialReload(ctx, actor))
 						savedAnimPath = path;
@@ -417,7 +431,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 				else if (ctx.order == -1)
 				{
 					// Make sure that Aim, AimUp and AimDown all use the same index
-					if (auto* path = HandleAimUpDownRandomness(animGroupId, ctx))
+					if (auto* path = HandleAimUpDownRandomness(groupId, ctx))
 						savedAnimPath = path;
 					else
 						// pick random variant
@@ -435,6 +449,8 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt32 animGro
 				if (auto* anim = LoadCustomAnimation(savedAnimPath->path, animData); anim)
 				{
 					HandleExtraOperations(animData, anim, *savedAnimPath);
+					if (ctx.conditionScript && animsTime)
+						animsTime->anim = anim;
 					return anim;
 				}
 			}

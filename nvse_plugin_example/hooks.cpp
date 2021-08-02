@@ -73,80 +73,6 @@ __declspec(naked) void AnimationHook()
 	}
 }
 
-bool __fastcall IsPlayerReadyForAnim(Decoding::HighProcess* highProcess)
-{
-	const auto defaultReturn = [&]()
-	{
-		//return g_thePlayer->baseProcess->IsReadyForAnim();
-		return ThisStdCall<bool>(0x8DA2A0, highProcess);
-	};
-	
-	if (g_thePlayer->baseProcess != highProcess)
-		return defaultReturn();
-	if (g_thePlayer->IsThirdPerson())
-		return defaultReturn();
-	auto* currentAnim = g_thePlayer->firstPersonAnimData->animSequence[kSequence_Weapon];
-	if (!currentAnim || !currentAnim->animGroup)
-		// shouldn't happen
-		return defaultReturn();
-	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
-	if (animData3rd->idleAnim && (animData3rd->idleAnim->idleForm->flags & 1) != 0)
-		return false;
-	auto iter = g_timeTrackedAnims.find(currentAnim);
-	auto* curr3rdWeapAnim = animData3rd->animSequence[kSequence_Weapon];
-	if (iter == g_timeTrackedAnims.end())
-	{
-		if (curr3rdWeapAnim && curr3rdWeapAnim->animGroup)
-		{
-			// 1st person finished if anim is shorter
-			iter = std::ranges::find_if(g_timeTrackedAnims, [&](auto& p) {return p.first->animGroup->groupID == curr3rdWeapAnim->animGroup->groupID; });
-			if (iter == g_timeTrackedAnims.end())
-			{
-				return defaultReturn();
-			}
-		}
-		else
-			return defaultReturn();
-	}
-	if (!iter->second.respectEndKey)
-		return defaultReturn();
-	UInt16 thirdPersonGroupID;
-	auto* leftArm3rdAnim = animData3rd->animSequence[kSequence_LeftArm];
-	if (leftArm3rdAnim && leftArm3rdAnim->animGroup && ((thirdPersonGroupID = leftArm3rdAnim->animGroup->groupID)) 
-		&& (thirdPersonGroupID == kAnimGroup_PipBoy || thirdPersonGroupID == kAnimGroup_PipBoyChild))
-		return false;
-	if (ThisStdCall<bool>(0x967AE0, g_thePlayer)) // PlayerCharacter::HasPipboyOpen
-		return false;
-	const auto usingRangedWeapon = CdeclCall<bool>(0x9A96C0, g_thePlayer);
-	if (!usingRangedWeapon)
-		return defaultReturn();
-	if (iter->second.finishedEndKey)
-	{
-		if (reinterpret_cast<UInt32>(_ReturnAddress()) == 0x9420E6 && GameFuncs::GetControlState(Decoding::ControlCode::Attack, Decoding::IsDXKeyState::IsPressed))
-		{
-			const auto groupID = iter->first->animGroup->groupID;
-			const auto nextSequenceKey = (groupID & 0xFF00) + static_cast<UInt16>(animData3rd->GetNextAttackGroupID());
-			auto* anim3rdPersonCounterpart = GetGameAnimation(animData3rd, nextSequenceKey);
-			if (!anim3rdPersonCounterpart)
-				return defaultReturn();
-			GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, Decoding::AnimAction::kAnimAction_Attack, anim3rdPersonCounterpart);
-		}
-		return true;
-	}
-	return false;
-
-}
-
-__declspec(naked) void IsPlayerReadyForAnimHook()
-{
-	const static auto retnAddr = 0x9420E6;
-	__asm
-	{
-		call IsPlayerReadyForAnim
-		jmp retnAddr
-	}
-}
-
 void DecreaseAttackTimer()
 {
 	auto* p = static_cast<Decoding::HighProcess*>(g_thePlayer->baseProcess);
@@ -289,9 +215,6 @@ void ApplyHooks()
 
 	WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
-
-	//SafeWrite32(0x1087C5C, reinterpret_cast<UInt32>(IsPlayerReadyForAnim));
-
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
 
 	if (ini.GetOrCreate("General", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))

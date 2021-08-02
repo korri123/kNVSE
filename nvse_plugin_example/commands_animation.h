@@ -10,6 +10,7 @@
 #include "ParamInfos.h"
 #include "utility.h"
 
+struct SavedAnims;
 extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
 
 enum QueuedIdleFlags
@@ -48,6 +49,7 @@ enum class POVSwitchState
 {
 	NotSet, POV3rd, POV1st
 };
+
 struct AnimTime
 {
 	float time = 0;
@@ -61,9 +63,19 @@ struct AnimTime
 	POVSwitchState povState = POVSwitchState::NotSet;
 	UInt32 numThirdPersonKeys = 0;
 	float *thirdPersonKeys = nullptr;
+	Script* conditionScriptPoll = nullptr;
+};
+
+struct SavedAnimsTime
+{
+	float time = 0;
+	AnimData* animData = nullptr;
+	UInt16 groupId = 0;
+	BSAnimGroupSequence* anim = nullptr;
 };
 
 extern std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
+extern std::map<SavedAnims*, SavedAnimsTime> g_timeTrackedGroups;
 
 enum class AnimKeySetting
 {
@@ -243,7 +255,7 @@ namespace GameFuncs
 	inline auto* Actor_SetAnimActionAndSequence = reinterpret_cast<void (__thiscall*)(Actor*, Decoding::AnimAction, BSAnimGroupSequence*)>(0x8A73E0);
 	inline auto* AnimData_GetAnimSequenceElement = reinterpret_cast<BSAnimGroupSequence* (__thiscall*)(AnimData*, eAnimSequence a2)>(0x491040);
 	
-	inline auto GetControlState = _VL((Decoding::ControlCode code, Decoding::IsDXKeyState state), ThisStdCall<int>(0xA24660, *g_inputGlobals, code, state));
+	inline auto GetControlState = _VL((ControlCode code, Decoding::IsDXKeyState state), ThisStdCall<int>(0xA24660, *g_inputGlobals, code, state));
 	inline auto SetControlHeld = _VL((int key), ThisStdCall<int>(0xA24280, *g_inputGlobals, key));
 
 	inline auto IsDoingAttackAnimation = THISCALL(0x894900, bool, Actor* actor);
@@ -251,6 +263,7 @@ namespace GameFuncs
 
 	inline auto ActivateSequence = THISCALL(0xA2E280, bool, NiControllerManager* manager, NiControllerSequence* source, NiControllerSequence* destination, float blend, int priority, bool startOver, float morphWeight, NiControllerSequence* pkTimeSyncSeq);
 	inline auto MorphSequence = THISCALL(0xA351D0, bool, NiControllerSequence *source, NiControllerSequence *pkDestSequence, float fDuration, int iPriority, float fSourceWeight, float fDestWeight);
+	inline auto BlendFromPose = THISCALL(0xA2F800, bool, NiControllerManager * mgr, NiControllerSequence * pkSequence, float fDestFrame, float fDuration, int iPriority, NiControllerSequence * pkSequenceToSynchronize);
 }
 
 enum SequenceState1

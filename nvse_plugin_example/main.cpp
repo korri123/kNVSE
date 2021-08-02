@@ -40,9 +40,10 @@ void HandleAnimTimes()
 {
 	for (auto iter = g_timeTrackedAnims.begin(); iter != g_timeTrackedAnims.end(); ++iter)
 	{
-		auto& animTime = iter->second;
-		auto* anim = iter->first;
+		auto& [anim, animTime] = *iter;
 		auto& time = animTime.time;
+		auto* actor = animTime.animData->actor;
+		auto* animData = animTime.animData;
 		time += GetTimePassed(animTime.animData, anim->animGroup->groupID);
 
 		if (animTime.respectEndKey)
@@ -94,6 +95,35 @@ void HandleAnimTimes()
 			}
 		}
 	}
+	for (auto& [savedAnim, animTime] : g_timeTrackedGroups)
+	{
+		auto& [time, animData, groupId, anim] = animTime;
+		time += GetTimePassed(animTime.animData, groupId);
+		auto* actor = animData->actor;
+		if (savedAnim->conditionScript)
+		{
+			auto* animInfo = GetGroupInfo(groupId);
+			auto* curAnim = animData->animSequence[animInfo->sequenceType];
+			if (curAnim && curAnim->animGroup->groupID == groupId)
+			{
+				NVSEArrayVarInterface::Element arrResult;
+				if (g_script->CallFunction(savedAnim->conditionScript, actor, nullptr, &arrResult, 0))
+				{
+					const auto result = static_cast<bool>(arrResult.Number());
+					const auto customAnimState = anim ? anim->state : kAnimState_Inactive;
+					if (customAnimState == kAnimState_Inactive && result && curAnim != anim
+						|| customAnimState != kAnimState_Inactive && !result && curAnim == anim)
+					{
+						auto* resultAnim = GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
+#if _DEBUG
+						if (!resultAnim)
+							DebugBreak();
+#endif
+					}
+				}
+			}
+		}
+	}
 }
 
 void HandleBurstFire()
@@ -129,7 +159,7 @@ void HandleBurstFire()
 			{
 				const auto ammoCount = ammoInfo->countDelta;
 				const bool* godMode = reinterpret_cast<bool*>(0x11E07BA);
-				if (weapon && (ammoCount == 0 || ammoCount == weapon->clipRounds.clipRounds) && !godMode)
+				if (weapon && (ammoCount == 0 || ammoCount == weapon->clipRounds.clipRounds) && !*godMode)
 				{
 					erase();
 					continue;
@@ -158,7 +188,6 @@ void HandleBurstFire()
 
 void HandleMorph()
 {
-	
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
 	auto* animData1st = g_thePlayer->firstPersonAnimData;
 	auto* highProcess = g_thePlayer->GetHighProcess();
@@ -176,8 +205,8 @@ void HandleMorph()
 		auto* sourceAnim = animData->animSequence[kSequence_Weapon];
 		animData->animSequence[kSequence_Weapon] = hipfireAnim;
 		animData->groupIDs[kSequence_Weapon] = hipfireId;
-		const auto duration = sourceAnim->endKeyTime - sourceAnim->startTime;
-		const auto result = GameFuncs::ActivateSequence(nullptr, sourceAnim, hipfireAnim, duration, 0, true, hipfireAnim->seqWeight, nullptr);
+		const auto duration = sourceAnim->endKeyTime - (sourceAnim->startTime + sourceAnim->offset);
+		const auto result = GameFuncs::BlendFromPose(animData->controllerManager, hipfireAnim, sourceAnim->startTime, 0.0f, 0, nullptr);
 		int i = 0;
 	}
 	highProcess->SetCurrentActionAndSequence(hipfireId, animData3rd->animSequence[kSequence_Weapon]);
