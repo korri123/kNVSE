@@ -425,6 +425,9 @@
     <ClInclude Include="..\nvse\nvse\GameTasks.h" />
     <ClInclude Include="..\nvse\nvse\GameTiles.h" />
     <ClInclude Include="..\nvse\nvse\GameTypes.h" />
+    <ClInclude Include="..\nvse\nvse\NiNodes.h" />
+    <ClInclude Include="..\nvse\nvse\NiObjects.h" />
+    <ClInclude Include="..\nvse\nvse\NiTypes.h" />
     <ClInclude Include="..\nvse\nvse\SafeWrite.h" />
     <ClInclude Include="..\nvse\nvse\Utilities.h" />
     <ClInclude Include="..\nvse\nvse\utility.h" />

@@ -99,6 +99,7 @@ struct SavedAnims
 	int order = -1;
 	std::vector<AnimPath> anims;
 	Script* conditionScript = nullptr;
+	bool pollCondition = false;
 };
 
 enum class AnimCustom
@@ -161,6 +162,7 @@ struct BurstState
 struct JSONAnimContext
 {
 	Script* script;
+	bool pollCondition;
 
 	void Reset()
 	{
@@ -322,7 +324,7 @@ DEFINE_COMMAND_PLUGIN(kNVSEReset, "", false, 0, nullptr)
 DEFINE_COMMAND_PLUGIN(ForceStopIdle, "", true, 1, kParams_OneOptionalInt)
 
 
-void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, int* outGroupId = nullptr, Script* conditionScript = nullptr);
+void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, Script* conditionScript = nullptr, bool pollCondition = false);
 void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append);
@@ -333,5 +335,6 @@ float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 bool IsCustomAnim(BSAnimGroupSequence* sequence);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
+bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, AnimPath& ctx);
 float GetAnimMult(AnimData* animData, UInt8 animGroupID);
 bool IsAnimGroupReload(UInt8 animGroupId);

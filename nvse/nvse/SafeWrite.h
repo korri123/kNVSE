@@ -19,7 +19,7 @@ void WriteRelCall(UInt32 jumpSrc, UInt32 jumpTgt);
 template <typename T>
 void WriteRelCall(UInt32 jumpSrc, T jumpTgt)
 {
-	WriteRelCall(jumpSrc, reinterpret_cast<UInt32>(jumpTgt));
+	WriteRelCall(jumpSrc, UInt32(jumpTgt));
 }
 
 // 6 bytes

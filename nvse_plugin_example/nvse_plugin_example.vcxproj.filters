@@ -138,6 +138,15 @@
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="stack_allocator.h" />
     <ClInclude Include="SimpleINILibrary.h" />
+    <ClInclude Include="..\nvse\nvse\NiNodes.h">
+      <Filter>nvse</Filter>
+    </ClInclude>
+    <ClInclude Include="..\nvse\nvse\NiTypes.h">
+      <Filter>nvse</Filter>
+    </ClInclude>
+    <ClInclude Include="..\nvse\nvse\NiObjects.h">
+      <Filter>nvse</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

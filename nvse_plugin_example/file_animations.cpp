@@ -25,7 +25,7 @@ void LoadPathsForType(const std::filesystem::path& path, const T identifier, boo
 		try
 		{
 			if constexpr (std::is_same<T, nullptr_t>::value)
-				OverrideFormAnimation(nullptr, str, false, true, append);
+				OverrideFormAnimation(nullptr, str, firstPerson, true, append);
 			else if constexpr (std::is_same<T, const TESObjectWEAP*>::value)
 				OverrideWeaponAnimation(identifier, str, firstPerson, true, append);
 			else if constexpr (std::is_same<T, const Actor*>::value)
@@ -132,9 +132,10 @@ struct JSONEntry
 	const std::string folderName;
 	const TESForm* form;
 	Script* conditionScript;
+	bool pollCondition;
 
-	JSONEntry(std::string folderName, const TESForm* form, Script* script)
-		: folderName(std::move(folderName)), form(form), conditionScript(script)
+	JSONEntry(std::string folderName, const TESForm* form, Script* script, bool pollCondition)
+		: folderName(std::move(folderName)), form(form), conditionScript(script), pollCondition(pollCondition)
 	{
 	}
 };
@@ -230,12 +231,15 @@ void HandleJson(const std::filesystem::path& path)
 						continue;
 				}
 				Script* condition = nullptr;
+				auto pollCondition = false;
 				if (elem.contains("condition"))
 				{
 					const auto& condStr = elem["condition"].get<std::string>();
 					condition = CompileConditionScript(condStr, folder);
 					if (condition)
 						Log("Compiled condition script " + condStr + " successfully");
+					if (elem.contains("pollCondition"))
+						pollCondition = elem["pollCondition"].get<bool>();
 				}
 				if (mod && !formIds.empty())
 				{
@@ -250,12 +254,12 @@ void HandleJson(const std::filesystem::path& path)
 						}
 						LogForm(form);
 						Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
-						g_jsonEntries.emplace_back(folder, form, condition);
+						g_jsonEntries.emplace_back(folder, form, condition, pollCondition);
 					}
 				}
 				else
 				{
-					g_jsonEntries.emplace_back(folder, nullptr, condition);
+					g_jsonEntries.emplace_back(folder, nullptr, condition, pollCondition);
 				}
 			}
 		}
@@ -275,6 +279,7 @@ void LoadJsonEntries()
 	for (const auto& entry : g_jsonEntries)
 	{
 		g_jsonContext.script = entry.conditionScript;
+		g_jsonContext.pollCondition = entry.pollCondition;
 		if (entry.form)
 			Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		else
@@ -328,5 +333,5 @@ void LoadFileAnimPaths()
 	LoadJsonEntries();
 	const auto now = std::chrono::system_clock::now();
 	const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(now - then);
-	DebugPrint(FormatString("Loaded file animations in %d ms", diff.count()));
+	DebugPrint(FormatString("Loaded AnimGroupOverride in %d ms", diff.count()));
 }

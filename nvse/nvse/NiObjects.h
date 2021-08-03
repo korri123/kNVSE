@@ -59,62 +59,88 @@ class NiPSysModifier;
 class NiRenderer;
 class NiGeometryData;
 
-// 0AC
+// 9C
 class NiAVObject : public NiObjectNET
 {
 public:
-	NiAVObject();
-	~NiAVObject();
+	/*08C*/virtual void		Unk_23(UInt32 arg1);
+	/*090*/virtual void		Unk_24(NiMatrix33* arg1, NiVector3* arg2, bool arg3);
+	/*094*/virtual void		Unk_25(UInt32 arg1);
+	/*098*/virtual void		Unk_26(UInt32 arg1);
+	/*09C*/virtual NiAVObject* GetObjectByName(void* objName);
+	/*0A0*/virtual void		Unk_28(UInt32 arg1, UInt32 arg2, UInt32 arg3);
+	/*0A4*/virtual void		Unk_29(void* updParams, UInt32 arg2);
+	/*0A8*/virtual void		Unk_2A(UInt32 arg1, UInt32 arg2);
+	/*0AC*/virtual void		Unk_2B(UInt32 arg1, UInt32 arg2);
+	/*0B0*/virtual void		Unk_2C(UInt32 arg1);
+	/*0B4*/virtual void		Unk_2D(UInt32 arg1);
+	/*0B8*/virtual void		UpdateTransform(void* updInfo);
+	/*0BC*/virtual void		Unk_2F(void);
+	/*0C0*/virtual void		UpdateBounds(void* updInfo);
+	/*0C4*/virtual void		Unk_31(UInt32 arg1, UInt32 arg2);
+	/*0C8*/virtual void		Unk_32(UInt32 arg1);
+	/*0CC*/virtual void		Unk_33(UInt32 arg1);
+	/*0D0*/virtual void		Unk_34(void);
+	/*0D4*/virtual void		Unk_35(UInt32 arg1);
+	/*0D8*/virtual void		Unk_36(UInt32 arg1);
 
-	virtual void			UpdatePropertiesAndControllers(float arg);	// calls Update on properties and controllers
-	virtual void			Unk_24(void);
-	virtual void			Unk_25(void);
-	virtual NiObjectNET *	GetObject(const char * name);
-	virtual bool			IsNameType(const char * name);	//verified
-	virtual void			Unk_28(float arg, bool updateProperties);	// if(updateProperties) UpdatePropertiesAndControllers(arg); Unk_1D(); Unk_1E();
-	virtual void			Unk_29(float arg);			// update controllers, if kFlag_SelUpdatePropControllers update properties, if(kFlag_SelUpdateTransforms) { Unk_1D(); Unk_1E(); }
-	virtual void			Unk_2A(float arg);			// update controllers, if kFlag_SelUpdatePropControllers update properties, if(kFlag_SelUpdateTransforms) { Unk_1D(); Unk_1E(); }
-	virtual void			Unk_2B(void * arg);			// empty
-	virtual void			Unk_2C(void * arg);			// empty
-	virtual void			UpdateTransform(void);		// update world transform based on local transform and parent (also update collision)
-	virtual void			Unk_2E(void);				// empty
-	virtual void			Cull(NiCullingProcess * tgt);	// accumulate for drawing? NiNode iterates children
-	virtual void			Unk_30(void * arg);			// get NiMaterialProperty, pass to arg if found
-	virtual void			Unk_31(void * arg);
-	virtual void			Unk_32(void * arg);
-	virtual void			Unk_33(void * arg);
-	virtual void			Unk_34(void * arg);
-	virtual void			Unk_35(void * arg);
-	virtual void			Unk_36(void * arg);	// last is 036 verified
-
-	enum
+	enum NiFlags
 	{
-		kFlag_AppCulled =					1 << 0,	// originally named m_bAppCulled but they appear to have used bitfields
-		kFlag_SelUpdate =					1 << 1,
-		kFlag_SelUpdateTransforms =			1 << 2,
-		kFlag_SelUpdatePropControllers =	1 << 3,
-		kFlag_SelUpdateRigid =				1 << 4,
+		kNiFlag_Hidden = 0x00000001,
+		kNiFlag_SelectiveUpdate = 0x00000002,
+		kNiFlag_SelUpdTransforms = 0x00000004,
+		kNiFlag_SelUpdController = 0x00000008,
+		kNiFlag_SelUpdRigid = 0x00000010,
+		kNiFlag_DisplayObject = 0x00000020,
+		kNiFlag_DisableSorting = 0x00000040,
+		kNiFlag_SelUpdTransformsOverride = 0x00000080,
+		kNiFlag_UnkBit8 = 0x00000100,
+		kNiFlag_SaveExternalGeomData = 0x00000200,
+		kNiFlag_NoDecals = 0x00000400,
+		kNiFlag_AlwaysDraw = 0x00000800,
+		kNiFlag_MeshLOD = 0x00001000,
+		kNiFlag_FixedBound = 0x00002000,
+		kNiFlag_TopFadeNode = 0x00004000,
+		kNiFlag_IgnoreFade = 0x00008000,
+		kNiFlag_NoAnimSyncX = 0x00010000,
+		kNiFlag_NoAnimSyncY = 0x00020000,
+		kNiFlag_NoAnimSyncZ = 0x00040000,
+		kNiFlag_NoAnimSyncS = 0x00080000,
+		kNiFlag_NoDismember = 0x00100000,
+		kNiFlag_NoDismemberValidity = 0x00200000,
+		kNiFlag_RenderUse = 0x00400000,
+		kNiFlag_MaterialsApplied = 0x00800000,
+		kNiFlag_HighDetail = 0x01000000,
+		kNiFlag_ForceUpdate = 0x02000000,
+		kNiFlag_PreProcessedNode = 0x04000000,
+		kNiFlag_UnkBit27 = 0x08000000,
+		kNiFlag_UnkBit28 = 0x10000000,
+		kNiFlag_IsPointLight = 0x20000000,	//	JIP only
+		kNiFlag_DoneInitLights = 0x40000000,	//	JIP only
+		kNiFlag_IsInserted = 0x80000000	//	JIP only
 	};
 
-	struct RotAndTranslate 
-	{
-		NiMatrix33	rotate;		// Init'd to 1 0 0, 0 1 0, 0 0 1
-		NiVector3	translate;	// Init'd to 0x011F426C[3]
-	};	// 30
+	NiNode* m_parent;				// 18
+	void* m_collisionObject;		// 1C
+	NiSphere* m_kWorldBound;			// 20
+	DList<NiProperty>		m_propertyList;			// 24
+	UInt32					m_flags;				// 30
+	NiMatrix33				m_localRotate;			// 34
+	NiVector3				m_localTranslate;		// 58
+	float					m_localScale;			// 64
+	NiMatrix33				m_worldRotate;			// 68
+	NiVector3				m_worldTranslate;		// 8C
+	float					m_worldScale;			// 98
 
-	NiNode						* m_parent;				// 018 the implementation requires Func003A, so minimu NiNode.
-	UInt32						unk001C;				// 01C
-	UInt32						unk0020;				// 020 three members used as array, plus the following float
-	UInt32						unk0024;				// 024 -
-	UInt32						unk0028;				// 028 -
-	float						flt002C;				// 02C -
-	UInt32						unk0030;				// 030 Init'd to 10000000000000001110b
-	RotAndTranslate				dat0034;				// 034 local ?
-	RotAndTranslate				dat0064;				// 064 world ?
+	void Update();
+	UInt32 GetIndex();
+	bool __fastcall ReplaceObject(NiAVObject* object);
+	NiProperty* __fastcall GetProperty(UInt32 propID);
 
-	void Dump(UInt32 level, const char * indent);
+	void DumpProperties();
+	void DumpParents();
 };
-STATIC_ASSERT(sizeof(NiAVObject) == 0x94);
+STATIC_ASSERT(sizeof(NiAVObject) == 0x9C);
 
 #if 0
 
@@ -254,26 +280,32 @@ public:
 class NiNode : public NiAVObject
 {
 public:
-	NiNode();
-	~NiNode();
+	/*0DC*/virtual void		AddObject(NiAVObject* object, bool arg2);
+	/*0E0*/virtual void		AddObjectAt(UInt32 index, NiAVObject* object);
+	/*0E4*/virtual void		RemoveObject2(NiAVObject* toRemove, NiAVObject** arg2);
+	/*0E8*/virtual void		RemoveObject(NiAVObject* toRemove);	//	Calls RemoveObject2 with arg2 as ptr to NULL
+	/*0EC*/virtual void		RemoveNthObject2(UInt32 index, NiAVObject** arg2);
+	/*0F0*/virtual void		RemoveNthObject(UInt32 index);			//	Calls RemoveNthObject2 with arg2 as ptr to NULL
+	/*0F4*/virtual void		Unk_3D(UInt32 arg1, UInt32 arg2, UInt32 arg3);
+	/*0F8*/virtual void		Unk_3E(UInt32 arg1, UInt32 arg2);
+	/*0FC*/virtual void		Unk_3F(void);
 
-	virtual void		AddObject(NiObject * obj, UInt32 arg1);							// 37 verified
-	virtual NiObject *	RemoveObject(NiObject ** out, NiObject* toRemove);				// 38 looks ok
-	virtual void		Unk_38(void);													// 39 either lookup or remove a child.
-	virtual void		Unk_39(void);													// 3A calls 39 then release returned child
-	virtual void		Unk_3A(void);													// 3B
-	virtual bool		Unk_3B(void);
-	virtual bool		Unk_3C(void);
-	virtual bool		Unk_3D(void);
-	virtual bool		Unk_3E(void);
-	virtual bool		Unk_3F(void);
+	NiTArray<NiAVObject*>	m_children;		// 9C
 
-	UInt32						unk0094;	// 094
-	UInt32						unk0098;	// 098
-	NiTArray <NiAVObject *>		m_children;	// 09C
-
-};	// 0AC
-
+	static NiNode* __stdcall Create(const char* nameStr);		//	str of NiString
+	NiNode* CreateCopy();
+	NiAVObject* __fastcall GetBlockByName(const char* nameStr);	//	str of NiString
+	NiAVObject* __fastcall GetBlock(const char* blockName);
+	NiNode* __fastcall GetNode(const char* nodeName);
+	bool IsMovable();
+	void RemoveCollision();
+	void BulkSetMaterialPropertyTraitValue(UInt32 traitID, float value);
+	bool HasPhantom();
+	void GetBodyMass(float* totalMass);
+	void ApplyForce(NiVector4* forceVector);
+	void Dump();
+};
+STATIC_ASSERT(sizeof(NiNode) == 0xAC);
 #if 0
 
 // F0

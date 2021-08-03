@@ -2,6 +2,8 @@
 
 #include <GameUI.h>
 #include <span>
+#include <unordered_set>
+
 #include "GameProcess.h"
 #include "GameObjects.h"
 #include "commands_animation.h"
@@ -32,7 +34,7 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		auto* currAction = &highProcess->currentAction;
 #endif
 		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
-
+		auto* toReplace = toMorph ? *toMorph : nullptr;
 		if (auto* anim = GetActorAnimation(animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
 		{
 			*toMorph = anim;
@@ -40,6 +42,17 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 			if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
 				Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
 #endif		
+		}
+		else if (toReplace)
+		{
+			// allow non animgroupoverride anims to use custom text keys
+			static std::unordered_set<BSAnimGroupSequence*> noCustomKeyAnims;
+			if (!noCustomKeyAnims.contains(toReplace))
+			{
+				AnimPath ctx;
+				if (!HandleExtraOperations(animData, toReplace, ctx))
+					noCustomKeyAnims.insert(toReplace);
+			}
 		}
 	}
 	return true;
@@ -176,6 +189,22 @@ void __fastcall FixBlendMult()
 	}
 }
 
+void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void* _EDX, float fTime, bool bUpdateInterpolators)
+{
+	if (sequence->state == kAnimState_Inactive)
+		return;
+	if (sequence->destFrame != -FLT_MAX)
+	{
+		if (sequence->offset == -FLT_MAX)
+		{
+			sequence->offset = -fTime;
+		}
+		sequence->offset += sequence->destFrame;
+		sequence->destFrame = -FLT_MAX;
+	}
+	ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
+}
+
 HOOK BlendMultHook()
 {
 	const static auto hookedCall = 0xA328B0;
@@ -229,11 +258,13 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelJump(0x4951D2, BlendMultHook);
 
-	/*if (ini.GetOrCreate("General", "bFixAimAfterShooting", 1, "; stops the player from being stuck in irons sight aim mode after shooting a weapon while aiming"))
+	if (ini.GetOrCreate("General", "bFixAimAfterShooting", 1, "; stops the player from being stuck in irons sight aim mode after shooting a weapon while aiming"))
 	{
-		APPLY_JMP(ProlongedAimFix);
-		SafeWriteBuf(0x491275, "\xEB\x0B", 2);
-	}*/
+		//APPLY_JMP(ProlongedAimFix);
+		//SafeWriteBuf(0x491275, "\xEB\x0B", 2);
+
+		//WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
+	}
 	
 	ini.SaveFile(iniPath.c_str(), false);
 }

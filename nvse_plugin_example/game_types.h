@@ -526,3 +526,5 @@ enum class ControlCode
 extern OSInputGlobals** g_inputGlobals;
 
 TESAnimGroup::AnimGroupInfo* GetGroupInfo(UInt8 groupId);
+
+NiAVObject* __fastcall GetNifBlock(TESObjectREFR* thisObj, UInt32 pcNode, const char* blockName);
