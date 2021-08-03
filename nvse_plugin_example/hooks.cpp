@@ -258,13 +258,13 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelJump(0x4951D2, BlendMultHook);
 
-	if (ini.GetOrCreate("General", "bFixAimAfterShooting", 1, "; stops the player from being stuck in irons sight aim mode after shooting a weapon while aiming"))
-	{
+	//if (ini.GetOrCreate("General", "bFixAimAfterShooting", 1, "; stops the player from being stuck in irons sight aim mode after shooting a weapon while aiming"))
+	//{
 		//APPLY_JMP(ProlongedAimFix);
 		//SafeWriteBuf(0x491275, "\xEB\x0B", 2);
 
 		//WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
-	}
+	//}
 	
 	ini.SaveFile(iniPath.c_str(), false);
 }
