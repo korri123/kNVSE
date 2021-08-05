@@ -252,3 +252,12 @@ __declspec(naked) NiAVObject* __fastcall GetNifBlock(TESObjectREFR *thisObj, UIn
 		retn	4
 	}
 }
+
+float TESObjectWEAP::GetModBonuses(UInt32 effectID)
+{
+	float result = 0;
+	for (UInt32 idx = 0; idx < 3; idx++)
+		if (effectMods[idx] == effectID)
+			result += value1Mod[idx];
+	return result;
+}

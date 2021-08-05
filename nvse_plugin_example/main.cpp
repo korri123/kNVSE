@@ -14,6 +14,7 @@
 #include "game_types.h"
 #include <set>
 
+#include "NiObjects.h"
 #include "SimpleINILibrary.h"
 
 #define RegisterScriptCommand(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name);
@@ -42,8 +43,8 @@ void HandleAnimTimes()
 	{
 		auto& [anim, animTime] = *iter;
 		auto& time = animTime.time;
-		auto* actor = animTime.animData->actor;
 		auto* animData = animTime.animData;
+		auto* actor = animData->actor;
 		time += GetTimePassed(animTime.animData, anim->animGroup->groupID);
 
 		if (animTime.respectEndKey)
@@ -54,7 +55,7 @@ void HandleAnimTimes()
 				animTime.anim3rdCounterpart->animGroup->keyTimes = animTime.thirdPersonKeys;
 				animTime.povState = POVSwitchState::POV3rd;
 			};
-			if (time >= anim->endKeyTime && !animTime.finishedEndKey)
+			if (time >= anim->endKeyTime && !animTime.finishedEndKey || actor->GetWeaponForm() != animTime.actorWeapon)
 			{
 				revert3rdPersonAnimTimes();
 				animTime.finishedEndKey = true;
@@ -70,8 +71,11 @@ void HandleAnimTimes()
 					if (!anim3rd)
 						continue;
 					animTime.anim3rdCounterpart = anim3rd;
-					animTime.numThirdPersonKeys = anim3rd->animGroup->numKeys;
-					animTime.thirdPersonKeys = anim3rd->animGroup->keyTimes;
+					if (!animTime.thirdPersonKeys)
+					{
+						animTime.numThirdPersonKeys = anim3rd->animGroup->numKeys;
+						animTime.thirdPersonKeys = anim3rd->animGroup->keyTimes;
+					}
 				}
 				if (g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV3rd)
 				{
@@ -131,10 +135,11 @@ void HandleBurstFire()
 	auto iter = g_burstFireQueue.begin();
 	while (iter != g_burstFireQueue.end())
 	{
-		auto& [animData, anim, index, hitKeys, timePassed, shouldEject] = *iter;
+		auto& [animData, anim, index, hitKeys, timePassed, shouldEject, lastNiTime] = *iter;
 		auto* currentAnim = animData->animSequence[kSequence_Weapon];
 		auto* weap = animData->actor->baseProcess->GetWeaponInfo();
 		auto* weapon = weap ? weap->weapon : nullptr;
+		auto* actor = animData->actor;
 		const auto erase = [&]()
 		{
 			iter = g_burstFireQueue.erase(iter);
@@ -145,6 +150,12 @@ void HandleBurstFire()
 			erase();
 			continue;
 		}
+		if (anim->lastScaledTime < lastNiTime)
+		{
+			erase();
+			continue;
+		}
+		lastNiTime = anim->lastScaledTime;
 		if (timePassed <= anim->animGroup->keyTimes[kSeqState_HitOrDetach])
 		{
 			// first hit handled by engine
@@ -154,15 +165,26 @@ void HandleBurstFire()
 		}
 		if (timePassed > hitKeys.at(index)->m_fTime)
 		{
-
-			if (auto* ammoInfo = static_cast<Decoding::MiddleHighProcess*>(animData->actor->baseProcess)->ammoInfo)
+			if (auto* ammoInfo = actor->baseProcess->GetAmmoInfo()) // static_cast<Decoding::MiddleHighProcess*>(animData->actor->baseProcess)->ammoInfo
 			{
-				const auto ammoCount = ammoInfo->countDelta;
 				const bool* godMode = reinterpret_cast<bool*>(0x11E07BA);
-				if (weapon && (ammoCount == 0 || ammoCount == weapon->clipRounds.clipRounds) && !*godMode)
+				if (!*godMode)
 				{
-					erase();
-					continue;
+					//const auto clipSize = GetWeaponInfoClipSize(actor);
+					if (DidActorReload(actor, ReloadSubscriber::BurstFire) || ammoInfo->count == 0)
+					{
+						// reloaded
+						erase();
+						continue;
+					}
+#if 0
+					const auto ammoCount = ammoInfo->countDelta;
+					if (weapon && (ammoCount == 0 || ammoCount == clipSize))
+					{
+						erase();
+						continue;
+					}
+#endif
 				}
 			}
 			++index;
@@ -220,10 +242,11 @@ void HandleProlongedAim()
 		hipfireAnim->destFrame = sourceAnim->startTime / hipfireAnim->frequency;
 		//animData->noBlend120 = true;
 		//const auto oldBlend = hipfireAnim->animGroup->blend;
-
+		std::span blocks{ sourceAnim->controlledBlocks, sourceAnim->numControlledBlocks };
+		
 		GameFuncs::PlayAnimGroup(animData, hipfireId, 1, -1, -1);
 		
-		auto* niBlock = GetNifBlock(g_thePlayer, 2, "Bip01 L Thumb12");
+		//auto* niBlock = GetNifBlock(g_thePlayer, 2, "Bip01 L Thumb12");
 		//hipfireAnim->animGroup->blend = oldBlend;
 		//const auto duration = sourceAnim->endKeyTime - (sourceAnim->startTime + sourceAnim->offset);
 		//const auto result = GameFuncs::BlendFromPose(animData->controllerManager, hipfireAnim, sourceAnim->startTime, 0.0f, 0, nullptr);
@@ -251,6 +274,11 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleBurstFire();
 			HandleAnimTimes();
 			//HandleProlongedAim();
+			HandleOnActorReload();
+			//auto* niBlock = GetNifBlock(g_thePlayer, 2, "Bip01 L Thumb12");
+			//static auto lastZ = niBlock->m_localTranslate.z;
+			//if (lastZ != niBlock->m_localTranslate.z)
+				//Console_Print("%g", niBlock->m_localTranslate.z);
 		}
 	}
 

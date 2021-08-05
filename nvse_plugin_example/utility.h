@@ -30,7 +30,7 @@ AnimData* GetThirdPersonAnimData(AnimData* animData);
 void PatchPause(UInt32 ptr);
 
 template <typename T>
-bool In(const T& t, std::initializer_list<T> l)
+bool In(T t, std::initializer_list<T> l)
 {
 	for (auto i : l)
 		if (l == t)

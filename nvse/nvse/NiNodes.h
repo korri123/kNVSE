@@ -841,6 +841,8 @@ public:
 	UInt32	numFaces;		// 06C
 };
 
+class ControlledBlock;
+
 // 0C
 class NiInterpolator : public NiObject
 {
@@ -869,11 +871,38 @@ public:
 	virtual void	Unk_35(void);
 	virtual void	Unk_36(void);
 
-	float		flt08;		// 08
+	float m_lastTime;
+
 };
 
 class NiMultiTargetTransformController;
-class NiBlendInterpolator;
+
+class NiBlendInterpolator : public NiInterpolator
+{
+public:
+	struct InterpArrayItem
+	{
+		NiPointer<NiInterpolator> m_spInterpolator;
+		float m_fWeight;
+		float m_fNormalizedWeight;
+		char m_cPriority;
+		float m_fEaseSpinner;
+		float m_fUpdateTime;
+	};
+	unsigned char m_uFlags;
+	unsigned char m_ucArraySize;
+	unsigned char m_ucInterpCount;
+	unsigned char m_ucSingleIdx;
+	unsigned char m_cHighPriority;
+	unsigned char m_cNextHighPriority;
+	InterpArrayItem* m_pkInterpArray;
+	NiInterpolator* m_pkSingleInterpolator;
+	float m_fWeightThreshold;
+	float m_fSingleTime;
+	float m_fHighSumOfWeights;
+	float m_fNextHighSumOfWeights;
+	float m_fHighEaseSpinner;
+};
 
 struct NiFixedString
 {

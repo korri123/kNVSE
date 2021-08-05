@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <unordered_set>
 
 #include "CommandTable.h"
 #include "GameForms.h"
@@ -37,6 +38,7 @@ struct BurstFireData
 	std::vector<NiTextKey*> hitKeys;
 	float timePassed;
 	bool shouldEject = false;
+	float lastOffset = -FLT_MAX;
 };
 
 struct CallScriptKeyData
@@ -64,6 +66,7 @@ struct AnimTime
 	UInt32 numThirdPersonKeys = 0;
 	float *thirdPersonKeys = nullptr;
 	Script* conditionScriptPoll = nullptr;
+	TESObjectWEAP* actorWeapon = nullptr;
 };
 
 struct SavedAnimsTime
@@ -330,6 +333,8 @@ void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool first
 void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append);
 void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, bool append);
 
+void HandleOnActorReload();
+
 float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 
 bool IsCustomAnim(BSAnimGroupSequence* sequence);
@@ -338,3 +343,24 @@ BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, AnimPath& ctx);
 float GetAnimMult(AnimData* animData, UInt8 animGroupID);
 bool IsAnimGroupReload(UInt8 animGroupId);
+
+bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod);
+
+
+int GetWeaponInfoClipSize(Actor* actor);
+
+enum class ReloadSubscriber
+{
+	Partial, BurstFire
+};
+
+struct ReloadHandler
+{
+	BaseProcess::AmmoInfo* lastAmmoInfo = nullptr;
+	std::unordered_map<ReloadSubscriber, bool> subscribers;
+	
+};
+
+void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);
+
+bool DidActorReload(Actor* actor, ReloadSubscriber subscriber);

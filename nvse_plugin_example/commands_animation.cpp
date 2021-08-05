@@ -242,6 +242,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 {
 	auto applied = false;
 	std::span textKeys{ sequence->textKeyData->m_pKeys, sequence->textKeyData->m_uiNumKeys };
+	auto* actor = animData->actor;
 	const auto hasKey = [&](const char* keyText, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
 	{
 		if (setting == AnimKeySetting::Set)
@@ -287,7 +288,8 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		}
 		if (!hitKeys.empty())
 		{
-			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0);
+			SubscribeOnActorReload(actor, ReloadSubscriber::BurstFire);
+			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0,false, -FLT_MAX);
 		}
 	}
 	if (animData == g_thePlayer->firstPersonAnimData && (hasKey("respectEndKey", ctx.hasRespectEndKey) || hasKey("respectTextKeys", ctx.hasRespectEndKey)))
@@ -298,6 +300,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		animTime.respectEndKey = true;
 		animTime.animData = g_thePlayer->firstPersonAnimData;
 		animTime.finishedEndKey = false;
+		animTime.actorWeapon = actor->GetWeaponForm();
 	}
 	if (hasKey("interruptLoop", ctx.hasInterruptLoop))
 	{
@@ -347,7 +350,7 @@ AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor)
 	if (!weapon || !ammoInfo)
 		return nullptr;
 	StackVector<AnimPath*, 0x100> reloads;
-	if (ammoInfo->count == 0 || ammoInfo->count == weapon->clipRounds.clipRounds)
+	if (ammoInfo->count == 0 || DidActorReload(actor, ReloadSubscriber::Partial))
 		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, !p.partialReload));
 	else
 		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, p.partialReload));
@@ -454,6 +457,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 				
 				if (auto* anim = LoadCustomAnimation(savedAnimPath->path, animData); anim)
 				{
+					SubscribeOnActorReload(actor, ReloadSubscriber::Partial);
 					HandleExtraOperations(animData, anim, *savedAnimPath);
 					if (ctx.conditionScript && animsTime)
 						animsTime->anim = anim;
@@ -718,6 +722,80 @@ float GetAnimMult(AnimData* animData, UInt8 animGroupID)
 bool IsAnimGroupReload(UInt8 animGroupId)
 {
 	return animGroupId >= kAnimGroup_ReloadWStart && animGroupId <= kAnimGroup_ReloadZ;
+}
+
+bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod)
+{
+	ExtraDataList* xData = weaponInfo->extendData ? weaponInfo->extendData->GetFirstItem() : NULL;
+	if (!xData) return 0;
+	ExtraWeaponModFlags* xModFlags = GetExtraType((*xData), WeaponModFlags);
+	if (!xModFlags) return 0;
+	UInt8 modFlags = xModFlags->flags, idx = 3;
+	while (idx--) if ((modFlags & (1 << idx)) && (weap->effectMods[idx] == mod)) return 1;
+	return 0;
+}
+
+int GetWeaponInfoClipSize(Actor* actor)
+{
+	auto* weaponInfo = reinterpret_cast<Decoding::ContChangesEntry*>(actor->baseProcess->GetWeaponInfo());
+	auto weap = static_cast<TESObjectWEAP*>(weaponInfo->type);
+	int maxRounds = weap->clipRounds.clipRounds;
+	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+	auto* ammo = ammoInfo ? ammoInfo->ammo : nullptr;
+	if (WeaponHasNthMod(weaponInfo, weap, TESObjectWEAP::kWeaponModEffect_IncreaseClipCapacity))
+	{
+		maxRounds += weap->GetModBonuses(TESObjectWEAP::kWeaponModEffect_IncreaseClipCapacity);
+	}
+
+	/*double itemCount = 0;
+	if (ammo && CdeclCall<bool>(0x59D8E0, actor, ammo, 0, &itemCount))
+	{
+		return min(maxRounds, (int)itemCount);
+	}*/
+	
+	return maxRounds;
+}
+
+std::unordered_map<Actor*, ReloadHandler> g_reloadTracker;
+
+void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber)
+{
+	auto& handler = g_reloadTracker[actor];
+	handler.subscribers.emplace(subscriber, false);
+	handler.lastAmmoInfo = actor->baseProcess->GetAmmoInfo();
+}
+
+bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
+{
+	const auto iter = g_reloadTracker.find(actor);
+	if (iter == g_reloadTracker.end())
+		return false;
+	auto& didReload = iter->second.subscribers[subscriber];
+	const auto result = didReload;
+	didReload = false;
+	return result;
+}
+
+void HandleOnActorReload()
+{
+	for (auto& [actor, handler] : g_reloadTracker)
+	{
+		auto* curAmmoInfo = actor->baseProcess->GetAmmoInfo();
+		if (curAmmoInfo != handler.lastAmmoInfo)
+		{
+			ra::for_each(handler.subscribers, _L(auto& p, p.second = true));
+			handler.lastAmmoInfo = curAmmoInfo;
+		}
+		else
+		{
+			const auto currentAnimAction = static_cast<AnimAction>(actor->baseProcess->GetCurrentAnimAction());
+			const static std::unordered_set s_reloads = { kAnimAction_Reload, kAnimAction_ReloadLoop, kAnimAction_ReloadLoopStart, kAnimAction_ReloadLoopEnd };
+			if (s_reloads.contains(currentAnimAction))
+			{
+				ra::for_each(handler.subscribers, _L(auto &p, p.second = false));
+			}
+		}
+	}
 }
 
 float GetTimePassed(AnimData* animData, UInt8 animGroupID)

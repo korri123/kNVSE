@@ -145,7 +145,7 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 gr
 
 bool __fastcall IsCustomAnimKey(const char* key)
 {
-	const static auto customKeys = { "noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire" };
+	const static auto customKeys = { "noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys"};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }
 

@@ -2551,6 +2551,7 @@ public:
 	TESObjectWEAP();
 	~TESObjectWEAP();
 	bool IsMeleeWeapon() const;
+	float GetModBonuses(UInt32 effectID);
 
 	enum EWeaponType {
 		kWeapType_HandToHandMelee = 0,
