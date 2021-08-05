@@ -208,11 +208,6 @@ void HandleBurstFire()
 }
 const auto kNVSEVersion = 8;
 
-bool __fastcall ActivateToBlendHook(NiControllerManager* mgr, void* _EDX, BSAnimGroupSequence* from, BSAnimGroupSequence* to, float fEaseIn, int priority, bool startOver, float weight, NiControllerSequence* sync)
-{
-	return GameFuncs::BlendFromPose(mgr, to, fEaseIn, to->destFrame * 0.1f, 0, sync);
-}
-
 void HandleProlongedAim()
 {
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
@@ -227,34 +222,25 @@ void HandleProlongedAim()
 	const auto curGroupId = curWeaponAnim->animGroup->groupID;
 	const UInt16 hipfireId = curGroupId - 3;
 
-	//SafeWrite8(0x495244 + 1, 0);
-	//SafeWriteBuf(0xA35008, "\xEB\x9", 2);
-	//WriteRelCall(0x4952F8, ActivateToBlendHook);
 	for (auto* animData : {animData3rd, animData1st})
 	{
 		auto* hipfireAnim = GetGameAnimation(animData, hipfireId);
 		auto* sourceAnim = animData->animSequence[kSequence_Weapon];
-		//animData->animSequence[kSequence_Weapon] = hipfireAnim;
-		//animData->groupIDs[kSequence_Weapon] = hipfireId;
 		
-		//hipfireAnim->offset = -sourceAnim->startTime;
-		//hipfireAnim->startTime = sourceAnim->startTime;
 		hipfireAnim->destFrame = sourceAnim->startTime / hipfireAnim->frequency;
-		//animData->noBlend120 = true;
-		//const auto oldBlend = hipfireAnim->animGroup->blend;
-		std::span blocks{ sourceAnim->controlledBlocks, sourceAnim->numControlledBlocks };
+		std::span blocks{ hipfireAnim->controlledBlocks, hipfireAnim->numControlledBlocks };
+
+		auto oldBlend = hipfireAnim->animGroup->blendIn;
+		hipfireAnim->animGroup->blendIn = 8;
+
+		ra::for_each(blocks, _L(NiControllerSequence::ControlledBlock & block, block.blendInterpolator->m_cHighPriority += 20));
 		
 		GameFuncs::PlayAnimGroup(animData, hipfireId, 1, -1, -1);
-		
-		//auto* niBlock = GetNifBlock(g_thePlayer, 2, "Bip01 L Thumb12");
-		//hipfireAnim->animGroup->blend = oldBlend;
-		//const auto duration = sourceAnim->endKeyTime - (sourceAnim->startTime + sourceAnim->offset);
-		//const auto result = GameFuncs::BlendFromPose(animData->controllerManager, hipfireAnim, sourceAnim->startTime, 0.0f, 0, nullptr);
-		int i = 0;
+
+		ra::for_each(blocks, _L(NiControllerSequence::ControlledBlock & block, block.blendInterpolator->m_cHighPriority -= 20));
+
+		hipfireAnim->animGroup->blendIn = oldBlend;
 	}
-	//WriteRelCall(0x4952F8, 0xA2E280);
-	//SafeWriteBuf(0xA35008, "\xD9\xEE", 2);
-	//SafeWrite8(0x495244 + 1, 1);
 	highProcess->SetCurrentActionAndSequence(hipfireId, GetGameAnimation(animData3rd, hipfireId));
 }
 
@@ -274,7 +260,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleBurstFire();
 			HandleAnimTimes();
 			//HandleProlongedAim();
-			HandleOnActorReload();
+			//HandleOnActorReload();
 			//auto* niBlock = GetNifBlock(g_thePlayer, 2, "Bip01 L Thumb12");
 			//static auto lastZ = niBlock->m_localTranslate.z;
 			//if (lastZ != niBlock->m_localTranslate.z)

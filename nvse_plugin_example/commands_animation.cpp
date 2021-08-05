@@ -888,7 +888,7 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	auto enable = 0;
 	char path[0x1000];
 	int pollCondition = 0;
-	Script* conditionScript;
+	Script* conditionScript = nullptr;
 	if (!ExtractArgs(EXTRACT_ARGS, &firstPerson, &enable, &path, &pollCondition, &conditionScript))
 		return true;
 	Actor* actor = nullptr;
