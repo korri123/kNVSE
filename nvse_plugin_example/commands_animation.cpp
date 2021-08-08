@@ -275,24 +275,30 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 	if (sequence->animGroup->IsAttack() && hasKey("burstFire", ctx.hasBurstFire))
 	{
 		std::vector<NiTextKey*> hitKeys;
-		bool skippedFirst = false;
-		for (auto& key : textKeys)
+		std::vector<NiTextKey*> ejectKeys;
+		const auto parseForKeys = [&](const char* keyName, std::vector<NiTextKey*>& keys)
 		{
-			if (_stricmp(key.m_kText.CStr(), "hit") == 0)
+			bool skippedFirst = false;
+			for (auto& key : textKeys)
 			{
-				if (!skippedFirst)
+				if (_stricmp(key.m_kText.CStr(), keyName) == 0)
 				{
-					// engine handles first key
-					skippedFirst = true;
-					continue;
+					if (!skippedFirst)
+					{
+						// engine handles first key
+						skippedFirst = true;
+						continue;
+					}
+					keys.push_back(&key);
 				}
-				hitKeys.push_back(&key);
 			}
-		}
-		if (!hitKeys.empty())
+		};
+		parseForKeys("hit", hitKeys);
+		parseForKeys("eject", ejectKeys);
+		if (!hitKeys.empty() || !ejectKeys.empty())
 		{
 			SubscribeOnActorReload(actor, ReloadSubscriber::BurstFire);
-			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor);
+			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor, std::move(ejectKeys), 0, false);
 		}
 	}
 	if (animData == g_thePlayer->firstPersonAnimData && (hasKey("respectEndKey", ctx.hasRespectEndKey) || hasKey("respectTextKeys", ctx.hasRespectEndKey)))
@@ -346,6 +352,26 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 			});
 			if (!ra::any_of(scriptPairs, _L(auto& p, p.first == nullptr || !IS_ID(p.first, Script))))
 				iter->second.scripts = std::move(scriptPairs);
+		}
+	}
+	if (hasKey("SoundPath:", ctx.hasSoundPath, KeyCheckType::KeyStartsWith))
+	{
+		auto& animTime = g_timeTrackedAnims[sequence];
+		animTime.soundStage = 0;
+		animTime.actor = actor;
+		animTime.lastNiTime = -FLT_MAX;
+		if (!animTime.playsSoundPath)
+		{
+			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey & key, StartsWith(key.m_kText.CStr(), "SoundPath:")));
+			auto soundPairs = MapTo<std::pair<Sound, float>>(*keys, [&](NiTextKey* key)
+			{
+				const auto str = StripSpace(key->m_kText.CStr());
+				const auto pathNoData = str.substr(str.find_first_of(':') + 1);
+				const auto path = "Data\\Sound\\" + pathNoData;
+				return std::make_pair(Sound::InitByFilename(path.c_str()), key->m_fTime);
+			});
+			animTime.soundPaths = std::move(soundPairs);
+			animTime.playsSoundPath = true;
 		}
 	}
 	return applied;
@@ -995,6 +1021,17 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 	LoadFileAnimPaths();
 	return true;
 }
+
+#if _DEBUG
+
+bool Cmd_kNVSETest_Execute(COMMAND_ARGS)
+{
+	Sound sound = Sound::InitByFilename("Data\\Sound\\fx\\csgo_headshot_sounds\\head\\headshot1.wav");
+	sound.Play();
+	return true;
+}
+
+#endif
 
 
 //bool Cmd_GetPlayingAnimationPath_Execute(COMMAND_ARGS)

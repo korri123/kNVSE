@@ -41,6 +41,16 @@ void Actor::FireWeapon()
 	GameFuncs::HandleQueuedAnimFlags(this); //Actor::HandleQueuedIdleFlags
 }
 
+void Actor::EjectFromWeapon(TESObjectWEAP* weapon)
+{
+	if (weapon && GameFuncs::IsDoingAttackAnimation(this) && !weapon->IsMeleeWeapon() && !weapon->IsAutomatic())
+	{
+		// eject
+		baseProcess->SetQueuedIdleFlag(kIdleFlag_AttackEjectEaseInFollowThrough);
+		GameFuncs::HandleQueuedAnimFlags(this);
+	}
+}
+
 TESObjectWEAP* Actor::GetWeaponForm() const
 {
 	auto* weaponInfo = this->baseProcess->GetWeaponInfo();

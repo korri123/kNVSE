@@ -112,11 +112,26 @@ void HandleAnimTimes()
 		}
 		if (animTime.callScript && animTime.scriptStage < animTime.scripts.size() && !deferredErase)
 		{
+			
 			auto& p = animTime.scripts.at(animTime.scriptStage);
 			if (time > p.second)
 			{
-				g_script->CallFunction(p.first, animTime.animData->actor, nullptr, nullptr, 0);
+				if (!IsPlayersOtherAnimData(animTime.actor->GetAnimData()))
+					g_script->CallFunction(p.first, animTime.animData->actor, nullptr, nullptr, 0);
 				++animTime.scriptStage;
+			}
+		}
+		if (animTime.playsSoundPath && animTime.soundStage < animTime.soundPaths.size() && !deferredErase)
+		{
+			auto& p = animTime.soundPaths.at(animTime.soundStage);
+			if (time > p.second)
+			{
+				if (!IsPlayersOtherAnimData(animTime.actor->GetAnimData()))
+				{
+					p.first.Set3D(actor);
+					p.first.Play();
+				}
+				++animTime.soundStage;
 			}
 		}
 		if (deferredErase)
@@ -177,7 +192,7 @@ void HandleBurstFire()
 	auto iter = g_burstFireQueue.begin();
 	while (iter != g_burstFireQueue.end())
 	{
-		auto& [animData, anim, index, hitKeys, timePassed, shouldEject, lastNiTime, actor] = *iter;
+		auto& [animData, anim, index, hitKeys, timePassed, shouldEject, lastNiTime, actor, ejectKeys, ejectIdx, reloading] = *iter;
 		const auto erase = [&]()
 		{
 			iter = g_burstFireQueue.erase(iter);
@@ -203,7 +218,9 @@ void HandleBurstFire()
 			++iter;
 			continue;
 		}
-		if (timePassed > hitKeys.at(index)->m_fTime)
+		const auto passedHitKey = index < hitKeys.size() && timePassed > hitKeys.at(index)->m_fTime;
+		const auto passedEjectKey = ejectIdx < ejectKeys.size() && !ejectKeys.empty() && ejectIdx < ejectKeys.size() && timePassed > ejectKeys.at(ejectIdx)->m_fTime;
+		if (passedHitKey || passedEjectKey)
 		{
 			if (auto* ammoInfo = actor->baseProcess->GetAmmoInfo()) // static_cast<Decoding::MiddleHighProcess*>(animData->actor->baseProcess)->ammoInfo
 			{
@@ -213,8 +230,7 @@ void HandleBurstFire()
 					if (DidActorReload(actor, ReloadSubscriber::BurstFire) || ammoInfo->count == 0 || actor->IsAnimActionReload())
 					{
 						// reloaded
-						erase();
-						continue;
+						reloading = true;
 					}
 #if 0
 					const auto ammoCount = ammoInfo->countDelta;
@@ -226,20 +242,30 @@ void HandleBurstFire()
 #endif
 				}
 			}
-			++index;
+			if (passedHitKey)
+				++index;
 			if (!IsPlayersOtherAnimData(animData))
 			{
-				animData->actor->FireWeapon();
-				if (weapon && GameFuncs::IsDoingAttackAnimation(animData->actor) && !weapon->IsMeleeWeapon() && !weapon->IsAutomatic())
+				bool ejected = false;
+				if (passedHitKey)
 				{
-					// eject
-					animData->actor->baseProcess->SetQueuedIdleFlag(kIdleFlag_AttackEjectEaseInFollowThrough);
-					GameFuncs::HandleQueuedAnimFlags(animData->actor);
+					if (!reloading)
+						actor->FireWeapon();
+					if (!passedEjectKey && ejectKeys.empty() || ejectIdx == ejectKeys.size())
+					{
+						actor->EjectFromWeapon(weapon);
+						ejected = true;
+					}
+				}
+				if (!ejected && passedEjectKey)
+				{
+					actor->EjectFromWeapon(weapon);
+					++ejectIdx;
 				}
 			}
 		}
 		
-		if (index < hitKeys.size())
+		if (index < hitKeys.size() || !ejectKeys.empty() && ejectIdx < ejectKeys.size())
 			++iter;
 		else
 			erase();
@@ -550,6 +576,9 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	RegisterScriptCommand(PlayAnimationPath);
 	RegisterScriptCommand(ForceStopIdle);
 	RegisterScriptCommand(kNVSEReset);
+#if _DEBUG
+	RegisterScriptCommand(kNVSETest);
+#endif
 	
 	if (isEditor)
 	{

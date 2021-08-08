@@ -85,7 +85,7 @@ public:
 	virtual ValidBip01Names * GetValidBip01Names(void);	// 007A	Character only
 	virtual ValidBip01Names * CallGetValidBip01Names(void);
 	virtual void		SetValidBip01Names(ValidBip01Names validBip01Names);
-	virtual void		GetPos(void);				// GetPos or GetDistance
+	virtual NiPoint3*		GetPos(void);				// GetPos or GetDistance
 	virtual void		Unk_7E(UInt32 arg0);
 	virtual void		Unk_7F(void);
 	virtual void		Unk_80(UInt32 arg0);
@@ -478,6 +478,7 @@ public:
 	virtual void		Unk_135(void);
 	virtual void		Unk_136(void);
 	void FireWeapon();
+	void EjectFromWeapon(TESObjectWEAP* weapon);
 	TESObjectWEAP* GetWeaponForm() const;
 	bool IsAnimActionReload() const;
 

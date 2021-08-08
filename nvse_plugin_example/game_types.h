@@ -523,6 +523,54 @@ enum class ControlCode
 	Screenshot = 0x1E,
 };
 
+// 0C
+struct Sound
+{
+	UInt32 soundID{};
+	UInt8 maybeSuccess{};
+	UInt8 pad05{};
+	UInt8 pad06{};
+	UInt8 pad07{};
+	UInt32 unk08{};
+
+	Sound() = default;
+
+	Sound(const char* soundPath, UInt32 flags)
+	{
+		ThisStdCall(0xAD7550, CdeclCall<void*>(0xAD9060), this, soundPath, flags);
+	}
+
+	void Play()
+	{
+		ThisStdCall(0xAD8830, this, 1);
+	}
+
+	void PlayDelayed(int delayMS, int unused)
+	{
+		ThisStdCall(0xAD8870, this, delayMS, unused);
+	}
+
+	static Sound InitByFilename(const char* path)
+	{
+		Sound sound;
+		ThisStdCall(0xAD7480, CdeclCall<void*>(0x453A70), &sound, path, 0, nullptr);
+		return sound;
+	}
+
+	void Set3D(Actor* actor)
+	{
+		if (!actor)
+			return;
+		auto* pos = actor->GetPos();
+		auto* node = actor->GetNiNode();
+		if (pos && node)
+		{
+			ThisStdCall(0xAD8B60, this, pos->x, pos->y, pos->z);
+			ThisStdCall(0xAD8F20, this, node);
+		}
+	}
+};
+
 struct NiQuatTransform
 {
 	NiPoint3 m_kTranslate;

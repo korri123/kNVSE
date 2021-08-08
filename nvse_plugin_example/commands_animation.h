@@ -41,6 +41,9 @@ struct BurstFireData
 	bool shouldEject = false;
 	float lastNiTime = -FLT_MAX;
 	Actor* actor = nullptr;
+	std::vector<NiTextKey*> ejectKeys;
+	std::size_t ejectIdx = 0;
+	bool reloading = false;
 };
 
 extern std::list<BurstFireData> g_burstFireQueue;
@@ -71,6 +74,9 @@ struct AnimTime
 	TESObjectWEAP* actorWeapon = nullptr;
 	Actor* actor = nullptr;
 	float lastNiTime = -FLT_MAX;
+	bool playsSoundPath = false;
+	std::vector<std::pair<Sound, float>> soundPaths;
+	UInt32 soundStage = 0;
 };
 
 struct SavedAnimsTime
@@ -99,6 +105,7 @@ struct AnimPath
 	AnimKeySetting hasInterruptLoop{};
 	AnimKeySetting hasNoBlend{};
 	AnimKeySetting hasCallScript{};
+	AnimKeySetting hasSoundPath{};
 	bool partialReload = false;
 
 };
@@ -332,7 +339,11 @@ DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", false, sizeof kParams_SetActorA
 DEFINE_COMMAND_PLUGIN(PlayAnimationPath, "", true, sizeof kParams_PlayAnimationPath / sizeof(ParamInfo), kParams_PlayAnimationPath)
 DEFINE_COMMAND_PLUGIN(kNVSEReset, "", false, 0, nullptr)
 DEFINE_COMMAND_PLUGIN(ForceStopIdle, "", true, 1, kParams_OneOptionalInt)
+#if _DEBUG
 
+DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
+
+#endif
 
 void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, Script* conditionScript = nullptr, bool pollCondition = false);
 void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append);
