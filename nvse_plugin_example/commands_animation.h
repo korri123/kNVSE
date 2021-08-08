@@ -14,6 +14,7 @@
 struct SavedAnims;
 extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
 
+
 enum QueuedIdleFlags
 {
   kIdleFlag_FireWeapon = 0x1,
@@ -38,8 +39,11 @@ struct BurstFireData
 	std::vector<NiTextKey*> hitKeys;
 	float timePassed;
 	bool shouldEject = false;
-	float lastOffset = -FLT_MAX;
+	float lastNiTime = -FLT_MAX;
+	Actor* actor = nullptr;
 };
+
+extern std::list<BurstFireData> g_burstFireQueue;
 
 struct CallScriptKeyData
 {
@@ -63,10 +67,10 @@ struct AnimTime
 	UInt32 scriptStage = 0;
 	BSAnimGroupSequence* anim3rdCounterpart = nullptr;
 	POVSwitchState povState = POVSwitchState::NotSet;
-	UInt32 numThirdPersonKeys = 0;
-	float *thirdPersonKeys = nullptr;
 	Script* conditionScriptPoll = nullptr;
 	TESObjectWEAP* actorWeapon = nullptr;
+	Actor* actor = nullptr;
+	float lastNiTime = -FLT_MAX;
 };
 
 struct SavedAnimsTime
@@ -75,6 +79,8 @@ struct SavedAnimsTime
 	AnimData* animData = nullptr;
 	UInt16 groupId = 0;
 	BSAnimGroupSequence* anim = nullptr;
+	Actor* actor = nullptr;
+	float lastNiTime = -FLT_MAX;
 };
 
 extern std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
@@ -209,9 +215,9 @@ enum eAnimSequence
 	kSequence_Death = 0x14,
 };
 
-enum AnimAction
+enum AnimAction : SInt16
 {
-	kAnimAction_None = 0xFFFFFFFF,
+	kAnimAction_None = -1,
 	kAnimAction_Equip_Weapon = 0x0,
 	kAnimAction_Unequip_Weapon = 0x1,
 	kAnimAction_Attack = 0x2,
@@ -269,6 +275,7 @@ namespace GameFuncs
 	inline auto ActivateSequence = THISCALL(0xA2E280, bool, NiControllerManager* manager, NiControllerSequence* source, NiControllerSequence* destination, float blend, int priority, bool startOver, float morphWeight, NiControllerSequence* pkTimeSyncSeq);
 	inline auto MorphSequence = THISCALL(0xA351D0, bool, NiControllerSequence *source, NiControllerSequence *pkDestSequence, float fDuration, int iPriority, float fSourceWeight, float fDestWeight);
 	inline auto BlendFromPose = THISCALL(0xA2F800, bool, NiControllerManager * mgr, NiControllerSequence * pkSequence, float fDestFrame, float fDuration, int iPriority, NiControllerSequence * pkSequenceToSynchronize);
+	inline auto DeactivateSequence = THISCALL(0x47B220, int, NiControllerManager * mgr, NiControllerSequence * pkSequence, float fEaseOut);
 }
 
 enum SequenceState1
@@ -351,14 +358,14 @@ int GetWeaponInfoClipSize(Actor* actor);
 
 enum class ReloadSubscriber
 {
-	Partial, BurstFire
+	Partial, BurstFire, AimTransition
 };
 
 struct ReloadHandler
 {
-	BaseProcess::AmmoInfo* lastAmmoInfo = nullptr;
 	std::unordered_map<ReloadSubscriber, bool> subscribers;
-	
+	UInt32 lastAmmoCount = 0;
+	AnimAction lastAction = kAnimAction_None;
 };
 
 void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);

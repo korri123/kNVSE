@@ -11,6 +11,7 @@
 #include "GameObjects.h"
 #include "GameRTTI.h"
 #include "hooks.h"
+#include "main.h"
 #include "MemoizedMap.h"
 #include "SafeWrite.h"
 #include "utility.h"
@@ -153,7 +154,9 @@ BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID)
 {
 	auto* seqBase = animData->mapAnimSequenceBase->Lookup(groupID);
 	if (seqBase)
-		return seqBase->GetSequenceByIndex(0);
+	{
+		return seqBase->GetSequenceByIndex(-1);
+	}
 	return nullptr;
 }
 
@@ -289,7 +292,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		if (!hitKeys.empty())
 		{
 			SubscribeOnActorReload(actor, ReloadSubscriber::BurstFire);
-			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0,false, -FLT_MAX);
+			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor);
 		}
 	}
 	if (animData == g_thePlayer->firstPersonAnimData && (hasKey("respectEndKey", ctx.hasRespectEndKey) || hasKey("respectTextKeys", ctx.hasRespectEndKey)))
@@ -301,6 +304,8 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		animTime.animData = g_thePlayer->firstPersonAnimData;
 		animTime.finishedEndKey = false;
 		animTime.actorWeapon = actor->GetWeaponForm();
+		animTime.actor = animData->actor;
+		animTime.lastNiTime = -FLT_MAX;
 	}
 	if (hasKey("interruptLoop", ctx.hasInterruptLoop))
 	{
@@ -321,11 +326,14 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		auto iter = g_timeTrackedAnims.find(sequence);
 		if (iter == g_timeTrackedAnims.end())
 			iter = g_timeTrackedAnims.emplace(sequence, AnimTime()).first;
-		iter->second.scriptStage = 0;
+		auto& animTime = iter->second;
+		animTime.scriptStage = 0;
+		animTime.lastNiTime = -FLT_MAX;
 		if (!iter->second.callScript)
 		{
-			iter->second.callScript = true;
-			iter->second.animData = animData;
+			animTime.callScript = true;
+			animTime.animData = animData;
+			animTime.actor = animData->actor;
 			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey& key, StartsWith(key.m_kText.CStr(), "Script:")));
 			auto scriptPairs = MapTo<std::pair<Script*, float>>(*keys, [&](NiTextKey* key)
 			{
@@ -418,6 +426,8 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 				animTime.animData = animData;
 				animTime.groupId = groupId;
 				animTime.time = 0;
+				animTime.actor = animData->actor;
+				animTime.lastNiTime = -FLT_MAX;
 				return &animTime;
 			};
 			SavedAnimsTime* animsTime = nullptr;
@@ -762,17 +772,24 @@ void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber)
 {
 	auto& handler = g_reloadTracker[actor];
 	handler.subscribers.emplace(subscriber, false);
-	handler.lastAmmoInfo = actor->baseProcess->GetAmmoInfo();
+	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+	if (ammoInfo)
+		handler.lastAmmoCount = ammoInfo->count;
 }
 
 bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
 {
+	if (IsGodMode())
+		return false;
 	const auto iter = g_reloadTracker.find(actor);
 	if (iter == g_reloadTracker.end())
 		return false;
-	auto& didReload = iter->second.subscribers[subscriber];
-	const auto result = didReload;
-	didReload = false;
+	auto* didReload = &iter->second.subscribers[subscriber];
+	const auto result = *didReload;
+	g_executionQueue.emplace_back([=]()
+	{
+		*didReload = false;
+	});
 	return result;
 }
 
@@ -781,20 +798,20 @@ void HandleOnActorReload()
 	for (auto& [actor, handler] : g_reloadTracker)
 	{
 		auto* curAmmoInfo = actor->baseProcess->GetAmmoInfo();
-		if (curAmmoInfo != handler.lastAmmoInfo)
+		if (!curAmmoInfo)
+			continue;
+		const bool isAnimActionReload = actor->IsAnimActionReload();
+		const auto count = curAmmoInfo->count;
+		if ((count > handler.lastAmmoCount || count == 0 && handler.lastAmmoCount != 0) && !isAnimActionReload && handler.lastAction != kAnimAction_ReloadLoop)
 		{
 			ra::for_each(handler.subscribers, _L(auto& p, p.second = true));
-			handler.lastAmmoInfo = curAmmoInfo;
 		}
-		else
+		else if (isAnimActionReload)
 		{
-			const auto currentAnimAction = static_cast<AnimAction>(actor->baseProcess->GetCurrentAnimAction());
-			const static std::unordered_set s_reloads = { kAnimAction_Reload, kAnimAction_ReloadLoop, kAnimAction_ReloadLoopStart, kAnimAction_ReloadLoopEnd };
-			if (s_reloads.contains(currentAnimAction))
-			{
-				ra::for_each(handler.subscribers, _L(auto &p, p.second = false));
-			}
+			ra::for_each(handler.subscribers, _L(auto &p, p.second = false));
 		}
+		handler.lastAction = static_cast<AnimAction>(actor->baseProcess->GetCurrentAnimAction());
+		handler.lastAmmoCount = count;
 	}
 }
 

@@ -147,7 +147,7 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 {
 	ScriptBuffer buffer;
 	DataHandler::Get()->DisableAssignFormIDs(true);
-	auto* condition = Script::CreateScript();
+	auto condition = MakeUnique<Script, 0x5AA0F0, 0x5AA1A0>();
 	DataHandler::Get()->DisableAssignFormIDs(false);
 	std::string scriptSource;
 	if (!FindStringCI(condString, "SetFunctionValue"))
@@ -173,16 +173,16 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 			SafeWrite8(0x5B3A8D, 0x73);
 	};
 	patchEndOfLineCheck(true);
-	auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition, &buffer);
+	auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition.get(), &buffer);
 	patchEndOfLineCheck(false);
 	if (!result)
 	{
 		DebugPrint("Failed to compile condition script");
-		condition = nullptr;
+		return nullptr;
 	}
 	buffer.scriptText = nullptr;
 	condition->text = nullptr;
-	return condition;
+	return condition.release();
 }
 
 void HandleJson(const std::filesystem::path& path)

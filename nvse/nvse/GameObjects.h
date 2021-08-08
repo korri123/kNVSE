@@ -99,7 +99,7 @@ public:
 	virtual bool		Unk_88(void);			// seems to always return 0
 	virtual void		Unk_89(void);
 	virtual void		Unk_8A(void);			// SetParentCell (Interior only ?)
-	virtual void		Unk_8B(void);			// IsDead = HasNoHealth (baseForm health <= 0 or Flags bit23 set)
+	virtual bool		IsDying(bool arg0);			// IsDead = HasNoHealth (baseForm health <= 0 or Flags bit23 set)
 	virtual bool		Unk_8C(void);
 	virtual bool		Unk_8D(void);
 	virtual void		Unk_8E(void);
@@ -479,6 +479,7 @@ public:
 	virtual void		Unk_136(void);
 	void FireWeapon();
 	TESObjectWEAP* GetWeaponForm() const;
+	bool IsAnimActionReload() const;
 
 	MagicCaster			magicCaster;			// 088
 	MagicTarget			magicTarget;			// 094
@@ -656,11 +657,49 @@ public:
 	UInt8								pad7BD[3];				// 7BD
 	UInt32								unk7C0[49];				// 7C0
 	tList<BGSEntryPointPerkEntry>		perkEntries[74];		// 884
-	UInt32								unkAD4[164];			// AD4
-	CombatActors						*combatActors;			// D64
-	UInt32								unkD68[3];				// D68
-	UInt8								unkD74[96];				// D74
-	UInt32								unkDD4[(0x0E50 - 0x0DD4) / 4];	// DD4
+	tList<void>						perkRanksTM;			// AD4
+	tList<BGSEntryPointPerkEntry>		perkEntriesTM[74];		// ADC
+	UInt32								unkD2C[4];				// D2C
+	NiObject* unkD3C;				// D3C
+	UInt32								unkD40;					// D40
+	Actor* reticleActor;			// D44
+	tList<void>* compassTargets;		// D48
+	UInt32								unkD4C;					// D4C
+	float								lastAmmoSwapTime;		// D50
+	UInt32								unkD54[4];				// D4C
+	CombatActors* combatActors;			// D64
+	UInt32								teammateCount;			// D68
+	UInt32								unkD6C[5];				// D6C
+	NiNode* niNodeD80;				// D80
+	UInt32								unkD84[12];				// D84
+	NiNode* niNodeDB4;				// DB4
+	UInt32								unkDB8[7];				// DB8
+	NiVector3							vectorDD4;				// DD4
+	NiVector3							cameraPos;				// DE0
+	void* rigidBody;				// DEC
+	bool								pcInCombat;				// DF0
+	bool								pcUnseen;				// DF1
+	UInt8								byteDF2;				// DF2
+	UInt8								byteDF3;				// DF3
+	BSSimpleArray<void>			itemChanges;			// DF4
+	UInt32								unkE04[5];				// E04
+	float								killCamTimer;			// E18
+	float								killCamCooldown;		// E1C
+	UInt8								byteE20;				// E20
+	UInt8								byteE21;				// E21
+	UInt8								byteE22;				// E22
+	UInt8								byteE23;				// E23
+	float								fltE24;					// E24
+	float								counterAttackTimer;		// E28
+	UInt32								unkE2C;					// E2C
+	UInt32								itemDetectionTimer;		// E30
+	NiNode* ironSightNode;			// E34
+	bool								noHardcoreTracking;		// E38	Appears to be unused
+	bool								skipHCNeedsUpdate;		// E39
+	UInt8								byteE3A;				// E3A
+	UInt8								byteE3B;				// E3B
+	BSSimpleArray<TESAmmo*>				hotkeyedWeaponAmmos;	// E3C
+	UInt32								unkE4C;					// E4C
 
 		// 7C4 is a byte used during Combat evaluation (Player is targetted ?), 
 		// 7C6 is a boolean meaning toddler, 

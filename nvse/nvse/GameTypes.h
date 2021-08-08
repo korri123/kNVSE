@@ -535,6 +535,17 @@ public:
 	Node *Head() {return first;}
 	Node *Tail() {return last;}
 	UInt32 Size() const {return count;}
+
+	template <typename F>
+	void ForEach(const F& f)
+	{
+		auto* node = Head();
+		for (int i = 0; i < Size(); ++i)
+		{
+			f(node->data);
+			node = node->next;
+		}
+	}
 };
 
 // 010

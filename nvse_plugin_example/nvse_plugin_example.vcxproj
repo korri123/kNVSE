@@ -162,7 +162,7 @@
     </ClCompile>
     <Link>
       <ModuleDefinitionFile>exports.def</ModuleDefinitionFile>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention />
@@ -436,6 +436,7 @@
     <ClInclude Include="hooks.h" />
     <ClInclude Include="json.h" />
     <ClInclude Include="game_types.h" />
+    <ClInclude Include="main.h" />
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="SimpleINILibrary.h" />
     <ClInclude Include="stack_allocator.h" />
@@ -449,6 +450,9 @@
       <Project>{20c6411c-596f-4b85-be4e-8bc91f59d8a6}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="GameTypes.natvis" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

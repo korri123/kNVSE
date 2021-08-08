@@ -983,14 +983,29 @@ public:
 		NiFixedString m_kInterpolatorID;
 	};
 
+	enum FlagsKNVSE
+	{
+		kFlag_DestframeStartTime = 1
+	};
 
-	const char* sequenceName;
-	UInt32 numControlledBlocks;
-	UInt32 arrayGrowBy;
-	NiControllerSequence::ControlledBlock* controlledBlocks;
-	NiControllerSequence::IDTag* IDTagArray;
-	float seqWeight;
-	NiTextKeyExtraData* textKeyData;
+	enum AnimState
+	{
+		kAnimState_Inactive = 0x0,
+		kAnimState_Animating = 0x1,
+		kAnimState_EaseIn = 0x2,
+		kAnimState_EaseOut = 0x3,
+		kAnimState_TransSource = 0x4,
+		kAnimState_TransDest = 0x5,
+		kAnimState_MorphSource = 0x6,
+	};
+
+	const char* sequenceName; // 8
+	UInt32 numControlledBlocks; // C
+	UInt32 arrayGrowBy; // 10
+	NiControllerSequence::ControlledBlock* controlledBlocks; // 14
+	NiControllerSequence::IDTag* IDTagArray; // 18
+	float seqWeight; // 1C
+	NiTextKeyExtraData* textKeyData; // 20
 	UInt32 cycleType;
 	float frequency;
 	float beginKeyTime;
@@ -999,7 +1014,7 @@ public:
 	float weightedLastTime;
 	float lastScaledTime;
 	NiControllerManager* owner;
-	UInt32 state;
+	AnimState state;
 	float offset;
 	float startTime;
 	float endTime;
@@ -1007,11 +1022,11 @@ public:
 	NiControllerSequence* partnerSequence;
 	const char* accumRootName;
 	UInt32 node60_maybeAccumRoot;
-	UInt32 unk64;
-	SInt16 wrd68;
+	UInt32 kNVSEFlags; // deprecated string palette
+	SInt16 curAnimNIdx;
 	UInt16 wrd6A;
-	UInt32 unk6C;
-	UInt16 wrd70;
+	UInt32 spNotesA;
+	UInt16 numNotes;
 	UInt8 hasHashHashAtStartOfNodeName;
 	UInt8 byte73;
 };
@@ -1305,6 +1320,7 @@ public:
 	}
 
 	bool IsAttackIS();
+	bool IsAttackNonIS();
 
 
 	bool IsAim()

@@ -523,6 +523,15 @@ enum class ControlCode
 	Screenshot = 0x1E,
 };
 
+struct NiQuatTransform
+{
+	NiPoint3 m_kTranslate;
+	NiQuaternion m_kRotate;
+	float m_fScale;
+};
+
+extern NiQuatTransform* trans;
+
 extern OSInputGlobals** g_inputGlobals;
 
 TESAnimGroup::AnimGroupInfo* GetGroupInfo(UInt8 groupId);

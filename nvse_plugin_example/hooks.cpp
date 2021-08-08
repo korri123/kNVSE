@@ -12,6 +12,7 @@
 #include "nitypes.h"
 #include "SimpleINILibrary.h"
 #include "utility.h"
+#include "main.h"
 
 AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
@@ -38,6 +39,7 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		if (auto* anim = GetActorAnimation(animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
 		{
 			*toMorph = anim;
+			
 #if 0
 			if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
 				Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
@@ -189,18 +191,23 @@ void __fastcall FixBlendMult()
 	}
 }
 
+extern float g_destFrame;
+
 void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void* _EDX, float fTime, bool bUpdateInterpolators)
 {
+
 	if (sequence->state == kAnimState_Inactive)
 		return;
-	if (sequence->destFrame != -FLT_MAX)
+	if (g_destFrame != -FLT_MAX && sequence->kNVSEFlags & NiControllerSequence::kFlag_DestframeStartTime)
 	{
 		if (sequence->offset == -FLT_MAX)
 		{
 			sequence->offset = -fTime;
 		}
-		sequence->offset += sequence->destFrame;
-		sequence->destFrame = -FLT_MAX;
+		sequence->offset += g_destFrame;
+		g_destFrame = -FLT_MAX;
+		sequence->kNVSEFlags ^= NiControllerSequence::kFlag_DestframeStartTime;
+		sequence->destFrame = -FLT_MAX; // end my suffering
 	}
 	ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
 }
@@ -258,13 +265,14 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelJump(0x4951D2, BlendMultHook);
 
+#if _DEBUG || IS_TRANSITION_FIX
 	//if (ini.GetOrCreate("General", "bFixAimAfterShooting", 1, "; stops the player from being stuck in irons sight aim mode after shooting a weapon while aiming"))
 	{
 		//APPLY_JMP(ProlongedAimFix);
 		//SafeWriteBuf(0x491275, "\xEB\x0B", 2);
-
-		//WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
+		WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
 	}
+#endif
 	
 	ini.SaveFile(iniPath.c_str(), false);
 }

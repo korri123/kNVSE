@@ -891,6 +891,7 @@ public:
 // 08
 class AnimSequenceMultiple : public AnimSequenceBase
 {
+public:
 	DList<BSAnimGroupSequence>* anims; // 04
 };
 

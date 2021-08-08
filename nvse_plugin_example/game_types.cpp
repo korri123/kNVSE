@@ -98,6 +98,49 @@ bool TESAnimGroup::IsAttackIS()
 	return true;
 }
 
+bool TESAnimGroup::IsAttackNonIS()
+{
+	const auto idMinor = static_cast<AnimGroupID>(groupID & 0xFF);
+	switch (idMinor)
+	{
+	case kAnimGroup_AttackLeft: break;
+	case kAnimGroup_AttackRight: break;
+	case kAnimGroup_Attack3: break;
+	case kAnimGroup_Attack4: break;
+	case kAnimGroup_Attack5: break;
+	case kAnimGroup_Attack6: break;
+	case kAnimGroup_Attack7: break;
+	case kAnimGroup_Attack8: break;
+	case kAnimGroup_AttackLoop: break;
+	case kAnimGroup_AttackSpin: break;
+	case kAnimGroup_AttackSpin2: break;
+	case kAnimGroup_AttackPower: break;
+	case kAnimGroup_AttackForwardPower: break;
+	case kAnimGroup_AttackBackPower: break;
+	case kAnimGroup_AttackLeftPower: break;
+	case kAnimGroup_AttackRightPower: break;
+	case kAnimGroup_AttackCustom1Power: break;
+	case kAnimGroup_AttackCustom2Power: break;
+	case kAnimGroup_AttackCustom3Power: break;
+	case kAnimGroup_AttackCustom4Power: break;
+	case kAnimGroup_AttackCustom5Power: break;
+	case kAnimGroup_PlaceMine: break;
+	case kAnimGroup_PlaceMine2: break;
+	case kAnimGroup_AttackThrow: break;
+	case kAnimGroup_AttackThrow2: break;
+	case kAnimGroup_AttackThrow3: break;
+	case kAnimGroup_AttackThrow4: break;
+	case kAnimGroup_AttackThrow5: break;
+	case kAnimGroup_Attack9: break;
+	case kAnimGroup_AttackThrow6: break;
+	case kAnimGroup_AttackThrow7: break;
+	case kAnimGroup_AttackThrow8: break;
+
+	default: return false;
+	}
+	return true;
+}
+
 TESAnimGroup::AnimGroupInfo* GetGroupInfo(UInt8 groupId)
 {
 	return &g_animGroupInfos[groupId];
@@ -261,3 +304,12 @@ float TESObjectWEAP::GetModBonuses(UInt32 effectID)
 			result += value1Mod[idx];
 	return result;
 }
+
+bool Actor::IsAnimActionReload() const
+{
+	const auto currentAnimAction = static_cast<AnimAction>(baseProcess->GetCurrentAnimAction());
+	const static std::unordered_set s_reloads = { kAnimAction_Reload, kAnimAction_ReloadLoop, kAnimAction_ReloadLoopStart, kAnimAction_ReloadLoopEnd };
+	return s_reloads.contains(currentAnimAction);
+}
+
+NiQuatTransform* trans = nullptr;

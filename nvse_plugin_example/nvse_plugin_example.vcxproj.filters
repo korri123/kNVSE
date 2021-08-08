@@ -147,8 +147,12 @@
     <ClInclude Include="..\nvse\nvse\NiObjects.h">
       <Filter>nvse</Filter>
     </ClInclude>
+    <ClInclude Include="main.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="GameTypes.natvis" />
   </ItemGroup>
 </Project>
