@@ -999,6 +999,14 @@ public:
 		kAnimState_MorphSource = 0x6,
 	};
 
+	enum CycleType
+	{
+		LOOP = 0x0,
+		REVERSE = 0x1,
+		CLAMP = 0x2,
+		MAX_CYCLE_TYPES = 0x3,
+	};
+
 	const char* sequenceName; // 8
 	UInt32 numControlledBlocks; // C
 	UInt32 arrayGrowBy; // 10
@@ -1006,7 +1014,7 @@ public:
 	NiControllerSequence::IDTag* IDTagArray; // 18
 	float seqWeight; // 1C
 	NiTextKeyExtraData* textKeyData; // 20
-	UInt32 cycleType;
+	CycleType cycleType;
 	float frequency;
 	float beginKeyTime;
 	float endKeyTime;

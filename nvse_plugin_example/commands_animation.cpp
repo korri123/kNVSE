@@ -407,6 +407,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 		if (actor == g_thePlayer || npc)
 			animCustomStack->push_back(AnimCustom::Human);
 		auto exclusiveAnim = false;
+		auto emptyMag = false;
 		if (npc)
 		{
 			if (npc && !npc->baseData.IsFemale())
@@ -432,6 +433,8 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 				if (modFlags->flags & 4 && !animStacks.mod3Anims.empty())
 					animCustomStack->push_back(AnimCustom::Mod3);
 			}
+			if (auto* ammoInfo = actor->baseProcess->GetAmmoInfo())
+				emptyMag = ammoInfo->count == 0;
 		}
 		while (!animCustomStack->empty())
 		{
@@ -472,6 +475,10 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 				{
 					if (auto* path = GetPartialReload(ctx, actor))
 						savedAnimPath = path;
+				}
+				else if (emptyMag && ra::any_of(ctx.anims, _L(AnimPath& path, path.emptyMagAnim)))
+				{
+					savedAnimPath = &*ra::find_if(ctx.anims, _L(AnimPath & p, p.emptyMagAnim));
 				}
 				else if (ctx.order == -1)
 				{
@@ -678,19 +685,24 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 		anims.conditionScript = conditionScript;
 		anims.pollCondition = pollCondition;
 	}
-
 	const auto realPath = std::filesystem::path(path);
-	if (FindStringCI(realPath.filename().string(), "_order_"))
+	const auto& fileName = realPath.filename().string();
+	if (FindStringCI(fileName, "_order_"))
 	{
 		anims.order = 0;
 		// sort alphabetically
 		std::ranges::sort(anims.anims, [&](const auto& a, const auto& b) {return a.path < b.path; });
 		Log("Detected _order_ in filename; animation variants for this anim group will be played sequentially");
 	}
-	if (FindStringCI(realPath.filename().string(), "_partial"))
+	if (FindStringCI(fileName, "_partial"))
 	{
 		lastAnim.partialReload = true;
 		Log("Partial reload detected");
+	}
+	if (FindStringCI(fileName, "_empty"))
+	{
+		lastAnim.emptyMagAnim = true;
+		Log("Empty mag anim detected");
 	}
 }
 

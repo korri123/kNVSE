@@ -129,13 +129,14 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 
 struct JSONEntry
 {
-	const std::string folderName;
+	std::string folderName;
 	const TESForm* form;
 	Script* conditionScript;
 	bool pollCondition;
+	int loadPriority;
 
-	JSONEntry(std::string folderName, const TESForm* form, Script* script, bool pollCondition)
-		: folderName(std::move(folderName)), form(form), conditionScript(script), pollCondition(pollCondition)
+	JSONEntry(std::string folderName, const TESForm* form, Script* script, bool pollCondition, int priority)
+		: folderName(std::move(folderName)), form(form), conditionScript(script), pollCondition(pollCondition), loadPriority(priority)
 	{
 	}
 };
@@ -211,6 +212,9 @@ void HandleJson(const std::filesystem::path& path)
 					DebugPrint("JSON error: expected object with mod, form and folder fields");
 					continue;
 				}
+				int priority = 0;
+				if (elem.contains("priority"))
+					priority = elem["priority"].get<int>();
 				auto modName = elem.contains("mod") ? elem["mod"].get<std::string>() : "";
 				const auto* mod = !modName.empty() ? DataHandler::Get()->LookupModByName(modName.c_str()) : nullptr;
 				if (!mod && !modName.empty())
@@ -254,12 +258,12 @@ void HandleJson(const std::filesystem::path& path)
 						}
 						LogForm(form);
 						Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
-						g_jsonEntries.emplace_back(folder, form, condition, pollCondition);
+						g_jsonEntries.emplace_back(folder, form, condition, pollCondition, priority);
 					}
 				}
 				else
 				{
-					g_jsonEntries.emplace_back(folder, nullptr, condition, pollCondition);
+					g_jsonEntries.emplace_back(folder, nullptr, condition, pollCondition, priority);
 				}
 			}
 		}
@@ -276,6 +280,10 @@ void HandleJson(const std::filesystem::path& path)
 
 void LoadJsonEntries()
 {
+	ra::sort(g_jsonEntries, [&](const JSONEntry& entry1, const JSONEntry& entry2)
+	{
+		return entry1.loadPriority < entry2.loadPriority;
+	});
 	for (const auto& entry : g_jsonEntries)
 	{
 		g_jsonContext.script = entry.conditionScript;

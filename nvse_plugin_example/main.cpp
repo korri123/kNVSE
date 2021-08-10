@@ -60,7 +60,7 @@ void HandleAnimTimes()
 		// allow code below to clean up
 		bool deferredErase = false;
 
-		if (anim->lastScaledTime < animTime.lastNiTime)
+		if (anim->lastScaledTime < animTime.lastNiTime && anim->cycleType != NiControllerSequence::LOOP || anim->state == NiControllerSequence::kAnimState_Inactive)
 		{
 			deferredErase = true;
 		}
@@ -146,7 +146,7 @@ void HandleAnimTimes()
 		auto& [savedAnim, animTime] = *iter;
 		auto& [time, animData, groupId, anim, actor, lastNiTime] = animTime;
 
-		if (shouldErase(actor) || anim && anim->weightedLastTime < lastNiTime)
+		if (shouldErase(actor) || anim && anim->weightedLastTime < lastNiTime && anim->cycleType != NiControllerSequence::LOOP || anim && anim->state == NiControllerSequence::kAnimState_Inactive)
 		{
 			iter = g_timeTrackedGroups.erase(iter);
 			continue;
@@ -197,7 +197,7 @@ void HandleBurstFire()
 		{
 			iter = g_burstFireQueue.erase(iter);
 		};
-		if (actor->IsDeleted() || actor->IsDying(true) || anim->lastScaledTime < lastNiTime)
+		if (actor->IsDeleted() || actor->IsDying(true) || anim->lastScaledTime < lastNiTime && anim->cycleType != NiControllerSequence::LOOP)
 		{
 			erase();
 			continue;

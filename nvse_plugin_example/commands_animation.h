@@ -107,7 +107,7 @@ struct AnimPath
 	AnimKeySetting hasCallScript{};
 	AnimKeySetting hasSoundPath{};
 	bool partialReload = false;
-
+	bool emptyMagAnim = false;
 };
 
 struct SavedAnims
