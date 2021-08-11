@@ -2801,7 +2801,18 @@ public:
 	TESModel			targetNIF;			// 1E8 - target NIF
 	TESModel			model200;			// 200 - could be a texture swap
 	UInt32				unk218;				// 218
-	TESSound			* sounds[12];		// 21C
+	TESSound* shoot3DSound;
+	TESSound* shootDistSound;
+	TESSound* shoot2DSound;
+	TESSound* soundShoot3DLooping;
+	TESSound* noAmmoSound;
+	TESSound* blockSound;
+	TESSound* idleSound;
+	TESSound* equipSound;
+	TESSound* unequipSound;
+	TESSound* modShoot3DSound;
+	TESSound* modShootDistSound;
+	TESSound* modShoot2DSound;
 	BGSImpactDataSet	* impactDataSet;	// 24C
 	TESObjectSTAT		* worldStatic;		// 250
 	TESObjectSTAT		* mod1Static;		// 254
@@ -2850,7 +2861,6 @@ public:
 	float GetItemModValue2(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value2Mod[which]; }
 
 };
-
 STATIC_ASSERT(offsetof(TESObjectWEAP, fullName) == 0x030);
 STATIC_ASSERT(offsetof(TESObjectWEAP, icon) == 0x5C);
 STATIC_ASSERT(offsetof(TESObjectWEAP, ammo) == 0xA4);

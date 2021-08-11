@@ -1,7 +1,10 @@
 #pragma once
+#include <unordered_set>
 struct AnimData;
 class BSAnimGroupSequence;
 enum AnimGroupID : UInt8;
+
+extern std::unordered_set<BSAnimGroupSequence*> g_reloadStartBlendFixes;
 
 struct AnimationContext
 {

@@ -147,7 +147,7 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 gr
 
 bool __fastcall IsCustomAnimKey(const char* key)
 {
-	const static auto customKeys = { "noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:"};
+	const static auto customKeys = { "noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:", "blendToReloadLoop"};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }
 
@@ -235,11 +235,53 @@ bool __fastcall ProlongedAimFix(UInt8* basePointer)
 }
 
 JMP_HOOK(0x8BB96A, ProlongedAimFix, 0x8BB974, {
-	_A lea ecx, [ebp]
+	_A lea ecx,[ebp]
 	_A call ProlongedAimFix
 	_A cmp al, 1
 	_A jmp retnAddr
-})
+	})
+
+std::unordered_set<BSAnimGroupSequence*> g_reloadStartBlendFixes;
+
+bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
+{
+	const static std::unordered_set ids = { kAnimGroup_ReloadWStart, kAnimGroup_ReloadYStart, kAnimGroup_ReloadXStart, kAnimGroup_ReloadZStart };
+	auto* anim = *reinterpret_cast<BSAnimGroupSequence**>(basePointer - 0xA0);
+	const auto queuedId = *reinterpret_cast<AnimGroupID*>(basePointer - 0x30);
+	const auto currentId = *reinterpret_cast<AnimGroupID*>(basePointer - 0x34);
+	auto* animData = *reinterpret_cast<AnimData**>(basePointer - 0x18c);
+	const auto newCondition = _L(, queuedId == 0xFF && !ids.contains(currentId));
+	const auto defaultCondition = _L(, queuedId == 0xFF);
+	if (!anim)
+		return defaultCondition();
+	if (!g_reloadStartBlendFixes.contains(anim))
+	{
+		if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
+		{
+			auto* fpsAnim = GetActorAnimation(anim->animGroup->groupID, true, g_thePlayer->firstPersonAnimData, nullptr);
+			if (fpsAnim && g_reloadStartBlendFixes.contains(fpsAnim))
+				return newCondition();
+		}
+		return defaultCondition();
+	}
+	return newCondition();
+}
+
+HOOK NoAimInReloadLoop()
+{
+	constexpr static auto jumpIfTrue = 0x492CB1;
+	constexpr static auto jumpIfFalse = 0x492BF8;
+	__asm
+	{
+		lea ecx, [ebp]
+		call ShouldPlayAimAnim
+		test al, al
+		jz isFalse
+		jmp jumpIfTrue
+	isFalse:
+		jmp jumpIfFalse
+	}
+}
 
 void ApplyHooks()
 {
@@ -273,6 +315,8 @@ void ApplyHooks()
 		WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
 	}
 #endif
-	
+
+	WriteRelJump(0x492BF2, NoAimInReloadLoop);
+
 	ini.SaveFile(iniPath.c_str(), false);
 }

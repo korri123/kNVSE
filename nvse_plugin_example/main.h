@@ -4,6 +4,6 @@
 
 extern std::deque<std::function<void()>> g_executionQueue;
 
-#define IS_TRANSITION_FIX 1
+#define IS_TRANSITION_FIX 0
 
 bool IsGodMode();

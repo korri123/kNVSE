@@ -106,6 +106,7 @@ struct AnimPath
 	AnimKeySetting hasNoBlend{};
 	AnimKeySetting hasCallScript{};
 	AnimKeySetting hasSoundPath{};
+	AnimKeySetting hasBlendToReloadLoop{};
 	bool partialReload = false;
 	bool emptyMagAnim = false;
 };

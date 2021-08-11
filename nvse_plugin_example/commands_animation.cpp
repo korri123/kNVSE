@@ -374,6 +374,10 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 			animTime.playsSoundPath = true;
 		}
 	}
+	if (hasKey("blendToReloadLoop", ctx.hasBlendToReloadLoop))
+	{
+		g_reloadStartBlendFixes.insert(sequence);
+	}
 	return applied;
 }
 
@@ -422,7 +426,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 		}
 		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
 		{
-			auto* xData = weaponInfo->GetExtraData();
+			const auto* xData = weaponInfo->GetExtraData();
 			auto* modFlags = static_cast<ExtraWeaponModFlags*>(xData->GetByType(kExtraData_WeaponModFlags));
 			if (modFlags && modFlags->flags)
 			{
@@ -433,7 +437,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 				if (modFlags->flags & 4 && !animStacks.mod3Anims.empty())
 					animCustomStack->push_back(AnimCustom::Mod3);
 			}
-			if (auto* ammoInfo = actor->baseProcess->GetAmmoInfo())
+			if (const auto* ammoInfo = actor->baseProcess->GetAmmoInfo())
 				emptyMag = ammoInfo->count == 0;
 		}
 		while (!animCustomStack->empty())
@@ -833,11 +837,20 @@ bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
 
 void HandleOnActorReload()
 {
-	for (auto& [actor, handler] : g_reloadTracker)
+	for (auto iter = g_reloadTracker.begin(); iter != g_reloadTracker.end();)
 	{
+		auto& [actor, handler] = *iter;
+		if (actor->IsDeleted() || actor->IsDying(true))
+		{
+			iter = g_reloadTracker.erase(iter);
+			continue;
+		}
 		auto* curAmmoInfo = actor->baseProcess->GetAmmoInfo();
 		if (!curAmmoInfo)
+		{
+			++iter;
 			continue;
+		}
 		const bool isAnimActionReload = actor->IsAnimActionReload();
 		const auto count = curAmmoInfo->count;
 		if ((count > handler.lastAmmoCount || count == 0 && handler.lastAmmoCount != 0) && !isAnimActionReload && handler.lastAction != kAnimAction_ReloadLoop)
@@ -850,6 +863,7 @@ void HandleOnActorReload()
 		}
 		handler.lastAction = static_cast<AnimAction>(actor->baseProcess->GetCurrentAnimAction());
 		handler.lastAmmoCount = count;
+		++iter;
 	}
 }
 

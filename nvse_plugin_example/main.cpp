@@ -38,7 +38,7 @@ bool isEditor = false;
 
 void HandleAnimTimes()
 {
-	const auto shouldErase = [](Actor* actor)
+	constexpr auto shouldErase = [](Actor* actor)
 	{
 		return actor->IsDying(true) || actor->IsDeleted();
 	};
@@ -169,7 +169,7 @@ void HandleAnimTimes()
 						|| customAnimState != kAnimState_Inactive && !result && curAnim == anim)
 					{
 						auto* resultAnim = GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
-#if _DEBUG
+#if 0
 						if (!resultAnim)
 							DebugBreak();
 #endif
@@ -271,7 +271,7 @@ void HandleBurstFire()
 			erase();
 	}
 }
-const auto kNVSEVersion = 10;
+constexpr auto kNVSEVersion = 11;
 
 float g_destFrame = -FLT_MAX;
 void HandleProlongedAim()
@@ -463,6 +463,21 @@ void HandleProlongedAim()
 		destAnim->animGroup->blendIn = oldBlend;
 	}
 	highProcess->SetCurrentActionAndSequence(destId, GetGameAnimation(animData3rd, destId));
+}
+
+void HandleEmptyAttack()
+{
+	auto* ammoInfo = g_thePlayer->baseProcess->GetAmmoInfo();
+	if (!ammoInfo)
+		return;
+	if (ammoInfo->count != 0)
+		return;
+	auto* animData = g_thePlayer->GetAnimData();
+	auto* currentWeaponAnim = animData->animSequence[kSequence_Weapon];
+	if (!currentWeaponAnim || !currentWeaponAnim->animGroup->IsAim())
+		return;
+	bool firstPerson = animData == g_thePlayer->firstPersonAnimData;
+	const auto groupID = (currentWeaponAnim->animGroup->groupID & 0xFF00) + kAnimGroup_Aim;
 }
 
 void HandleExecutionQueue()
