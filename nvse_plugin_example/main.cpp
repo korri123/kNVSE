@@ -36,31 +36,48 @@ NVSEScriptInterface* g_script;
 
 bool isEditor = false;
 
+float GetAnimTime(const AnimData* animData, const BSAnimGroupSequence* anim)
+{
+	auto time = anim->offset + animData->timePassed;
+	if (anim->state == NiControllerSequence::kAnimState_TransDest)
+	{
+		time = anim->endTime - animData->timePassed;
+	}
+	return time;
+}
+
 void HandleAnimTimes()
 {
 	constexpr auto shouldErase = [](Actor* actor)
 	{
-		return actor->IsDying(true) || actor->IsDeleted();
+		return !actor || actor->IsDying(true) || actor->IsDeleted();
 	};
 	for (auto iter = g_timeTrackedAnims.begin(); iter != g_timeTrackedAnims.end();)
 	{
 		const auto erase = [&]() {iter = g_timeTrackedAnims.erase(iter); };
 		auto& [anim, animTime] = *iter;
-		auto& time = animTime.time;
-		auto* animData = animTime.animData;
-		auto* actor = animTime.actor;
-		time += GetTimePassed(animTime.animData, anim->animGroup->groupID);
+		//auto& time = animTime.time;
+
+		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
 
 		if (shouldErase(actor))
 		{
 			erase();
 			continue;
 		}
+		auto* animData = animTime.GetAnimData(actor);
+		if (!animData)
+		{
+			erase();
+			continue;
+		}
 
+		const auto time = GetAnimTime(animData, anim);
+		
 		// allow code below to clean up
 		bool deferredErase = false;
 
-		if (anim->lastScaledTime < animTime.lastNiTime && anim->cycleType != NiControllerSequence::LOOP || anim->state == NiControllerSequence::kAnimState_Inactive)
+		if (anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || anim->state == NiControllerSequence::kAnimState_Inactive)
 		{
 			deferredErase = true;
 		}
@@ -76,7 +93,6 @@ void HandleAnimTimes()
 					auto [keys, numKeys] = iter3rd->second;
 					animTime.anim3rdCounterpart->animGroup->numKeys = numKeys;
 					animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
-
 				}
 				animTime.povState = POVSwitchState::POV3rd;
 			};
@@ -116,8 +132,8 @@ void HandleAnimTimes()
 			auto& p = animTime.scripts.at(animTime.scriptStage);
 			if (time > p.second)
 			{
-				if (!IsPlayersOtherAnimData(animTime.actor->GetAnimData()))
-					g_script->CallFunction(p.first, animTime.animData->actor, nullptr, nullptr, 0);
+				if (!IsPlayersOtherAnimData(actor->GetAnimData()))
+					g_script->CallFunction(p.first, actor, nullptr, nullptr, 0);
 				++animTime.scriptStage;
 			}
 		}
@@ -126,13 +142,17 @@ void HandleAnimTimes()
 			auto& p = animTime.soundPaths.at(animTime.soundStage);
 			if (time > p.second)
 			{
-				if (!IsPlayersOtherAnimData(animTime.actor->GetAnimData()))
+				if (!IsPlayersOtherAnimData(actor->GetAnimData()))
 				{
 					p.first.Set3D(actor);
 					p.first.Play();
 				}
 				++animTime.soundStage;
 			}
+		}
+		if (animTime.scriptLines)
+		{
+			animTime.scriptLines->Update(time, _L(Script* script, ThisStdCall(0x5AC1E0, script, actor, nullptr, nullptr, false)));
 		}
 		if (deferredErase)
 		{
@@ -144,16 +164,23 @@ void HandleAnimTimes()
 	for (auto iter = g_timeTrackedGroups.begin(); iter != g_timeTrackedGroups.end();)
 	{
 		auto& [savedAnim, animTime] = *iter;
-		auto& [time, animData, groupId, anim, actor, lastNiTime] = animTime;
+		auto& [_, groupId, anim, actorId, lastNiTime, firstPerson] = animTime;
+		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 
-		if (shouldErase(actor) || anim && anim->weightedLastTime < lastNiTime && anim->cycleType != NiControllerSequence::LOOP || anim && anim->state == NiControllerSequence::kAnimState_Inactive)
+		if (shouldErase(actor) || anim && anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || anim && anim->state == NiControllerSequence::kAnimState_Inactive)
 		{
 			iter = g_timeTrackedGroups.erase(iter);
 			continue;
 		}
+		auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
+		if (!animData)
+		{
+			iter = g_timeTrackedGroups.erase(iter);
+			continue;
+		}
+
 		if (anim)
 			lastNiTime = anim->weightedLastTime;
-		time += GetTimePassed(animTime.animData, groupId);
 		if (savedAnim->conditionScript)
 		{
 			auto* animInfo = GetGroupInfo(groupId);
@@ -168,11 +195,7 @@ void HandleAnimTimes()
 					if (customAnimState == kAnimState_Inactive && result && curAnim != anim
 						|| customAnimState != kAnimState_Inactive && !result && curAnim == anim)
 					{
-						auto* resultAnim = GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
-#if 0
-						if (!resultAnim)
-							DebugBreak();
-#endif
+						GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
 					}
 				}
 			}
@@ -192,12 +215,19 @@ void HandleBurstFire()
 	auto iter = g_burstFireQueue.begin();
 	while (iter != g_burstFireQueue.end())
 	{
-		auto& [animData, anim, index, hitKeys, timePassed, shouldEject, lastNiTime, actor, ejectKeys, ejectIdx, reloading] = *iter;
+		auto& [firstPerson, anim, index, hitKeys, _, shouldEject, lastNiTime, actorId, ejectKeys, ejectIdx, reloading] = *iter;
 		const auto erase = [&]()
 		{
 			iter = g_burstFireQueue.erase(iter);
 		};
-		if (actor->IsDeleted() || actor->IsDying(true) || anim->lastScaledTime < lastNiTime && anim->cycleType != NiControllerSequence::LOOP)
+		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
+		if (!actor || actor->IsDeleted() || actor->IsDying(true) || anim->lastScaledTime - lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP)
+		{
+			erase();
+			continue;
+		}
+		auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
+		if (!animData)
 		{
 			erase();
 			continue;
@@ -210,7 +240,8 @@ void HandleBurstFire()
 			erase();
 			continue;
 		}
-		timePassed += GetTimePassed(animData, anim->animGroup->groupID);
+		//timePassed += GetTimePassed(animData, anim->animGroup->groupID);
+		const auto timePassed = GetAnimTime(animData, anim);
 		if (timePassed <= anim->animGroup->keyTimes[kSeqState_HitOrDetach])
 		{
 			// first hit handled by engine

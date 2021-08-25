@@ -33,14 +33,14 @@ enum QueuedIdleFlags
 
 struct BurstFireData
 {
-	AnimData* animData;
+	bool firstPerson = false;
 	BSAnimGroupSequence* anim;
 	std::size_t index;
 	std::vector<NiTextKey*> hitKeys;
 	float timePassed;
 	bool shouldEject = false;
 	float lastNiTime = -FLT_MAX;
-	Actor* actor = nullptr;
+	UInt32 actorId = 0;
 	std::vector<NiTextKey*> ejectKeys;
 	std::size_t ejectIdx = 0;
 	bool reloading = false;
@@ -59,34 +59,80 @@ enum class POVSwitchState
 	NotSet, POV3rd, POV1st
 };
 
+template <typename T>
+class TimedExecution
+{
+public:
+	std::vector<std::pair<T, float>> items;
+	size_t index = 0;
+	bool init = false;
+
+	template <typename F>
+	void Update(float time, F&& f)
+	{
+		if (index >= items.size())
+			return;
+		auto& [item, nextTime] = items.at(index);
+		if (time >= nextTime)
+		{
+			f(item);
+			++index;
+		}
+	}
+
+	template <typename F2>
+	TimedExecution(const std::span<NiTextKey>& keys, F2&& f2)
+	{
+		for (auto& key : keys)
+		{
+			T t;
+			if (f2(key.m_kText.CStr(), t))
+				items.emplace_back(t, key.m_fTime);
+		}
+		init = true;
+	}
+
+	void Reset()
+	{
+		index = 0;
+	}
+};
+
 struct AnimTime
 {
-	float time = 0;
 	bool finishedEndKey = false;
 	bool respectEndKey = false;
 	bool callScript = false;
 	std::vector<std::pair<Script*, float>> scripts;
-	AnimData* animData = nullptr;
+	bool firstPerson = false;
 	UInt32 scriptStage = 0;
 	BSAnimGroupSequence* anim3rdCounterpart = nullptr;
 	POVSwitchState povState = POVSwitchState::NotSet;
 	Script* conditionScriptPoll = nullptr;
 	TESObjectWEAP* actorWeapon = nullptr;
-	Actor* actor = nullptr;
+	UInt32 actorId = 0;
 	float lastNiTime = -FLT_MAX;
 	bool playsSoundPath = false;
 	std::vector<std::pair<Sound, float>> soundPaths;
 	UInt32 soundStage = 0;
+	TimedExecution<Script*>* scriptLines = nullptr;
+
+	AnimData* GetAnimData(Actor* actor) const
+	{
+		if (firstPerson)
+			return g_thePlayer->firstPersonAnimData;
+		return actor->baseProcess->GetAnimData();
+	}
 };
 
 struct SavedAnimsTime
 {
 	float time = 0;
-	AnimData* animData = nullptr;
 	UInt16 groupId = 0;
 	BSAnimGroupSequence* anim = nullptr;
-	Actor* actor = nullptr;
+	UInt32 actorId = 0;
 	float lastNiTime = -FLT_MAX;
+	bool firstPerson = false;
 };
 
 extern std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
@@ -107,8 +153,10 @@ struct AnimPath
 	AnimKeySetting hasCallScript{};
 	AnimKeySetting hasSoundPath{};
 	AnimKeySetting hasBlendToReloadLoop{};
+	AnimKeySetting hasScriptLine{};
 	bool partialReload = false;
-	bool emptyMagAnim = false;
+	std::unique_ptr<TimedExecution<Script*>> scriptLineKeys = nullptr;
+
 };
 
 struct SavedAnims
@@ -117,6 +165,7 @@ struct SavedAnims
 	std::vector<AnimPath> anims;
 	Script* conditionScript = nullptr;
 	bool pollCondition = false;
+	std::unique_ptr<AnimPath> emptyMagAnim = nullptr;
 };
 
 enum class AnimCustom
@@ -346,11 +395,8 @@ DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 
 #endif
 
-void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, Script* conditionScript = nullptr, bool pollCondition = false);
-void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append);
-void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append);
-void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append);
-void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, bool append);
+void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet);
+void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false);
 
 void HandleOnActorReload();
 

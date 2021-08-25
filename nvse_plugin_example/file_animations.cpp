@@ -14,7 +14,7 @@
 template <typename T>
 void LoadPathsForType(const std::filesystem::path& path, const T identifier, bool firstPerson)
 {
-	auto append = false;
+	std::unordered_set<UInt16> variantIds;
 	for (std::filesystem::recursive_directory_iterator iter(path), end; iter != end; ++iter)
 	{
 		if (_stricmp(iter->path().extension().string().c_str(), ".kf") != 0)
@@ -25,17 +25,17 @@ void LoadPathsForType(const std::filesystem::path& path, const T identifier, boo
 		try
 		{
 			if constexpr (std::is_same<T, nullptr_t>::value)
-				OverrideFormAnimation(nullptr, str, firstPerson, true, append);
+				OverrideFormAnimation(nullptr, str, firstPerson, true, variantIds);
 			else if constexpr (std::is_same<T, const TESObjectWEAP*>::value)
-				OverrideWeaponAnimation(identifier, str, firstPerson, true, append);
+				OverrideFormAnimation(identifier, str, firstPerson, true, variantIds);
 			else if constexpr (std::is_same<T, const Actor*>::value)
-				OverrideActorAnimation(identifier, str, firstPerson, true, append);
+				OverrideFormAnimation(identifier, str, firstPerson, true, variantIds);
 			else if constexpr (std::is_same<T, UInt8>::value)
-				OverrideModIndexAnimation(identifier, str, firstPerson, true, append);
+				OverrideModIndexAnimation(identifier, str, firstPerson, true, variantIds);
 			else if constexpr (std::is_same<T, const TESRace*>::value)
-				OverrideRaceAnimation(identifier, str, firstPerson, true, append);
+				OverrideFormAnimation(identifier, str, firstPerson, true, variantIds);
 			else if constexpr (std::is_same<T, const TESForm*>::value)
-				OverrideFormAnimation(identifier, str, firstPerson, true, append);
+				OverrideFormAnimation(identifier, str, firstPerson, true, variantIds);
 			else
 				static_assert(false);
 		}
@@ -43,7 +43,6 @@ void LoadPathsForType(const std::filesystem::path& path, const T identifier, boo
 		{
 			DebugPrint(FormatString("AnimGroupOverride Error: %s", e.what()));
 		}
-		append = true;
 	}
 }
 
@@ -176,13 +175,13 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 	patchEndOfLineCheck(true);
 	auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition.get(), &buffer);
 	patchEndOfLineCheck(false);
+	buffer.scriptText = nullptr;
+	condition->text = nullptr;
 	if (!result)
 	{
 		DebugPrint("Failed to compile condition script");
 		return nullptr;
 	}
-	buffer.scriptText = nullptr;
-	condition->text = nullptr;
 	return condition.release();
 }
 

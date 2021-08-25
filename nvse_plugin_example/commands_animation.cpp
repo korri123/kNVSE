@@ -241,11 +241,26 @@ enum class KeyCheckType
 	KeyEquals, KeyStartsWith
 };
 
+std::string GetTextAfterColon(std::string in)
+{
+	auto str = in.substr(in.find_first_of(':') + 1);
+	while (!str.empty() && isspace(*str.begin()))
+		str.erase(str.begin());
+	return str;
+}
+
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, AnimPath& ctx)
 {
 	auto applied = false;
 	std::span textKeys{ sequence->textKeyData->m_pKeys, sequence->textKeyData->m_uiNumKeys };
 	auto* actor = animData->actor;
+	AnimTime* animTimePtr = nullptr;
+	const auto getAnimTime = [&]() -> AnimTime&
+	{
+		if (!animTimePtr)
+			animTimePtr = &g_timeTrackedAnims[sequence];
+		return *animTimePtr;
+	};
 	const auto hasKey = [&](const char* keyText, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
 	{
 		if (setting == AnimKeySetting::Set)
@@ -298,20 +313,16 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		if (!hitKeys.empty() || !ejectKeys.empty())
 		{
 			SubscribeOnActorReload(actor, ReloadSubscriber::BurstFire);
-			g_burstFireQueue.emplace_back(animData, sequence, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor, std::move(ejectKeys), 0, false);
+			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, sequence, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false);
 		}
 	}
 	if (animData == g_thePlayer->firstPersonAnimData && (hasKey("respectEndKey", ctx.hasRespectEndKey) || hasKey("respectTextKeys", ctx.hasRespectEndKey)))
 	{
-		auto& animTime = g_timeTrackedAnims[sequence];
-		animTime.time = 0;
+		auto& animTime = getAnimTime();
 		animTime.povState = POVSwitchState::NotSet;
 		animTime.respectEndKey = true;
-		animTime.animData = g_thePlayer->firstPersonAnimData;
 		animTime.finishedEndKey = false;
 		animTime.actorWeapon = actor->GetWeaponForm();
-		animTime.actor = animData->actor;
-		animTime.lastNiTime = -FLT_MAX;
 	}
 	if (hasKey("interruptLoop", ctx.hasInterruptLoop))
 	{
@@ -329,17 +340,11 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 	}
 	if (hasKey("Script:", ctx.hasCallScript, KeyCheckType::KeyStartsWith))
 	{
-		auto iter = g_timeTrackedAnims.find(sequence);
-		if (iter == g_timeTrackedAnims.end())
-			iter = g_timeTrackedAnims.emplace(sequence, AnimTime()).first;
-		auto& animTime = iter->second;
+		auto& animTime = getAnimTime();
 		animTime.scriptStage = 0;
-		animTime.lastNiTime = -FLT_MAX;
-		if (!iter->second.callScript)
+		if (!animTime.callScript)
 		{
 			animTime.callScript = true;
-			animTime.animData = animData;
-			animTime.actor = animData->actor;
 			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey& key, StartsWith(key.m_kText.CStr(), "Script:")));
 			auto scriptPairs = MapTo<std::pair<Script*, float>>(*keys, [&](NiTextKey* key)
 			{
@@ -351,15 +356,14 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 				return std::make_pair(static_cast<Script*>(form), key->m_fTime);
 			});
 			if (!ra::any_of(scriptPairs, _L(auto& p, p.first == nullptr || !IS_ID(p.first, Script))))
-				iter->second.scripts = std::move(scriptPairs);
+				animTime.scripts = std::move(scriptPairs);
 		}
 	}
 	if (hasKey("SoundPath:", ctx.hasSoundPath, KeyCheckType::KeyStartsWith))
 	{
-		auto& animTime = g_timeTrackedAnims[sequence];
+		auto& animTime = getAnimTime();
 		animTime.soundStage = 0;
-		animTime.actor = actor;
-		animTime.lastNiTime = -FLT_MAX;
+		animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
 		if (!animTime.playsSoundPath)
 		{
 			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey & key, StartsWith(key.m_kText.CStr(), "SoundPath:")));
@@ -377,6 +381,35 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 	if (hasKey("blendToReloadLoop", ctx.hasBlendToReloadLoop))
 	{
 		g_reloadStartBlendFixes.insert(sequence);
+	}
+	if (hasKey("scriptLine:", ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
+	{
+		if (!ctx.scriptLineKeys)
+		{
+			ctx.scriptLineKeys = std::make_unique<TimedExecution<Script*>>(textKeys, [&](const char* key, Script*& result)
+			{
+				if (!StartsWith(key, "scriptLine:"))
+					return false;
+				auto line = GetTextAfterColon(key);
+				if (line.empty())
+					return false;
+				FormatScriptText(line);
+				result = Script::CompileFromText(line, "ScriptLineKey");
+				if (!result)
+					return false;
+				return true;
+			});
+		}
+		ctx.scriptLineKeys->Reset();
+		auto& animTime = getAnimTime();
+		animTime.scriptLines = ctx.scriptLineKeys.get();
+	}
+	if (applied)
+	{
+		auto& animTime = getAnimTime();
+		animTime.actorId = actor->refID;
+		animTime.lastNiTime = -FLT_MAX;
+		animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
 	}
 	return applied;
 }
@@ -449,17 +482,19 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 		}
 		if ((!stack || stack->empty()) && !exclusiveAnim)
 			stack = &animStacks.GetCustom(AnimCustom::None);
-
-		if (stack && !stack->empty())
+		if (!stack)
+			return nullptr;
+		for (auto iter = stack->rbegin(); iter != stack->rend(); ++iter)
 		{
-			auto& ctx = stack->back();
+			auto& ctx = *iter;
+
 			const auto initAnimTime = [&]()
 			{
 				auto& animTime = g_timeTrackedGroups[&ctx];
-				animTime.animData = animData;
+				animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
 				animTime.groupId = groupId;
 				animTime.time = 0;
-				animTime.actor = animData->actor;
+				animTime.actorId = animData->actor->refID;
 				animTime.lastNiTime = -FLT_MAX;
 				return &animTime;
 			};
@@ -470,7 +505,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 					animsTime = initAnimTime(); // init'd here so conditions can activate despite not being overridden
 				NVSEArrayVarInterface::Element result;
 				if (!g_script->CallFunction(ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
-					return nullptr;
+					continue;
 			}
 			if (!ctx.anims.empty())
 			{
@@ -480,9 +515,9 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 					if (auto* path = GetPartialReload(ctx, actor))
 						savedAnimPath = path;
 				}
-				else if (emptyMag && ra::any_of(ctx.anims, _L(AnimPath& path, path.emptyMagAnim)))
+				else if (emptyMag && ctx.emptyMagAnim)
 				{
-					savedAnimPath = &*ra::find_if(ctx.anims, _L(AnimPath & p, p.emptyMagAnim));
+					savedAnimPath = ctx.emptyMagAnim.get();
 				}
 				else if (ctx.order == -1)
 				{
@@ -500,7 +535,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 				}
 
 				if (!savedAnimPath)
-					return nullptr;
+					continue;
 				
 				if (auto* anim = LoadCustomAnimation(savedAnimPath->path, animData); anim)
 				{
@@ -626,7 +661,7 @@ int GetAnimGroupId(const std::string& path)
 	return -1;
 }
 
-void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, bool append, Script* conditionScript = nullptr, bool pollCondition = false)
+void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false)
 {
 	if (!conditionScript && g_jsonContext.script)
 	{
@@ -677,10 +712,23 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 		std::rotate(iter, iter + 1, stack.end());
 		return;
 	}
-	if (!append || stack.empty())
+	// if not inserted before, treat as variant; else add to stack as separate set
+	auto [_, newItem] = groupIdFillSet.emplace(groupId);
+	if (newItem || stack.empty())
 		stack.emplace_back();
 
+	const auto realPath = std::filesystem::path(path);
+	const auto& fileName = realPath.filename().string();
+
 	auto& anims = stack.back();
+
+	if (FindStringCI(fileName, "_empty"))
+	{
+		anims.emptyMagAnim = std::make_unique<AnimPath>(path);
+		Log("Empty mag anim detected");
+		return;
+	}
+
 	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.c_str()));
 	auto& lastAnim = anims.anims.emplace_back(path);
 	if (conditionScript)
@@ -689,8 +737,6 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 		anims.conditionScript = conditionScript;
 		anims.pollCondition = pollCondition;
 	}
-	const auto realPath = std::filesystem::path(path);
-	const auto& fileName = realPath.filename().string();
 	if (FindStringCI(fileName, "_order_"))
 	{
 		anims.order = 0;
@@ -703,45 +749,20 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 		lastAnim.partialReload = true;
 		Log("Partial reload detected");
 	}
-	if (FindStringCI(fileName, "_empty"))
-	{
-		lastAnim.emptyMagAnim = true;
-		Log("Empty mag anim detected");
-	}
 }
 
-void OverrideActorAnimation(const Actor* actor, const std::string& path, bool firstPerson, bool enable, bool append, Script* conditionScript, bool pollCondition)
-{
-	if (!actor)
-		return OverrideModIndexAnimation(0xFF, path, firstPerson, enable, append);
-	auto& map = GetMap(firstPerson);
-	if (firstPerson && actor != g_thePlayer)
-		throw std::exception("Cannot apply first person animations on actors other than player!");
-	SetOverrideAnimation(actor->refID, path, map, enable, append, conditionScript, pollCondition);
-}
-
-void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, bool append)
+void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
 {
 	if (!form)
-		return OverrideModIndexAnimation(0xFF, path, firstPerson, enable, append);
+		return OverrideModIndexAnimation(0xFF, path, firstPerson, enable, groupIdFillSet);
 	auto& map = GetMap(firstPerson);
-	SetOverrideAnimation(form ? form->refID : -1, path, map, enable, append);
+	SetOverrideAnimation(form ? form->refID : -1, path, map, enable, groupIdFillSet, conditionScript, pollCondition);
 }
 
-void OverrideWeaponAnimation(const TESObjectWEAP* weapon, const std::string& path, bool firstPerson, bool enable, bool append)
-{
-	OverrideFormAnimation(weapon, path, firstPerson, enable, append);
-}
-
-void OverrideModIndexAnimation(const UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, bool append)
+void OverrideModIndexAnimation(const UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet)
 {
 	auto& map = GetModIndexMap(firstPerson);
-	SetOverrideAnimation(modIdx, path, map, enable, append);
-}
-
-void OverrideRaceAnimation(const TESRace* race, const std::string& path, bool firstPerson, bool enable, bool append)
-{
-	OverrideFormAnimation(race, path, firstPerson, enable, append);
+	SetOverrideAnimation(modIdx, path, map, enable, groupIdFillSet);
 }
 
 float GetAnimMult(AnimData* animData, UInt8 animGroupID)
@@ -808,11 +829,11 @@ int GetWeaponInfoClipSize(Actor* actor)
 	return maxRounds;
 }
 
-std::unordered_map<Actor*, ReloadHandler> g_reloadTracker;
+std::unordered_map<UInt32, ReloadHandler> g_reloadTracker;
 
 void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber)
 {
-	auto& handler = g_reloadTracker[actor];
+	auto& handler = g_reloadTracker[actor->refID];
 	handler.subscribers.emplace(subscriber, false);
 	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
 	if (ammoInfo)
@@ -823,7 +844,7 @@ bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
 {
 	if (IsGodMode())
 		return false;
-	const auto iter = g_reloadTracker.find(actor);
+	const auto iter = g_reloadTracker.find(actor->refID);
 	if (iter == g_reloadTracker.end())
 		return false;
 	auto* didReload = &iter->second.subscribers[subscriber];
@@ -839,8 +860,9 @@ void HandleOnActorReload()
 {
 	for (auto iter = g_reloadTracker.begin(); iter != g_reloadTracker.end();)
 	{
-		auto& [actor, handler] = *iter;
-		if (actor->IsDeleted() || actor->IsDying(true))
+		auto& [actorId, handler] = *iter;
+		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
+		if (!actor || !actor->IsTypeActor() || actor->IsDeleted() || actor->IsDying(true) || !actor->baseProcess)
 		{
 			iter = g_reloadTracker.erase(iter);
 			continue;
@@ -893,7 +915,6 @@ void OverrideAnimsFromScript(const char* path, const bool enable, F&& overrideAn
 	const auto folderPath = FormatString("Data\\Meshes\\%s", path);
 	if (std::filesystem::is_directory(folderPath))
 	{
-		bool append = false;
 		for (std::filesystem::recursive_directory_iterator iter(folderPath), end; iter != end; ++iter)
 		{
 			if (iter->is_directory())
@@ -902,19 +923,18 @@ void OverrideAnimsFromScript(const char* path, const bool enable, F&& overrideAn
 			if (_stricmp(extension.c_str(), ".kf") != 0)
 				continue;
 			constexpr size_t len = sizeof "Data\\Meshes\\";		
-			overrideAnim(iter->path().string().c_str() + (len-1), append);
-			append = true;
+			overrideAnim(iter->path().string().c_str() + (len-1));
 		}
 
 	}
 	else
 	{
-		overrideAnim(path, false);
+		overrideAnim(path);
 		if (enable)
 		{
-			auto paths = GetAnimationVariantPaths(path);
+			const auto paths = GetAnimationVariantPaths(path);
 			for (auto& pathIter : paths)
-				overrideAnim(pathIter.c_str(), true);
+				overrideAnim(pathIter.c_str());
 		}
 	}
 }
@@ -935,10 +955,11 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 		return true;
 	try
 	{
+		std::unordered_set<UInt16> animGroupVariantSet;
 		LogScript(scriptObj, weapon, "SetWeaponAnimationPath");
-		const auto overrideAnim = [&](const std::string& animPath, bool append)
+		const auto overrideAnim = [&](const std::string& animPath)
 		{
-			OverrideWeaponAnimation(weapon, animPath, firstPerson, enable, append);
+			OverrideFormAnimation(weapon, animPath, firstPerson, enable, animGroupVariantSet);
 		};
 		OverrideAnimsFromScript(path, enable, overrideAnim);
 		*result = 1;
@@ -982,9 +1003,10 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	}
 	try
 	{
-		const auto overrideAnim = [&](const char* animPath, bool append)
+		std::unordered_set<UInt16> animGroupVariantSet;
+		const auto overrideAnim = [&](const char* animPath)
 		{
-			OverrideActorAnimation(actor, animPath, firstPerson, enable, append, conditionScript, pollCondition);
+			OverrideFormAnimation(actor, animPath, firstPerson, enable, animGroupVariantSet, conditionScript, pollCondition);
 		};
 		OverrideAnimsFromScript(path, enable, overrideAnim);
 		*result = 1;

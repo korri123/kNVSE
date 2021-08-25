@@ -1,6 +1,7 @@
 #include "game_types.h"
 
 #include "commands_animation.h"
+#include "GameData.h"
 #include "GameOSDepend.h"
 #include "GameProcess.h"
 #include "NiObjects.h"
@@ -322,4 +323,87 @@ bool Actor::IsAnimActionReload() const
 	return s_reloads.contains(currentAnimAction);
 }
 
-NiQuatTransform* trans = nullptr;
+__declspec(naked) TESForm* __stdcall LookupFormByRefID(UInt32 refID)
+{
+	__asm
+	{
+		mov		ecx, ds:[0x11C54C0]
+		mov		eax, [esp+4]
+		xor		edx, edx
+		div		dword ptr [ecx+4]
+		mov		eax, [ecx+8]
+		mov		eax, [eax+edx*4]
+		test	eax, eax
+		jz		done
+		mov		edx, [esp+4]
+		ALIGN 16
+	iterHead:
+		cmp		[eax+4], edx
+		jz		found
+		mov		eax, [eax]
+		test	eax, eax
+		jnz		iterHead
+		retn	4
+	found:
+		mov		eax, [eax+8]
+	done:
+		retn	4
+	}
+}
+
+Script* Script::CompileFromText(const std::string& scriptSource, const std::string& name)
+{
+	ScriptBuffer buffer;
+	DataHandler::Get()->DisableAssignFormIDs(true);
+	auto condition = MakeUnique<Script, 0x5AA0F0, 0x5AA1A0>();
+	DataHandler::Get()->DisableAssignFormIDs(false);
+	buffer.scriptName.Set(("kNVSEScript_" + name).c_str());
+	buffer.scriptText = scriptSource.data();
+	buffer.partialScript = true;
+	const auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
+	const auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition.get(), &buffer);
+	condition->text = nullptr;
+	buffer.scriptText = nullptr;
+	if (!result)
+	{
+		DebugPrint("Failed to compile script");
+		return nullptr;
+	}
+	return condition.release();
+}
+
+bool TESForm::IsTypeActor()
+{
+	return IS_ID(this, Character) || IS_ID(this, Creature);
+}
+
+void FormatScriptText(std::string& str)
+{
+	UInt32 pos = 0;
+
+	while (((pos = str.find('%', pos)) != -1) && pos < str.length() - 1)
+	{
+		char toInsert = 0;
+		switch (str[pos + 1])
+		{
+		case '%':
+			pos += 2;
+			continue;
+		case 'r':
+		case 'R':
+			toInsert = '\n';
+			break;
+		case 'q':
+		case 'Q':
+			toInsert = '"';
+			break;
+		default:
+			pos += 1;
+			continue;
+		}
+
+		str.insert(pos, 1, toInsert); // insert char at current pos
+		str.erase(pos + 1, 2);		  // erase format specifier
+		pos += 1;
+	}
+}

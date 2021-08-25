@@ -149,6 +149,8 @@ public:
 	tList<RefVariable>* GetRefList();
 	static Script* CreateScript();
 	void DeleteScript() const;
+
+	static Script* CompileFromText(const std::string& text, const std::string& name);
 };
 
 STATIC_ASSERT(sizeof(Script) == SCRIPT_SIZE);
@@ -237,7 +239,7 @@ struct ScriptBuffer
 	ScriptBuffer();
 	~ScriptBuffer();
 
-	char			* scriptText;		// 000
+	const char* scriptText;		// 000
 	UInt32			textOffset;			// 004 
 	RuntimeMode		runtimeMode;		// 008
 	String			scriptName;			// 00C
