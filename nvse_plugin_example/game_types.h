@@ -527,7 +527,7 @@ enum class ControlCode
 struct Sound
 {
 	UInt32 soundID{};
-	UInt8 maybeSuccess{};
+	UInt8 success{};
 	UInt8 pad05{};
 	UInt8 pad06{};
 	UInt8 pad07{};

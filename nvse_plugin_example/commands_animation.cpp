@@ -340,43 +340,48 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 	}
 	if (hasKey("Script:", ctx.hasCallScript, KeyCheckType::KeyStartsWith))
 	{
-		auto& animTime = getAnimTime();
-		animTime.scriptStage = 0;
-		if (!animTime.callScript)
+		if (!ctx.scriptCallKeys)
 		{
-			animTime.callScript = true;
-			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey& key, StartsWith(key.m_kText.CStr(), "Script:")));
-			auto scriptPairs = MapTo<std::pair<Script*, float>>(*keys, [&](NiTextKey* key)
+			ctx.scriptCallKeys = std::make_unique<TimedExecution<Script*>>(textKeys, [&](const char* key, Script*& result)
 			{
-				const auto str = StripSpace(key->m_kText.CStr());
-				const auto edid = str.substr(str.find_first_of(':')+1);
+				if (!StartsWith(key, "Script:"))
+					return false;
+				const auto edid = GetTextAfterColon(key);
+				if (edid.empty())
+					return false;
 				auto* form = GetFormByID(edid.c_str());
 				if (!form || !IS_ID(form, Script))
+				{
 					DebugPrint(FormatString("Text key contains invalid script %s", edid.c_str()));
-				return std::make_pair(static_cast<Script*>(form), key->m_fTime);
+					return false;
+				}
+				result = static_cast<Script*>(form);
+				return true;
 			});
-			if (!ra::any_of(scriptPairs, _L(auto& p, p.first == nullptr || !IS_ID(p.first, Script))))
-				animTime.scripts = std::move(scriptPairs);
 		}
+		auto& animTime = getAnimTime();
+		animTime.scriptCalls = ctx.scriptCallKeys->CreateContext();
 	}
 	if (hasKey("SoundPath:", ctx.hasSoundPath, KeyCheckType::KeyStartsWith))
 	{
-		auto& animTime = getAnimTime();
-		animTime.soundStage = 0;
-		animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
-		if (!animTime.playsSoundPath)
+		if (!ctx.soundPaths)
 		{
-			const auto keys = Filter<0x100, NiTextKey>(textKeys, _L(NiTextKey & key, StartsWith(key.m_kText.CStr(), "SoundPath:")));
-			auto soundPairs = MapTo<std::pair<Sound, float>>(*keys, [&](NiTextKey* key)
+			ctx.soundPaths = std::make_unique<TimedExecution<Sound>>(textKeys, [&](const char* key, Sound& result)
 			{
-				const auto str = StripSpace(key->m_kText.CStr());
-				const auto pathNoData = str.substr(str.find_first_of(':') + 1);
-				const auto path = "Data\\Sound\\" + pathNoData;
-				return std::make_pair(Sound::InitByFilename(path.c_str()), key->m_fTime);
+				if (!StartsWith(key, "SoundPath:"))
+					return false;
+				const auto line = GetTextAfterColon(key);
+				if (line.empty())
+					return false;
+				const auto path = "Data\\Sound\\" + line;
+				result = Sound::InitByFilename(path.c_str());
+				if (!result.soundID)
+					return false;
+				return true;
 			});
-			animTime.soundPaths = std::move(soundPairs);
-			animTime.playsSoundPath = true;
 		}
+		auto& animTime = getAnimTime();
+		animTime.soundPaths = ctx.soundPaths->CreateContext();
 	}
 	if (hasKey("blendToReloadLoop", ctx.hasBlendToReloadLoop))
 	{
@@ -396,13 +401,15 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 				FormatScriptText(line);
 				result = Script::CompileFromText(line, "ScriptLineKey");
 				if (!result)
+				{
+					DebugPrint("Failed to compile script in scriptLine key: " + line);
 					return false;
+				}
 				return true;
 			});
 		}
-		ctx.scriptLineKeys->Reset();
 		auto& animTime = getAnimTime();
-		animTime.scriptLines = ctx.scriptLineKeys.get();
+		animTime.scriptLines = ctx.scriptLineKeys->CreateContext();
 	}
 	if (applied)
 	{

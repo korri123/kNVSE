@@ -126,35 +126,26 @@ void HandleAnimTimes()
 				}
 			}
 		}
-		if (animTime.callScript && animTime.scriptStage < animTime.scripts.size() && !deferredErase)
+		if (!deferredErase)
 		{
-			
-			auto& p = animTime.scripts.at(animTime.scriptStage);
-			if (time > p.second)
+			if (animTime.scriptCalls.Exists())
 			{
-				if (!IsPlayersOtherAnimData(actor->GetAnimData()))
-					g_script->CallFunction(p.first, actor, nullptr, nullptr, 0);
-				++animTime.scriptStage;
+				animTime.scriptCalls.Update(time, animData, _L(Script* script, g_script->CallFunction(script, actor, nullptr, nullptr, 0)));
 			}
-		}
-		if (animTime.playsSoundPath && animTime.soundStage < animTime.soundPaths.size() && !deferredErase)
-		{
-			auto& p = animTime.soundPaths.at(animTime.soundStage);
-			if (time > p.second)
+			if (animTime.soundPaths.Exists())
 			{
-				if (!IsPlayersOtherAnimData(actor->GetAnimData()))
+				animTime.soundPaths.Update(time, animData, [&](Sound& sound)
 				{
-					p.first.Set3D(actor);
-					p.first.Play();
-				}
-				++animTime.soundStage;
+					sound.Set3D(actor);
+					sound.Play();
+				});
+			}
+			if (animTime.scriptLines.Exists())
+			{
+				animTime.scriptLines.Update(time, animData, _L(Script* script, ThisStdCall(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, false)));
 			}
 		}
-		if (animTime.scriptLines)
-		{
-			animTime.scriptLines->Update(time, _L(Script* script, ThisStdCall(0x5AC1E0, script, actor, nullptr, nullptr, false)));
-		}
-		if (deferredErase)
+		else
 		{
 			erase();
 			continue;
@@ -302,7 +293,7 @@ void HandleBurstFire()
 			erase();
 	}
 }
-constexpr auto kNVSEVersion = 11;
+constexpr auto kNVSEVersion = 12;
 
 float g_destFrame = -FLT_MAX;
 void HandleProlongedAim()

@@ -63,22 +63,39 @@ template <typename T>
 class TimedExecution
 {
 public:
-	std::vector<std::pair<T, float>> items;
-	size_t index = 0;
-	bool init = false;
 
-	template <typename F>
-	void Update(float time, F&& f)
+	class Context
 	{
-		if (index >= items.size())
-			return;
-		auto& [item, nextTime] = items.at(index);
-		if (time >= nextTime)
+	public:
+		TimedExecution* execution;
+		size_t index = 0;
+
+		explicit Context(TimedExecution<T>* execution)
+			: execution(execution)
 		{
-			f(item);
-			++index;
 		}
-	}
+
+		bool Exists() { return execution != nullptr; }
+
+		Context() : execution(nullptr) {}
+
+		template <typename F>
+		void Update(float time, AnimData* animData, F&& f)
+		{
+			if (index >= execution->items.size())
+				return;
+			auto& [item, nextTime] = execution->items.at(index);
+			if (time >= nextTime)
+			{
+				if (!IsPlayersOtherAnimData(animData))
+					f(item);
+				++index;
+			}
+		}
+	};
+
+	std::vector<std::pair<T, float>> items;
+	bool init = false;
 
 	template <typename F2>
 	TimedExecution(const std::span<NiTextKey>& keys, F2&& f2)
@@ -92,9 +109,9 @@ public:
 		init = true;
 	}
 
-	void Reset()
+	Context CreateContext()
 	{
-		index = 0;
+		return Context(this);
 	}
 };
 
@@ -102,20 +119,16 @@ struct AnimTime
 {
 	bool finishedEndKey = false;
 	bool respectEndKey = false;
-	bool callScript = false;
-	std::vector<std::pair<Script*, float>> scripts;
 	bool firstPerson = false;
-	UInt32 scriptStage = 0;
 	BSAnimGroupSequence* anim3rdCounterpart = nullptr;
 	POVSwitchState povState = POVSwitchState::NotSet;
 	Script* conditionScriptPoll = nullptr;
 	TESObjectWEAP* actorWeapon = nullptr;
 	UInt32 actorId = 0;
 	float lastNiTime = -FLT_MAX;
-	bool playsSoundPath = false;
-	std::vector<std::pair<Sound, float>> soundPaths;
-	UInt32 soundStage = 0;
-	TimedExecution<Script*>* scriptLines = nullptr;
+	TimedExecution<Script*>::Context scriptLines;
+	TimedExecution<Script*>::Context scriptCalls;
+	TimedExecution<Sound>::Context soundPaths;
 
 	AnimData* GetAnimData(Actor* actor) const
 	{
@@ -156,6 +169,8 @@ struct AnimPath
 	AnimKeySetting hasScriptLine{};
 	bool partialReload = false;
 	std::unique_ptr<TimedExecution<Script*>> scriptLineKeys = nullptr;
+	std::unique_ptr<TimedExecution<Script*>> scriptCallKeys = nullptr;
+	std::unique_ptr<TimedExecution<Sound>> soundPaths = nullptr;
 
 };
 
