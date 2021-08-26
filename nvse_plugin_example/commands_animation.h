@@ -117,15 +117,14 @@ public:
 
 struct AnimTime
 {
+	UInt32 actorId = 0;
+	float lastNiTime = -FLT_MAX;
 	bool finishedEndKey = false;
 	bool respectEndKey = false;
 	bool firstPerson = false;
 	BSAnimGroupSequence* anim3rdCounterpart = nullptr;
 	POVSwitchState povState = POVSwitchState::NotSet;
-	Script* conditionScriptPoll = nullptr;
 	TESObjectWEAP* actorWeapon = nullptr;
-	UInt32 actorId = 0;
-	float lastNiTime = -FLT_MAX;
 	TimedExecution<Script*>::Context scriptLines;
 	TimedExecution<Script*>::Context scriptCalls;
 	TimedExecution<Sound>::Context soundPaths;

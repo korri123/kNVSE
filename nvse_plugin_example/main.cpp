@@ -50,7 +50,7 @@ void HandleAnimTimes()
 {
 	constexpr auto shouldErase = [](Actor* actor)
 	{
-		return !actor || actor->IsDying(true) || actor->IsDeleted();
+		return !actor || actor->IsDying(true) || actor->IsDeleted() || !actor->baseProcess;
 	};
 	for (auto iter = g_timeTrackedAnims.begin(); iter != g_timeTrackedAnims.end();)
 	{
