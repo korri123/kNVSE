@@ -356,7 +356,9 @@ void HandleProlongedAim()
 		const auto getAnim = [&](UInt16 groupId)
 		{
 			auto* anim = GetGameAnimation(animData, groupId);
-			if (auto* overrideAnim = GetActorAnimation(groupId, animData == animData1st, animData, anim ? anim->sequenceName : nullptr))
+			BSAnimGroupSequence* overrideAnim;
+			std::optional<AnimationResult> overrideAnimPath;
+			if ((overrideAnimPath = GetActorAnimation(groupId, animData == animData1st, animData, anim ? anim->sequenceName : nullptr)) && (overrideAnim = LoadAnimationPath(*overrideAnimPath, animData)))
 				anim = overrideAnim;
 			return anim;
 		};

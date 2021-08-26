@@ -160,7 +160,7 @@ BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID)
 	return nullptr;
 }
 
-BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
+std::optional<BSAnimationContext> LoadAnimation(const std::string& path, AnimData* animData)
 {
 	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
 	if (kfModel && kfModel->animGroup && animData)
@@ -170,13 +170,12 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 		
 		// delete an animation if it's already using up our slot
 		//if (GameFuncs::LoadAnimation(animData, kfModel, false)) return kfModel->controllerSequence;
-		auto* seqBase = animData->mapAnimSequenceBase->Lookup(groupId);
-		if (seqBase)
+		if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 		{
-			auto* anim = seqBase->GetSequenceByIndex(0);
+			auto* anim = base->GetSequenceByIndex(0);
 			if (anim && _stricmp(anim->sequenceName, path.c_str()) == 0)
- 				return anim;
-			seqBase->Destroy(true);
+ 				return BSAnimationContext(anim, base);
+			base->Destroy(true);
 			GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, groupId);
 		}
 		if (GameFuncs::LoadAnimation(animData, kfModel, false))
@@ -185,7 +184,7 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 			{
 				BSAnimGroupSequence* anim;
 				if (base && ((anim = base->GetSequenceByIndex(0))))
-					return anim;
+					return BSAnimationContext(anim, base);
 				DebugPrint("Map returned null anim");
 			}
 			else
@@ -195,19 +194,19 @@ BSAnimGroupSequence* LoadAnimation(const std::string& path, AnimData* animData)
 		}
 	}
 	DebugPrint("Failed to load KF Model " + path);
-	return nullptr;
+	return std::nullopt;
 }
 
 std::unordered_map<AnimData*, GameAnimMap*> g_customMaps;
 
-BSAnimGroupSequence* LoadCustomAnimation(const std::string& path, AnimData* animData)
+std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData)
 {
 	auto*& customMap = g_customMaps[animData];
 	if (!customMap)
 		customMap = CreateGameAnimMap();
 	auto* defaultMap = animData->mapAnimSequenceBase;
 	animData->mapAnimSequenceBase = customMap;
-	auto* result = LoadAnimation(path, animData);
+	auto result = LoadAnimation(path, animData);
 	animData->mapAnimSequenceBase = defaultMap;
 	return result;
 }
@@ -439,7 +438,7 @@ AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor)
 	return reloads->at(ctx.order++ % reloads->size());
 }
 
-BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, const char* prevPath = nullptr)
+std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, const char* prevPath = nullptr)
 {
 	if (const auto stacksIter = overrides.stacks.find(groupId); stacksIter != overrides.stacks.end())
 	{
@@ -490,7 +489,7 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 		if ((!stack || stack->empty()) && !exclusiveAnim)
 			stack = &animStacks.GetCustom(AnimCustom::None);
 		if (!stack)
-			return nullptr;
+			return std::nullopt;
 		for (auto iter = stack->rbegin(); iter != stack->rend(); ++iter)
 		{
 			auto& ctx = *iter;
@@ -544,27 +543,20 @@ BSAnimGroupSequence* PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId
 				if (!savedAnimPath)
 					continue;
 				
-				if (auto* anim = LoadCustomAnimation(savedAnimPath->path, animData); anim)
-				{
-					SubscribeOnActorReload(actor, ReloadSubscriber::Partial);
-					HandleExtraOperations(animData, anim, *savedAnimPath);
-					if (ctx.conditionScript && animsTime)
-						animsTime->anim = anim;
-					return anim;
-				}
+				return AnimationResult(savedAnimPath, &ctx, animsTime);
 			}
 		}
 	}
-	return nullptr;
+	return std::nullopt;
 }
 
-BSAnimGroupSequence* GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32 animGroupId, AnimData* animData, const char* prevPath = nullptr)
+std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32 animGroupId, AnimData* animData, const char* prevPath = nullptr)
 {
 	if (const auto mapIter = map.find(id); mapIter != map.end())
 	{
 		return PickAnimation(mapIter->second, animGroupId, animData, prevPath);
 	}
-	return nullptr;
+	return std::nullopt;
 }
 
 AnimOverrideMap& GetMap(bool firstPerson)
@@ -577,22 +569,37 @@ AnimOverrideMap& GetModIndexMap(bool firstPerson)
 	return firstPerson ? g_animGroupModIdxFirstPersonMap : g_animGroupModIdxThirdPersonMap;
 }
 
-BSAnimGroupSequence* GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath)
+BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData)
 {
-	BSAnimGroupSequence* result;
+	auto& [animPath, ctx, animsTime] = result;
+	if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
+	{
+		auto* anim = animCtx->anim;
+		SubscribeOnActorReload(animData->actor, ReloadSubscriber::Partial);
+		HandleExtraOperations(animData, anim, *animPath);
+		if (ctx->conditionScript && animsTime)
+			animsTime->anim = anim;
+		return anim;
+	}
+	return nullptr;
+}
+
+std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath)
+{
+	std::optional<AnimationResult> result;
+	std::optional<AnimationResult> modIndexResult;
+
 	auto& map = GetMap(firstPerson);
 	auto* actor = animData->actor;
 	auto& modIndexMap = GetModIndexMap(firstPerson);
-	BSAnimGroupSequence* modIndexResult = nullptr;
-	const auto getFormAnimation = [&](TESForm* form)
+	const auto getFormAnimation = [&](TESForm* form) -> std::optional<AnimationResult>
 	{
-		BSAnimGroupSequence* lResult;
-		if ((lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData, prevPath)))
+		if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData, prevPath))
 			return lResult;
 		// mod index
-		if (!modIndexResult)
+		if (!modIndexResult.has_value())
 			modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData, prevPath);
-		return static_cast<BSAnimGroupSequence*>(nullptr);
+		return std::nullopt;
 	};
 	// weapon form ID
 	if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon && (result = getFormAnimation(weaponInfo->weapon)))
@@ -611,17 +618,16 @@ BSAnimGroupSequence* GetActorAnimation(UInt32 animGroupId, bool firstPerson, Ani
 	TESCreature* creature;
 	if ((creature = static_cast<TESCreature*>(actor->GetActorBase())) && IS_ID(creature, Creature) && (result = getFormAnimation(creature)))
 		return result;
-	
+
 	// equipped TODO
-	
-	
+
 	// mod index (set in getFormAnimation if exists)
 	if (modIndexResult)
 		return modIndexResult;
 	// non-form ID dependent animations (global replacers)
 	if ((result = PickAnimation(modIndexMap[0xFF], animGroupId, animData, prevPath)))
 		return result;
-	return nullptr;
+	return std::nullopt;
 }
 
 MemoizedMap<const char*, int> s_animGroupNameToIDMap;

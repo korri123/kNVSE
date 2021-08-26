@@ -1,5 +1,8 @@
 #pragma once
 
+#include <chrono>
+#include <chrono>
+#include <optional>
 #include <span>
 #include <unordered_set>
 
@@ -364,8 +367,33 @@ enum PlayerAnimDataType
   kPlayerAnimData_1st = 0x1,
 };
 
+class AnimationResult
+{
+public:
+	AnimPath* animPath;
+	SavedAnims* parent;
+	SavedAnimsTime* animsTime;
+	AnimationResult(AnimPath* path, SavedAnims* parent, SavedAnimsTime* animsTime)
+		: animPath(path),
+		  parent(parent), animsTime(animsTime)
+	{
+	}
+};
 
-BSAnimGroupSequence* GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath);
+struct BSAnimationContext
+{
+	BSAnimGroupSequence* anim;
+	AnimSequenceBase* base;
+
+	BSAnimationContext(BSAnimGroupSequence* anim, AnimSequenceBase* base): anim(anim), base(base)
+	{
+	}
+};
+
+std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData);
+BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData);
+
+std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath);
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {

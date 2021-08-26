@@ -14,6 +14,9 @@
 #include "utility.h"
 #include "main.h"
 
+// allow first person anims to override even if their 3rd person counterpart is missing
+SInt32 g_firstPersonAnimId = -1;
+
 AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
@@ -25,6 +28,7 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 	auto* curSeq = animData->animSequence[groupInfo.sequenceType];
 #endif
 	g_animationHookContext = AnimationContext(basePointer);
+
 	if (animData && animData->actor)
 	{
 #if 0
@@ -35,11 +39,15 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		auto* currAction = &highProcess->currentAction;
 #endif
 		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
-		auto* toReplace = toMorph ? *toMorph : nullptr;
-		if (auto* anim = GetActorAnimation(animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
+		if (firstPerson && g_firstPersonAnimId != -1)
 		{
-			*toMorph = anim;
-			
+			animGroupId = g_firstPersonAnimId;
+			g_firstPersonAnimId = -1;
+		}
+		auto* toReplace = toMorph ? *toMorph : nullptr;
+		if (const auto animResult = GetActorAnimation(animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
+		{
+			*toMorph = LoadAnimationPath(*animResult, animData);
 #if 0
 			if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
 				Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
@@ -258,8 +266,9 @@ bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
 	{
 		if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
 		{
-			auto* fpsAnim = GetActorAnimation(anim->animGroup->groupID, true, g_thePlayer->firstPersonAnimData, nullptr);
-			if (fpsAnim && g_reloadStartBlendFixes.contains(fpsAnim))
+			std::optional<BSAnimationContext> fpsAnim;
+			const auto fpsAnimPath = GetActorAnimation(anim->animGroup->groupID, true, g_thePlayer->firstPersonAnimData, nullptr);
+			if (fpsAnimPath && (fpsAnim = LoadCustomAnimation(fpsAnimPath->animPath->path, animData)) && g_reloadStartBlendFixes.contains(fpsAnim->anim))
 				return newCondition();
 		}
 		return defaultCondition();
@@ -281,6 +290,43 @@ HOOK NoAimInReloadLoop()
 	isFalse:
 		jmp jumpIfFalse
 	}
+}
+
+// attempt to fix anims that don't get loaded since they aren't in the game to begin with
+bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void* _EDX, UInt16 groupId, AnimSequenceBase** base)
+{
+	if ((*base = animMap->Lookup(groupId)))
+		return true;
+
+	// check kNVSE - since we don't have access to animData we'll do some stack abuse to get it
+	auto* basePtr = static_cast<UInt8*>(_AddressOfReturnAddress()) - 4;
+	auto* parentBasePtr = *reinterpret_cast<UInt8**>(basePtr);
+	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr - 0x10);
+
+	if (!animData->actor)
+		return false;
+
+	const auto findCustomAnim = [&](AnimData* animData) -> bool
+	{
+		if (const auto anim = GetActorAnimation(groupId, animData == g_thePlayer->firstPersonAnimData, animData, nullptr))
+		{
+			if (const auto animCtx = LoadCustomAnimation(anim->animPath->path, animData))
+			{
+				*base = animCtx->base;
+				return true;
+			}
+		}
+		return false;
+	};
+	if (findCustomAnim(animData))
+		return true;
+	if (animData->actor == g_thePlayer && g_firstPersonAnimId == -1 && findCustomAnim(g_thePlayer->firstPersonAnimData))
+	{
+		// allow 1st person to use anim if it exists instead of 3rd person anim which doesn't exist
+		g_firstPersonAnimId = groupId;
+		*base = nullptr;
+	}
+	return false;
 }
 
 void ApplyHooks()
@@ -317,6 +363,12 @@ void ApplyHooks()
 #endif
 
 	WriteRelJump(0x492BF2, NoAimInReloadLoop);
+
+	// attempt to fix anims that don't get loaded since they aren't in the game to begin with
+	WriteRelCall(0x49575B, NonExistingAnimHook);
+	WriteRelCall(0x495965, NonExistingAnimHook);
+	WriteRelCall(0x4959B9, NonExistingAnimHook);
+	WriteRelCall(0x495A03, NonExistingAnimHook);
 
 	ini.SaveFile(iniPath.c_str(), false);
 }
