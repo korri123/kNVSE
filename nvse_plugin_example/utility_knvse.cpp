@@ -90,5 +90,17 @@ std::string& StripSpace(std::string&& data)
 
 bool StartsWith(const char* left, const char* right)
 {
-	return ToLower(left).starts_with(ToLower(right));
+	const auto rLen = strlen(right);
+	const auto lLen = strlen(left);
+	if (rLen == 0)
+		return false;
+
+	size_t size = min(lLen, rLen);
+	for (unsigned int i = 0; i < size; ++i)
+	{
+		if (tolower(static_cast<unsigned char>(left[i])) != tolower(static_cast<unsigned char>(right[i])))
+			return false;
+	}
+
+	return true;
 }

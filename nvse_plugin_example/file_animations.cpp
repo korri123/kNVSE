@@ -12,30 +12,24 @@
 
 
 template <typename T>
-void LoadPathsForType(const std::filesystem::path& path, const T identifier, bool firstPerson)
+void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, bool firstPerson)
 {
 	std::unordered_set<UInt16> variantIds;
-	for (std::filesystem::recursive_directory_iterator iter(path), end; iter != end; ++iter)
+	for (std::filesystem::recursive_directory_iterator iter(dirPath), end; iter != end; ++iter)
 	{
 		if (_stricmp(iter->path().extension().string().c_str(), ".kf") != 0)
 			continue;
-		const auto fullPath = iter->path().string();
-		auto str = fullPath.substr(fullPath.find("AnimGroupOverride\\"));
-		Log("Loading animation path " + str + "...");
+		const auto& path = iter->path().string();
+		const auto& relPath = std::filesystem::path(path.substr(path.find("AnimGroupOverride\\")));
+		Log("Loading animation path " + dirPath.string() + "...");
 		try
 		{
 			if constexpr (std::is_same<T, nullptr_t>::value)
-				OverrideFormAnimation(nullptr, str, firstPerson, true, variantIds);
-			else if constexpr (std::is_same<T, const TESObjectWEAP*>::value)
-				OverrideFormAnimation(identifier, str, firstPerson, true, variantIds);
-			else if constexpr (std::is_same<T, const Actor*>::value)
-				OverrideFormAnimation(identifier, str, firstPerson, true, variantIds);
-			else if constexpr (std::is_same<T, UInt8>::value)
-				OverrideModIndexAnimation(identifier, str, firstPerson, true, variantIds);
-			else if constexpr (std::is_same<T, const TESRace*>::value)
-				OverrideFormAnimation(identifier, str, firstPerson, true, variantIds);
-			else if constexpr (std::is_same<T, const TESForm*>::value)
-				OverrideFormAnimation(identifier, str, firstPerson, true, variantIds);
+				OverrideFormAnimation(nullptr, relPath, firstPerson, true, variantIds);
+			else if constexpr (std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*> || std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>)
+				OverrideFormAnimation(identifier, relPath, firstPerson, true, variantIds);
+			else if constexpr (std::is_same_v<T, UInt8>)
+				OverrideModIndexAnimation(identifier, relPath, firstPerson, true, variantIds);
 			else
 				static_assert(false);
 		}

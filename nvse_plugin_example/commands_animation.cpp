@@ -384,7 +384,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 	}
 	if (hasKey("blendToReloadLoop", ctx.hasBlendToReloadLoop))
 	{
-		g_reloadStartBlendFixes.insert(sequence);
+		g_reloadStartBlendFixes.insert(sequence->sequenceName);
 	}
 	if (hasKey("scriptLine:", ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
 	{
@@ -638,15 +638,67 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstP
 
 MemoizedMap<const char*, int> s_animGroupNameToIDMap;
 
-int GetAnimGroupId(const std::string& path)
+std::span<const char*> s_moveTypeNames{ reinterpret_cast<const char**>(0x1197794), 4 };
+std::span<const char*> s_handTypeNames{ reinterpret_cast<const char**>(0x11977A4), 12 };
+
+std::string GetBaseAnimGroupName(const std::string& name)
 {
+	std::string oName = name;
+	for (auto* moveTypeName : s_moveTypeNames)
+	{
+		if (StartsWith(oName.c_str(), moveTypeName))
+		{
+			oName = oName.substr(strlen(moveTypeName));
+			break;
+		}
+	}
+	if (StartsWith(oName.c_str(), "mt"))
+		oName = oName.substr(2);
+	else
+	{
+		for (auto* handTypeName : s_handTypeNames)
+		{
+			if (StartsWith(oName.c_str(), handTypeName))
+			{
+				oName = oName.substr(strlen(handTypeName));
+				break;
+			}
+		}
+	}
+
+	return oName;
+}
+
+int GetAnimGroupId(const std::filesystem::path& path)
+{
+	constexpr auto lookupByName = [](const char* name)
+	{
+		return s_animGroupNameToIDMap.Get(name, [](const char* name)
+		{
+			std::string alt;
+			if (auto* underscorePos = strchr(name, '_'))
+			{
+				alt = std::string(name, underscorePos - name);
+				name = alt.c_str();
+			}
+			const auto iter = ra::find_if(g_animGroupInfos, _L(TESAnimGroup::AnimGroupInfo & i, _stricmp(i.name, name) == 0));
+			if (iter == g_animGroupInfos.end())
+				return -1;
+			return iter - g_animGroupInfos.begin();
+		});
+	};
+
+	const auto& baseName = GetBaseAnimGroupName(path.stem().string());
+	if (const auto id = lookupByName(baseName.c_str()); id != -1)
+		return id;
+
 	int moveType = 0;
 	int animHandType = 0;
 	int isPowerArmor = 0;
 	CdeclCall(0x5F38D0, path.c_str(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
 
 	char bsStream[1492];
-	auto pathStr = FormatString("Meshes\\%s", path.c_str());
+	auto pathStr = FormatString("Meshes\\%s", path.string().c_str());
 	std::ranges::replace(pathStr, '/', '\\');
 
 	auto* file = GameFuncs::GetFilePtr(pathStr.c_str(), 0, -1, 1);
@@ -659,19 +711,7 @@ int GetAnimGroupId(const std::string& path)
 		ThisStdCall(0x633C90, &ref, 0); // NiRefObject__NiRefObject
 		CdeclCall(0xA35700, bsStream, 0, &ref); // Read from file
 		auto* anim = static_cast<NiControllerSequence*>(ref);
-		const auto groupId = s_animGroupNameToIDMap.Get(anim->sequenceName, [](const char* name)
-		{
-			std::string alt;
-			if (auto* underscorePos = strchr(name,'_'))
-			{
-				alt = std::string(name, underscorePos - name);
-				name = alt.c_str();
-			}
-			const auto iter = ra::find_if(g_animGroupInfos, _L(TESAnimGroup::AnimGroupInfo & i, _stricmp(i.name, name) == 0));
-			if (iter == g_animGroupInfos.end())
-				return -1;
-			return iter - g_animGroupInfos.begin();
-		});
+		const auto groupId = lookupByName(anim->sequenceName);
 		if (groupId == -1)
 			return -1;
 		ref->Destructor(true);
@@ -680,15 +720,15 @@ int GetAnimGroupId(const std::string& path)
 	return -1;
 }
 
-void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap& map, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false)
+void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath, AnimOverrideMap& map, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false)
 {
 	if (!conditionScript && g_jsonContext.script)
 	{
 		conditionScript = g_jsonContext.script;
 		pollCondition = g_jsonContext.pollCondition;
 	}
-	std::ranges::replace(path, '/', '\\');
-	const auto groupId = GetAnimGroupId(path);
+	const auto& path = fPath.string();
+	const auto groupId = GetAnimGroupId(fPath);
 	if (groupId == -1)
 		throw std::exception(FormatString("Failed to resolve file '%s'", path.c_str()).c_str());
 	auto& animGroupMap = map[refId];
@@ -736,8 +776,7 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	if (newItem || stack.empty())
 		stack.emplace_back();
 
-	const auto realPath = std::filesystem::path(path);
-	const auto& fileName = realPath.filename().string();
+	const auto& fileName = fPath.filename().string();
 
 	auto& anims = stack.back();
 
@@ -770,7 +809,7 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	}
 }
 
-void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
+void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
 {
 	if (!form)
 		return OverrideModIndexAnimation(0xFF, path, firstPerson, enable, groupIdFillSet);
@@ -778,7 +817,7 @@ void OverrideFormAnimation(const TESForm* form, const std::string& path, bool fi
 	SetOverrideAnimation(form ? form->refID : -1, path, map, enable, groupIdFillSet, conditionScript, pollCondition);
 }
 
-void OverrideModIndexAnimation(const UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet)
+void OverrideModIndexAnimation(const UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet)
 {
 	auto& map = GetModIndexMap(firstPerson);
 	SetOverrideAnimation(modIdx, path, map, enable, groupIdFillSet);

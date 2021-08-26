@@ -4,7 +4,7 @@ struct AnimData;
 class BSAnimGroupSequence;
 enum AnimGroupID : UInt8;
 
-extern std::unordered_set<BSAnimGroupSequence*> g_reloadStartBlendFixes;
+extern std::unordered_set<std::string> g_reloadStartBlendFixes;
 
 struct AnimationContext
 {

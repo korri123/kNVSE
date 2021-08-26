@@ -56,12 +56,12 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		else if (toReplace)
 		{
 			// allow non animgroupoverride anims to use custom text keys
-			static std::unordered_set<BSAnimGroupSequence*> noCustomKeyAnims;
-			if (!noCustomKeyAnims.contains(toReplace))
+			static std::unordered_set<std::string> noCustomKeyAnims;
+			if (!noCustomKeyAnims.contains(toReplace->sequenceName))
 			{
 				AnimPath ctx;
 				if (!HandleExtraOperations(animData, toReplace, ctx))
-					noCustomKeyAnims.insert(toReplace);
+					noCustomKeyAnims.insert(toReplace->sequenceName);
 			}
 		}
 	}
@@ -249,7 +249,7 @@ JMP_HOOK(0x8BB96A, ProlongedAimFix, 0x8BB974, {
 	_A jmp retnAddr
 	})
 
-std::unordered_set<BSAnimGroupSequence*> g_reloadStartBlendFixes;
+std::unordered_set<std::string> g_reloadStartBlendFixes;
 
 bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
 {
@@ -262,19 +262,14 @@ bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
 	const auto defaultCondition = _L(, queuedId == 0xFF);
 	if (!anim)
 		return defaultCondition();
-	if (!g_reloadStartBlendFixes.contains(anim))
+	if (!g_reloadStartBlendFixes.contains(anim->sequenceName))
 	{
 		if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
 		{
-			std::optional<BSAnimationContext> fpsAnim;
-			const auto animGroupId = anim->animGroup->groupID;
-			const auto fpsAnimPath = GetActorAnimation(animGroupId, true, g_thePlayer->firstPersonAnimData, nullptr);
-			if (fpsAnimPath)
-			{
-				const auto* animPath = GetAnimPath(*fpsAnimPath, animGroupId, animData);
-				if ((fpsAnim = LoadCustomAnimation(animPath->path, animData)) && g_reloadStartBlendFixes.contains(fpsAnim->anim))
-					return newCondition();
-			}
+			const auto seqType = GetSequenceType(anim->animGroup->groupID);
+			auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
+			if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->sequenceName))
+				return newCondition();
 		}
 		return defaultCondition();
 	}

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <chrono>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <unordered_set>
@@ -435,8 +436,8 @@ DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 
 #endif
 
-void OverrideModIndexAnimation(UInt8 modIdx, const std::string& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet);
-void OverrideFormAnimation(const TESForm* form, const std::string& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false);
+void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet);
+void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false);
 
 void HandleOnActorReload();
 

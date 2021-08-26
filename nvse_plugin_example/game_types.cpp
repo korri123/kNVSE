@@ -157,6 +157,11 @@ TESAnimGroup::AnimGroupInfo* GetGroupInfo(UInt8 groupId)
 	return &g_animGroupInfos[groupId];
 }
 
+UInt32 GetSequenceType(UInt8 groupId)
+{
+	return GetGroupInfo(groupId)->sequenceType;
+}
+
 TESAnimGroup::AnimGroupInfo* TESAnimGroup::GetGroupInfo() const
 {
 	return ::GetGroupInfo(groupID);
