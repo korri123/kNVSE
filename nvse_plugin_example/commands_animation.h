@@ -16,7 +16,7 @@
 
 struct SavedAnims;
 extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
-
+using FormID = UInt32;
 
 enum QueuedIdleFlags
 {
@@ -178,7 +178,7 @@ struct AnimPath
 
 struct SavedAnims
 {
-	int order = -1;
+	bool hasOrder = false;
 	std::vector<AnimPath> anims;
 	Script* conditionScript = nullptr;
 	bool pollCondition = false;
@@ -370,12 +370,10 @@ enum PlayerAnimDataType
 class AnimationResult
 {
 public:
-	AnimPath* animPath;
 	SavedAnims* parent;
 	SavedAnimsTime* animsTime;
-	AnimationResult(AnimPath* path, SavedAnims* parent, SavedAnimsTime* animsTime)
-		: animPath(path),
-		  parent(parent), animsTime(animsTime)
+	AnimationResult(SavedAnims* parent, SavedAnimsTime* animsTime)
+		: parent(parent), animsTime(animsTime)
 	{
 	}
 };
@@ -391,7 +389,7 @@ struct BSAnimationContext
 };
 
 std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData);
-BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData);
+BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 
 std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath);
 
@@ -471,3 +469,5 @@ struct ReloadHandler
 void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);
 
 bool DidActorReload(Actor* actor, ReloadSubscriber subscriber);
+
+AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimData* animData);

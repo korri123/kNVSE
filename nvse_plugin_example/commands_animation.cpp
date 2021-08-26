@@ -420,6 +420,8 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 	return applied;
 }
 
+std::map<std::pair<FormID, SavedAnims*>, int> g_actorAnimOrderMap;
+
 AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor)
 {
 	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
@@ -433,9 +435,9 @@ AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor)
 		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, p.partialReload));
 	if (reloads->empty())
 		return nullptr;
-	if (ctx.order == -1)
+	if (!ctx.hasOrder)
 		return reloads->at(GetRandomUInt(reloads->size()));
-	return reloads->at(ctx.order++ % reloads->size());
+	return reloads->at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % reloads->size());
 }
 
 std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, const char* prevPath = nullptr)
@@ -450,7 +452,6 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 		if (actor == g_thePlayer || npc)
 			animCustomStack->push_back(AnimCustom::Human);
 		auto exclusiveAnim = false;
-		auto emptyMag = false;
 		if (npc)
 		{
 			if (npc && !npc->baseData.IsFemale())
@@ -476,8 +477,6 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				if (modFlags->flags & 4 && !animStacks.mod3Anims.empty())
 					animCustomStack->push_back(AnimCustom::Mod3);
 			}
-			if (const auto* ammoInfo = actor->baseProcess->GetAmmoInfo())
-				emptyMag = ammoInfo->count == 0;
 		}
 		while (!animCustomStack->empty())
 		{
@@ -515,35 +514,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 			}
 			if (!ctx.anims.empty())
 			{
-				AnimPath* savedAnimPath = nullptr;
-				if (IsAnimGroupReload(static_cast<UInt8>(groupId)) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
-				{
-					if (auto* path = GetPartialReload(ctx, actor))
-						savedAnimPath = path;
-				}
-				else if (emptyMag && ctx.emptyMagAnim)
-				{
-					savedAnimPath = ctx.emptyMagAnim.get();
-				}
-				else if (ctx.order == -1)
-				{
-					// Make sure that Aim, AimUp and AimDown all use the same index
-					if (auto* path = HandleAimUpDownRandomness(groupId, ctx))
-						savedAnimPath = path;
-					else
-						// pick random variant
-						savedAnimPath = &ctx.anims.at(GetRandomUInt(ctx.anims.size()));
-				}
-				else
-				{
-					// ordered
-					savedAnimPath = &ctx.anims.at(ctx.order++ % ctx.anims.size());
-				}
-
-				if (!savedAnimPath)
-					continue;
-				
-				return AnimationResult(savedAnimPath, &ctx, animsTime);
+				return AnimationResult(&ctx, animsTime);
 			}
 		}
 	}
@@ -569,9 +540,44 @@ AnimOverrideMap& GetModIndexMap(bool firstPerson)
 	return firstPerson ? g_animGroupModIdxFirstPersonMap : g_animGroupModIdxThirdPersonMap;
 }
 
-BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData)
+AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimData* animData)
 {
-	auto& [animPath, ctx, animsTime] = result;
+	auto& ctx = *animResult.parent;
+	AnimPath* savedAnimPath = nullptr;
+	bool emptyMag = false;
+	Actor* actor = animData->actor;
+	if (const auto* ammoInfo = actor->baseProcess->GetAmmoInfo())
+		emptyMag = ammoInfo->count == 0;
+	if (IsAnimGroupReload(static_cast<UInt8>(groupId)) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
+	{
+		if (auto* path = GetPartialReload(ctx, actor))
+			savedAnimPath = path;
+	}
+	else if (emptyMag && ctx.emptyMagAnim)
+	{
+		savedAnimPath = ctx.emptyMagAnim.get();
+	}
+	else if (!ctx.hasOrder)
+	{
+		// Make sure that Aim, AimUp and AimDown all use the same index
+		if (auto* path = HandleAimUpDownRandomness(groupId, ctx))
+			savedAnimPath = path;
+		else
+			// pick random variant
+			savedAnimPath = &ctx.anims.at(GetRandomUInt(ctx.anims.size()));
+	}
+	else
+	{
+		// ordered
+		savedAnimPath = &ctx.anims.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % ctx.anims.size());
+	}
+	return savedAnimPath;
+}
+
+BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId)
+{
+	auto& [ctx, animsTime] = result;
+	auto* animPath = GetAnimPath(result, groupId, animData);
 	if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
 	{
 		auto* anim = animCtx->anim;
@@ -752,7 +758,7 @@ void SetOverrideAnimation(const UInt32 refId, std::string path, AnimOverrideMap&
 	}
 	if (FindStringCI(fileName, "_order_"))
 	{
-		anims.order = 0;
+		anims.hasOrder = true;
 		// sort alphabetically
 		std::ranges::sort(anims.anims, [&](const auto& a, const auto& b) {return a.path < b.path; });
 		Log("Detected _order_ in filename; animation variants for this anim group will be played sequentially");

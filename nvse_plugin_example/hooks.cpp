@@ -47,7 +47,7 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		auto* toReplace = toMorph ? *toMorph : nullptr;
 		if (const auto animResult = GetActorAnimation(animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
 		{
-			*toMorph = LoadAnimationPath(*animResult, animData);
+			*toMorph = LoadAnimationPath(*animResult, animData, animGroupId);
 #if 0
 			if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
 				Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
@@ -267,9 +267,14 @@ bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
 		if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
 		{
 			std::optional<BSAnimationContext> fpsAnim;
-			const auto fpsAnimPath = GetActorAnimation(anim->animGroup->groupID, true, g_thePlayer->firstPersonAnimData, nullptr);
-			if (fpsAnimPath && (fpsAnim = LoadCustomAnimation(fpsAnimPath->animPath->path, animData)) && g_reloadStartBlendFixes.contains(fpsAnim->anim))
-				return newCondition();
+			const auto animGroupId = anim->animGroup->groupID;
+			const auto fpsAnimPath = GetActorAnimation(animGroupId, true, g_thePlayer->firstPersonAnimData, nullptr);
+			if (fpsAnimPath)
+			{
+				const auto* animPath = GetAnimPath(*fpsAnimPath, animGroupId, animData);
+				if ((fpsAnim = LoadCustomAnimation(animPath->path, animData)) && g_reloadStartBlendFixes.contains(fpsAnim->anim))
+					return newCondition();
+			}
 		}
 		return defaultCondition();
 	}
@@ -306,11 +311,19 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	if (!animData->actor)
 		return false;
 
+	// we do not want non existing 3rd anim data to try to get played as nothing gets played if it can't find it
+	if (animData == g_thePlayer->firstPersonAnimData)
+		animData = g_thePlayer->baseProcess->GetAnimData();
+
 	const auto findCustomAnim = [&](AnimData* animData) -> bool
 	{
-		if (const auto anim = GetActorAnimation(groupId, animData == g_thePlayer->firstPersonAnimData, animData, nullptr))
+		if (const auto animCtx = GetActorAnimation(groupId, animData == g_thePlayer->firstPersonAnimData, animData, nullptr))
 		{
-			if (const auto animCtx = LoadCustomAnimation(anim->animPath->path, animData))
+			const auto& animPaths = animCtx->parent->anims;
+			auto* animPath = !animPaths.empty() ? &animPaths.at(0) : nullptr;
+			if (!animPath)
+				return false;
+			if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
 			{
 				*base = animCtx->base;
 				return true;
