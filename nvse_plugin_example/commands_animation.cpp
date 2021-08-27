@@ -687,15 +687,18 @@ int GetAnimGroupId(const std::filesystem::path& path)
 			return iter - g_animGroupInfos.begin();
 		});
 	};
+	const auto toFullId = [&](UInt8 groupId)
+	{
+		int moveType = 0;
+		int animHandType = 0;
+		int isPowerArmor = 0;
+		CdeclCall(0x5F38D0, path.string().c_str(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
+		return groupId + (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8);
+	};
 
 	const auto& baseName = GetBaseAnimGroupName(path.stem().string());
 	if (const auto id = lookupByName(baseName.c_str()); id != -1)
-		return id;
-
-	int moveType = 0;
-	int animHandType = 0;
-	int isPowerArmor = 0;
-	CdeclCall(0x5F38D0, path.c_str(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
+		return toFullId(id);
 
 	char bsStream[1492];
 	auto pathStr = FormatString("Meshes\\%s", path.string().c_str());
@@ -715,7 +718,7 @@ int GetAnimGroupId(const std::filesystem::path& path)
 		if (groupId == -1)
 			return -1;
 		ref->Destructor(true);
-		return groupId + (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8);
+		return toFullId(groupId);
 	}
 	return -1;
 }
