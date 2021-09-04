@@ -88,19 +88,16 @@ std::string& StripSpace(std::string&& data)
 	return data;
 }
 
-bool StartsWith(const char* left, const char* right)
+bool StartsWith(const char* string, const char* prefix)
 {
-	const auto rLen = strlen(right);
-	const auto lLen = strlen(left);
-	if (rLen == 0)
-		return false;
-
-	size_t size = min(lLen, rLen);
-	for (unsigned int i = 0; i < size; ++i)
+	size_t count = 0;
+	while (*prefix)
 	{
-		if (tolower(static_cast<unsigned char>(left[i])) != tolower(static_cast<unsigned char>(right[i])))
+		if (tolower(*prefix++) != tolower(*string++))
 			return false;
+		++count;
 	}
-
+	if (!count)
+		return false;
 	return true;
 }

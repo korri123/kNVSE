@@ -91,7 +91,7 @@ public:
 			auto& [item, nextTime] = execution->items.at(index);
 			if (time >= nextTime)
 			{
-				if (!IsPlayersOtherAnimData(animData))
+				//if (!IsPlayersOtherAnimData(animData))
 					f(item);
 				++index;
 			}
@@ -143,7 +143,6 @@ struct AnimTime
 
 struct SavedAnimsTime
 {
-	float time = 0;
 	UInt16 groupId = 0;
 	BSAnimGroupSequence* anim = nullptr;
 	UInt32 actorId = 0;
@@ -170,6 +169,7 @@ struct AnimPath
 	AnimKeySetting hasSoundPath{};
 	AnimKeySetting hasBlendToReloadLoop{};
 	AnimKeySetting hasScriptLine{};
+	AnimKeySetting hasReplaceWithGroup{};
 	bool partialReload = false;
 	std::unique_ptr<TimedExecution<Script*>> scriptLineKeys = nullptr;
 	std::unique_ptr<TimedExecution<Script*>> scriptCallKeys = nullptr;
@@ -351,6 +351,7 @@ namespace GameFuncs
 	inline auto MorphSequence = THISCALL(0xA351D0, bool, NiControllerSequence *source, NiControllerSequence *pkDestSequence, float fDuration, int iPriority, float fSourceWeight, float fDestWeight);
 	inline auto BlendFromPose = THISCALL(0xA2F800, bool, NiControllerManager * mgr, NiControllerSequence * pkSequence, float fDestFrame, float fDuration, int iPriority, NiControllerSequence * pkSequenceToSynchronize);
 	inline auto DeactivateSequence = THISCALL(0x47B220, int, NiControllerManager * mgr, NiControllerSequence * pkSequence, float fEaseOut);
+	inline auto GetActorAnimGroupId = THISCALL(0x897910, UInt16, Actor* actor, UInt32 groupId, BaseProcess::WeaponInfo* weapInfo, bool aFalse, AnimData* animData);
 }
 
 enum SequenceState1
@@ -392,7 +393,7 @@ struct BSAnimationContext
 std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 
-std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath);
+std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData);
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {
@@ -407,15 +408,14 @@ static ParamInfo kParams_SetActorAnimationPath[] =
 	{	"first person",	kParamType_Integer,	0	}, // firstPerson
 	{	"enable",	kParamType_Integer,	0	}, // enable or disable
 	{	"animation path",	kParamType_String,	0	},  // path
-	{ "play immediately", kParamType_Integer, 1 },
+	{ "poll condition", kParamType_Integer, 1 },
 	{"condition", kParamType_AnyForm, 1},
 };
 
 static ParamInfo kParams_PlayAnimationPath[] =
 {
 	{"path", kParamType_String, 0},
-	{"anim type", kParamType_Integer, 0},
-	{"first person", kParamType_Integer, 0}
+	{"first person", kParamType_Integer, 1}
 };
 
 static ParamInfo kParams_SetAnimationPathCondition[] =
@@ -424,19 +424,26 @@ static ParamInfo kParams_SetAnimationPathCondition[] =
 	{"condition", kParamType_AnyForm, 0},
 };
 
+static ParamInfo kParams_PlayGroupAlt[] =
+{
+	{"anim group", kParamType_AnimationGroup, 0},
+	{"play immediately", kParamType_Integer, 1},
+};
+
 DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 2, kParams_OneForm_OneOptionalInt)
 DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof kParams_SetWeaponAnimationPath / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
 DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", false, sizeof kParams_SetActorAnimationPath / sizeof(ParamInfo), kParams_SetActorAnimationPath)
 DEFINE_COMMAND_PLUGIN(PlayAnimationPath, "", true, sizeof kParams_PlayAnimationPath / sizeof(ParamInfo), kParams_PlayAnimationPath)
 DEFINE_COMMAND_PLUGIN(kNVSEReset, "", false, 0, nullptr)
 DEFINE_COMMAND_PLUGIN(ForceStopIdle, "", true, 1, kParams_OneOptionalInt)
+DEFINE_COMMAND_PLUGIN(PlayGroupAlt, "", true, 2, kParams_PlayGroupAlt)
 #if _DEBUG
 
 DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 
 #endif
 
-void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet);
+void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition);
 void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false);
 
 void HandleOnActorReload();
@@ -446,9 +453,10 @@ float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 bool IsCustomAnim(BSAnimGroupSequence* sequence);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
-bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, AnimPath& ctx);
+bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPath& ctx);
 float GetAnimMult(AnimData* animData, UInt8 animGroupID);
 bool IsAnimGroupReload(UInt8 animGroupId);
+bool IsAnimGroupMovement(UInt8 animGroupId);
 
 bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod);
 
@@ -472,3 +480,4 @@ void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);
 bool DidActorReload(Actor* actor, ReloadSubscriber subscriber);
 
 AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimData* animData);
+int GroupNameToId(const std::string& name);

@@ -26,6 +26,7 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 #if _DEBUG
 	auto& groupInfo = g_animGroupInfos[animGroupId & 0xFF];
 	auto* curSeq = animData->animSequence[groupInfo.sequenceType];
+	//animData->noBlend120 = true;
 #endif
 	g_animationHookContext = AnimationContext(basePointer);
 
@@ -45,10 +46,10 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 			g_firstPersonAnimId = -1;
 		}
 		auto* toReplace = toMorph ? *toMorph : nullptr;
-		if (const auto animResult = GetActorAnimation(animGroupId, firstPerson, animData, *toMorph ? (*toMorph)->sequenceName : nullptr))
+		if (const auto animResult = GetActorAnimation(animGroupId, firstPerson, animData))
 		{
 			*toMorph = LoadAnimationPath(*animResult, animData, animGroupId);
-#if 0
+#if _DEBUG && 0
 			if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
 				Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
 #endif		
@@ -56,12 +57,16 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		else if (toReplace)
 		{
 			// allow non animgroupoverride anims to use custom text keys
-			static std::unordered_set<std::string> noCustomKeyAnims;
-			if (!noCustomKeyAnims.contains(toReplace->sequenceName))
+			static std::unordered_map<std::string, AnimPath> customKeyAnims;
+			if (auto iter = customKeyAnims.find(toReplace->sequenceName); iter != customKeyAnims.end())
+				HandleExtraOperations(animData, toReplace, iter->second);
+			else
 			{
 				AnimPath ctx;
-				if (!HandleExtraOperations(animData, toReplace, ctx))
-					noCustomKeyAnims.insert(toReplace->sequenceName);
+				if (HandleExtraOperations(animData, toReplace, ctx))
+				{
+					customKeyAnims.emplace(toReplace->sequenceName, std::move(ctx));
+				}
 			}
 		}
 	}
@@ -155,7 +160,7 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 gr
 
 bool __fastcall IsCustomAnimKey(const char* key)
 {
-	const static auto customKeys = { "noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:", "blendToReloadLoop", "scriptLine:"};
+	const static auto customKeys = { "noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:", "blendToReloadLoop", "scriptLine:", "replaceWithGroup:"};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }
 
@@ -292,29 +297,17 @@ HOOK NoAimInReloadLoop()
 	}
 }
 
-// attempt to fix anims that don't get loaded since they aren't in the game to begin with
-bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void* _EDX, UInt16 groupId, AnimSequenceBase** base)
+bool LookupAnimFromMap(NiTPointerMap<AnimSequenceBase>* animMap, UInt16 groupId, AnimSequenceBase** base, AnimData* animData)
 {
-	if ((*base = animMap->Lookup(groupId)))
-		return true;
-
-	// check kNVSE - since we don't have access to animData we'll do some stack abuse to get it
-	auto* basePtr = static_cast<UInt8*>(_AddressOfReturnAddress()) - 4;
-	auto* parentBasePtr = *reinterpret_cast<UInt8**>(basePtr);
-	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr - 0x10);
-
-	if (!animData->actor)
-		return false;
-
 	// we do not want non existing 3rd anim data to try to get played as nothing gets played if it can't find it
-	if (animData == g_thePlayer->firstPersonAnimData)
-		animData = g_thePlayer->baseProcess->GetAnimData();
+	//if (animData == g_thePlayer->firstPersonAnimData)
+	//	animData = g_thePlayer->baseProcess->GetAnimData();
 
 	const auto findCustomAnim = [&](AnimData* animData) -> bool
 	{
-		if (const auto animCtx = GetActorAnimation(groupId, animData == g_thePlayer->firstPersonAnimData, animData, nullptr))
+		if (const auto animResult = GetActorAnimation(groupId, animData == g_thePlayer->firstPersonAnimData, animData))
 		{
-			const auto& animPaths = animCtx->parent->anims;
+			const auto& animPaths = animResult->parent->anims;
 			auto* animPath = !animPaths.empty() ? &animPaths.at(0) : nullptr;
 			if (!animPath)
 				return false;
@@ -328,12 +321,37 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	};
 	if (findCustomAnim(animData))
 		return true;
-	if (animData->actor == g_thePlayer && g_firstPersonAnimId == -1 && findCustomAnim(g_thePlayer->firstPersonAnimData))
+	/*if (animData->actor == g_thePlayer && g_firstPersonAnimId == -1 && findCustomAnim(g_thePlayer->firstPersonAnimData))
 	{
 		// allow 1st person to use anim if it exists instead of 3rd person anim which doesn't exist
 		g_firstPersonAnimId = groupId;
 		*base = nullptr;
-	}
+	}*/
+	return false;
+}
+
+UInt8* GetParentBasePtr(void* addressOfReturnAddress)
+{
+	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;
+	return *reinterpret_cast<UInt8**>(basePtr);
+}
+
+
+// attempt to fix anims that don't get loaded since they aren't in the game to begin with
+template <int AnimDataOffset>
+bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void* _EDX, UInt16 groupId, AnimSequenceBase** base)
+{
+	if ((*base = animMap->Lookup(groupId)))
+		return true;
+	// check kNVSE - since we don't have access to animData we'll do some stack abuse to get it
+	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
+	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
+
+	if (!animData->actor)
+		return false;
+
+	if (LookupAnimFromMap(animMap, groupId, base, animData))
+		return true;
 	return false;
 }
 
@@ -372,11 +390,35 @@ void ApplyHooks()
 
 	WriteRelJump(0x492BF2, NoAimInReloadLoop);
 
+#if 1
 	// attempt to fix anims that don't get loaded since they aren't in the game to begin with
-	WriteRelCall(0x49575B, NonExistingAnimHook);
-	WriteRelCall(0x495965, NonExistingAnimHook);
-	WriteRelCall(0x4959B9, NonExistingAnimHook);
-	WriteRelCall(0x495A03, NonExistingAnimHook);
+	WriteRelCall(0x49575B, NonExistingAnimHook<-0x10>);
+	WriteRelCall(0x495965, NonExistingAnimHook<-0x10>);
+	WriteRelCall(0x4959B9, NonExistingAnimHook<-0x10>);
+	WriteRelCall(0x495A03, NonExistingAnimHook<-0x10>);
 
+	WriteRelCall(0x4948E6, NonExistingAnimHook<-0x14>);
+	WriteRelCall(0x49472B, NonExistingAnimHook<-0x8>);
+
+	/* experimental */
+	WriteRelCall(0x9D0E80, NonExistingAnimHook<-0x1C>);
+	WriteRelCall(0x97FF06, NonExistingAnimHook<-0x8>);
+	WriteRelCall(0x97FE09, NonExistingAnimHook<-0xC>);
+	WriteRelCall(0x97F36D, NonExistingAnimHook<-0xC>);
+	WriteRelCall(0x8B7985, NonExistingAnimHook<-0x14>);
+	WriteRelCall(0x49651B, NonExistingAnimHook<-0x14>);
+	WriteRelCall(0x49651B, NonExistingAnimHook<-0x8>);
+	WriteRelCall(0x495DC6, NonExistingAnimHook<-0x10>);
+	WriteRelCall(0x4956CE, NonExistingAnimHook<-0x14>);
+	WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
+	WriteRelCall(0x49431B, NonExistingAnimHook<-0xC>);
+	WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>);
+	WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
+
+	//WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
+	//WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
+	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
+	/* experimental end */
+#endif
 	ini.SaveFile(iniPath.c_str(), false);
 }

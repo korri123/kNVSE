@@ -29,7 +29,7 @@ void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, 
 			else if constexpr (std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*> || std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>)
 				OverrideFormAnimation(identifier, relPath, firstPerson, true, variantIds);
 			else if constexpr (std::is_same_v<T, UInt8>)
-				OverrideModIndexAnimation(identifier, relPath, firstPerson, true, variantIds);
+				OverrideModIndexAnimation(identifier, relPath, firstPerson, true, variantIds, nullptr, false);
 			else
 				static_assert(false);
 		}
@@ -92,7 +92,6 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 		Log("Loading form ID " + iterPath.string());
 		if (iter->is_directory())
 		{
-			
 			try
 			{
 				const auto& folderName = iterPath.filename().string();
@@ -110,12 +109,16 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 						DebugPrint(FormatString("Form %X not found!", formId));
 					}
 				}
+				else
+				{
+					DebugPrint("Failed to convert " + folderName + " to a form ID");
+				}
 			}
 			catch (std::exception&) {}
 		}
 		else
 		{
-			Log("Skipping as path is not a directory...");
+			DebugPrint("Skipping as path is not a directory...");
 		}
 	}
 }
@@ -173,7 +176,7 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 	condition->text = nullptr;
 	if (!result)
 	{
-		DebugPrint("Failed to compile condition script");
+		DebugPrint("Failed to compile condition script " + condString);
 		return nullptr;
 	}
 	return condition.release();
@@ -212,7 +215,7 @@ void HandleJson(const std::filesystem::path& path)
 				const auto* mod = !modName.empty() ? DataHandler::Get()->LookupModByName(modName.c_str()) : nullptr;
 				if (!mod && !modName.empty())
 				{
-					Log("Mod name " + modName + " was not found");
+					DebugPrint("Mod name " + modName + " was not found");
 					continue;
 				}
 				const auto& folder = elem["folder"].get<std::string>();
@@ -246,7 +249,7 @@ void HandleJson(const std::filesystem::path& path)
 						auto* form = LookupFormByID(formId);
 						if (!form)
 						{
-							Log(FormatString("Form %X was not found", formId));
+							DebugPrint(FormatString("Form %X was not found", formId));
 							continue;
 						}
 						LogForm(form);

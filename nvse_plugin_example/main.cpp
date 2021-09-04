@@ -81,14 +81,15 @@ void HandleAnimTimes()
 		{
 			deferredErase = true;
 		}
-		animTime.lastNiTime = anim->lastScaledTime;
+		else
+			animTime.lastNiTime = anim->lastScaledTime;
 		
 		if (animTime.respectEndKey && !animTime.finishedEndKey)
 		{
-			static std::unordered_map<BSAnimGroupSequence*, std::pair<float*, int>> s_anim3rdKeys;
+			static std::unordered_map<std::string, std::pair<float*, int>> s_anim3rdKeys;
 			const auto revert3rdPersonAnimTimes = [&]()
 			{
-				if (const auto iter3rd = s_anim3rdKeys.find(animTime.anim3rdCounterpart); iter3rd != s_anim3rdKeys.end())
+				if (const auto iter3rd = s_anim3rdKeys.find(animTime.anim3rdCounterpart->sequenceName); iter3rd != s_anim3rdKeys.end())
 				{
 					auto [keys, numKeys] = iter3rd->second;
 					animTime.anim3rdCounterpart->animGroup->numKeys = numKeys;
@@ -112,7 +113,7 @@ void HandleAnimTimes()
 					if (!anim3rd)
 						continue;
 					animTime.anim3rdCounterpart = anim3rd;
-					s_anim3rdKeys.emplace(anim3rd, std::make_pair(anim3rd->animGroup->keyTimes, anim3rd->animGroup->numKeys));
+					s_anim3rdKeys.emplace(anim3rd->sequenceName, std::make_pair(anim3rd->animGroup->keyTimes, anim3rd->animGroup->numKeys));
 				}
 				if (g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV3rd)
 				{
@@ -155,7 +156,7 @@ void HandleAnimTimes()
 	for (auto iter = g_timeTrackedGroups.begin(); iter != g_timeTrackedGroups.end();)
 	{
 		auto& [savedAnim, animTime] = *iter;
-		auto& [_, groupId, anim, actorId, lastNiTime, firstPerson] = animTime;
+		auto& [groupId, anim, actorId, lastNiTime, firstPerson] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 
 		if (shouldErase(actor) || anim && anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || anim && anim->state == NiControllerSequence::kAnimState_Inactive)
@@ -179,7 +180,7 @@ void HandleAnimTimes()
 			if (curAnim && curAnim->animGroup->groupID == groupId)
 			{
 				NVSEArrayVarInterface::Element arrResult;
-				if (g_script->CallFunction(savedAnim->conditionScript, actor, nullptr, &arrResult, 0))
+				if (g_script->CallFunction(savedAnim->conditionScript, actor, nullptr, &arrResult, 1))
 				{
 					const auto result = static_cast<bool>(arrResult.Number());
 					const auto customAnimState = anim ? anim->state : kAnimState_Inactive;
@@ -293,7 +294,7 @@ void HandleBurstFire()
 			erase();
 	}
 }
-constexpr auto kNVSEVersion = 12;
+constexpr auto kNVSEVersion = 15;
 
 float g_destFrame = -FLT_MAX;
 void HandleProlongedAim()
@@ -358,7 +359,7 @@ void HandleProlongedAim()
 			auto* anim = GetGameAnimation(animData, groupId);
 			BSAnimGroupSequence* overrideAnim;
 			std::optional<AnimationResult> overrideAnimPath;
-			if ((overrideAnimPath = GetActorAnimation(groupId, animData == animData1st, animData, anim ? anim->sequenceName : nullptr)) && (overrideAnim = LoadAnimationPath(*overrideAnimPath, animData, groupId)))
+			if ((overrideAnimPath = GetActorAnimation(groupId, animData == animData1st, animData)) && (overrideAnim = LoadAnimationPath(*overrideAnimPath, animData, groupId)))
 				anim = overrideAnim;
 			return anim;
 		};
@@ -532,6 +533,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleExecutionQueue();
 #if _DEBUG || IS_TRANSITION_FIX
 			HandleProlongedAim();
+
 #endif
 			//auto* niBlock = GetNifBlock(g_thePlayer, 2, "Bip01 L Thumb12");
 			//static auto lastZ = niBlock->m_localTranslate.z;
@@ -594,13 +596,6 @@ int g_logLevel = 0;
 
 bool NVSEPlugin_Load(const NVSEInterface* nvse)
 {
-#if _DEBUG
-	if (false)
-	{
-		PatchPause(0);
-		g_thePlayer->baseProcess->GetCurrentSequence();
-	}
-#endif
 	g_pluginHandle = nvse->GetPluginHandle();
 	g_nvseInterface = (NVSEInterface*)nvse;
 	g_messagingInterface = (NVSEMessagingInterface*)nvse->QueryInterface(kInterface_Messaging);
@@ -615,6 +610,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	RegisterScriptCommand(PlayAnimationPath);
 	RegisterScriptCommand(ForceStopIdle);
 	RegisterScriptCommand(kNVSEReset);
+	RegisterScriptCommand(PlayGroupAlt);
 #if _DEBUG
 	RegisterScriptCommand(kNVSETest);
 #endif

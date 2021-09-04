@@ -248,16 +248,16 @@ std::string GetTextAfterColon(std::string in)
 	return str;
 }
 
-bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, AnimPath& ctx)
+bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPath& ctx)
 {
 	auto applied = false;
-	std::span textKeys{ sequence->textKeyData->m_pKeys, sequence->textKeyData->m_uiNumKeys };
+	std::span textKeys{ anim->textKeyData->m_pKeys, anim->textKeyData->m_uiNumKeys };
 	auto* actor = animData->actor;
 	AnimTime* animTimePtr = nullptr;
 	const auto getAnimTime = [&]() -> AnimTime&
 	{
 		if (!animTimePtr)
-			animTimePtr = &g_timeTrackedAnims[sequence];
+			animTimePtr = &g_timeTrackedAnims[anim];
 		return *animTimePtr;
 	};
 	const auto hasKey = [&](const char* keyText, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
@@ -286,7 +286,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		return result;
 	};
 
-	if (sequence->animGroup->IsAttack() && hasKey("burstFire", ctx.hasBurstFire))
+	if (anim->animGroup->IsAttack() && hasKey("burstFire", ctx.hasBurstFire))
 	{
 		std::vector<NiTextKey*> hitKeys;
 		std::vector<NiTextKey*> ejectKeys;
@@ -312,7 +312,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		if (!hitKeys.empty() || !ejectKeys.empty())
 		{
 			SubscribeOnActorReload(actor, ReloadSubscriber::BurstFire);
-			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, sequence, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false);
+			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, anim, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false);
 		}
 	}
 	if (animData == g_thePlayer->firstPersonAnimData && (hasKey("respectEndKey", ctx.hasRespectEndKey) || hasKey("respectTextKeys", ctx.hasRespectEndKey)))
@@ -330,7 +330,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		{
 			g_thePlayer->baseProcess->GetAnimData()->groupIDs[kSequence_Weapon] = kAnimGroup_AttackLoopIS;
 		}
-		g_lastLoopSequence = sequence;
+		g_lastLoopSequence = anim;
 		g_startedAnimation = true;
 	}
 	if (hasKey("noBlend", ctx.hasNoBlend))
@@ -384,7 +384,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 	}
 	if (hasKey("blendToReloadLoop", ctx.hasBlendToReloadLoop))
 	{
-		g_reloadStartBlendFixes.insert(sequence->sequenceName);
+		g_reloadStartBlendFixes.insert(anim->sequenceName);
 	}
 	if (hasKey("scriptLine:", ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
 	{
@@ -409,6 +409,21 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* sequence, An
 		}
 		auto& animTime = getAnimTime();
 		animTime.scriptLines = ctx.scriptLineKeys->CreateContext();
+	}
+	if (hasKey("replaceWithGroup:", ctx.hasReplaceWithGroup, KeyCheckType::KeyStartsWith))
+	{
+		const auto keyText = ra::find_if(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), "replaceWithGroup:")))->m_kText.CStr();
+		const auto& line = GetTextAfterColon(keyText);
+		const auto newGroupId = GroupNameToId(line);
+		if (newGroupId != -1)
+		{
+			*g_animationHookContext.groupID = newGroupId;
+			if (*g_animationHookContext.sequenceId != -1)
+			{
+				*g_animationHookContext.sequenceId = static_cast<eAnimSequence>(GetSequenceType(newGroupId));
+			}
+			anim->animGroup->groupID = newGroupId;
+		}
 	}
 	if (applied)
 	{
@@ -440,18 +455,19 @@ AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor)
 	return reloads->at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % reloads->size());
 }
 
-std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, const char* prevPath = nullptr)
+std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData)
 {
 	if (const auto stacksIter = overrides.stacks.find(groupId); stacksIter != overrides.stacks.end())
 	{
-		auto* actor = animData->actor;
-		std::vector<SavedAnims>* stack = nullptr;
-		StackVector<AnimCustom, static_cast<size_t>(AnimCustom::Max)> animCustomStack;
 		auto& animStacks = stacksIter->second;
+		auto* actor = animData->actor;
+
+		StackVector<AnimCustom, static_cast<size_t>(AnimCustom::Max)> animCustomStack;
+		animCustomStack->push_back(AnimCustom::None);
+
 		auto* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
 		if (actor == g_thePlayer || npc)
 			animCustomStack->push_back(AnimCustom::Human);
-		auto exclusiveAnim = false;
 		if (npc)
 		{
 			if (npc && !npc->baseData.IsFemale())
@@ -459,9 +475,9 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 			else
 				animCustomStack->push_back(AnimCustom::Female);
 		}
-		if (prevPath && FindStringCI(prevPath, R"(\hurt\)"))
+		if (actor->avOwner.GetActorValueInt(kAVCode_LeftMobilityCondition) <= 0 || actor->avOwner.GetActorValueInt(kAVCode_RightMobilityCondition) <= 0 && IsAnimGroupMovement(groupId))
 		{
-			exclusiveAnim = true;
+			animCustomStack->clear();
 			animCustomStack->push_back(AnimCustom::Hurt);
 		}
 		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
@@ -478,54 +494,47 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					animCustomStack->push_back(AnimCustom::Mod3);
 			}
 		}
-		while (!animCustomStack->empty())
+		for (auto animCustomIter = animCustomStack->rbegin(); animCustomIter != animCustomStack->rend(); ++animCustomIter)
 		{
-			stack = &animStacks.GetCustom(animCustomStack->back());
-			if (!stack->empty())
-				break;
-			animCustomStack->pop_back();
-		}
-		if ((!stack || stack->empty()) && !exclusiveAnim)
-			stack = &animStacks.GetCustom(AnimCustom::None);
-		if (!stack)
-			return std::nullopt;
-		for (auto iter = stack->rbegin(); iter != stack->rend(); ++iter)
-		{
-			auto& ctx = *iter;
+			auto& stack = animStacks.GetCustom(*animCustomIter);
+			for (auto iter = stack.rbegin(); iter != stack.rend(); ++iter)
+			{
+				auto& ctx = *iter;
 
-			const auto initAnimTime = [&]()
-			{
-				auto& animTime = g_timeTrackedGroups[&ctx];
-				animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
-				animTime.groupId = groupId;
-				animTime.time = 0;
-				animTime.actorId = animData->actor->refID;
-				animTime.lastNiTime = -FLT_MAX;
-				return &animTime;
-			};
-			SavedAnimsTime* animsTime = nullptr;
-			if (ctx.conditionScript)
-			{
-				if (ctx.pollCondition)
-					animsTime = initAnimTime(); // init'd here so conditions can activate despite not being overridden
-				NVSEArrayVarInterface::Element result;
-				if (!g_script->CallFunction(ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
-					continue;
-			}
-			if (!ctx.anims.empty())
-			{
-				return AnimationResult(&ctx, animsTime);
+				const auto initAnimTime = [&]()
+				{
+					auto& animTime = g_timeTrackedGroups[&ctx];
+					animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
+					animTime.groupId = groupId;
+					animTime.actorId = animData->actor->refID;
+					animTime.lastNiTime = -FLT_MAX;
+					return &animTime;
+				};
+				SavedAnimsTime* animsTime = nullptr;
+				if (ctx.conditionScript)
+				{
+					if (ctx.pollCondition)
+						animsTime = initAnimTime(); // init'd here so conditions can activate despite not being overridden
+					NVSEArrayVarInterface::Element result;
+					if (!g_script->CallFunction(ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
+						continue;
+				}
+				if (!ctx.anims.empty())
+				{
+					return AnimationResult(&ctx, animsTime);
+				}
 			}
 		}
+		
 	}
 	return std::nullopt;
 }
 
-std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32 animGroupId, AnimData* animData, const char* prevPath = nullptr)
+std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32 animGroupId, AnimData* animData)
 {
 	if (const auto mapIter = map.find(id); mapIter != map.end())
 	{
-		return PickAnimation(mapIter->second, animGroupId, animData, prevPath);
+		return PickAnimation(mapIter->second, animGroupId, animData);
 	}
 	return std::nullopt;
 }
@@ -590,8 +599,10 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 	return nullptr;
 }
 
-std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData, const char* prevPath)
+std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData)
 {
+	if (!animData || !animData->actor)
+		return std::nullopt;
 	std::optional<AnimationResult> result;
 	std::optional<AnimationResult> modIndexResult;
 
@@ -600,11 +611,11 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstP
 	auto& modIndexMap = GetModIndexMap(firstPerson);
 	const auto getFormAnimation = [&](TESForm* form) -> std::optional<AnimationResult>
 	{
-		if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData, prevPath))
+		if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData))
 			return lResult;
 		// mod index
 		if (!modIndexResult.has_value())
-			modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData, prevPath);
+			modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData);
 		return std::nullopt;
 	};
 	// weapon form ID
@@ -614,7 +625,7 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstP
 	if ((result = getFormAnimation(actor)))
 		return result;
 	// base form ID
-	if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData, prevPath))))
+	if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData))))
 		return result;
 	// race form ID
 	TESNPC* npc; TESRace* race;
@@ -631,7 +642,7 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstP
 	if (modIndexResult)
 		return modIndexResult;
 	// non-form ID dependent animations (global replacers)
-	if ((result = PickAnimation(modIndexMap[0xFF], animGroupId, animData, prevPath)))
+	if ((result = PickAnimation(modIndexMap[0xFF], animGroupId, animData)))
 		return result;
 	return std::nullopt;
 }
@@ -669,24 +680,38 @@ std::string GetBaseAnimGroupName(const std::string& name)
 	return oName;
 }
 
+int SimpleGroupNameToId(const char* name)
+{
+	return s_animGroupNameToIDMap.Get(name, [](const char* name)
+	{
+		std::string alt;
+		if (auto* underscorePos = strchr(name, '_'))
+		{
+			alt = std::string(name, underscorePos - name);
+			name = alt.c_str();
+		}
+		const auto iter = ra::find_if(g_animGroupInfos, _L(TESAnimGroup::AnimGroupInfo & i, _stricmp(i.name, name) == 0));
+		if (iter == g_animGroupInfos.end())
+			return -1;
+		return iter - g_animGroupInfos.begin();
+	});
+}
+
+int GroupNameToId(const std::string& name)
+{
+	int moveType = 0;
+	int animHandType = 0;
+	int isPowerArmor = 0;
+	CdeclCall(0x5F38D0, ('\\' + name).c_str(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
+	const auto& baseName = GetBaseAnimGroupName(name);
+	const auto groupId = SimpleGroupNameToId(baseName.c_str());
+	if (groupId == -1)
+		return -1;
+	return groupId + (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8);
+}
+
 int GetAnimGroupId(const std::filesystem::path& path)
 {
-	constexpr auto lookupByName = [](const char* name)
-	{
-		return s_animGroupNameToIDMap.Get(name, [](const char* name)
-		{
-			std::string alt;
-			if (auto* underscorePos = strchr(name, '_'))
-			{
-				alt = std::string(name, underscorePos - name);
-				name = alt.c_str();
-			}
-			const auto iter = ra::find_if(g_animGroupInfos, _L(TESAnimGroup::AnimGroupInfo & i, _stricmp(i.name, name) == 0));
-			if (iter == g_animGroupInfos.end())
-				return -1;
-			return iter - g_animGroupInfos.begin();
-		});
-	};
 	const auto toFullId = [&](UInt8 groupId)
 	{
 		int moveType = 0;
@@ -697,7 +722,7 @@ int GetAnimGroupId(const std::filesystem::path& path)
 	};
 
 	const auto& baseName = GetBaseAnimGroupName(path.stem().string());
-	if (const auto id = lookupByName(baseName.c_str()); id != -1)
+	if (const auto id = SimpleGroupNameToId(baseName.c_str()); id != -1)
 		return toFullId(id);
 
 	char bsStream[1492];
@@ -714,7 +739,7 @@ int GetAnimGroupId(const std::filesystem::path& path)
 		ThisStdCall(0x633C90, &ref, 0); // NiRefObject__NiRefObject
 		CdeclCall(0xA35700, bsStream, 0, &ref); // Read from file
 		auto* anim = static_cast<NiControllerSequence*>(ref);
-		const auto groupId = lookupByName(anim->sequenceName);
+		const auto groupId = SimpleGroupNameToId(anim->sequenceName);
 		if (groupId == -1)
 			return -1;
 		ref->Destructor(true);
@@ -815,15 +840,15 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
 {
 	if (!form)
-		return OverrideModIndexAnimation(0xFF, path, firstPerson, enable, groupIdFillSet);
+		return OverrideModIndexAnimation(0xFF, path, firstPerson, enable, groupIdFillSet, conditionScript, pollCondition);
 	auto& map = GetMap(firstPerson);
 	SetOverrideAnimation(form ? form->refID : -1, path, map, enable, groupIdFillSet, conditionScript, pollCondition);
 }
 
-void OverrideModIndexAnimation(const UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet)
+void OverrideModIndexAnimation(const UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
 {
 	auto& map = GetModIndexMap(firstPerson);
-	SetOverrideAnimation(modIdx, path, map, enable, groupIdFillSet);
+	SetOverrideAnimation(modIdx, path, map, enable, groupIdFillSet, conditionScript, pollCondition);
 }
 
 float GetAnimMult(AnimData* animData, UInt8 animGroupID)
@@ -856,6 +881,11 @@ float GetAnimMult(AnimData* animData, UInt8 animGroupID)
 bool IsAnimGroupReload(UInt8 animGroupId)
 {
 	return animGroupId >= kAnimGroup_ReloadWStart && animGroupId <= kAnimGroup_ReloadZ;
+}
+
+bool IsAnimGroupMovement(UInt8 animGroupId)
+{
+	return GetSequenceType(animGroupId) == kSequence_Movement;
 }
 
 bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod)
@@ -1083,13 +1113,9 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
 	char path[0x400];
-	auto firstPerson = -1;
-	auto type = -1;
+	auto firstPerson = 0;
 	
-	if (!ExtractArgs(EXTRACT_ARGS, &path, &type, &firstPerson))
-		return true;
-
-	if (type < 0)
+	if (!ExtractArgs(EXTRACT_ARGS, &path, &firstPerson))
 		return true;
 
 	if (thisObj != g_thePlayer && firstPerson)
@@ -1103,21 +1129,14 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 		return true;
 
 	auto* animData = actor->baseProcess->GetAnimData();
-	if (firstPerson)
+	if (firstPerson && actor == g_thePlayer)
 		animData = g_thePlayer->firstPersonAnimData;
 
-	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path);
-
-	if (!kfModel)
-		return true;
-
-	if (!GameFuncs::LoadAnimation(animData, kfModel, false))
-		return true;
-	
-	const auto animGroup = 0xFE;
-	GameFuncs::MorphToSequence(animData, kfModel->controllerSequence, animGroup, type);
-	
-	*result = 1;
+	if (const auto anim = LoadCustomAnimation(path, animData))
+	{
+		GameFuncs::MorphToSequence(animData, anim->anim, anim->anim->animGroup->groupID, -1);
+		*result = 1;
+	}
 	return true;
 }
 
@@ -1127,7 +1146,26 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 	g_animGroupThirdPersonMap.clear();
 	g_animGroupModIdxFirstPersonMap.clear();
 	g_animGroupModIdxThirdPersonMap.clear();
+	g_customMaps.clear();
 	LoadFileAnimPaths();
+	return true;
+}
+
+bool Cmd_PlayGroupAlt_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+	int groupIdMinor;
+	int flags = 1;
+	if (!ExtractArgs(EXTRACT_ARGS, &groupIdMinor, &flags))
+		return true;
+	if (!thisObj || !thisObj->IsTypeActor())
+		return true;
+	auto* actor = static_cast<Actor*>(thisObj);
+	const auto groupId = GameFuncs::GetActorAnimGroupId(actor, groupIdMinor, nullptr, false, nullptr);
+	if (groupId == 0xFF)
+		return true;
+	if (GameFuncs::PlayAnimGroup(actor->GetAnimData(), groupId, flags, -1, -1))
+		*result = 1;
 	return true;
 }
 
@@ -1135,8 +1173,7 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 
 bool Cmd_kNVSETest_Execute(COMMAND_ARGS)
 {
-	Sound sound = Sound::InitByFilename("Data\\Sound\\fx\\csgo_headshot_sounds\\head\\headshot1.wav");
-	sound.Play();
+	g_thePlayer->GetHighProcess()->currentAction = Decoding::kAnimAction_Attack;
 	return true;
 }
 
