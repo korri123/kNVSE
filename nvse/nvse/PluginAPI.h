@@ -495,12 +495,26 @@ struct NVSEDataInterface
 		kNVSEData_SingletonMax,
 	};
 	void * (* GetSingleton)(UInt32 singletonID);
-	enum  {
+	enum {
 		kNVSEData_InventoryReferenceCreate = 1,
 		kNVSEData_InventoryReferenceGetForRefID,
 		kNVSEData_InventoryReferenceGetRefBySelf,
 		kNVSEData_ArrayVarMapDeleteBySelf,
 		kNVSEData_StringVarMapDeleteBySelf,
+		kNVSEData_LambdaDeleteAllForScript,
+		kNVSEData_InventoryReferenceCreateEntry,
+
+		// If a command that accepts a script (=> lambdas) needs to store the script event list (variable value list) for longer
+		// than the lifetime of the parent script (UDFs clear their lists immediately after execution for example), then you can call
+		// kNVSEData_LambdaSaveVariableList which will save the variable list after deletion so that the lambda can still use the values
+		// until the lambda is discarded. It is required that you clean up with kNVSEData_LambdaUnsaveVariableList when you are no longer
+		// keeping the lambda.
+		kNVSEData_LambdaSaveVariableList,
+		kNVSEData_LambdaUnsaveVariableList,
+
+		kNVSEData_IsScriptLambda,
+		kNVSEData_HasScriptCommand,
+		kNVSEData_DecompileScript,
 
 		kNVSEData_FuncMax,
 	};

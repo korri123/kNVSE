@@ -521,7 +521,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					if (ctx.pollCondition)
 						animsTime = initAnimTime(); // init'd here so conditions can activate despite not being overridden
 					NVSEArrayVarInterface::Element result;
-					if (!g_script->CallFunction(ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
+					if (!g_script->CallFunction(**ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
 						continue;
 				}
 				if (!ctx.anims.empty())

@@ -95,6 +95,8 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 			try
 			{
 				const auto& folderName = iterPath.filename().string();
+				if (folderName[0] == '_') // _1stperson, _male
+					continue;
 				const auto id = HexStringToInt(folderName);
 				if (id != -1) 
 				{

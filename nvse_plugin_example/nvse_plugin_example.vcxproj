@@ -404,6 +404,7 @@
     <ClCompile Include="file_animations.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="hooks.cpp" />
+    <ClCompile Include="LambdaVariableContext.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
   </ItemGroup>
@@ -437,6 +438,7 @@
     <ClInclude Include="json.h" />
     <ClInclude Include="game_types.h" />
     <ClInclude Include="knvse_version.h" />
+    <ClInclude Include="LambdaVariableContext.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="resource.h" />

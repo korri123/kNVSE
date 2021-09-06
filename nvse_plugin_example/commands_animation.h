@@ -12,6 +12,7 @@
 #include "GameObjects.h"
 #include "GameProcess.h"
 #include "game_types.h"
+#include "LambdaVariableContext.h"
 #include "ParamInfos.h"
 #include "utility.h"
 
@@ -181,7 +182,7 @@ struct SavedAnims
 {
 	bool hasOrder = false;
 	std::vector<AnimPath> anims;
-	Script* conditionScript = nullptr;
+	std::optional<LambdaVariableContext> conditionScript;
 	bool pollCondition = false;
 	std::unique_ptr<AnimPath> emptyMagAnim = nullptr;
 };

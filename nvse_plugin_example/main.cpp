@@ -15,6 +15,7 @@
 #include <set>
 
 #include "knvse_version.h"
+#include "LambdaVariableContext.h"
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
 
@@ -34,6 +35,9 @@ std::deque<std::function<void()>> g_executionQueue;
 #if RUNTIME
 NVSEScriptInterface* g_script;
 #endif
+
+_CaptureLambdaVars CaptureLambdaVars;
+_UncaptureLambdaVars UncaptureLambdaVars;
 
 bool isEditor = false;
 
@@ -194,7 +198,7 @@ void HandleAnimTimes()
 			if (curAnim && curAnim->animGroup->groupID == groupId)
 			{
 				NVSEArrayVarInterface::Element arrResult;
-				if (g_script->CallFunction(savedAnim->conditionScript, actor, nullptr, &arrResult, 0))
+				if (g_script->CallFunction(**savedAnim->conditionScript, actor, nullptr, &arrResult, 0))
 				{
 					const auto result = static_cast<bool>(arrResult.Number());
 					const auto customAnimState = anim ? anim->state : kAnimState_Inactive;
@@ -615,6 +619,11 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_messagingInterface = (NVSEMessagingInterface*)nvse->QueryInterface(kInterface_Messaging);
 	g_messagingInterface->RegisterListener(g_pluginHandle, "NVSE", MessageHandler);
 	g_script = (NVSEScriptInterface*)nvse->QueryInterface(kInterface_Script);
+
+	NVSEDataInterface* nvseData = (NVSEDataInterface*)nvse->QueryInterface(kInterface_Data);
+	CaptureLambdaVars = (_CaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaSaveVariableList);
+	UncaptureLambdaVars = (_UncaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaUnsaveVariableList);
+
 	
 	nvse->SetOpcodeBase(0x3920);
 	
