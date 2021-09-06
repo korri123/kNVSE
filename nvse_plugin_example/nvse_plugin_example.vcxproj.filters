@@ -148,11 +148,16 @@
       <Filter>nvse</Filter>
     </ClInclude>
     <ClInclude Include="main.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="knvse_version.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="GameTypes.natvis" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="nvse_plugin_example.rc" />
   </ItemGroup>
 </Project>

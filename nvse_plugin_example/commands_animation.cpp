@@ -260,7 +260,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			animTimePtr = &g_timeTrackedAnims[anim];
 		return *animTimePtr;
 	};
-	const auto hasKey = [&](const char* keyText, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
+	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
 	{
 		if (setting == AnimKeySetting::Set)
 		{
@@ -270,14 +270,19 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		if (setting == AnimKeySetting::NotSet)
 			return false;
 		auto result = false;
-		switch (type)
+		for (const char* keyText : keyTexts)
 		{
-		case KeyCheckType::KeyEquals: 
-			result = ra::any_of(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.CStr(), keyText) == 0));
-			break;
-		case KeyCheckType::KeyStartsWith:
-			result = ra::any_of(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), keyText)));
-			break;
+			switch (type)
+			{
+			case KeyCheckType::KeyEquals: 
+				result = ra::any_of(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.CStr(), keyText) == 0));
+				break;
+			case KeyCheckType::KeyStartsWith:
+				result = ra::any_of(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), keyText)));
+				break;
+			}
+			if (result)
+				break;
 		}
 		setting = result ? AnimKeySetting::Set : AnimKeySetting::NotSet;
 		if (result)
@@ -286,7 +291,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		return result;
 	};
 
-	if (anim->animGroup->IsAttack() && hasKey("burstFire", ctx.hasBurstFire))
+	if (anim->animGroup->IsAttack() && hasKey({"burstFire"}, ctx.hasBurstFire))
 	{
 		std::vector<NiTextKey*> hitKeys;
 		std::vector<NiTextKey*> ejectKeys;
@@ -315,7 +320,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, anim, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false);
 		}
 	}
-	if (animData == g_thePlayer->firstPersonAnimData && (hasKey("respectEndKey", ctx.hasRespectEndKey) || hasKey("respectTextKeys", ctx.hasRespectEndKey)))
+	if (animData == g_thePlayer->firstPersonAnimData && hasKey({"respectEndKey", "respectTextKeys"}, ctx.hasRespectEndKey))
 	{
 		auto& animTime = getAnimTime();
 		animTime.povState = POVSwitchState::NotSet;
@@ -323,7 +328,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		animTime.finishedEndKey = false;
 		animTime.actorWeapon = actor->GetWeaponForm();
 	}
-	if (hasKey("interruptLoop", ctx.hasInterruptLoop))
+	if (hasKey({"interruptLoop"}, ctx.hasInterruptLoop))
 	{
 		*reinterpret_cast<UInt8*>(g_animationHookContext.groupID) = kAnimGroup_AttackLoopIS;
 		if (animData == g_thePlayer->firstPersonAnimData)
@@ -333,11 +338,11 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		g_lastLoopSequence = anim;
 		g_startedAnimation = true;
 	}
-	if (hasKey("noBlend", ctx.hasNoBlend))
+	if (hasKey({"noBlend"}, ctx.hasNoBlend))
 	{
 		g_animationHookContext.animData->noBlend120 = true;
 	}
-	if (hasKey("Script:", ctx.hasCallScript, KeyCheckType::KeyStartsWith))
+	if (hasKey({"Script:"}, ctx.hasCallScript, KeyCheckType::KeyStartsWith))
 	{
 		if (!ctx.scriptCallKeys)
 		{
@@ -361,7 +366,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		auto& animTime = getAnimTime();
 		animTime.scriptCalls = ctx.scriptCallKeys->CreateContext();
 	}
-	if (hasKey("SoundPath:", ctx.hasSoundPath, KeyCheckType::KeyStartsWith))
+	if (hasKey({"SoundPath:"}, ctx.hasSoundPath, KeyCheckType::KeyStartsWith))
 	{
 		if (!ctx.soundPaths)
 		{
@@ -382,11 +387,11 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		auto& animTime = getAnimTime();
 		animTime.soundPaths = ctx.soundPaths->CreateContext();
 	}
-	if (hasKey("blendToReloadLoop", ctx.hasBlendToReloadLoop))
+	if (hasKey({"blendToReloadLoop"}, ctx.hasBlendToReloadLoop))
 	{
 		g_reloadStartBlendFixes.insert(anim->sequenceName);
 	}
-	if (hasKey("scriptLine:", ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
+	if (hasKey({"scriptLine:"}, ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
 	{
 		if (!ctx.scriptLineKeys)
 		{
@@ -410,7 +415,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		auto& animTime = getAnimTime();
 		animTime.scriptLines = ctx.scriptLineKeys->CreateContext();
 	}
-	if (hasKey("replaceWithGroup:", ctx.hasReplaceWithGroup, KeyCheckType::KeyStartsWith))
+	if (hasKey({"replaceWithGroup:"}, ctx.hasReplaceWithGroup, KeyCheckType::KeyStartsWith))
 	{
 		const auto keyText = ra::find_if(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), "replaceWithGroup:")))->m_kText.CStr();
 		const auto& line = GetTextAfterColon(keyText);
@@ -927,8 +932,6 @@ void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber)
 	auto& handler = g_reloadTracker[actor->refID];
 	handler.subscribers.emplace(subscriber, false);
 	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
-	if (ammoInfo)
-		handler.lastAmmoCount = ammoInfo->count;
 }
 
 bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
@@ -965,17 +968,10 @@ void HandleOnActorReload()
 			continue;
 		}
 		const bool isAnimActionReload = actor->IsAnimActionReload();
-		const auto count = curAmmoInfo->count;
-		if ((count > handler.lastAmmoCount || count == 0 && handler.lastAmmoCount != 0) && !isAnimActionReload && handler.lastAction != kAnimAction_ReloadLoop)
-		{
-			ra::for_each(handler.subscribers, _L(auto& p, p.second = true));
-		}
-		else if (isAnimActionReload)
+		if (isAnimActionReload)
 		{
 			ra::for_each(handler.subscribers, _L(auto &p, p.second = false));
 		}
-		handler.lastAction = static_cast<AnimAction>(actor->baseProcess->GetCurrentAnimAction());
-		handler.lastAmmoCount = count;
 		++iter;
 	}
 }

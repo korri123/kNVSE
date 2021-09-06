@@ -436,8 +436,10 @@
     <ClInclude Include="hooks.h" />
     <ClInclude Include="json.h" />
     <ClInclude Include="game_types.h" />
+    <ClInclude Include="knvse_version.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="MemoizedMap.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="SimpleINILibrary.h" />
     <ClInclude Include="stack_allocator.h" />
     <ClInclude Include="utility.h" />
@@ -453,6 +455,9 @@
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="GameTypes.natvis" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="nvse_plugin_example.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

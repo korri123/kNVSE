@@ -471,8 +471,6 @@ enum class ReloadSubscriber
 struct ReloadHandler
 {
 	std::unordered_map<ReloadSubscriber, bool> subscribers;
-	UInt32 lastAmmoCount = 0;
-	AnimAction lastAction = kAnimAction_None;
 };
 
 void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);
@@ -481,3 +479,5 @@ bool DidActorReload(Actor* actor, ReloadSubscriber subscriber);
 
 AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimData* animData);
 int GroupNameToId(const std::string& name);
+
+extern std::unordered_map<UInt32, ReloadHandler> g_reloadTracker;

@@ -14,6 +14,7 @@
 #include "game_types.h"
 #include <set>
 
+#include "knvse_version.h"
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
 
@@ -89,11 +90,16 @@ void HandleAnimTimes()
 			static std::unordered_map<std::string, std::pair<float*, int>> s_anim3rdKeys;
 			const auto revert3rdPersonAnimTimes = [&]()
 			{
+				if (!animTime.anim3rdCounterpart)
+					return;
 				if (const auto iter3rd = s_anim3rdKeys.find(animTime.anim3rdCounterpart->sequenceName); iter3rd != s_anim3rdKeys.end())
 				{
 					auto [keys, numKeys] = iter3rd->second;
-					animTime.anim3rdCounterpart->animGroup->numKeys = numKeys;
-					animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
+					if (animTime.anim3rdCounterpart)
+					{
+						animTime.anim3rdCounterpart->animGroup->numKeys = numKeys;
+						animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
+					}
 				}
 				animTime.povState = POVSwitchState::POV3rd;
 			};
@@ -111,9 +117,17 @@ void HandleAnimTimes()
 					if (!anim3rd || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
 						anim3rd = anim->Get3rdPersonCounterpart();
 					if (!anim3rd)
+					{
+						erase();
 						continue;
+					}
 					animTime.anim3rdCounterpart = anim3rd;
 					s_anim3rdKeys.emplace(anim3rd->sequenceName, std::make_pair(anim3rd->animGroup->keyTimes, anim3rd->animGroup->numKeys));
+				}
+				if (!animTime.anim3rdCounterpart)
+				{
+					erase();
+					continue;
 				}
 				if (g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV3rd)
 				{
@@ -180,7 +194,7 @@ void HandleAnimTimes()
 			if (curAnim && curAnim->animGroup->groupID == groupId)
 			{
 				NVSEArrayVarInterface::Element arrResult;
-				if (g_script->CallFunction(savedAnim->conditionScript, actor, nullptr, &arrResult, 1))
+				if (g_script->CallFunction(savedAnim->conditionScript, actor, nullptr, &arrResult, 0))
 				{
 					const auto result = static_cast<bool>(arrResult.Number());
 					const auto customAnimState = anim ? anim->state : kAnimState_Inactive;
@@ -276,7 +290,8 @@ void HandleBurstFire()
 						actor->FireWeapon();
 					if (!passedEjectKey && ejectKeys.empty() || ejectIdx == ejectKeys.size())
 					{
-						actor->EjectFromWeapon(weapon);
+						if (!reloading)
+							actor->EjectFromWeapon(weapon);
 						ejected = true;
 					}
 				}
@@ -294,7 +309,6 @@ void HandleBurstFire()
 			erase();
 	}
 }
-constexpr auto kNVSEVersion = 15;
 
 float g_destFrame = -FLT_MAX;
 void HandleProlongedAim()
@@ -520,7 +534,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	{
 		g_thePlayer = *(PlayerCharacter **)0x011DEA3C;
 		LoadFileAnimPaths();
-		Console_Print("kNVSE version %d", kNVSEVersion);
+		Console_Print("kNVSE version %d", VERSION_MAJOR);
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{
@@ -551,7 +565,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 	// fill out the info structure
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "kNVSE";
-	info->version = kNVSEVersion;
+	info->version = VERSION_MAJOR;
 
 	// version checks
 	if (!nvse->isEditor && nvse->nvseVersion < PACKED_NVSE_VERSION)

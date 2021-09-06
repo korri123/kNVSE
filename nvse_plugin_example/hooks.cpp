@@ -355,6 +355,31 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	return false;
 }
 
+void __fastcall HandleOnReload(Decoding::MiddleHighProcess* process)
+{
+	auto* animData = process->animData;
+	if (!animData || !animData->actor)
+		return;
+	if (auto iter = g_reloadTracker.find(animData->actor->refID); iter != g_reloadTracker.end())
+	{
+		auto& handler = iter->second;
+		ra::for_each(handler.subscribers, _L(auto& p, p.second = true));
+	}
+}
+
+__declspec(naked) void OnReloadHook()
+{
+	__asm
+	{
+		mov ecx, [ebp-0xC] // MiddleHighProcess*
+		call HandleOnReload
+		mov al, 1
+		mov esp, ebp
+		pop ebp
+		ret 4
+	}
+}
+
 void ApplyHooks()
 {
 	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
@@ -419,6 +444,8 @@ void ApplyHooks()
 	//WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
 	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
 	/* experimental end */
+
+	WriteRelJump(0x91EA33, OnReloadHook);
 #endif
 	ini.SaveFile(iniPath.c_str(), false);
 }
