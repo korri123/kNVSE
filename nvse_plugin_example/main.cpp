@@ -620,11 +620,6 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_messagingInterface->RegisterListener(g_pluginHandle, "NVSE", MessageHandler);
 	g_script = (NVSEScriptInterface*)nvse->QueryInterface(kInterface_Script);
 
-	NVSEDataInterface* nvseData = (NVSEDataInterface*)nvse->QueryInterface(kInterface_Data);
-	CaptureLambdaVars = (_CaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaSaveVariableList);
-	UncaptureLambdaVars = (_UncaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaUnsaveVariableList);
-
-	
 	nvse->SetOpcodeBase(0x3920);
 	
 	RegisterScriptCommand(ForcePlayIdle);
@@ -642,6 +637,11 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	{
 		return true;
 	}
+
+	NVSEDataInterface* nvseData = (NVSEDataInterface*)nvse->QueryInterface(kInterface_Data);
+	CaptureLambdaVars = (_CaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaSaveVariableList);
+	UncaptureLambdaVars = (_UncaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaUnsaveVariableList);
+
 
 	ApplyHooks();
 	return true;
