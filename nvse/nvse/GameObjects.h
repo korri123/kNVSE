@@ -637,7 +637,7 @@ public:
 	UInt8								disabledControlFlags;			// 680 kControlFlag_xxx
 	UInt8								unk0681[3];						// 681
 	UInt32								unk684[2];				// 684
-	ValidBip01Names						* playerVB01N;					// 68C
+	ValidBip01Names						* player1stPersonVB01N;					// 68C
 	AnimData*							firstPersonAnimData;				// 690 ExtraDataAnim::Data
 	NiNode								* playerNode;					// 694 used as node if unk64A is true
 	UInt32								unk698;		// 698

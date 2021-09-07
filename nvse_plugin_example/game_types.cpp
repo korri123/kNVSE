@@ -167,6 +167,11 @@ TESAnimGroup::AnimGroupInfo* TESAnimGroup::GetGroupInfo() const
 	return ::GetGroupInfo(groupID);
 }
 
+UInt8 TESAnimGroup::GetBaseGroupID() const
+{
+	return groupID;
+}
+
 enum
 {
 	kAddr_AddExtraData = 0x40FF60,

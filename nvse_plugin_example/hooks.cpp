@@ -20,13 +20,14 @@ SInt32 g_firstPersonAnimId = -1;
 AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
-
+extern bool g_fixHolster;
 bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer)
 {
 #if _DEBUG
 	auto& groupInfo = g_animGroupInfos[animGroupId & 0xFF];
 	auto* curSeq = animData->animSequence[groupInfo.sequenceType];
 	//animData->noBlend120 = true;
+
 #endif
 	g_animationHookContext = AnimationContext(basePointer);
 

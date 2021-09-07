@@ -1356,6 +1356,7 @@ public:
 	};
 
 	TESAnimGroup::AnimGroupInfo* GetGroupInfo() const;
+	UInt8 GetBaseGroupID() const;
 
 	struct __declspec(align(4)) AnimGroupSound
 	{

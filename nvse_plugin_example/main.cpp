@@ -51,6 +51,8 @@ float GetAnimTime(const AnimData* animData, const BSAnimGroupSequence* anim)
 	return time;
 }
 
+bool g_fixHolster = false;
+
 void HandleAnimTimes()
 {
 	constexpr auto shouldErase = [](Actor* actor)
@@ -59,7 +61,10 @@ void HandleAnimTimes()
 	};
 	for (auto iter = g_timeTrackedAnims.begin(); iter != g_timeTrackedAnims.end();)
 	{
-		const auto erase = [&]() {iter = g_timeTrackedAnims.erase(iter); };
+		const auto erase = [&]()
+		{
+			iter = g_timeTrackedAnims.erase(iter);
+		};
 		auto& [anim, animTime] = *iter;
 		//auto& time = animTime.time;
 
@@ -105,6 +110,10 @@ void HandleAnimTimes()
 						animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
 					}
 				}
+				if ((anim->animGroup->groupID & 0xFF) == kAnimGroup_Unequip /* && !g_thePlayer->IsThirdPerson()*/)
+				{
+					g_fixHolster = true;
+				}
 				animTime.povState = POVSwitchState::POV3rd;
 			};
 			if (time >= anim->endKeyTime || actor->GetWeaponForm() != animTime.actorWeapon || deferredErase)
@@ -144,6 +153,13 @@ void HandleAnimTimes()
 					animTime.povState = POVSwitchState::POV1st;
 				}
 			}
+		}
+		if (animTime.callbacks.Exists())
+		{
+			animTime.callbacks.Update(time, animData, [](const std::function<void()>& callback)
+			{
+				callback();
+			});
 		}
 		if (!deferredErase)
 		{
@@ -532,6 +548,19 @@ void HandleExecutionQueue()
 	}
 }
 
+void HandleMisc()
+{
+	if (g_fixHolster && g_thePlayer->IsThirdPerson())
+	{
+		auto* anim = g_thePlayer->GetHighProcess()->animData->animSequence[kSequence_Weapon];
+		if (!anim || anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
+		{
+			g_fixHolster = false;
+			ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
+		}
+	}
+}
+
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
@@ -549,6 +578,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleBurstFire();
 			HandleAnimTimes();
 			HandleExecutionQueue();
+			HandleMisc();
 #if _DEBUG || IS_TRANSITION_FIX
 			HandleProlongedAim();
 
@@ -558,6 +588,14 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			//if (lastZ != niBlock->m_localTranslate.z)
 				//Console_Print("%g", niBlock->m_localTranslate.z);
 		}
+	}
+	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
+	{
+		for (auto* ctx : g_clearSounds)
+		{
+			ctx->soundPaths = nullptr;
+		}
+		g_clearSounds.clear();
 	}
 
 }

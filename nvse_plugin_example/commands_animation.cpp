@@ -248,6 +248,8 @@ std::string GetTextAfterColon(std::string in)
 	return str;
 }
 
+std::vector<AnimPath*> g_clearSounds; // need to be cleared on load
+
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPath& ctx)
 {
 	auto applied = false;
@@ -257,7 +259,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	const auto getAnimTime = [&]() -> AnimTime&
 	{
 		if (!animTimePtr)
-			animTimePtr = &g_timeTrackedAnims[anim];
+			animTimePtr = &g_timeTrackedAnims.emplace(anim, actor).first->second;
 		return *animTimePtr;
 	};
 	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
@@ -327,6 +329,21 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		animTime.respectEndKey = true;
 		animTime.finishedEndKey = false;
 		animTime.actorWeapon = actor->GetWeaponForm();
+		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_Unequip)
+		{
+			// quick hack to fix floating weapon bug
+			auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[kSequence_Weapon];
+			if (anim3rd && anim3rd->animGroup->GetBaseGroupID() == kAnimGroup_Unequip)
+			{
+				auto& animTime3rd = g_timeTrackedAnims.emplace(anim3rd, actor).first->second;
+				animTime3rd.callbacksBase = AnimTime::TimedCallbacks();
+				animTime3rd.callbacksBase->items.emplace_back([]()
+				{
+					ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
+				}, max(anim3rd->animGroup->keyTimes[kSeqState_EjectOrUnequipEnd]-0.001, anim->animGroup->keyTimes[kSeqState_EjectOrUnequipEnd] - 0.001));
+				animTime3rd.callbacks = animTime3rd.callbacksBase->CreateContext();
+			}
+		}
 	}
 	if (hasKey({"interruptLoop"}, ctx.hasInterruptLoop))
 	{
@@ -383,6 +400,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 					return false;
 				return true;
 			});
+			g_clearSounds.push_back(&ctx);
 		}
 		auto& animTime = getAnimTime();
 		animTime.soundPaths = ctx.soundPaths->CreateContext();
@@ -1169,7 +1187,7 @@ bool Cmd_PlayGroupAlt_Execute(COMMAND_ARGS)
 
 bool Cmd_kNVSETest_Execute(COMMAND_ARGS)
 {
-	g_thePlayer->GetHighProcess()->currentAction = Decoding::kAnimAction_Attack;
+	ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
 	return true;
 }
 

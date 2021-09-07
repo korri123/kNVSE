@@ -114,6 +114,8 @@ public:
 		init = true;
 	}
 
+	TimedExecution() = default;
+
 	Context CreateContext()
 	{
 		return Context(this);
@@ -134,11 +136,20 @@ struct AnimTime
 	TimedExecution<Script*>::Context scriptCalls;
 	TimedExecution<Sound>::Context soundPaths;
 
+	using TimedCallbacks = TimedExecution<std::function<void()>>;
+	std::optional<TimedCallbacks> callbacksBase;
+	TimedCallbacks::Context callbacks;
+
 	AnimData* GetAnimData(Actor* actor) const
 	{
 		if (firstPerson)
 			return g_thePlayer->firstPersonAnimData;
 		return actor->baseProcess->GetAnimData();
+	}
+
+	explicit AnimTime(Actor* actor)
+		: actorId(actor->refID)
+	{
 	}
 };
 
@@ -482,3 +493,4 @@ AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimDat
 int GroupNameToId(const std::string& name);
 
 extern std::unordered_map<UInt32, ReloadHandler> g_reloadTracker;
+extern std::vector<AnimPath*> g_clearSounds;
