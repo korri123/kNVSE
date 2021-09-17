@@ -432,6 +432,7 @@
  *
  ****/
 
+class NiTransformInterpolator;
 class NiAVObject;
 class BSFadeNode;
 class NiExtraData;
@@ -875,14 +876,33 @@ public:
 
 };
 
-class NiMultiTargetTransformController;
+/* 12659 */
+class NiTimeController : NiObject
+{
+public:
+	UInt16 m_uFlags;
+	float m_fFrequency;
+	float m_fPhase;
+	float m_fLoKeyTime;
+	float m_fHiKeyTime;
+	float m_fStartTime;
+	float m_fLastTime;
+	float m_fWeightedLastTime;
+	float m_fScaledTime;
+	NiObjectNET* m_pkTarget;
+	NiPointer<NiTimeController> m_spNext;
+};
+
+class NiInterpController : public NiTimeController
+{
+};
 
 class NiBlendInterpolator : public NiInterpolator
 {
 public:
 	struct InterpArrayItem
 	{
-		NiPointer<NiInterpolator> m_spInterpolator;
+		NiPointer<NiTransformInterpolator> m_spInterpolator;
 		float m_fWeight;
 		float m_fNormalizedWeight;
 		char m_cPriority;
@@ -902,6 +922,19 @@ public:
 	float m_fHighSumOfWeights;
 	float m_fNextHighSumOfWeights;
 	float m_fHighEaseSpinner;
+};
+
+class NiBlendTransformInterpolator : public NiBlendInterpolator
+{
+};
+
+/* 44137 */
+class NiMultiTargetTransformController : NiInterpController
+{
+public:
+	NiBlendTransformInterpolator* m_pkBlendInterps;
+	NiAVObject** m_ppkTargets;
+	unsigned __int16 m_usNumInterps;
 };
 
 struct NiFixedString
@@ -966,11 +999,11 @@ public:
 
 	struct ControlledBlock
 	{
-		NiInterpolator* interpolator;
+		NiTransformInterpolator* interpolator;
 		NiMultiTargetTransformController* multiTargetCtrl;
 		NiBlendInterpolator* blendInterpolator;
-		unsigned __int8 blendIdx;
-		UInt8 byte0D;
+		UInt8 blendIdx;
+		UInt8 priority;
 		UInt8 gap0E[2];
 	};
 
@@ -997,6 +1030,7 @@ public:
 		kAnimState_TransSource = 0x4,
 		kAnimState_TransDest = 0x5,
 		kAnimState_MorphSource = 0x6,
+		kAnimState_UnknownVoid = 0x7
 	};
 
 	enum CycleType
@@ -1634,4 +1668,76 @@ class NiTextKeyExtraData : public NiExtraData
 public:
 	unsigned int m_uiNumKeys;
 	NiTextKey* m_pKeys;
+};
+
+
+struct NiQuatTransform
+{
+	NiPoint3 m_kTranslate;
+	NiQuaternion m_kRotate;
+	float m_fScale;
+};
+
+/* 1224 */
+enum KeyType
+{
+	NOINTERP = 0x0,
+	LINKEY = 0x1,
+	BEZKEY = 0x2,
+	TCBKEY = 0x3,
+	EULERKEY = 0x4,
+	STEPKEY = 0x5,
+	NUMKEYTYPES = 0x6,
+};
+
+struct NiAnimationKey
+{
+	float m_fTime;
+};
+
+struct NiRotKey : NiAnimationKey
+{
+	NiQuaternion m_quat;
+};
+
+struct NiPosKey : NiAnimationKey
+{
+	NiPoint3 m_Pos;
+};
+
+struct NiFloatKey : NiAnimationKey
+{
+	float m_fValue;
+};
+
+class NiTransformData : public NiObject
+{
+public:
+	unsigned __int16 m_usNumRotKeys;
+	unsigned __int16 m_usNumPosKeys;
+	unsigned __int16 m_usNumScaleKeys;
+	KeyType m_eRotType;
+	KeyType m_ePosType;
+	KeyType m_eScaleType;
+	unsigned __int8 m_ucRotSize;
+	unsigned __int8 m_ucPosSize;
+	unsigned __int8 m_ucScaleSize;
+	NiRotKey* m_pkRotKeys;
+	NiPosKey* m_pkPosKeys;
+	NiFloatKey* m_pkScaleKeys;
+};
+
+struct NiKeyBasedInterpolator : NiInterpolator
+{
+};
+
+class NiTransformInterpolator : public NiKeyBasedInterpolator
+{
+public:
+	NiQuatTransform m_kTransformValue;
+	NiPointer<NiTransformData> m_spData;
+	unsigned __int16 m_usLastTransIdx;
+	unsigned __int16 m_usLastRotIdx;
+	unsigned __int16 m_usLastScaleIdx;
+	bool bPose;
 };

@@ -16,6 +16,7 @@
 #include "ParamInfos.h"
 #include "utility.h"
 
+
 struct SavedAnims;
 extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
 using FormID = UInt32;
@@ -156,6 +157,7 @@ struct AnimTime
 struct SavedAnimsTime
 {
 	UInt16 groupId = 0;
+	UInt16 realGroupId = 0;
 	BSAnimGroupSequence* anim = nullptr;
 	UInt32 actorId = 0;
 	float lastNiTime = -FLT_MAX;
@@ -187,15 +189,6 @@ struct AnimPath
 	std::unique_ptr<TimedExecution<Script*>> scriptCallKeys = nullptr;
 	std::unique_ptr<TimedExecution<Sound>> soundPaths = nullptr;
 
-};
-
-struct SavedAnims
-{
-	bool hasOrder = false;
-	std::vector<AnimPath> anims;
-	std::optional<LambdaVariableContext> conditionScript;
-	bool pollCondition = false;
-	std::unique_ptr<AnimPath> emptyMagAnim = nullptr;
 };
 
 enum class AnimCustom
@@ -249,6 +242,35 @@ struct AnimStacks
 
 };
 
+// Per ref ID there is a stack of animation variants per group ID
+class AnimOverrideStruct
+{
+public:
+	std::unordered_map<UInt32, AnimStacks> stacks;
+};
+
+using AnimOverrideMap = std::unordered_map<UInt32, AnimOverrideStruct>;
+
+struct SavedAnims
+{
+private:
+	void MoveMapKeys(SavedAnims& other);
+public:
+	bool hasOrder = false;
+	std::vector<AnimPath> anims;
+	std::optional<LambdaVariableContext> conditionScript;
+	bool pollCondition = false;
+	std::unique_ptr<AnimPath> emptyMagAnim = nullptr;
+
+	SavedAnims() = default;
+
+	~SavedAnims();
+
+	SavedAnims(SavedAnims&& other) noexcept;
+
+	SavedAnims& operator=(SavedAnims&& other) noexcept;
+};
+
 struct BurstState
 {
 	int index = 0;
@@ -269,8 +291,6 @@ struct JSONAnimContext
 };
 
 extern JSONAnimContext g_jsonContext;
-
-extern std::unordered_map<BSAnimGroupSequence*, BurstState> burstFireAnims;
 
 enum AnimHandTypes
 {
@@ -354,7 +374,7 @@ namespace GameFuncs
 	inline auto* AnimData_GetAnimSequenceElement = reinterpret_cast<BSAnimGroupSequence* (__thiscall*)(AnimData*, eAnimSequence a2)>(0x491040);
 	
 	inline auto GetControlState = _VL((ControlCode code, Decoding::IsDXKeyState state), ThisStdCall<int>(0xA24660, *g_inputGlobals, code, state));
-	inline auto SetControlHeld = _VL((int key), ThisStdCall<int>(0xA24280, *g_inputGlobals, key));
+	inline auto SetControlHeld = _VL((ControlCode code), ThisStdCall<int>(0xA24280, *g_inputGlobals, code));
 
 	inline auto IsDoingAttackAnimation = THISCALL(0x894900, bool, Actor* actor);
 	inline auto HandleQueuedAnimFlags = THISCALL(0x8BA600, void, Actor* actor);

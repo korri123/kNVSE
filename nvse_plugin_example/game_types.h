@@ -571,15 +571,6 @@ struct Sound
 	}
 };
 
-struct NiQuatTransform
-{
-	NiPoint3 m_kTranslate;
-	NiQuaternion m_kRotate;
-	float m_fScale;
-};
-
-extern NiQuatTransform* trans;
-
 extern OSInputGlobals** g_inputGlobals;
 
 TESAnimGroup::AnimGroupInfo* GetGroupInfo(UInt8 groupId);
@@ -591,6 +582,8 @@ NiAVObject* __fastcall GetNifBlock(TESObjectREFR* thisObj, UInt32 pcNode, const 
 
 TESForm* __stdcall LookupFormByRefID(UInt32 refID);
 void FormatScriptText(std::string& str);
+
+UInt16 GetActorRealAnimGroup(Actor* actor, UInt8 groupID);
 
 // 64
 struct ActorHitData
@@ -763,3 +756,12 @@ struct __declspec(align(4)) VATSQueuedAction
 	UInt8 isMissFortuneVisit;
 	UInt8 gap25[3];
 };
+
+enum AnimMoveTypes
+{
+	kAnimMoveType_Walking = 0x0,
+	kAnimMoveType_Sneaking = 0x1,
+	kAnimMoveType_Swimming = 0x2,
+	kAnimMoveType_Flying = 0x3,
+};
+

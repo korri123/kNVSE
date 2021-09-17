@@ -9,6 +9,15 @@
 			</ArrayItems>
 		</Expand>
 	</Type>
+	<Type Name="NiTArray&lt;*&gt;">
+		<DisplayString>{{ Size={numObjs} }}</DisplayString>
+		<Expand>
+			<ArrayItems>
+				<Size>numObjs</Size>
+				<ValuePointer>data</ValuePointer>
+			</ArrayItems>
+		</Expand>
+	</Type>
 	<Type Name="Set&lt;*&gt;">
 		<DisplayString>{{ Size={numKeys} }}</DisplayString>
 		<Expand>

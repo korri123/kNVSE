@@ -22,14 +22,6 @@
 std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<TESAnimGroup::AnimGroupInfo*>(0x11977D8), 245 };
 JSONAnimContext g_jsonContext;
 
-// Per ref ID there is a stack of animation variants per group ID
-class AnimOverrideStruct
-{
-public:
-	std::unordered_map<UInt32, AnimStacks> stacks;
-};
-
-using AnimOverrideMap = std::unordered_map<UInt32, AnimOverrideStruct>;
 AnimOverrideMap g_animGroupThirdPersonMap;
 AnimOverrideMap g_animGroupFirstPersonMap;
 
@@ -199,6 +191,42 @@ std::optional<BSAnimationContext> LoadAnimation(const std::string& path, AnimDat
 
 std::unordered_map<AnimData*, GameAnimMap*> g_customMaps;
 
+void SavedAnims::MoveMapKeys(SavedAnims& other)
+{
+	if (auto node = g_timeTrackedGroups.extract(&other))
+	{
+		node.key() = this;
+		g_timeTrackedGroups.insert(std::move(node));
+	}
+}
+
+SavedAnims::~SavedAnims()
+{
+	g_timeTrackedGroups.erase(this);
+}
+
+SavedAnims::SavedAnims(SavedAnims&& other) noexcept: hasOrder(other.hasOrder),
+                                                     anims(std::move(other.anims)),
+                                                     conditionScript(std::move(other.conditionScript)),
+                                                     pollCondition(other.pollCondition),
+                                                     emptyMagAnim(std::move(other.emptyMagAnim))
+{
+	MoveMapKeys(other);
+}
+
+SavedAnims& SavedAnims::operator=(SavedAnims&& other) noexcept
+{
+	if (this == &other)
+		return *this;
+	hasOrder = other.hasOrder;
+	anims = std::move(other.anims);
+	conditionScript = std::move(other.conditionScript);
+	pollCondition = other.pollCondition;
+	emptyMagAnim = std::move(other.emptyMagAnim);
+	MoveMapKeys(other);
+	return *this;
+}
+
 std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData)
 {
 	auto*& customMap = g_customMaps[animData];
@@ -335,13 +363,24 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[kSequence_Weapon];
 			if (anim3rd && anim3rd->animGroup->GetBaseGroupID() == kAnimGroup_Unequip)
 			{
-				auto& animTime3rd = g_timeTrackedAnims.emplace(anim3rd, actor).first->second;
-				animTime3rd.callbacksBase = AnimTime::TimedCallbacks();
-				animTime3rd.callbacksBase->items.emplace_back([]()
+				animTime.callbacksBase = AnimTime::TimedCallbacks();
+				/*animTime.callbacksBase->items.emplace_back([]()
 				{
-					ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
-				}, max(anim3rd->animGroup->keyTimes[kSeqState_EjectOrUnequipEnd]-0.001, anim->animGroup->keyTimes[kSeqState_EjectOrUnequipEnd] - 0.001));
-				animTime3rd.callbacks = animTime3rd.callbacksBase->CreateContext();
+					Console_Print("attaching...");
+					ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->GetHighProcess()->animData, g_thePlayer);
+				}, anim3rd->animGroup->keyTimes[kSeqState_HitOrDetach]);*/
+				/*animTime.callbacksBase->items.emplace_back([]()
+				{
+					Console_Print("ending...");
+					auto animData3rd = g_thePlayer->GetHighProcess()->animData;
+					auto oldGroupId = animData3rd->groupIDs[kSequence_Weapon];
+					auto oldAnim = animData3rd->animSequence[kSequence_Weapon];
+					ThisStdCall(0x4994F0, animData3rd, kSequence_Weapon, false); // end sequence
+					ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, animData3rd, g_thePlayer);
+					animData3rd->groupIDs[kSequence_Weapon] = oldGroupId;
+					animData3rd->animSequence[kSequence_Weapon] = oldAnim;
+				}, anim3rd->animGroup->keyTimes[kSeqState_EjectOrUnequipEnd]);
+				animTime.callbacks = animTime.callbacksBase->CreateContext();*/
 			}
 		}
 	}
@@ -531,6 +570,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					animTime.groupId = groupId;
 					animTime.actorId = animData->actor->refID;
 					animTime.lastNiTime = -FLT_MAX;
+					animTime.realGroupId = GetActorRealAnimGroup(animData->actor, groupId);
 					return &animTime;
 				};
 				SavedAnimsTime* animsTime = nullptr;
@@ -820,6 +860,11 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 	{
 		// move iter to the top of stack
 		std::rotate(iter, iter + 1, stack.end());
+		if (conditionScript) // in case of hot reload
+		{
+			iter->conditionScript = conditionScript;
+			iter->pollCondition = pollCondition;
+		}
 		return;
 	}
 	// if not inserted before, treat as variant; else add to stack as separate set

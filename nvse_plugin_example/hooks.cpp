@@ -21,13 +21,25 @@ AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
+
+#if _DEBUG
+std::unordered_map<NiTransformInterpolator*, std::unordered_set<BSAnimGroupSequence*>> g_interpMap;
+std::unordered_set<BSAnimGroupSequence*>* GetInterpSeq(NiTransformInterpolator* i)
+{
+	auto pair = g_interpMap.find(i);
+	if (pair == g_interpMap.end())
+		return nullptr;
+	return &pair->second;
+}
+#endif
+
 bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer)
 {
+	auto* toReplace = toMorph ? *toMorph : nullptr;
 #if _DEBUG
 	auto& groupInfo = g_animGroupInfos[animGroupId & 0xFF];
 	auto* curSeq = animData->animSequence[groupInfo.sequenceType];
 	//animData->noBlend120 = true;
-
 #endif
 	g_animationHookContext = AnimationContext(basePointer);
 
@@ -46,13 +58,37 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 			animGroupId = g_firstPersonAnimId;
 			g_firstPersonAnimId = -1;
 		}
-		auto* toReplace = toMorph ? *toMorph : nullptr;
 		if (const auto animResult = GetActorAnimation(animGroupId, firstPerson, animData))
 		{
-			*toMorph = LoadAnimationPath(*animResult, animData, animGroupId);
-#if _DEBUG && 0
-			if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
-				Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
+			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
+			if (newAnim)
+				*toMorph = newAnim;
+#if _DEBUG
+			//if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
+			//	Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
+			if (newAnim)
+			{
+				std::span<NiControllerSequence::ControlledBlock> blocks{ newAnim->controlledBlocks, newAnim->numControlledBlocks };
+				int i = 0;
+				for (auto& block : blocks)
+				{
+					//++i;
+					//if (i < 5)
+					//	continue;
+					if (auto* blendInterp = block.blendInterpolator)
+					{
+						std::span interps{ blendInterp->m_pkInterpArray, blendInterp->m_ucArraySize };
+						for (auto& i : interps)
+						{
+							if (i.m_spInterpolator.data)
+								g_interpMap[i.m_spInterpolator.data].insert(newAnim);
+						}
+						//blendInterp->m_cHighPriority = 55;
+					}
+					//if (newAnim->animGroup->GetBaseGroupID() == kAnimGroup_AimIS)
+					//	block.priority = 55;
+				}
+			}
 #endif		
 		}
 		else if (toReplace)
@@ -67,6 +103,16 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 				if (HandleExtraOperations(animData, toReplace, ctx))
 				{
 					customKeyAnims.emplace(toReplace->sequenceName, std::move(ctx));
+				}
+			}
+
+			// hack to allow pollCondition to work correctly in first person when groupid is decayed
+			if (firstPerson)
+			{
+				auto realGroupId = GetActorRealAnimGroup(g_thePlayer, animGroupId);
+				if (realGroupId != animGroupId)
+				{
+					GetActorAnimation(realGroupId, true, g_thePlayer->firstPersonAnimData);
 				}
 			}
 		}
@@ -338,6 +384,7 @@ UInt8* GetParentBasePtr(void* addressOfReturnAddress)
 }
 
 
+
 // attempt to fix anims that don't get loaded since they aren't in the game to begin with
 template <int AnimDataOffset>
 bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void* _EDX, UInt16 groupId, AnimSequenceBase** base)
@@ -446,7 +493,20 @@ void ApplyHooks()
 	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
 	/* experimental end */
 
+#if 0
+	WriteVirtualCall(0x8961C9, static_cast<void(__fastcall*)(BaseProcess*, void*, bool, void*, AnimData*, Actor*)>([](BaseProcess*, void*, bool isEquip, void* bip, AnimData* animData, Actor*)
+	{
+		if (animData != g_thePlayer->firstPersonAnimData || isEquip)
+		{
+			ThisStdCall(0x9231D0, g_thePlayer->GetHighProcess(), isEquip, bip, animData, g_thePlayer);
+			return;
+		}
+		ThisStdCall(0x9231D0, g_thePlayer->GetHighProcess(), isEquip, g_thePlayer->bipedAnims1st, g_thePlayer->firstPersonAnimData, g_thePlayer);
+	}));
+#endif
 	WriteRelJump(0x91EA33, OnReloadHook);
+
+
 #endif
 	ini.SaveFile(iniPath.c_str(), false);
 }

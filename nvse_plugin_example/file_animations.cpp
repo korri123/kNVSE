@@ -297,7 +297,7 @@ void LoadJsonEntries()
 			Log(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
 		g_jsonContext.Reset();
 	}
-	g_jsonEntries.clear();
+	g_jsonEntries = std::vector<JSONEntry>();
 }
 
 void LoadFileAnimPaths()

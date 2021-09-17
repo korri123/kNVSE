@@ -417,3 +417,22 @@ void FormatScriptText(std::string& str)
 		pos += 1;
 	}
 }
+
+UInt32* g_weaponTypeToAnim = reinterpret_cast<UInt32*>(0x118A838);
+
+UInt16 GetActorRealAnimGroup(Actor* actor, UInt8 groupID)
+{
+	UInt8 animHandType = 0;
+	if (auto* form = actor->GetWeaponForm())
+		animHandType = g_weaponTypeToAnim[form->eWeaponType];
+	auto moveFlags = actor->actorMover->GetMovementFlags();
+	UInt8 moveType = 0;
+	if ((moveFlags & 0x800) != 0)
+		moveType = kAnimMoveType_Swimming;
+	else if ((moveFlags & 0x2000) != 0)
+		moveType = kAnimMoveType_Flying;
+	else if ((moveFlags & 0x400) != 0)
+		moveType = kAnimMoveType_Sneaking;
+	const auto isPowerArmor = ThisStdCall<bool>(0x8BA3E0, actor) || ThisStdCall<bool>(0x8BA410, actor);
+	return (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8) + groupID;
+}

@@ -22,6 +22,14 @@ void WriteRelCall(UInt32 jumpSrc, T jumpTgt)
 	WriteRelCall(jumpSrc, UInt32(jumpTgt));
 }
 
+template <typename T>
+void WriteVirtualCall(UInt32 jumpSrc, T jumpTgt)
+{
+	SafeWrite8(jumpSrc - 6, 0xB8); // mov eax
+	SafeWrite32(jumpSrc - 5, (UInt32)jumpTgt);
+	SafeWrite8(jumpSrc - 1, 0x90); // nop
+}
+
 // 6 bytes
 void WriteRelJnz(UInt32 jumpSrc, UInt32 jumpTgt);
 void WriteRelJle(UInt32 jumpSrc, UInt32 jumpTgt);

@@ -214,7 +214,7 @@ public:
 	virtual void	Unk_62(void);
 	virtual void	Unk_63(void);
 
-	virtual void	Unk_64(void);
+	virtual NiNode*	GetWeaponBone(void* bipedNames);
 	virtual void	Unk_65(void);
 	virtual void	Unk_66(void);
 	virtual void	Unk_67(void);

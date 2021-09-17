@@ -343,7 +343,7 @@ public:
 	virtual void		Unk_05(void);
 	virtual void		Unk_06(void);
 	virtual void		Unk_07(void);
-	virtual UInt32		Unk_08(void);	// for PlayerMover, it is GetMovementFlags
+	virtual UInt32		GetMovementFlags(void);	// for PlayerMover, it is GetMovementFlags
 		// bit 11 = swimming 
 		// bit 9 = sneaking
 		// bit 8 = run
@@ -637,9 +637,9 @@ public:
 	UInt8								disabledControlFlags;			// 680 kControlFlag_xxx
 	UInt8								unk0681[3];						// 681
 	UInt32								unk684[2];				// 684
-	ValidBip01Names						* player1stPersonVB01N;					// 68C
+	ValidBip01Names						* bipedAnims1st;					// 68C
 	AnimData*							firstPersonAnimData;				// 690 ExtraDataAnim::Data
-	NiNode								* playerNode;					// 694 used as node if unk64A is true
+	NiNode								* node1stPerson;					// 694 used as node if unk64A is true
 	UInt32								unk698;		// 698
 	UInt32								unk69C;		// 698
 	AnimData*							unkNotTpsAniMData;		// 698
@@ -714,7 +714,7 @@ public:
 		// D74: 96 bytes that are cleared when the 3D is cleared.
 
 	bool IsThirdPerson() { return thirdPersonConsistent; }
-	UInt32 GetMovementFlags() { return actorMover->Unk_08(); }	// 11: IsSwimming, 9: IsSneaking, 8: IsRunning, 7: IsWalking, 0: keep moving
+	UInt32 GetMovementFlags() { return actorMover->GetMovementFlags(); }	// 11: IsSwimming, 9: IsSneaking, 8: IsRunning, 7: IsWalking, 0: keep moving
 	bool IsPlayerSwimming() { return (GetMovementFlags()  >> 11) & 1; }
 
 	static PlayerCharacter*	GetSingleton();

@@ -5,6 +5,8 @@
 #include "hooks.h"
 #include "utility.h"
 #include <filesystem>
+#include <fstream>
+#include <numeric>
 #include <span>
 
 #include "file_animations.h"
@@ -16,6 +18,7 @@
 
 #include "knvse_version.h"
 #include "LambdaVariableContext.h"
+#include "nihooks.h"
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
 
@@ -52,6 +55,7 @@ float GetAnimTime(const AnimData* animData, const BSAnimGroupSequence* anim)
 }
 
 bool g_fixHolster = false;
+BSAnimGroupSequence* g_fixHolsterUnequipAnim3rd = nullptr;
 
 void HandleAnimTimes()
 {
@@ -110,9 +114,10 @@ void HandleAnimTimes()
 						animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
 					}
 				}
-				if ((anim->animGroup->groupID & 0xFF) == kAnimGroup_Unequip /* && !g_thePlayer->IsThirdPerson()*/)
+				if ((anim->animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
 				{
 					g_fixHolster = true;
+					g_fixHolsterUnequipAnim3rd = animTime.anim3rdCounterpart;
 				}
 				animTime.povState = POVSwitchState::POV3rd;
 			};
@@ -156,7 +161,12 @@ void HandleAnimTimes()
 		}
 		if (animTime.callbacks.Exists())
 		{
-			animTime.callbacks.Update(time, animData, [](const std::function<void()>& callback)
+			auto cTime = time;
+#if _DEBUG
+			if (deferredErase)
+				cTime = FLT_MAX;
+#endif
+			animTime.callbacks.Update(cTime, animData, [](const std::function<void()>& callback)
 			{
 				callback();
 			});
@@ -171,8 +181,11 @@ void HandleAnimTimes()
 			{
 				animTime.soundPaths.Update(time, animData, [&](Sound& sound)
 				{
-					sound.Set3D(actor);
-					sound.Play();
+					if (!IsPlayersOtherAnimData(animData))
+					{
+						sound.Set3D(actor);
+						sound.Play();
+					}
 				});
 			}
 			if (animTime.scriptLines.Exists())
@@ -190,10 +203,10 @@ void HandleAnimTimes()
 	for (auto iter = g_timeTrackedGroups.begin(); iter != g_timeTrackedGroups.end();)
 	{
 		auto& [savedAnim, animTime] = *iter;
-		auto& [groupId, anim, actorId, lastNiTime, firstPerson] = animTime;
+		auto& [groupId, realGroupId, anim, actorId, lastNiTime, firstPerson] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 
-		if (shouldErase(actor) || anim && anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || anim && anim->state == NiControllerSequence::kAnimState_Inactive)
+		if (shouldErase(actor) || anim && anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP)
 		{
 			iter = g_timeTrackedGroups.erase(iter);
 			continue;
@@ -207,11 +220,18 @@ void HandleAnimTimes()
 
 		if (anim)
 			lastNiTime = anim->weightedLastTime;
-		if (savedAnim->conditionScript)
+		auto* animInfo = GetGroupInfo(groupId);
+		auto* curAnim = animData->animSequence[animInfo->sequenceType];
+		if (savedAnim->conditionScript && curAnim)
 		{
-			auto* animInfo = GetGroupInfo(groupId);
-			auto* curAnim = animData->animSequence[animInfo->sequenceType];
-			if (curAnim && curAnim->animGroup->groupID == groupId)
+			const auto currentRealAnimGroupId = GetActorRealAnimGroup(actor, curAnim->animGroup->GetBaseGroupID());
+
+			// group id may have changed now that udf returns false
+			const auto groupIdFit = GameFuncs::GetActorAnimGroupId(actor, groupId & 0xFF, nullptr, false, animData);
+
+			const auto curHandType = (curAnim->animGroup->groupID & 0xf00) >> 8;
+			const auto handType = (groupId & 0xf00) >> 8;
+			if (handType >= curHandType && (realGroupId == currentRealAnimGroupId || realGroupId == curAnim->animGroup->groupID))
 			{
 				NVSEArrayVarInterface::Element arrResult;
 				if (g_script->CallFunction(**savedAnim->conditionScript, actor, nullptr, &arrResult, 0))
@@ -221,7 +241,7 @@ void HandleAnimTimes()
 					if (customAnimState == kAnimState_Inactive && result && curAnim != anim
 						|| customAnimState != kAnimState_Inactive && !result && curAnim == anim)
 					{
-						GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
+						GameFuncs::PlayAnimGroup(animData, groupIdFit, 1, -1, -1);
 					}
 				}
 			}
@@ -548,18 +568,78 @@ void HandleExecutionQueue()
 	}
 }
 
+NiNode* g_weaponBone = nullptr;
+
 void HandleMisc()
 {
 	if (g_fixHolster && g_thePlayer->IsThirdPerson())
 	{
 		auto* anim = g_thePlayer->GetHighProcess()->animData->animSequence[kSequence_Weapon];
-		if (!anim || anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
+		if (!anim)
 		{
-			g_fixHolster = false;
-			ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
+			if (g_fixHolsterUnequipAnim3rd->state == NiControllerSequence::kAnimState_Inactive)
+			{
+				g_fixHolster = false;
+				ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
+			}
 		}
+		else if (anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
+			g_fixHolster = false;
 	}
 }
+
+#if _DEBUG
+
+std::ofstream out("_upperarm.csv");
+bool g_init = false;
+std::string g_cur;
+
+#if 0
+void LogNodes(NiNode* node)
+{
+	for (auto iter = node->m_children.Begin(); iter; ++iter)
+	{
+		std::span s{ reinterpret_cast<float*>(&iter->m_localRotate), 13 };
+		if (g_init)
+		{
+			g_cur += FormatString("%g,", std::accumulate(s.begin(), s.end(), 0.0));
+		}
+		else
+		{
+			g_cur += std::string(iter->m_pcName) + ',';
+		}
+		if (auto* niNode = iter->GetAsNiNode())
+			LogNodes(niNode);
+	}
+}
+
+#endif
+
+void LogNodes(NiNode* node)
+{
+	for (auto iter = node->m_children.Begin(); iter; ++iter)
+	{
+		if (_stricmp(iter->m_pcName, "Bip01 L UpperArm") == 0)
+		{
+			std::span s{ reinterpret_cast<float*>(&iter->m_localRotate), 13 };
+			for (auto f : s)
+			{
+				g_cur += FormatString("%g,", f);
+			}
+		}
+		if (auto* niNode = iter->GetAsNiNode())
+			LogNodes(niNode);
+	}
+}
+
+void HandleDebug()
+{
+	if (!g_weaponBone)
+	{
+		g_weaponBone = g_thePlayer->baseProcess->GetWeaponBone(g_thePlayer->validBip01Names);
+	}
+}
+#endif
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
@@ -579,6 +659,9 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleAnimTimes();
 			HandleExecutionQueue();
 			HandleMisc();
+#if _DEBUG
+			HandleDebug();
+#endif
 #if _DEBUG || IS_TRANSITION_FIX
 			HandleProlongedAim();
 
@@ -669,6 +752,10 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	RegisterScriptCommand(PlayGroupAlt);
 #if _DEBUG
 	RegisterScriptCommand(kNVSETest);
+	if (false)
+	{
+		//g_thePlayer->baseProcess->GetWeaponBone();
+	}
 #endif
 	
 	if (isEditor)
@@ -680,7 +767,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	CaptureLambdaVars = (_CaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaSaveVariableList);
 	UncaptureLambdaVars = (_UncaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaUnsaveVariableList);
 
-
 	ApplyHooks();
+	ApplyNiHooks();
 	return true;
 }

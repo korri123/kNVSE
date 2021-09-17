@@ -68,6 +68,7 @@
     <ClCompile Include="utility_knvse.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="LambdaVariableContext.cpp" />
+    <ClCompile Include="nihooks.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">
@@ -152,6 +153,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="knvse_version.h" />
     <ClInclude Include="LambdaVariableContext.h" />
+    <ClInclude Include="nihooks.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

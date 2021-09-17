@@ -406,6 +406,7 @@
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="LambdaVariableContext.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="nihooks.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -441,6 +442,7 @@
     <ClInclude Include="LambdaVariableContext.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="MemoizedMap.h" />
+    <ClInclude Include="nihooks.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="SimpleINILibrary.h" />
     <ClInclude Include="stack_allocator.h" />
