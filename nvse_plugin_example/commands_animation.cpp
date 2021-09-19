@@ -287,7 +287,12 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	const auto getAnimTime = [&]() -> AnimTime&
 	{
 		if (!animTimePtr)
-			animTimePtr = &g_timeTrackedAnims.emplace(anim, actor).first->second;
+		{
+			auto iter= g_timeTrackedAnims.emplace(anim, actor);
+			if (!iter.second)
+				iter.first->second = AnimTime(actor);
+			animTimePtr = &iter.first->second;
+		}
 		return *animTimePtr;
 	};
 	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
@@ -357,31 +362,10 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		animTime.respectEndKey = true;
 		animTime.finishedEndKey = false;
 		animTime.actorWeapon = actor->GetWeaponForm();
-		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_Unequip)
+		auto* groupInfo = GetGroupInfo(anim->animGroup->groupID);
+		if (auto iter = ra::find_if(g_timeTrackedAnims, _L(auto& p, p.first != anim && p.second.respectEndKey && GetGroupInfo(p.first->animGroup->groupID)->sequenceType == groupInfo->sequenceType)); iter != g_timeTrackedAnims.end())
 		{
-			// quick hack to fix floating weapon bug
-			auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[kSequence_Weapon];
-			if (anim3rd && anim3rd->animGroup->GetBaseGroupID() == kAnimGroup_Unequip)
-			{
-				animTime.callbacksBase = AnimTime::TimedCallbacks();
-				/*animTime.callbacksBase->items.emplace_back([]()
-				{
-					Console_Print("attaching...");
-					ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->GetHighProcess()->animData, g_thePlayer);
-				}, anim3rd->animGroup->keyTimes[kSeqState_HitOrDetach]);*/
-				/*animTime.callbacksBase->items.emplace_back([]()
-				{
-					Console_Print("ending...");
-					auto animData3rd = g_thePlayer->GetHighProcess()->animData;
-					auto oldGroupId = animData3rd->groupIDs[kSequence_Weapon];
-					auto oldAnim = animData3rd->animSequence[kSequence_Weapon];
-					ThisStdCall(0x4994F0, animData3rd, kSequence_Weapon, false); // end sequence
-					ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, animData3rd, g_thePlayer);
-					animData3rd->groupIDs[kSequence_Weapon] = oldGroupId;
-					animData3rd->animSequence[kSequence_Weapon] = oldAnim;
-				}, anim3rd->animGroup->keyTimes[kSeqState_EjectOrUnequipEnd]);
-				animTime.callbacks = animTime.callbacksBase->CreateContext();*/
-			}
+			g_timeTrackedAnims.erase(iter);
 		}
 	}
 	if (hasKey({"interruptLoop"}, ctx.hasInterruptLoop))
@@ -424,7 +408,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	}
 	if (hasKey({"SoundPath:"}, ctx.hasSoundPath, KeyCheckType::KeyStartsWith))
 	{
-		if (!ctx.soundPaths)
+		if (!ctx.soundPaths || ctx.soundPaths->items.empty())
 		{
 			ctx.soundPaths = std::make_unique<TimedExecution<Sound>>(textKeys, [&](const char* key, Sound& result)
 			{
@@ -497,19 +481,35 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	return applied;
 }
 
+bool IsLoopingReload(UInt8 groupId)
+{
+	return groupId >= kAnimGroup_ReloadW && groupId <= kAnimGroup_ReloadZ;
+}
+
 std::map<std::pair<FormID, SavedAnims*>, int> g_actorAnimOrderMap;
 
-AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor)
+PartialLoopingReloadState g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
+
+AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor, UInt16 groupId)
 {
 	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
 	auto* weapon = actor->GetWeaponForm();
 	if (!weapon || !ammoInfo)
 		return nullptr;
 	StackVector<AnimPath*, 0x100> reloads;
-	if (ammoInfo->count == 0 || DidActorReload(actor, ReloadSubscriber::Partial))
+	if ((ammoInfo->count == 0 || DidActorReload(actor, ReloadSubscriber::Partial) || g_partialLoopReloadState == PartialLoopingReloadState::NotPartial) 
+		&& g_partialLoopReloadState != PartialLoopingReloadState::Partial)
+	{
 		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, !p.partialReload));
+		if (IsLoopingReload(groupId) && g_partialLoopReloadState == PartialLoopingReloadState::NotSet)
+			g_partialLoopReloadState = PartialLoopingReloadState::NotPartial;
+	}
 	else
+	{
 		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, p.partialReload));
+		if (IsLoopingReload(groupId) && g_partialLoopReloadState == PartialLoopingReloadState::NotSet)
+			g_partialLoopReloadState = PartialLoopingReloadState::Partial;
+	}
 	if (reloads->empty())
 		return nullptr;
 	if (!ctx.hasOrder)
@@ -581,6 +581,10 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					NVSEArrayVarInterface::Element result;
 					if (!g_script->CallFunction(**ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
 						continue;
+					else
+					{
+						int i = 0;
+					}
 				}
 				if (!ctx.anims.empty())
 				{
@@ -620,9 +624,9 @@ AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimDat
 	Actor* actor = animData->actor;
 	if (const auto* ammoInfo = actor->baseProcess->GetAmmoInfo())
 		emptyMag = ammoInfo->count == 0;
-	if (IsAnimGroupReload(static_cast<UInt8>(groupId)) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
+	if (IsAnimGroupReload(groupId) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
 	{
-		if (auto* path = GetPartialReload(ctx, actor))
+		if (auto* path = GetPartialReload(ctx, actor, groupId))
 			savedAnimPath = path;
 	}
 	else if (emptyMag && ctx.emptyMagAnim)
@@ -650,6 +654,8 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 {
 	auto& [ctx, animsTime] = result;
 	auto* animPath = GetAnimPath(result, groupId, animData);
+	if (!animPath)
+		return nullptr;
 	if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
 	{
 		auto* anim = animCtx->anim;
@@ -1238,12 +1244,21 @@ bool Cmd_kNVSETest_Execute(COMMAND_ARGS)
 
 #endif
 
-
-//bool Cmd_GetPlayingAnimationPath_Execute(COMMAND_ARGS)
-//{
-//	int type
-//}
-
+bool Cmd_CreateIdleAnimForm_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+	char path[0x1000];
+	eAnimSequence type = kSequence_SpecialIdle;
+	if (!ExtractArgs(EXTRACT_ARGS, &path, &type))
+	{
+		return true;
+	}
+	auto* idleForm = New<TESIdleForm>(0x5FE040);
+	idleForm->anim.SetModelPath(path);
+	idleForm->data.groupFlags = 0x40 + type;
+	*reinterpret_cast<UInt32*>(&result) = idleForm->refID;
+	return true;
+}
 
 // SetWeaponAnimationPath WeapNV9mmPistol 1 1 "characters\_male\idleanims\weapons\1hpAttackRight.kf"
 // SetWeaponAnimationPath WeapNVHuntingShotgun 1 1 "characters\_male\idleanims\weapons\2hrAttack7.kf"

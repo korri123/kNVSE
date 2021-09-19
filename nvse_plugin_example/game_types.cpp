@@ -370,6 +370,7 @@ Script* Script::CompileFromText(const std::string& scriptSource, const std::stri
 	buffer.scriptName.Set(("kNVSEScript_" + name).c_str());
 	buffer.scriptText = scriptSource.data();
 	buffer.partialScript = true;
+	buffer.currentScript = condition.get();
 	const auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
 	const auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition.get(), &buffer);
 	condition->text = nullptr;

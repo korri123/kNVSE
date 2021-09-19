@@ -258,7 +258,7 @@ struct ScriptBuffer
 	UInt8			unk03A[2];
 	Script::VarInfoEntry	vars;		// 03C
 	Script::RefListEntry	refVars;	// 044 probably ref vars
-	UInt32			unk04C;				// 04C num lines?
+	Script*			currentScript;				// 04C num lines?
 	Node<ScriptLineBuffer>	lines;		// 050
 	// nothing else initialized
 

@@ -1030,7 +1030,6 @@ public:
 		kAnimState_TransSource = 0x4,
 		kAnimState_TransDest = 0x5,
 		kAnimState_MorphSource = 0x6,
-		kAnimState_UnknownVoid = 0x7
 	};
 
 	enum CycleType
@@ -1071,6 +1070,12 @@ public:
 	UInt16 numNotes;
 	UInt8 hasHashHashAtStartOfNodeName;
 	UInt8 byte73;
+
+	void SetStartOffset(float offset)
+	{
+		destFrame = offset;
+		kNVSEFlags |= kFlag_DestframeStartTime;
+	}
 };
 
 // 06C

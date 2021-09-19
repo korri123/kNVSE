@@ -2,6 +2,8 @@
 #include <unordered_set>
 
 #include "commands_animation.h"
+
+extern float g_nextAnimOffset;
 struct AnimData;
 class BSAnimGroupSequence;
 enum AnimGroupID : UInt8;

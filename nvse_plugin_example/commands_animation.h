@@ -20,6 +20,7 @@
 struct SavedAnims;
 extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
 using FormID = UInt32;
+using GroupID = UInt16;
 
 enum QueuedIdleFlags
 {
@@ -73,7 +74,7 @@ public:
 	class Context
 	{
 	public:
-		TimedExecution* execution;
+		TimedExecution* execution = nullptr;
 		size_t index = 0;
 
 		explicit Context(TimedExecution<T>* execution)
@@ -88,6 +89,8 @@ public:
 		template <typename F>
 		void Update(float time, AnimData* animData, F&& f)
 		{
+			if (!execution)
+				return;
 			if (index >= execution->items.size())
 				return;
 			auto& [item, nextTime] = execution->items.at(index);
@@ -114,6 +117,7 @@ public:
 		}
 		init = true;
 	}
+
 
 	TimedExecution() = default;
 
@@ -462,6 +466,12 @@ static ParamInfo kParams_PlayGroupAlt[] =
 	{"play immediately", kParamType_Integer, 1},
 };
 
+static ParamInfo kParams_CreateIdleAnimForm[] = 
+{
+	{"path", kParamType_String, 0},
+	{"type", kParamType_Integer, 1},
+};
+
 DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 2, kParams_OneForm_OneOptionalInt)
 DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof kParams_SetWeaponAnimationPath / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
 DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", false, sizeof kParams_SetActorAnimationPath / sizeof(ParamInfo), kParams_SetActorAnimationPath)
@@ -469,6 +479,7 @@ DEFINE_COMMAND_PLUGIN(PlayAnimationPath, "", true, sizeof kParams_PlayAnimationP
 DEFINE_COMMAND_PLUGIN(kNVSEReset, "", false, 0, nullptr)
 DEFINE_COMMAND_PLUGIN(ForceStopIdle, "", true, 1, kParams_OneOptionalInt)
 DEFINE_COMMAND_PLUGIN(PlayGroupAlt, "", true, 2, kParams_PlayGroupAlt)
+DEFINE_COMMAND_PLUGIN(CreateIdleAnimForm, "", false, 2, kParams_CreateIdleAnimForm);
 #if _DEBUG
 
 DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
@@ -509,8 +520,17 @@ void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);
 
 bool DidActorReload(Actor* actor, ReloadSubscriber subscriber);
 
-AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimData* animData);
+AnimPath* GetAnimPath(const AnimationResult& animResult, AnimGroupID groupId, AnimData* animData);
 int GroupNameToId(const std::string& name);
 
 extern std::unordered_map<UInt32, ReloadHandler> g_reloadTracker;
 extern std::vector<AnimPath*> g_clearSounds;
+
+bool IsLoopingReload(UInt8 groupId);
+
+enum class PartialLoopingReloadState
+{
+	NotSet, NotPartial, Partial
+};
+
+extern PartialLoopingReloadState g_partialLoopReloadState;

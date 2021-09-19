@@ -21,6 +21,7 @@ AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
+float g_nextAnimOffset = 0;
 
 #if _DEBUG
 std::unordered_map<NiTransformInterpolator*, std::unordered_set<BSAnimGroupSequence*>> g_interpMap;
@@ -52,6 +53,8 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 		auto* queuedIdleFlags = &highProcess->queuedIdleFlags;
 		auto* currAction = &highProcess->currentAction;
 #endif
+		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
+			g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
 		if (firstPerson && g_firstPersonAnimId != -1)
 		{
@@ -116,6 +119,11 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 				}
 			}
 		}
+	}
+	if (g_nextAnimOffset && *toMorph)
+	{
+		(*toMorph)->SetStartOffset(g_nextAnimOffset);
+		g_nextAnimOffset = 0;
 	}
 	return true;
 }

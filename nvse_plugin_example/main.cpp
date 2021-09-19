@@ -202,19 +202,21 @@ void HandleAnimTimes()
 	}
 	for (auto iter = g_timeTrackedGroups.begin(); iter != g_timeTrackedGroups.end();)
 	{
+		const auto erase = [&]() {iter = g_timeTrackedGroups.erase(iter); };
 		auto& [savedAnim, animTime] = *iter;
 		auto& [groupId, realGroupId, anim, actorId, lastNiTime, firstPerson] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 
-		if (shouldErase(actor) || anim && anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP)
+		if (shouldErase(actor) || anim && anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || 
+			anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP)
 		{
-			iter = g_timeTrackedGroups.erase(iter);
+			erase();
 			continue;
 		}
 		auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
 		if (!animData)
 		{
-			iter = g_timeTrackedGroups.erase(iter);
+			erase();
 			continue;
 		}
 
@@ -222,13 +224,14 @@ void HandleAnimTimes()
 			lastNiTime = anim->weightedLastTime;
 		auto* animInfo = GetGroupInfo(groupId);
 		auto* curAnim = animData->animSequence[animInfo->sequenceType];
-		if (savedAnim->conditionScript && curAnim)
+		if (!curAnim)
+		{
+			erase();
+			continue;
+		}
+		if (savedAnim->conditionScript)
 		{
 			const auto currentRealAnimGroupId = GetActorRealAnimGroup(actor, curAnim->animGroup->GetBaseGroupID());
-
-			// group id may have changed now that udf returns false
-			const auto groupIdFit = GameFuncs::GetActorAnimGroupId(actor, groupId & 0xFF, nullptr, false, animData);
-
 			const auto curHandType = (curAnim->animGroup->groupID & 0xf00) >> 8;
 			const auto handType = (groupId & 0xf00) >> 8;
 			if (handType >= curHandType && (realGroupId == currentRealAnimGroupId || realGroupId == curAnim->animGroup->groupID))
@@ -241,9 +244,16 @@ void HandleAnimTimes()
 					if (customAnimState == kAnimState_Inactive && result && curAnim != anim
 						|| customAnimState != kAnimState_Inactive && !result && curAnim == anim)
 					{
+						// group id may have changed now that udf returns false
+						const auto groupIdFit = GameFuncs::GetActorAnimGroupId(actor, groupId & 0xFF, nullptr, false, animData);
 						GameFuncs::PlayAnimGroup(animData, groupIdFit, 1, -1, -1);
 					}
 				}
+			}
+			else
+			{
+				erase();
+				continue;
 			}
 		}
 		++iter;
@@ -676,7 +686,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	{
 		for (auto* ctx : g_clearSounds)
 		{
-			ctx->soundPaths = nullptr;
+			ctx->soundPaths->items.clear();
 		}
 		g_clearSounds.clear();
 	}
@@ -750,6 +760,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	RegisterScriptCommand(ForceStopIdle);
 	RegisterScriptCommand(kNVSEReset);
 	RegisterScriptCommand(PlayGroupAlt);
+	RegisterScriptCommand(CreateIdleAnimForm);
 #if _DEBUG
 	RegisterScriptCommand(kNVSETest);
 	if (false)

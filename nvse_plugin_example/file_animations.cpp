@@ -150,18 +150,19 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 	DataHandler::Get()->DisableAssignFormIDs(false);
 	std::string scriptSource;
 	if (!FindStringCI(condString, "SetFunctionValue"))
-		scriptSource = FormatString("begin function{}\r\nSetFunctionValue (%s)\r\nend\r\n", condString.c_str());
+		scriptSource = FormatString("begin function{}\nSetFunctionValue (%s)\nend\n", condString.c_str());
 	else
 	{
 		auto condStr = ReplaceAll(condString, "%r", "\r\n");
 		condStr = ReplaceAll(condStr, "%R", "\r\n");
-		scriptSource = FormatString("begin function{}\r\n%s\r\nend\r\n", condStr.c_str());
+		scriptSource = FormatString("begin function{}\n%s\nend\n", condStr.c_str());
 	}
 	buffer.scriptName.Set(("kNVSEConditionScript_" + folderName).c_str());
 	buffer.scriptText = scriptSource.data();
 	buffer.partialScript = true;
 	*buffer.scriptData = 0x1D;
 	buffer.dataOffset = 4;
+	buffer.currentScript = condition.get();
 	auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
 	const auto patchEndOfLineCheck = [&](bool bDisableCheck)
 	{
