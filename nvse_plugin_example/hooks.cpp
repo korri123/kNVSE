@@ -108,16 +108,6 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 					customKeyAnims.emplace(toReplace->sequenceName, std::move(ctx));
 				}
 			}
-
-			// hack to allow pollCondition to work correctly in first person when groupid is decayed
-			if (firstPerson)
-			{
-				auto realGroupId = GetActorRealAnimGroup(g_thePlayer, animGroupId);
-				if (realGroupId != animGroupId)
-				{
-					GetActorAnimation(realGroupId, true, g_thePlayer->firstPersonAnimData);
-				}
-			}
 		}
 	}
 	if (g_nextAnimOffset && *toMorph)
@@ -371,6 +361,11 @@ bool LookupAnimFromMap(NiTPointerMap<AnimSequenceBase>* animMap, UInt16 groupId,
 				*base = animCtx->base;
 				return true;
 			}
+		}
+		if (animData->actor == g_thePlayer && animData != g_thePlayer->firstPersonAnimData && groupId != GetActorRealAnimGroup(g_thePlayer, groupId))
+		{
+			// hack to allow pollCondition to work correctly in first person when groupid is decayed
+			GetActorAnimation(groupId, true, g_thePlayer->firstPersonAnimData);
 		}
 		return false;
 	};

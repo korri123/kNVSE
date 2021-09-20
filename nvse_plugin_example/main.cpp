@@ -689,6 +689,8 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			ctx->soundPaths->items.clear();
 		}
 		g_clearSounds.clear();
+		g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
+		g_reloadTracker.clear();
 	}
 
 }

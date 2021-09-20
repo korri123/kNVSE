@@ -1,6 +1,7 @@
 #include "commands_animation.h"
 
 #include <algorithm>
+#include <ranges>
 #include <unordered_set>
 #include <filesystem>
 #include <span>
@@ -539,8 +540,12 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 		}
 		if (actor->avOwner.GetActorValueInt(kAVCode_LeftMobilityCondition) <= 0 || actor->avOwner.GetActorValueInt(kAVCode_RightMobilityCondition) <= 0 && IsAnimGroupMovement(groupId))
 		{
-			animCustomStack->clear();
-			animCustomStack->push_back(AnimCustom::Hurt);
+			auto* toReplaceAnim = *g_animationHookContext.toAnim;
+			if (toReplaceAnim && FindStringCI(toReplaceAnim->sequenceName, "\\hurt\\")) // there really is no state on an animation which indicates it's a crippled anim
+			{
+				animCustomStack->clear();
+				animCustomStack->push_back(AnimCustom::Hurt);
+			}
 		}
 		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
 		{
@@ -556,13 +561,11 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					animCustomStack->push_back(AnimCustom::Mod3);
 			}
 		}
-		for (auto animCustomIter = animCustomStack->rbegin(); animCustomIter != animCustomStack->rend(); ++animCustomIter)
+		for (auto& animCustomIter : ra::reverse_view(*animCustomStack))
 		{
-			auto& stack = animStacks.GetCustom(*animCustomIter);
-			for (auto iter = stack.rbegin(); iter != stack.rend(); ++iter)
+			auto& stack = animStacks.GetCustom(animCustomIter);
+			for (auto& ctx : ra::reverse_view(stack))
 			{
-				auto& ctx = *iter;
-
 				const auto initAnimTime = [&]()
 				{
 					auto& animTime = g_timeTrackedGroups[&ctx];
@@ -581,10 +584,6 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					NVSEArrayVarInterface::Element result;
 					if (!g_script->CallFunction(**ctx.conditionScript, actor, nullptr, &result, 0) || result.Number() == 0.0)
 						continue;
-					else
-					{
-						int i = 0;
-					}
 				}
 				if (!ctx.anims.empty())
 				{
@@ -687,11 +686,11 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstP
 			modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData);
 		return std::nullopt;
 	};
-	// weapon form ID
-	if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon && (result = getFormAnimation(weaponInfo->weapon)))
-		return result;
 	// actor ref ID
 	if ((result = getFormAnimation(actor)))
+		return result;
+	// weapon form ID
+	if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon && (result = getFormAnimation(weaponInfo->weapon)))
 		return result;
 	// base form ID
 	if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData))))
