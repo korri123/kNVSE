@@ -24,19 +24,12 @@ void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, 
 		Log("Loading animation path " + dirPath.string() + "...");
 		try
 		{
-			if constexpr (std::is_same<T, nullptr_t>::value) {
-				Log("First case ");
+			if constexpr (std::is_same<T, nullptr_t>::value)
 				OverrideFormAnimation(nullptr, relPath, firstPerson, true, variantIds);
-			}
 			else if constexpr (std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*> || std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>)
-			{
-				Log("Second case ");
 				OverrideFormAnimation(identifier, relPath, firstPerson, true, variantIds);
-			}
 			else if constexpr (std::is_same_v<T, UInt8>) {
-				Log("Third case " + relPath.string());
 				OverrideModIndexAnimation(identifier, relPath, firstPerson, true, variantIds, nullptr, false);
-			}
 			else
 				static_assert(false);
 		}
