@@ -28,7 +28,7 @@ void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, 
 				OverrideFormAnimation(nullptr, relPath, firstPerson, true, variantIds);
 			else if constexpr (std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*> || std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>)
 				OverrideFormAnimation(identifier, relPath, firstPerson, true, variantIds);
-			else if constexpr (std::is_same_v<T, UInt8>) {
+			else if constexpr (std::is_same_v<T, UInt8>)
 				OverrideModIndexAnimation(identifier, relPath, firstPerson, true, variantIds, nullptr, false);
 			else
 				static_assert(false);
