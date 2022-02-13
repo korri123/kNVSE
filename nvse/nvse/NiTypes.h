@@ -209,7 +209,7 @@ struct NiTSet
 // this is a NiTPointerMap <UInt32, T_Data>
 // todo: generalize key
 template <typename T_Data>
-class NiTPointerMap
+class NiTPointerMap // credits to Yvileapsis for the changes
 {
 public:
 	NiTPointerMap();
@@ -217,48 +217,69 @@ public:
 
 	struct Entry
 	{
-		Entry	* next;
+		Entry* next;
 		UInt32	key;
-		T_Data	* data;
+		T_Data* data;
 	};
+
+	virtual void	Destroy(bool doFree);
+	virtual UInt32	CalculateBucket(UInt32 key);
+	virtual bool	CompareKey(UInt32 lhs, UInt32 rhs);
+	virtual void	FillEntry(Entry* entry, UInt32 key, T_Data data);
+	virtual void	FreeKey(Entry* entry);
+	virtual Entry* AllocNewEntry();
+	virtual void	FreeEntry(Entry* entry);
+
+	T_Data* Lookup(UInt32 key);
+	bool			Insert(Entry* nuEntry);
+
+	//	void	** _vtbl;				// 0
+	UInt32			m_numBuckets;	// 4
+	Entry** m_buckets;		// 8
+	UInt32			m_numItems;		// C
 
 	// note: traverses in non-numerical order
 	class Iterator
 	{
 		friend NiTPointerMap;
 
+		NiTPointerMap* m_table;
+		Entry* m_entry;
+		Entry** m_bucket;
+
+		void FindValid();
+		void FindNonEmpty()
+		{
+			for (Entry** end = &m_table->m_buckets[m_table->m_numBuckets]; m_bucket != end; m_bucket++)
+				if (m_entry = *m_bucket) return;
+		}
+
 	public:
-		Iterator(NiTPointerMap * table, Entry * entry = NULL, UInt32 bucket = 0)
-			:m_table(table), m_entry(entry), m_bucket(bucket) { FindValid(); }
+		Iterator(NiTPointerMap& _table) : m_table(&_table), m_bucket(m_table->m_buckets), m_entry(NULL) { FindNonEmpty(); }
+
 		~Iterator() { }
 
-		T_Data *	Get(void);
+		T_Data* Get(void);
 		UInt32		GetKey(void);
 		bool		Next(void);
 		bool		Done(void);
 
-	private:
-		void		FindValid(void);
+		T_Data Get() const { return m_entry->data; }
+		//		T_Key Key() const { return m_entry->key; }
 
-		NiTPointerMap	* m_table;
-		Entry		* m_entry;
-		UInt32		m_bucket;
+		explicit operator bool() const { return m_entry != NULL; }
+		void operator++()
+		{
+			m_entry = m_entry->next;
+			if (!m_entry)
+			{
+				m_bucket++;
+				FindNonEmpty();
+			}
+		}
 	};
 
-	virtual UInt32	CalculateBucket(UInt32 key);
-	virtual bool	CompareKey(UInt32 lhs, UInt32 rhs);
-	virtual void	Fn_03(UInt32 arg0, UInt32 arg1, UInt32 arg2);	// assign to entry
-	virtual void	Fn_04(UInt32 arg);
-	virtual void	Fn_05(void);	// locked operations
-	virtual void	Fn_06(void);	// locked operations
-
-	T_Data *	Lookup(UInt32 key);
-	bool		Insert(Entry* nuEntry);
-
-//	void	** _vtbl;		// 0
-	UInt32	m_numBuckets;	// 4
-	Entry	** m_buckets;	// 8
-	UInt32	m_numItems;		// C
+	Iterator Begin() { return Iterator(*this); }
 };
 
 template <typename T_Data>
