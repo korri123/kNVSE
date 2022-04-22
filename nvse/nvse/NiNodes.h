@@ -432,6 +432,7 @@
  *
  ****/
 
+class NiControllerSequence;
 class NiTransformInterpolator;
 class NiAVObject;
 class BSFadeNode;
@@ -1351,6 +1352,27 @@ enum AnimGroupID : UInt8
 	kAnimGroup_Max						// = 0x0FFF,	// Temporary until known
 };
 
+class NiDefaultAVObjectPalette;
+// 7C
+class NiControllerManager : public NiTimeController
+{
+public:
+	virtual void	Unk_2D(void);
+
+	NiTArray<NiControllerSequence*>				sequences;		// 34
+	NiTSet<NiControllerSequence*> m_kActiveSequences;
+	UInt32										unk4C;			// 4C
+	NiTStringPointerMap<NiControllerSequence*>	seqStrMap;		// 50
+	NiTArray<void*>* arr64;			// 64
+	UInt32										unk68;			// 68
+	UInt32										unk6C;			// 6C
+	UInt32										unk70;			// 70
+	UInt32										unk74;			// 74
+	NiDefaultAVObjectPalette* defObjPlt;		// 78
+};
+STATIC_ASSERT(sizeof(NiControllerManager) == 0x7C);
+
+
 // 02C+
 class TESAnimGroup : NiRefObject
 {
@@ -1467,7 +1489,7 @@ public:
 };
 
 // 158
-class BSFile: NiFile
+class BSFile: public NiFile
 {
 public:
 	BSFile();

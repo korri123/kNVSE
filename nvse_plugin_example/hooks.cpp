@@ -21,7 +21,6 @@ AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
-float g_nextAnimOffset = 0;
 
 #if _DEBUG
 std::unordered_map<NiTransformInterpolator*, std::unordered_set<BSAnimGroupSequence*>> g_interpMap;
@@ -34,25 +33,19 @@ std::unordered_set<BSAnimGroupSequence*>* GetInterpSeq(NiTransformInterpolator* 
 }
 #endif
 
+bool g_doNotSwapAnims = false;
+
 bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer)
 {
 	auto* toReplace = toMorph ? *toMorph : nullptr;
 #if _DEBUG
 	auto& groupInfo = g_animGroupInfos[animGroupId & 0xFF];
 	auto* curSeq = animData->animSequence[groupInfo.sequenceType];
-	//animData->noBlend120 = true;
 #endif
 	g_animationHookContext = AnimationContext(basePointer);
 
 	if (animData && animData->actor)
 	{
-#if 0
-		if (*toMorph && animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
-			Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
-		auto* highProcess = (Decoding::HighProcess*) animData->actor->baseProcess;
-		auto* queuedIdleFlags = &highProcess->queuedIdleFlags;
-		auto* currAction = &highProcess->currentAction;
-#endif
 		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
 			g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
@@ -61,38 +54,12 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 			animGroupId = g_firstPersonAnimId;
 			g_firstPersonAnimId = -1;
 		}
-		if (const auto animResult = GetActorAnimation(animGroupId, firstPerson, animData))
+		std::optional<AnimationResult> animResult;
+		if (!g_doNotSwapAnims && (animResult = GetActorAnimation(animGroupId, firstPerson, animData)))
 		{
 			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
 			if (newAnim)
 				*toMorph = newAnim;
-#if _DEBUG
-			//if (animData->actor->GetFullName() /*&& animData->actor != (*g_thePlayer)*/)
-			//	Console_Print("%X %s %s", animGroupId, animData->actor->GetFullName()->name.CStr(), (*toMorph)->sequenceName);
-			if (newAnim)
-			{
-				std::span<NiControllerSequence::ControlledBlock> blocks{ newAnim->controlledBlocks, newAnim->numControlledBlocks };
-				int i = 0;
-				for (auto& block : blocks)
-				{
-					//++i;
-					//if (i < 5)
-					//	continue;
-					if (auto* blendInterp = block.blendInterpolator)
-					{
-						std::span interps{ blendInterp->m_pkInterpArray, blendInterp->m_ucArraySize };
-						for (auto& i : interps)
-						{
-							if (i.m_spInterpolator.data)
-								g_interpMap[i.m_spInterpolator.data].insert(newAnim);
-						}
-						//blendInterp->m_cHighPriority = 55;
-					}
-					//if (newAnim->animGroup->GetBaseGroupID() == kAnimGroup_AimIS)
-					//	block.priority = 55;
-				}
-			}
-#endif		
 		}
 		else if (toReplace)
 		{
@@ -109,11 +76,6 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 				}
 			}
 		}
-	}
-	if (g_nextAnimOffset && *toMorph)
-	{
-		(*toMorph)->SetStartOffset(g_nextAnimOffset);
-		g_nextAnimOffset = 0;
 	}
 	return true;
 }
@@ -282,6 +244,8 @@ HOOK BlendMultHook()
 	}
 }
 
+
+#if 0
 bool __fastcall ProlongedAimFix(UInt8* basePointer)
 {
 	const auto keyType = *reinterpret_cast<UInt32*>(basePointer - 0xC);
@@ -298,6 +262,8 @@ JMP_HOOK(0x8BB96A, ProlongedAimFix, 0x8BB974, {
 	_A cmp al, 1
 	_A jmp retnAddr
 	})
+
+#endif
 
 std::unordered_set<std::string> g_reloadStartBlendFixes;
 
@@ -326,7 +292,7 @@ bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
 	return newCondition();
 }
 
-HOOK NoAimInReloadLoop()
+__declspec(naked) void NoAimInReloadLoop()
 {
 	constexpr static auto jumpIfTrue = 0x492CB1;
 	constexpr static auto jumpIfFalse = 0x492BF8;
@@ -380,9 +346,13 @@ bool LookupAnimFromMap(NiTPointerMap<AnimSequenceBase>* animMap, UInt16 groupId,
 	return false;
 }
 
-UInt8* GetParentBasePtr(void* addressOfReturnAddress)
+UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
 {
 	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;
+#if _DEBUG
+	if (lambda) // in debug mode, lambdas are wrapped inside a closure wrapper function, so one more step needed
+		basePtr = *reinterpret_cast<UInt8**>(basePtr);
+#endif
 	return *reinterpret_cast<UInt8**>(basePtr);
 }
 
@@ -397,7 +367,7 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	// check kNVSE - since we don't have access to animData we'll do some stack abuse to get it
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
-
+	
 	if (!animData->actor)
 		return false;
 
@@ -406,29 +376,16 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	return false;
 }
 
-void __fastcall HandleOnReload(Decoding::MiddleHighProcess* process)
+void __fastcall HandleOnReload(Actor* actor)
 {
-	auto* animData = process->animData;
-	if (!animData || !animData->actor)
+	if (!actor)
 		return;
-	if (auto iter = g_reloadTracker.find(animData->actor->refID); iter != g_reloadTracker.end())
+	if (auto iter = g_reloadTracker.find(actor->refID); iter != g_reloadTracker.end())
 	{
 		auto& handler = iter->second;
 		ra::for_each(handler.subscribers, _L(auto& p, p.second = true));
 	}
-}
-
-__declspec(naked) void OnReloadHook()
-{
-	__asm
-	{
-		mov ecx, [ebp-0xC] // MiddleHighProcess*
-		call HandleOnReload
-		mov al, 1
-		mov esp, ebp
-		pop ebp
-		ret 4
-	}
+	//std::erase_if(g_burstFireQueue, _L(BurstFireData & b, b.actorId == g_thePlayer->refID));
 }
 
 void ApplyHooks()
@@ -455,7 +412,7 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelJump(0x4951D2, BlendMultHook);
 
-#if _DEBUG || IS_TRANSITION_FIX
+#if IS_TRANSITION_FIX
 	//if (ini.GetOrCreate("General", "bFixAimAfterShooting", 1, "; stops the player from being stuck in irons sight aim mode after shooting a weapon while aiming"))
 	{
 		//APPLY_JMP(ProlongedAimFix);
@@ -507,9 +464,38 @@ void ApplyHooks()
 		ThisStdCall(0x9231D0, g_thePlayer->GetHighProcess(), isEquip, g_thePlayer->bipedAnims1st, g_thePlayer->firstPersonAnimData, g_thePlayer);
 	}));
 #endif
-	WriteRelJump(0x91EA33, OnReloadHook);
+	// hooking TESForm::GetFlags
+	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
+	{
+		HandleOnReload(g_thePlayer);
+		return form->flags;
+	}));
 
-
+#if 0
+	WriteRelCall(0x8955BB, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* sequence)
+	{
+		return sequence->state != NiControllerSequence::kAnimState_Inactive && sequence->state != NiControllerSequence::kAnimState_EaseOut;
+	}));
 #endif
+#endif
+
+	// BSAnimGroupSequence* destructor
+	WriteRelCall(0x4EEB4B, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim)
+	{
+		HandleOnSequenceDestroy(anim);
+
+		// hooked call
+		ThisStdCall(0xA35640, anim);
+	}));
+
+	// AnimData destructor
+	WriteRelCall(0x48FB82, INLINE_HOOK(void, __fastcall, AnimData* animData)
+	{
+		HandleOnAnimDataDelete(animData);
+
+		// hooked call
+		ThisStdCall(0x48FF50, animData);
+	}));
+
 	ini.SaveFile(iniPath.c_str(), false);
 }

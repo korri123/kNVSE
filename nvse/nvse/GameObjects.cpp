@@ -3,6 +3,7 @@
 #include "GameExtraData.h"
 #include "GameTasks.h"
 #include "GameUI.h"
+#include "game_types.h"
 #include "SafeWrite.h"
 #include "NiObjects.h"
 
@@ -57,6 +58,11 @@ QuestObjectiveTargets* PlayerCharacter::GetCurrentQuestObjectiveTargets()
 Decoding::HighProcess* PlayerCharacter::GetHighProcess()
 {
 	return reinterpret_cast<Decoding::HighProcess*>(baseProcess);
+}
+
+AnimData* PlayerCharacter::Get3rdPersonAnimData()
+{
+	return GetHighProcess()->animData;
 }
 
 TESContainer* TESObjectREFR::GetContainer()

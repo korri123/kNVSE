@@ -28,6 +28,22 @@ namespace Decoding
 		UInt32			flags;			// 14	Flags, bit0 would be not created and initialized
 	};
 
+	struct QueuedEquipItem
+	{
+		TESForm* item;
+		BaseExtraList* extraData;
+		UInt32 count;
+		UInt8 isEquipNotUnequip;
+		UInt8 shouldApplyEnchantment;
+		UInt8 noUnequip;
+		UInt8 shouldPlayEquipSound;
+		UInt8 byte10;
+		UInt8 byte11;
+		UInt8 gap12[2];
+		NiRefObject* modelFile;
+	};
+
+
 	// B4
 	class LowProcess : public BaseProcess
 	{
@@ -221,8 +237,8 @@ namespace Decoding
 		BSBound* boundingBox;		// 224
 		bool								isAiming;			// 228
 		UInt8								pad229[3];			// 229
-		UInt32								unk22C[2];			// 22C
-		float								radsSec234;			// 234
+		int unk22C;			// 22C
+		tList<QueuedEquipItem> queuedEquipItems; // 230
 		float								rads238;			// 238
 		float								waterRadsSec;		// 23C
 		void* hitData240;		// 240

@@ -8,10 +8,11 @@
 #include "json.h"
 #include <fstream>
 #include <utility>
-
-
+#include <type_traits>
 
 template <typename T>
+requires std::is_same_v<T, nullptr_t> || std::is_same_v<T, UInt8> || std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*>
+|| std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>
 void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, bool firstPerson)
 {
 	std::unordered_set<UInt16> variantIds;
@@ -24,14 +25,12 @@ void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, 
 		Log("Loading animation path " + dirPath.string() + "...");
 		try
 		{
-			if constexpr (std::is_same<T, nullptr_t>::value)
+			if constexpr (std::is_same_v<T, nullptr_t>)
 				OverrideFormAnimation(nullptr, relPath, firstPerson, true, variantIds);
 			else if constexpr (std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*> || std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>)
 				OverrideFormAnimation(identifier, relPath, firstPerson, true, variantIds);
 			else if constexpr (std::is_same_v<T, UInt8>)
 				OverrideModIndexAnimation(identifier, relPath, firstPerson, true, variantIds, nullptr, false);
-			else
-				static_assert(false);
 		}
 		catch (std::exception& e)
 		{

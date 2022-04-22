@@ -1,2 +1,2 @@
-#define VERSION_MAJOR 18
-#define VERSION_MAJOR_STR "18"
+#define VERSION_MAJOR 21
+#define VERSION_MAJOR_STR "21"

@@ -140,3 +140,5 @@ __declspec(naked) void Hook_##name() \
 #define APPLY_JMP(name) WriteRelJump(kAddr_##name, Hook_##name)
 
 #define _A __asm
+
+#define INLINE_HOOK(retnType, callingConv, ...) static_cast<retnType(callingConv*)(__VA_ARGS__)>([](__VA_ARGS__) [[msvc::forceinline]] -> retnType

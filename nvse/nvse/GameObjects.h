@@ -723,6 +723,7 @@ public:
 	static void UpdateHead(void);
 	QuestObjectiveTargets* GetCurrentQuestObjectiveTargets();
 	Decoding::HighProcess* GetHighProcess();
+	AnimData* Get3rdPersonAnimData();
 };
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);
 

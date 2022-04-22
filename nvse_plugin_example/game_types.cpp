@@ -44,7 +44,7 @@ void Actor::FireWeapon()
 
 void Actor::EjectFromWeapon(TESObjectWEAP* weapon)
 {
-	if (weapon && GameFuncs::IsDoingAttackAnimation(this) && !weapon->IsMeleeWeapon() && !weapon->IsAutomatic())
+	if (weapon && !weapon->IsMeleeWeapon())
 	{
 		// eject
 		baseProcess->SetQueuedIdleFlag(kIdleFlag_AttackEjectEaseInFollowThrough);

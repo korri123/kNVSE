@@ -1,5 +1,6 @@
 #pragma once
 
+#include "class_vtbls.h"
 #include "NiNodes.h"
 #include "GameForms.h"
 #include "GameTasks.h"

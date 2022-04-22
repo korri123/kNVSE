@@ -228,7 +228,7 @@ public:
 		friend NiTPointerMap;
 
 	public:
-		Iterator(NiTPointerMap * table, Entry * entry = NULL, UInt32 bucket = 0)
+		Iterator(NiTPointerMap<T_Data>* table, Entry * entry = NULL, UInt32 bucket = 0)
 			:m_table(table), m_entry(entry), m_bucket(bucket) { FindValid(); }
 		~Iterator() { }
 
@@ -237,10 +237,26 @@ public:
 		bool		Next(void);
 		bool		Done(void);
 
+		Iterator operator++()
+		{
+			Next();
+			return *this;
+		}
+
+		Entry* operator*() const
+		{
+			return m_entry;
+		}
+
+		bool operator!=(const Iterator& other)
+		{
+			return m_entry != other.m_entry;
+		}
+
 	private:
 		void		FindValid(void);
 
-		NiTPointerMap	* m_table;
+		NiTPointerMap<T_Data>* m_table;
 		Entry		* m_entry;
 		UInt32		m_bucket;
 	};
@@ -255,6 +271,27 @@ public:
 	T_Data *	Lookup(UInt32 key);
 	bool		Insert(Entry* nuEntry);
 
+	void Replace(UInt32 key, T_Data* data)
+	{
+		for (Entry* traverse = m_buckets[key % m_numBuckets]; traverse; traverse = traverse->next)
+			if (traverse->key == key)
+			{
+				traverse->data = data;
+				break;
+			}
+	}
+
+	[[nodiscard]] Iterator begin()
+	{
+		return Iterator(this);
+	}
+
+	[[nodiscard]] Iterator end()
+	{
+		return Iterator(this, static_cast<Entry*>(nullptr), m_numBuckets + 1);
+	}
+
+
 //	void	** _vtbl;		// 0
 	UInt32	m_numBuckets;	// 4
 	Entry	** m_buckets;	// 8
@@ -262,7 +299,7 @@ public:
 };
 
 template <typename T_Data>
-T_Data * NiTPointerMap <T_Data>::Lookup(UInt32 key)
+T_Data* NiTPointerMap <T_Data>::Lookup(UInt32 key)
 {
 	for(Entry * traverse = m_buckets[key % m_numBuckets]; traverse; traverse = traverse->next)
 		if(traverse->key == key)

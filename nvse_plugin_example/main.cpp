@@ -29,6 +29,7 @@ IDebugLog		gLog("kNVSE.log");
 PluginHandle	g_pluginHandle = kPluginHandle_Invalid;
 
 NVSEMessagingInterface* g_messagingInterface;
+NVSEEventManagerInterface* g_eventManagerInterface;
 NVSEInterface* g_nvseInterface;
 NVSECommandTableInterface* g_cmdTable;
 const CommandInfo* g_TFC;
@@ -57,6 +58,29 @@ float GetAnimTime(const AnimData* animData, const BSAnimGroupSequence* anim)
 bool g_fixHolster = false;
 BSAnimGroupSequence* g_fixHolsterUnequipAnim3rd = nullptr;
 
+static std::unordered_map<std::string, std::pair<float*, int>> s_anim3rdKeys;
+
+void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim)
+{
+	if (!animTime.anim3rdCounterpart)
+		return;
+	if (const auto iter3rd = s_anim3rdKeys.find(animTime.anim3rdCounterpart->sequenceName); iter3rd != s_anim3rdKeys.end())
+	{
+		auto [keys, numKeys] = iter3rd->second;
+		if (animTime.anim3rdCounterpart)
+		{
+			animTime.anim3rdCounterpart->animGroup->numKeys = numKeys;
+			animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
+		}
+	}
+	if ((anim->animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
+	{
+		g_fixHolster = true;
+		g_fixHolsterUnequipAnim3rd = animTime.anim3rdCounterpart;
+	}
+	animTime.povState = POVSwitchState::POV3rd;
+}
+
 void HandleAnimTimes()
 {
 	constexpr auto shouldErase = [](Actor* actor)
@@ -69,159 +93,133 @@ void HandleAnimTimes()
 		{
 			iter = g_timeTrackedAnims.erase(iter);
 		};
-		auto& [anim, animTime] = *iter;
-		//auto& time = animTime.time;
 
+		auto& animTime = iter->second;
+		auto* anim = animTime.anim;
+		if (!anim)
+		{
+			erase();
+			continue;
+		}
+		auto* groupInfo = GetGroupInfo(anim->animGroup->groupID);
+#if _DEBUG
+		auto animTimeDupl = TempObject(animTime); // see vals in debugger after erase
+#endif
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
-
-		if (shouldErase(actor))
+		if (!actor)
 		{
 			erase();
 			continue;
 		}
 		auto* animData = animTime.GetAnimData(actor);
-		if (!animData)
+		
+		if (shouldErase(actor) || !animData
+			// respectEndKey has a special case for calling erase()
+			|| !animTime.respectEndKey && (anim->state == NiControllerSequence::kAnimState_Inactive || animData->animSequence[groupInfo->sequenceType] != anim))
 		{
 			erase();
 			continue;
 		}
 
 		const auto time = GetAnimTime(animData, anim);
-		
-		// allow code below to clean up
-		bool deferredErase = false;
-
-		if (anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || anim->state == NiControllerSequence::kAnimState_Inactive)
+	
+		if (animTime.respectEndKey)
 		{
-			deferredErase = true;
-		}
-		else
-			animTime.lastNiTime = anim->lastScaledTime;
-		
-		if (animTime.respectEndKey && !animTime.finishedEndKey)
-		{
-			static std::unordered_map<std::string, std::pair<float*, int>> s_anim3rdKeys;
 			const auto revert3rdPersonAnimTimes = [&]()
 			{
-				if (!animTime.anim3rdCounterpart)
-					return;
-				if (const auto iter3rd = s_anim3rdKeys.find(animTime.anim3rdCounterpart->sequenceName); iter3rd != s_anim3rdKeys.end())
-				{
-					auto [keys, numKeys] = iter3rd->second;
-					if (animTime.anim3rdCounterpart)
-					{
-						animTime.anim3rdCounterpart->animGroup->numKeys = numKeys;
-						animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
-					}
-				}
-				if ((anim->animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
-				{
-					g_fixHolster = true;
-					g_fixHolsterUnequipAnim3rd = animTime.anim3rdCounterpart;
-				}
-				animTime.povState = POVSwitchState::POV3rd;
+				Revert3rdPersonAnimTimes(animTime, anim);
 			};
-			if (time >= anim->endKeyTime || actor->GetWeaponForm() != animTime.actorWeapon || deferredErase)
+			if (actor->GetWeaponForm() != animTime.actorWeapon 
+				|| animTime.anim3rdCounterpart && animTime.anim3rdPlaying && g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType] != animTime.anim3rdCounterpart)
 			{
-				revert3rdPersonAnimTimes();
-				animTime.finishedEndKey = true;
+				//if (!g_thePlayer->IsThirdPerson())
+				//	GameFuncs::DeactivateSequence(nullptr, animTime.anim3rdCounterpart, 0);
+				erase();
+				continue;
 			}
-			else
+			if (animTime.povState == POVSwitchState::NotSet)
 			{
-				if (animTime.povState == POVSwitchState::NotSet)
+				const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
+				auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
+				animTime.anim3rdPlaying = anim3rd != nullptr;
+				if (!anim3rd || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
 				{
-					const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
-					auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
-					if (!anim3rd || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
-						anim3rd = anim->Get3rdPersonCounterpart();
-					if (!anim3rd)
-					{
-						erase();
-						continue;
-					}
-					animTime.anim3rdCounterpart = anim3rd;
-					s_anim3rdKeys.emplace(anim3rd->sequenceName, std::make_pair(anim3rd->animGroup->keyTimes, anim3rd->animGroup->numKeys));
+					anim3rd = anim->Get3rdPersonCounterpart();
+					animTime.anim3rdPlaying = false;
 				}
-				if (!animTime.anim3rdCounterpart)
+				if (!anim3rd)
 				{
 					erase();
 					continue;
 				}
-				if (g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV3rd)
-				{
-					revert3rdPersonAnimTimes();
-				}
-				else if (!g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV1st)
-				{
-					animTime.anim3rdCounterpart->animGroup->numKeys = anim->animGroup->numKeys;
-					animTime.anim3rdCounterpart->animGroup->keyTimes = anim->animGroup->keyTimes;
-					animTime.povState = POVSwitchState::POV1st;
-				}
+				animTime.anim3rdCounterpart = anim3rd;
+				s_anim3rdKeys.emplace(anim3rd->sequenceName, std::make_pair(anim3rd->animGroup->keyTimes, anim3rd->animGroup->numKeys));
+			}
+			if (!animTime.anim3rdCounterpart)
+			{
+				erase();
+				continue;
+			}
+			if (g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV3rd)
+			{
+				revert3rdPersonAnimTimes();
+			}
+			else if (!g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV1st)
+			{
+				animTime.anim3rdCounterpart->animGroup->numKeys = anim->animGroup->numKeys;
+				animTime.anim3rdCounterpart->animGroup->keyTimes = anim->animGroup->keyTimes;
+				animTime.povState = POVSwitchState::POV1st;
 			}
 		}
 		if (animTime.callbacks.Exists())
 		{
-			auto cTime = time;
-#if _DEBUG
-			if (deferredErase)
-				cTime = FLT_MAX;
-#endif
-			animTime.callbacks.Update(cTime, animData, [](const std::function<void()>& callback)
+			animTime.callbacks.Update(time, animData, [](const std::function<void()>& callback)
 			{
 				callback();
 			});
 		}
-		if (!deferredErase)
+		if (animTime.scriptCalls.Exists())
 		{
-			if (animTime.scriptCalls.Exists())
-			{
-				animTime.scriptCalls.Update(time, animData, _L(Script* script, g_script->CallFunction(script, actor, nullptr, nullptr, 0)));
-			}
-			if (animTime.soundPaths.Exists())
-			{
-				animTime.soundPaths.Update(time, animData, [&](Sound& sound)
-				{
-					if (!IsPlayersOtherAnimData(animData))
-					{
-						sound.Set3D(actor);
-						sound.Play();
-					}
-				});
-			}
-			if (animTime.scriptLines.Exists())
-			{
-				animTime.scriptLines.Update(time, animData, _L(Script* script, ThisStdCall(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, false)));
-			}
+			animTime.scriptCalls.Update(time, animData, _L(Script* script, g_script->CallFunction(script, actor, nullptr, nullptr, 0)));
 		}
-		else
+		if (animTime.soundPaths.Exists())
 		{
-			erase();
-			continue;
+			animTime.soundPaths.Update(time, animData, [&](Sound& sound)
+			{
+				if (!IsPlayersOtherAnimData(animData))
+				{
+					sound.Set3D(actor);
+					sound.Play();
+				}
+			});
+		}
+		if (animTime.scriptLines.Exists())
+		{
+			animTime.scriptLines.Update(time, animData, _L(Script* script, ThisStdCall(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, false)));
 		}
 		++iter;
 	}
 	for (auto iter = g_timeTrackedGroups.begin(); iter != g_timeTrackedGroups.end();)
 	{
-		const auto erase = [&]() {iter = g_timeTrackedGroups.erase(iter); };
-		auto& [savedAnim, animTime] = *iter;
-		auto& [groupId, realGroupId, anim, actorId, lastNiTime, firstPerson] = animTime;
+		const auto erase = [&]()
+		{
+			iter = g_timeTrackedGroups.erase(iter);
+		};
+		auto& [seqType, animTime] = *iter;
+		auto& [savedAnim, groupId, realGroupId, anim, actorId, lastNiTime, firstPerson] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
-
-		if (shouldErase(actor) || anim && anim->lastScaledTime - animTime.lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP || 
-			anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP)
+		if (!actor)
 		{
 			erase();
 			continue;
 		}
 		auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
-		if (!animData)
+		if (shouldErase(actor) || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !savedAnim || !animData)
 		{
 			erase();
 			continue;
 		}
 
-		if (anim)
-			lastNiTime = anim->weightedLastTime;
 		auto* animInfo = GetGroupInfo(groupId);
 		auto* curAnim = animData->animSequence[animInfo->sequenceType];
 		if (!curAnim)
@@ -554,21 +552,6 @@ void HandleProlongedAim()
 	highProcess->SetCurrentActionAndSequence(destId, GetGameAnimation(animData3rd, destId));
 }
 
-void HandleEmptyAttack()
-{
-	auto* ammoInfo = g_thePlayer->baseProcess->GetAmmoInfo();
-	if (!ammoInfo)
-		return;
-	if (ammoInfo->count != 0)
-		return;
-	auto* animData = g_thePlayer->GetAnimData();
-	auto* currentWeaponAnim = animData->animSequence[kSequence_Weapon];
-	if (!currentWeaponAnim || !currentWeaponAnim->animGroup->IsAim())
-		return;
-	bool firstPerson = animData == g_thePlayer->firstPersonAnimData;
-	const auto groupID = (currentWeaponAnim->animGroup->groupID & 0xFF00) + kAnimGroup_Aim;
-}
-
 void HandleExecutionQueue()
 {
 	while (!g_executionQueue.empty())
@@ -669,30 +652,32 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleAnimTimes();
 			HandleExecutionQueue();
 			HandleMisc();
+			// HandleGarbageCollection(); this causes FileIO on each knvse anim play, no perf impact noticed on SSD
 #if _DEBUG
 			HandleDebug();
 #endif
-#if _DEBUG || IS_TRANSITION_FIX
+#if IS_TRANSITION_FIX
 			HandleProlongedAim();
-
 #endif
-			//auto* niBlock = GetNifBlock(g_thePlayer, 2, "Bip01 L Thumb12");
-			//static auto lastZ = niBlock->m_localTranslate.z;
-			//if (lastZ != niBlock->m_localTranslate.z)
-				//Console_Print("%g", niBlock->m_localTranslate.z);
 		}
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
 	{
-		for (auto* ctx : g_clearSounds)
-		{
-			ctx->soundPaths->items.clear();
-		}
-		g_clearSounds.clear();
+		HandleGarbageCollection();
 		g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 		g_reloadTracker.clear();
+		g_timeTrackedAnims.clear();
+		g_timeTrackedGroups.clear();
 	}
+}
 
+void OnActorEquipEventHandler(TESObjectREFR* ref, void* args)
+{
+	// On weapon switch it's the best time to remove all unused anims
+	TESForm** refArgs = static_cast<TESForm**>(args);
+	if (!IS_TYPE(refArgs[1], TESObjectWEAP))
+		return;
+	HandleGarbageCollection();
 }
 
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
@@ -703,11 +688,12 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "kNVSE";
 	info->version = VERSION_MAJOR;
+	Log("kNVSE version " + std::to_string(VERSION_MAJOR));
 
 	// version checks
 	if (!nvse->isEditor && nvse->nvseVersion < PACKED_NVSE_VERSION)
 	{
-		const auto str = FormatString("kNVSE: NVSE version too old (got %X expected at least %X). Plugin will NOT load! Install the latest version here: https://github.com/xNVSE/NVSE/releases/", nvse->nvseVersion, PACKED_NVSE_VERSION);
+		const auto str = FormatString("kNVSE: xNVSE version too old (got %X expected at least %X). Plugin will NOT load! Install the latest version here: https://github.com/xNVSE/NVSE/releases/", nvse->nvseVersion, PACKED_NVSE_VERSION);
 #if !_DEBUG
 		ShowErrorMessageBox(str.c_str());
 #endif
@@ -752,6 +738,8 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_messagingInterface = (NVSEMessagingInterface*)nvse->QueryInterface(kInterface_Messaging);
 	g_messagingInterface->RegisterListener(g_pluginHandle, "NVSE", MessageHandler);
 	g_script = (NVSEScriptInterface*)nvse->QueryInterface(kInterface_Script);
+	g_eventManagerInterface = (NVSEEventManagerInterface*)nvse->QueryInterface(kInterface_EventManager);
+	g_eventManagerInterface->SetNativeEventHandler("OnActorEquip", OnActorEquipEventHandler);
 
 	nvse->SetOpcodeBase(0x3920);
 	
@@ -763,6 +751,9 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	RegisterScriptCommand(kNVSEReset);
 	RegisterScriptCommand(PlayGroupAlt);
 	RegisterScriptCommand(CreateIdleAnimForm);
+	RegisterScriptCommand(EjectWeapon);
+	RegisterScriptCommand(SetAnimationTraitNumeric);
+	RegisterScriptCommand(GetAnimationTraitNumeric);
 #if _DEBUG
 	RegisterScriptCommand(kNVSETest);
 	if (false)

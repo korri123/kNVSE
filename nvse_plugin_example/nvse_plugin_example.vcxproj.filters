@@ -154,6 +154,7 @@
     <ClInclude Include="knvse_version.h" />
     <ClInclude Include="LambdaVariableContext.h" />
     <ClInclude Include="nihooks.h" />
+    <ClInclude Include="class_vtbls.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

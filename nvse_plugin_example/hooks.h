@@ -3,7 +3,6 @@
 
 #include "commands_animation.h"
 
-extern float g_nextAnimOffset;
 struct AnimData;
 class BSAnimGroupSequence;
 enum AnimGroupID : UInt8;
@@ -38,3 +37,4 @@ extern AnimationContext g_animationHookContext;
 extern bool g_startedAnimation;
 extern BSAnimGroupSequence* g_lastLoopSequence;
 void ApplyHooks();
+extern bool g_doNotSwapAnims;
