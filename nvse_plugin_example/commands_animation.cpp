@@ -183,17 +183,6 @@ struct RefCountHack
 
 std::map<std::pair<std::string, AnimData*>, BSAnimationContext> g_cachedAnimMap;
 
-void DeleteAnimSequence(AnimSequenceBase* base, BSAnimGroupSequence* anim, AnimData* animData)
-{
-	// GameFuncs::NiControllerManager_RemoveSequence(animData->controllerManager, anim); // DONE IN ANIMDATA CONSTRUCTOR
-	base->Destroy(true);
-}
-
-void DeleteAnimSequence(const BSAnimationContext& ctx, AnimData* animData)
-{
-	DeleteAnimSequence(ctx.base, ctx.anim, animData);
-}
-
 void HandleOnSequenceDestroy(BSAnimGroupSequence* anim)
 {
 	g_timeTrackedAnims.erase(anim);
@@ -243,12 +232,10 @@ void HandleOnAnimDataDelete(AnimData* animData)
 	while (true)
 	{
 		// delete all animations when anim data destructor runs
-		auto iter = ra::find_if(g_cachedAnimMap, _L(auto & p, p.first.second == animData));
+		auto iter = ra::find_if(g_cachedAnimMap, _L(auto& p, p.first.second == animData));
 		if (iter == g_cachedAnimMap.end())
 			break;
 		iter->second.base->Destroy(true);
-		DeleteAnimSequence(iter->second, animData);
-
 		// refcount will be 1 and sequence not destroyed but still better to end any time tracked anims
 		HandleOnSequenceDestroy(iter->second.anim);
 
