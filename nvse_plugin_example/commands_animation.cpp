@@ -204,10 +204,11 @@ void HandleGarbageCollection()
 			auto* anim = base->GetSequenceByIndex(-1);
 			if (!anim) 
 				continue;
+
 			if (anim->state == NiControllerSequence::kAnimState_Inactive)
 			{
 				GameFuncs::NiControllerManager_RemoveSequence(animData->controllerManager, anim);
-				// HandleOnSequenceDestroy(anim); This is called automatically in destructor
+				HandleOnSequenceDestroy(anim); // This should be called automatically in destructor
 				base->Destroy(true);
 				keysToRemove.push_back(entry->key);
 			}
@@ -237,9 +238,9 @@ void HandleOnAnimDataDelete(AnimData* animData)
 			break;
 		iter->second.base->Destroy(true);
 		// refcount will be 1 and sequence not destroyed but still better to end any time tracked anims
-		HandleOnSequenceDestroy(iter->second.anim);
 
-		g_cachedAnimMap.erase(iter);
+		HandleOnSequenceDestroy(iter->second.anim);
+		// g_cachedAnimMap.erase is called from HandleOnSequenceDestroy
 	}
 	if (auto iter = g_customMaps.find(animData); iter != g_customMaps.end())
 	{

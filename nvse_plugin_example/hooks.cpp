@@ -21,26 +21,47 @@ AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
-
-#if _DEBUG
-std::unordered_map<NiTransformInterpolator*, std::unordered_set<BSAnimGroupSequence*>> g_interpMap;
-std::unordered_set<BSAnimGroupSequence*>* GetInterpSeq(NiTransformInterpolator* i)
-{
-	auto pair = g_interpMap.find(i);
-	if (pair == g_interpMap.end())
-		return nullptr;
-	return &pair->second;
-}
-#endif
-
 bool g_doNotSwapAnims = false;
 
-bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer)
+
+UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
 {
-	auto* toReplace = toMorph ? *toMorph : nullptr;
+	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;
+#if _DEBUG
+	if (lambda) // in debug mode, lambdas are wrapped inside a closure wrapper function, so one more step needed
+		basePtr = *reinterpret_cast<UInt8**>(basePtr);
+#endif
+	return *reinterpret_cast<UInt8**>(basePtr);
+}
+
+// UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
+bool __fastcall HandleAnimationChange(AnimData* animData, void* _edx, BSAnimGroupSequence* toReplace)
+{
+	auto* basePointer = GetParentBasePtr(_AddressOfReturnAddress());
+	auto** toMorph = reinterpret_cast<BSAnimGroupSequence**>(basePointer + 0x8);
+	auto animGroupId = *reinterpret_cast<UInt32*>(basePointer + 0xC);
+	// auto* toReplace = toMorph ? *toMorph : nullptr;
 #if _DEBUG
 	auto& groupInfo = g_animGroupInfos[animGroupId & 0xFF];
 	auto* curSeq = animData->animSequence[groupInfo.sequenceType];
+	if (animData->actor->baseForm->refID == 0xE5958)
+	{
+		if (groupInfo.sequenceType != eAnimSequence::kSequence_WeaponUp && groupInfo.sequenceType != kSequence_WeaponDown)
+		{
+			static std::string lastFromName;
+			static std::string lastToName;
+			std::string fromStr = curSeq ? curSeq->sequenceName: "\\None";
+			std::string toStr = toReplace ? toReplace->sequenceName : "\\None";
+			auto fromName = fromStr.substr(fromStr.find_last_of('\\'));
+			auto toName = toStr.substr(toStr.find_last_of('\\'));
+			
+			if (fromName != lastFromName && toName != lastToName)
+			//if (curSeq && curSeq->animGroup->GetBaseGroupID() == kAnimGroup_FastForward || toReplace && toReplace->animGroup->GetBaseGroupID() == kAnimGroup_Idle)
+				Console_Print("%s %s -> %s", animData->actor->GetFullName()->name.CStr(), fromName.c_str(), toName.c_str());
+			lastFromName = fromName;
+			lastToName = toName;
+		}
+	}
 #endif
 	g_animationHookContext = AnimationContext(basePointer);
 
@@ -77,9 +98,11 @@ bool __fastcall HandleAnimationChange(AnimData* animData, UInt32 animGroupId, BS
 			}
 		}
 	}
-	return true;
+	// hooked call
+	return ThisStdCall(0x498EA0, animData, toReplace);
 }
 
+#if 0
 __declspec(naked) void AnimationHook()
 {
 	static auto fn_AnimDataContainsAnimSequence = 0x498EA0;
@@ -107,6 +130,7 @@ __declspec(naked) void AnimationHook()
 		ret 0xC
 	}
 }
+#endif
 
 void DecreaseAttackTimer()
 {
@@ -346,18 +370,6 @@ bool LookupAnimFromMap(NiTPointerMap<AnimSequenceBase>* animMap, UInt16 groupId,
 	return false;
 }
 
-UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
-{
-	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;
-#if _DEBUG
-	if (lambda) // in debug mode, lambdas are wrapped inside a closure wrapper function, so one more step needed
-		basePtr = *reinterpret_cast<UInt8**>(basePtr);
-#endif
-	return *reinterpret_cast<UInt8**>(basePtr);
-}
-
-
-
 // attempt to fix anims that don't get loaded since they aren't in the game to begin with
 template <int AnimDataOffset>
 bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void* _EDX, UInt16 groupId, AnimSequenceBase** base)
@@ -396,7 +408,9 @@ void ApplyHooks()
 	const auto errVal = ini.LoadFile(iniPath.c_str());
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
 
-	WriteRelJump(0x4949D0, AnimationHook);
+	//WriteRelJump(0x4949D0, AnimationHook);
+	WriteRelCall(0x4949D0, HandleAnimationChange);
+
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
 
@@ -453,30 +467,6 @@ void ApplyHooks()
 	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
 	/* experimental end */
 
-#if 0
-	WriteVirtualCall(0x8961C9, static_cast<void(__fastcall*)(BaseProcess*, void*, bool, void*, AnimData*, Actor*)>([](BaseProcess*, void*, bool isEquip, void* bip, AnimData* animData, Actor*)
-	{
-		if (animData != g_thePlayer->firstPersonAnimData || isEquip)
-		{
-			ThisStdCall(0x9231D0, g_thePlayer->GetHighProcess(), isEquip, bip, animData, g_thePlayer);
-			return;
-		}
-		ThisStdCall(0x9231D0, g_thePlayer->GetHighProcess(), isEquip, g_thePlayer->bipedAnims1st, g_thePlayer->firstPersonAnimData, g_thePlayer);
-	}));
-#endif
-	// hooking TESForm::GetFlags
-	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
-	{
-		HandleOnReload(g_thePlayer);
-		return form->flags;
-	}));
-
-#if 0
-	WriteRelCall(0x8955BB, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* sequence)
-	{
-		return sequence->state != NiControllerSequence::kAnimState_Inactive && sequence->state != NiControllerSequence::kAnimState_EaseOut;
-	}));
-#endif
 #endif
 
 	// BSAnimGroupSequence* destructor
@@ -495,6 +485,35 @@ void ApplyHooks()
 
 		// hooked call
 		ThisStdCall(0x48FF50, animData);
+	}));
+
+	// hooking TESForm::GetFlags
+	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
+	{
+		HandleOnReload(g_thePlayer);
+		return form->flags;
+	}));
+
+	// DEBUG npcs sprint
+	WriteRelJump(0x9DE060, INLINE_HOOK(void, __fastcall, ActorMover * mover, void* _edx, UInt32 flags)
+	{
+		if (mover->actor != g_thePlayer)
+		{
+			static auto beforeFlag = 0;
+			auto* before = MoveFlagToString(beforeFlag);
+			auto* after = MoveFlagToString(flags);
+			beforeFlag = flags;
+			//Console_Print("%s %s -> %s", mover->actor->GetFullName()->name.CStr(), before, after);
+		}
+		auto* playerMover = static_cast<PlayerMover*>(g_thePlayer->actorMover);
+		if (playerMover->pcMovementFlags & 0xF)
+		{
+			mover->moveFlagStrafe38 = 0;
+			mover->bStrafeMoveFlags71 = false;
+			return;
+		}
+		mover->bStrafeMoveFlags71 = true;
+		mover->moveFlagStrafe38 = flags;
 	}));
 
 	ini.SaveFile(iniPath.c_str(), false);

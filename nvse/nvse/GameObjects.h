@@ -236,7 +236,7 @@ public:
 	virtual void		Unk_BF(void);
 	virtual void		Unk_C0(void);
 	
-	BaseProcess	* baseProcess;	// 068
+	Decoding::HighProcess* baseProcess;	// 068
 	UInt32		unk06C;			// 06C - loaded	set to the talking actor ref when initialising ExtraTalkingActor
 	UInt32		unk070;			// 070 - loaded
 	UInt32		unk074;			// 074 - loaded
@@ -332,12 +332,134 @@ class PlayerMover;
 class ImageSpaceModifierInstanceDOF;
 class ImageSpaceModifierInstanceDRB;
 
+struct PathingLocation
+{
+	virtual ~PathingLocation();
+	NiPoint3 location;
+	UInt32 unk010;
+	UInt32 navMeshInfo;
+	UInt32 unk018;
+	TESWorldSpace* worldspace;
+	UInt32 unk020;
+	UInt16 unk024;
+	UInt8 flags026;
+	UInt8 gap027;
+};
+
+struct PathingRequest
+{
+	struct ExteriorCoordinates
+	{
+		UInt32 unk00[3];
+	};
+
+	virtual ~PathingRequest();
+	UInt32 unk004;
+	UInt32 unk008;
+	PathingLocation start;
+	PathingLocation dest;
+	ExteriorCoordinates extCoords05C;
+	float fGoalRadius;
+	float unk06C;
+	float fZDelta;
+	float unk074;
+	float unk078;
+	NiPoint3 targetPt;
+	float unk088;
+	float unk08C;
+	float unk090;
+	UInt32 ptr094;
+	UInt8 byte098;
+	UInt8 byte099;
+	UInt8 byte09A;
+	UInt8 byte09B;
+	UInt8 byte09C;
+	UInt8 byte09D;
+	UInt8 byte09E;
+	UInt8 byte09F;
+	UInt8 byte0A0;
+	UInt8 byte0A1;
+	UInt8 byte0A2;
+	UInt8 byte0A3;
+	UInt8 byte0A4;
+	UInt8 gap0A5[3];
+	UInt32 traversalFlags;
+	UInt8 byte0AC;
+	UInt8 gap0AD[3];
+};
+
+struct ActorPathHandler
+{
+	virtual ~ActorPathHandler();
+	UInt32 actor;
+	UInt32 actorMover;
+	UInt32 pathingSolution;
+	UInt32 pathingRequest;
+};
+
+struct DetailedActorPathHandler : ActorPathHandler
+{
+	UInt32 unk14;
+	UInt32 unk18;
+	UInt32 niPoint1C;
+	UInt32 unk20;
+	UInt32 unk24;
+	UInt32 unk28;
+	UInt32 unk2C;
+	UInt32 unk30;
+	UInt32 unk34;
+	UInt32 unk38;
+	UInt32 unk3C;
+	UInt32 unk40;
+	UInt32 unk44;
+	UInt32 unk48;
+	UInt32 unk4C;
+	UInt32 unk50;
+	UInt32 unk54;
+	UInt32 unk58;
+	UInt32 unk5C;
+	UInt32 moveFlags60;
+	UInt32 unk64;
+	UInt32 unk68;
+	UInt32 unk6C;
+	UInt32 unk70;
+	UInt32 unk74;
+	UInt32 unk78;
+	UInt32 unk7C;
+	UInt32 unk80;
+	UInt32 unk84;
+	UInt32 unk88;
+	UInt32 unk8C;
+	UInt32 unk90;
+	UInt32 unk94;
+	UInt32 unk98;
+	float flt9C;
+	UInt32 unkA0;
+	UInt32 unkA4;
+	UInt32 unkA8;
+	UInt32 unkAC;
+	UInt32 unkB0;
+	UInt32 unkB4;
+	UInt32 unkB8;
+	UInt32 unkBC;
+	UInt32 unkC0;
+	UInt32 unkC4;
+	UInt32 unkC8;
+	UInt32 unkCC;
+	UInt32 unkD0;
+	UInt32 unkD4;
+	UInt32 unkD8;
+	UInt32 unkDC;
+	UInt32 unkE0;
+};
+
+
 class ActorMover	// I need to call Func008
 {
 public:
-	virtual void		Unk_00(void);
-	virtual void		Unk_01(void);
-	virtual void		Unk_02(void);
+	virtual void		Destroy(void);
+	virtual void		SetMovementFlag(UInt32 flags);
+	virtual void		ClearMovementFlag(void);
 	virtual void		Unk_03(void);
 	virtual void		Unk_04(void);
 	virtual void		Unk_05(void);
@@ -349,7 +471,47 @@ public:
 		// bit 8 = run
 		// bit 7 = walk
 		// bit 0 = keep moving (Q)
+
+	UInt32 unk04;
+	UInt32 unk08;
+	UInt32 unk0C;
+	NiPoint3 overrideMovement;
+	PathingRequest* pathingRequest;
+	void* pathingSolution;
+	DetailedActorPathHandler* pathHandler;
+	Actor* actor;
+	UInt32 unk2C;
+	void* pathingMsgQueue;
+	UInt32 phMovementFlags1;
+	UInt32 moveFlagStrafe38;
+	UInt32 movementFlags2;
+	UInt32 unk40;
+	PathingLocation pathingLocation;
+	UInt32 unk6C;
+	UInt8 byte70;
+	UInt8 bStrafeMoveFlags71;
+	UInt8 bResetMoveFlag72;
+	UInt8 gap73;
+	UInt8 byte74;
+	UInt8 byte75;
+	UInt8 byte76;
+	UInt8 isOverrideMovement;
+	UInt32 bHasResetMoveFlag78;
+	UInt32 unk7C;
+	UInt32 unk80;
+	UInt32 count84;
+
 };
+
+class PlayerMover : public ActorMover
+{
+public:
+	NiPoint3 pt88;
+	UInt32 pcMovementFlags;
+	UInt32 isTurnLeftOrRight;
+	float fTurnAnimTime;
+};
+
 
 typedef std::vector<TESForm*> EquippedItemsList;
 
@@ -494,7 +656,7 @@ public:
 	UInt8								pad105[3];						// 105
 	UInt32								lifeState;						// 108 saved as byte HasHealth = 1 or 2, optionally 6
 	UInt32 unk10C;
-	UInt32 animGroupId110;
+	UInt32 nextAttackAnimGroupId110;
 	UInt32								unk114[(0x140-0x114) >> 2];		// 10B 12C is an array (of combat targets ?)
 	UInt32								unk140;							// 140 looks like a flag. Bit31 used while checking if non essential can take damage
 	UInt8                               unk144;							// 144

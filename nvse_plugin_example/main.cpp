@@ -673,9 +673,11 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 
 void OnActorEquipEventHandler(TESObjectREFR* ref, void* args)
 {
-	// On weapon switch it's the best time to remove all unused anims
-	TESForm** refArgs = static_cast<TESForm**>(args);
-	if (!IS_TYPE(refArgs[1], TESObjectWEAP))
+	// On player weapon switch it's the best time to remove all unused anims
+	auto** refArgs = static_cast<TESForm**>(args);
+	auto* equipped = refArgs[1];
+	auto* equipper = refArgs[0];
+	if (!equipped || !equipper || equipper->refID != 0x14 || !IS_TYPE(equipped, TESObjectWEAP))
 		return;
 	HandleGarbageCollection();
 }
@@ -738,8 +740,6 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_messagingInterface = (NVSEMessagingInterface*)nvse->QueryInterface(kInterface_Messaging);
 	g_messagingInterface->RegisterListener(g_pluginHandle, "NVSE", MessageHandler);
 	g_script = (NVSEScriptInterface*)nvse->QueryInterface(kInterface_Script);
-	g_eventManagerInterface = (NVSEEventManagerInterface*)nvse->QueryInterface(kInterface_EventManager);
-	g_eventManagerInterface->SetNativeEventHandler("OnActorEquip", OnActorEquipEventHandler);
 
 	nvse->SetOpcodeBase(0x3920);
 	
@@ -766,6 +766,9 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	{
 		return true;
 	}
+
+	g_eventManagerInterface = (NVSEEventManagerInterface*)nvse->QueryInterface(kInterface_EventManager);
+	g_eventManagerInterface->SetNativeEventHandler("OnActorEquip", OnActorEquipEventHandler);
 
 	NVSEDataInterface* nvseData = (NVSEDataInterface*)nvse->QueryInterface(kInterface_Data);
 	CaptureLambdaVars = (_CaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaSaveVariableList);

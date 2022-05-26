@@ -274,6 +274,25 @@ namespace Decoding
 		kAnimAction_ReloadLoop = 0x11,
 	};
 
+	struct ActorValueArrayValue
+	{
+		UInt8 isModified;
+		UInt8 gap01[3];
+		float value;
+	};
+
+	struct ActorValueArray
+	{
+		struct Value
+		{
+			UInt8 isModified;
+			UInt8 gap01[3];
+			float value;
+		};
+
+		Value avs[77];
+	};
+
 	
 	// 46C
 	class HighProcess : public MiddleHighProcess
@@ -374,7 +393,7 @@ namespace Decoding
 		TESObjectREFR* packageTarget;		// 41C
 		UInt32								unk420;				// 420
 		UInt32								queuedIdleFlags;	// 424
-		UInt32								unk428;				// 428
+		ActorValueArray*					actorValueArray428;	// 428
 		float								flt42C;				// 42C
 		UInt32								unk430;				// 430
 		void* ptr434;			// 434
@@ -781,3 +800,24 @@ enum AnimMoveTypes
 	kAnimMoveType_Flying = 0x3,
 };
 
+enum MovementFlags
+{
+	kMoveFlag_Forward = 0x1,
+	kMoveFlag_Backward = 0x2,
+	kMoveFlag_Left = 0x4,
+	kMoveFlag_Right = 0x8,
+	kMoveFlag_TurnLeft = 0x10,
+	kMoveFlag_TurnRight = 0x20,
+	kMoveFlag_NonController = 0x40,
+	kMoveFlag_Walking = 0x100,
+	kMoveFlag_Running = 0x200,
+	kMoveFlag_Sneaking = 0x400,
+	kMoveFlag_Swimming = 0x800,
+	kMoveFlag_Jump = 0x1000,
+	kMoveFlag_Flying = 0x2000,
+	kMoveFlag_Fall = 0x4000,
+	kMoveFlag_Slide = 0x8000,
+};
+
+
+const char* MoveFlagToString(UInt32 flag);

@@ -37,7 +37,7 @@ AnimGroupID AnimData::GetNextAttackGroupID() const
 
 void Actor::FireWeapon()
 {
-	animGroupId110 = static_cast<UInt32>(GetAnimData()->GetNextAttackGroupID());
+	nextAttackAnimGroupId110 = static_cast<UInt32>(GetAnimData()->GetNextAttackGroupID());
 	this->baseProcess->SetQueuedIdleFlag(kIdleFlag_FireWeapon);
 	GameFuncs::HandleQueuedAnimFlags(this); //Actor::HandleQueuedIdleFlags
 }
@@ -436,4 +436,29 @@ UInt16 GetActorRealAnimGroup(Actor* actor, UInt8 groupID)
 		moveType = kAnimMoveType_Sneaking;
 	const auto isPowerArmor = ThisStdCall<bool>(0x8BA3E0, actor) || ThisStdCall<bool>(0x8BA410, actor);
 	return (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8) + groupID;
+}
+
+const char* MoveFlagToString(UInt32 flag)
+{
+	auto flag8 = static_cast<MovementFlags>(flag & 0xFF);
+	switch(flag8)
+	{
+	case kMoveFlag_Forward: return "Forward";
+	case kMoveFlag_Backward: return "Backward";
+	case kMoveFlag_Left: return "Left";
+	case kMoveFlag_Right: return "Right";
+	case kMoveFlag_TurnLeft: return "TurnLeft";
+	case kMoveFlag_TurnRight: return "TurnRight";
+	case kMoveFlag_NonController: break;
+	case kMoveFlag_Walking: break;
+	case kMoveFlag_Running: break;
+	case kMoveFlag_Sneaking: break;
+	case kMoveFlag_Swimming: break;
+	case kMoveFlag_Jump: break;
+	case kMoveFlag_Flying: break;
+	case kMoveFlag_Fall: break;
+	case kMoveFlag_Slide: break;
+	default: ;
+	}
+	return "";
 }
