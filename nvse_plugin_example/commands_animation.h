@@ -175,7 +175,7 @@ struct AnimTime
 
 struct SavedAnimsTime
 {
-	SavedAnims* savedAnims = nullptr;
+	Script* conditionScript = nullptr;
 	UInt16 groupId = 0;
 	UInt16 realGroupId = 0;
 	BSAnimGroupSequence* anim = nullptr;
@@ -198,9 +198,18 @@ enum eAnimSequence
 	kSequence_Death = 0x14,
 };
 
+struct ActorSequenceKey
+{
+	UInt32 actorId;
+	UInt32 sequenceType;
+	bool firstPerson; // allow different anims for both viewmodels
+	friend auto operator<=>(const ActorSequenceKey&, const ActorSequenceKey&) = default;
+
+};
+
 
 extern std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
-extern std::map<SavedAnims*, SavedAnimsTime> g_timeTrackedGroups;
+extern std::map<ActorSequenceKey, SavedAnimsTime> g_timeTrackedGroups;
 
 enum class AnimKeySetting
 {
@@ -284,21 +293,12 @@ using AnimOverrideMap = std::unordered_map<UInt32, AnimOverrideStruct>;
 
 struct SavedAnims
 {
-private:
-	void MoveMapKeys(SavedAnims& other);
-public:
 	bool hasOrder = false;
 	std::vector<AnimPath> anims;
 	std::optional<LambdaVariableContext> conditionScript;
 	bool pollCondition = false;
 
 	SavedAnims() = default;
-
-	~SavedAnims();
-
-	SavedAnims(SavedAnims&& other) noexcept;
-
-	SavedAnims& operator=(SavedAnims&& other) noexcept;
 };
 
 struct BurstState

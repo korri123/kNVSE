@@ -200,15 +200,16 @@ void HandleAnimTimes()
 		++iter;
 	}
 
-	
-	for (auto iter = g_timeTrackedGroups.cbegin(); iter != g_timeTrackedGroups.cend();)
+
+	const auto timeTrackedGroups = std::map(g_timeTrackedGroups); // copy to avoid iterator invalidation
+	for (auto iter = timeTrackedGroups.cbegin(); iter != timeTrackedGroups.cend(); ++iter)
 	{
-		const auto erase = [&]()
+		const auto erase = [&]
 		{
-			iter = g_timeTrackedGroups.erase(iter);
+			g_timeTrackedGroups.erase(iter->first);
 		};
 		auto& [seqType, animTime] = *iter;
-		auto& [savedAnim, groupId, realGroupId, anim, actorId, lastNiTime, firstPerson] = animTime;
+		auto& [conditionScript, groupId, realGroupId, anim, actorId, lastNiTime, firstPerson] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 		if (!actor)
 		{
@@ -216,20 +217,20 @@ void HandleAnimTimes()
 			continue;
 		}
 		auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
-		if (shouldErase(actor) || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !savedAnim || !animData)
+		if (shouldErase(actor) || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript || !animData)
 		{
 			erase();
 			continue;
 		}
 
-		auto* animInfo = GetGroupInfo(groupId);
-		auto* curAnim = animData->animSequence[animInfo->sequenceType];
+		const auto* animInfo = GetGroupInfo(groupId);
+		const auto* curAnim = animData->animSequence[animInfo->sequenceType];
 		if (!curAnim)
 		{
 			erase();
 			continue;
 		}
-		if (savedAnim->conditionScript)
+		if (conditionScript)
 		{
 			const auto currentRealAnimGroupId = GetActorRealAnimGroup(actor, curAnim->animGroup->GetBaseGroupID());
 			const auto curHandType = (curAnim->animGroup->groupID & 0xf00) >> 8;
@@ -237,7 +238,7 @@ void HandleAnimTimes()
 			if (handType >= curHandType && (realGroupId == currentRealAnimGroupId || realGroupId == curAnim->animGroup->groupID))
 			{
 				NVSEArrayVarInterface::Element arrResult;
-				if (g_script->CallFunction(**savedAnim->conditionScript, actor, nullptr, &arrResult, 0))
+				if (g_script->CallFunction(conditionScript, actor, nullptr, &arrResult, 0))
 				{
 					const auto result = static_cast<bool>(arrResult.Number());
 					const auto customAnimState = anim ? anim->state : kAnimState_Inactive;
@@ -253,11 +254,10 @@ void HandleAnimTimes()
 			else
 			{
 				erase();
-				continue;
 			}
 		}
-		++iter;
 	}
+	
 }
 
 bool IsGodMode()

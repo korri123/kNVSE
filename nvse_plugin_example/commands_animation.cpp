@@ -301,39 +301,6 @@ AnimTime::~AnimTime()
 	Revert3rdPersonAnimTimes(*this, this->anim);
 }
 
-void SavedAnims::MoveMapKeys(SavedAnims& other)
-{
-	if (auto iter = ra::find_if(g_timeTrackedGroups, _L(auto& p, p.second.savedAnims == &other)); iter != g_timeTrackedGroups.end())
-	{
-		iter->second.savedAnims = this;
-	}
-}
-
-SavedAnims::~SavedAnims()
-{
-	std::erase_if(g_timeTrackedGroups, _L(auto & p, p.second.savedAnims == this));
-}
-
-SavedAnims::SavedAnims(SavedAnims&& other) noexcept: hasOrder(other.hasOrder),
-                                                     anims(std::move(other.anims)),
-                                                     conditionScript(std::move(other.conditionScript)),
-                                                     pollCondition(other.pollCondition)
-{
-	MoveMapKeys(other);
-}
-
-SavedAnims& SavedAnims::operator=(SavedAnims&& other) noexcept
-{
-	if (this == &other)
-		return *this;
-	hasOrder = other.hasOrder;
-	anims = std::move(other.anims);
-	conditionScript = std::move(other.conditionScript);
-	pollCondition = other.pollCondition;
-	MoveMapKeys(other);
-	return *this;
-}
-
 std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData)
 {
 	auto*& customMap = g_customMaps[animData];
@@ -368,7 +335,9 @@ AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
 std::list<BurstFireData> g_burstFireQueue;
 
 std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
-std::map<SavedAnims*, SavedAnimsTime> g_timeTrackedGroups;
+
+
+std::map<ActorSequenceKey, SavedAnimsTime> g_timeTrackedGroups;
 
 enum class KeyCheckType
 {
@@ -692,8 +661,10 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 			{
 				const auto initAnimTime = [&](SavedAnims* savedAnims)
 				{
-					auto& animTime = g_timeTrackedGroups[savedAnims];
-					animTime.savedAnims = savedAnims;
+					const bool firstPerson = animData == g_thePlayer->firstPersonAnimData;
+					const auto key = ActorSequenceKey(actor->refID, groupInfo->sequenceType, firstPerson);
+					auto& animTime = g_timeTrackedGroups[key];
+					animTime.conditionScript = **savedAnims->conditionScript;
 					animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
 					animTime.groupId = groupId;
 					animTime.actorId = animData->actor->refID;
@@ -798,7 +769,7 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 		if (ctx->conditionScript && animsTime)
 		{
 			animsTime->anim = anim;
-			ClearSameSequenceTypeGroups(anim, result.animsTime);
+			// ClearSameSequenceTypeGroups(anim, result.animsTime); // should no longer be needed since g_timeTrackedGroups is keyed on sequence type
 		}
 		return anim;
 	}
