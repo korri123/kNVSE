@@ -317,8 +317,7 @@ SavedAnims::~SavedAnims()
 SavedAnims::SavedAnims(SavedAnims&& other) noexcept: hasOrder(other.hasOrder),
                                                      anims(std::move(other.anims)),
                                                      conditionScript(std::move(other.conditionScript)),
-                                                     pollCondition(other.pollCondition),
-                                                     emptyMagAnim(std::move(other.emptyMagAnim))
+                                                     pollCondition(other.pollCondition)
 {
 	MoveMapKeys(other);
 }
@@ -331,7 +330,6 @@ SavedAnims& SavedAnims::operator=(SavedAnims&& other) noexcept
 	anims = std::move(other.anims);
 	conditionScript = std::move(other.conditionScript);
 	pollCondition = other.pollCondition;
-	emptyMagAnim = std::move(other.emptyMagAnim);
 	MoveMapKeys(other);
 	return *this;
 }
@@ -745,19 +743,14 @@ AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimDat
 {
 	auto& ctx = *animResult.parent;
 	AnimPath* savedAnimPath = nullptr;
-	bool emptyMag = false;
 	Actor* actor = animData->actor;
-	if (const auto* ammoInfo = actor->baseProcess->GetAmmoInfo())
-		emptyMag = ammoInfo->count == 0;
+
 	if (IsAnimGroupReload(groupId) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
 	{
 		if (auto* path = GetPartialReload(ctx, actor, groupId))
 			savedAnimPath = path;
 	}
-	else if (emptyMag && ctx.emptyMagAnim)
-	{
-		savedAnimPath = ctx.emptyMagAnim.get();
-	}
+
 	else if (!ctx.hasOrder)
 	{
 		// Make sure that Aim, AimUp and AimDown all use the same index
@@ -1027,13 +1020,6 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 	const auto& fileName = fPath.filename().string();
 
 	auto& anims = stack.back();
-
-	if (FindStringCI(fileName, "_empty"))
-	{
-		anims.emptyMagAnim = std::make_unique<AnimPath>(path);
-		Log("Empty mag anim detected");
-		return;
-	}
 
 	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.c_str()));
 	auto& lastAnim = anims.anims.emplace_back(path);

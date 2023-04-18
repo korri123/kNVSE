@@ -291,7 +291,6 @@ public:
 	std::vector<AnimPath> anims;
 	std::optional<LambdaVariableContext> conditionScript;
 	bool pollCondition = false;
-	std::unique_ptr<AnimPath> emptyMagAnim = nullptr;
 
 	SavedAnims() = default;
 

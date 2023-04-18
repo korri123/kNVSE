@@ -494,6 +494,7 @@ void ApplyHooks()
 		return form->flags;
 	}));
 
+#if 0
 	// DEBUG npcs sprint
 	WriteRelJump(0x9DE060, INLINE_HOOK(void, __fastcall, ActorMover * mover, void* _edx, UInt32 flags)
 	{
@@ -515,6 +516,19 @@ void ApplyHooks()
 		mover->bStrafeMoveFlags71 = true;
 		mover->moveFlagStrafe38 = flags;
 	}));
+#endif
+
+#if _DEBUG
+	// IsReadyForAttack
+	WriteVirtualCall(0x9420E4, INLINE_HOOK(bool, __fastcall, BaseProcess*)
+	{
+		return true;
+	}));
+	WriteVirtualCall(0x893E86, INLINE_HOOK(bool, __fastcall, BaseProcess*)
+	{
+		return true;
+	}));
+#endif
 
 	ini.SaveFile(iniPath.c_str(), false);
 }

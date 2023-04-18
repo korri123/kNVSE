@@ -199,7 +199,9 @@ void HandleAnimTimes()
 		}
 		++iter;
 	}
-	for (auto iter = g_timeTrackedGroups.begin(); iter != g_timeTrackedGroups.end();)
+
+	
+	for (auto iter = g_timeTrackedGroups.cbegin(); iter != g_timeTrackedGroups.cend();)
 	{
 		const auto erase = [&]()
 		{
@@ -768,7 +770,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	}
 
 	g_eventManagerInterface = (NVSEEventManagerInterface*)nvse->QueryInterface(kInterface_EventManager);
-	g_eventManagerInterface->SetNativeEventHandler("OnActorEquip", OnActorEquipEventHandler);
+	//g_eventManagerInterface->SetNativeEventHandler("OnActorEquip", OnActorEquipEventHandler);
 
 	NVSEDataInterface* nvseData = (NVSEDataInterface*)nvse->QueryInterface(kInterface_Data);
 	CaptureLambdaVars = (_CaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaSaveVariableList);
