@@ -400,6 +400,10 @@ void __fastcall HandleOnReload(Actor* actor)
 	//std::erase_if(g_burstFireQueue, _L(BurstFireData & b, b.actorId == g_thePlayer->refID));
 }
 
+#if _DEBUG
+std::vector<std::string> g_niNames;
+#endif
+
 void ApplyHooks()
 {
 	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
@@ -518,7 +522,7 @@ void ApplyHooks()
 	}));
 #endif
 
-#if _DEBUG
+#if _DEBUG && 0
 	// IsReadyForAttack
 	WriteVirtualCall(0x9420E4, INLINE_HOOK(bool, __fastcall, BaseProcess*)
 	{
@@ -528,7 +532,19 @@ void ApplyHooks()
 	{
 		return true;
 	}));
+
+	SafeWrite32(0x1096310, INLINE_HOOK(UInt32*, __fastcall, void* _this, void* _edx, char** name)
+	{
+		g_niNames.emplace_back(*name);
+		const auto result = ThisStdCall<UInt32*>(0xA2EE00, _this, name);
+		if (result && *result == 0xDDDDDD)
+		{
+			int i = 0;
+		}
+		return result;
+	}));
 #endif
 
 	ini.SaveFile(iniPath.c_str(), false);
 }
+

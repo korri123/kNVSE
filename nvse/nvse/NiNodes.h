@@ -1352,6 +1352,19 @@ enum AnimGroupID : UInt8
 	kAnimGroup_Max						// = 0x0FFF,	// Temporary until known
 };
 
+class NiAVObjectPalette : public NiObject
+{
+};
+
+
+class NiDefaultAVObjectPalette : public NiAVObjectPalette
+{
+public:
+	NiTStringPointerMap<NiAVObject> m_kHash;
+	NiAVObject* m_pkScene;
+};
+
+
 class NiDefaultAVObjectPalette;
 // 7C
 class NiControllerManager : public NiTimeController

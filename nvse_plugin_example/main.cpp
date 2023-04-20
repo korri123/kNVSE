@@ -665,23 +665,12 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
 	{
-		HandleGarbageCollection();
+		// HandleGarbageCollection();
 		g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 		g_reloadTracker.clear();
 		g_timeTrackedAnims.clear();
 		g_timeTrackedGroups.clear();
 	}
-}
-
-void OnActorEquipEventHandler(TESObjectREFR* ref, void* args)
-{
-	// On player weapon switch it's the best time to remove all unused anims
-	auto** refArgs = static_cast<TESForm**>(args);
-	auto* equipped = refArgs[1];
-	auto* equipper = refArgs[0];
-	if (!equipped || !equipper || equipper->refID != 0x14 || !IS_TYPE(equipped, TESObjectWEAP))
-		return;
-	HandleGarbageCollection();
 }
 
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)

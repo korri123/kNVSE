@@ -22,6 +22,7 @@
 #include "stack_allocator.h"
 #include <array>
 #include "NiNodes.h"
+#include "NiTypes.h"
 
 
 std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<TESAnimGroup::AnimGroupInfo*>(0x11977D8), 245 };
@@ -191,6 +192,9 @@ void HandleOnSequenceDestroy(BSAnimGroupSequence* anim)
 	std::erase_if(g_cachedAnimMap, _L(auto & p, p.second.anim == anim));
 }
 
+NiTPointerMap_t<const char*, NiAVObject>::Entry entry;
+
+// causes crashes
 void HandleGarbageCollection()
 {
 	for (const auto& iter : g_customMaps)
@@ -280,7 +284,7 @@ std::optional<BSAnimationContext> LoadAnimation(const std::string& path, AnimDat
 				BSAnimGroupSequence* anim;
 				if (base && ((anim = base->GetSequenceByIndex(-1))))
 				{
-					anim->destFrame = kfModel->controllerSequence->destFrame;
+					// anim->destFrame = kfModel->controllerSequence->destFrame;
 					const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 					return entry->second;
 				}
@@ -1316,7 +1320,7 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 	g_cachedAnimMap.clear();
 	g_timeTrackedAnims.clear();
 	g_timeTrackedGroups.clear();
-	HandleGarbageCollection();
+	// HandleGarbageCollection();
 	LoadFileAnimPaths();
 	if (!IsConsoleMode())
 		Console_Print("kNVSEReset called from a script! This is a DEBUG function that maybe leak memory");

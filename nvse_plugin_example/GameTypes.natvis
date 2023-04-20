@@ -108,4 +108,32 @@
 			</ArrayItems>
 		</Expand>
 	</Type>
+
+  <Type Name="NiTPointerMap_t&lt;*&gt;">
+    <DisplayString>{{NumBuckets = {m_numBuckets}, NumItems = {m_numItems}}}</DisplayString>
+    <Expand>
+      <Item Name="NumBuckets">m_numBuckets</Item>
+      <Item Name="NumItems">m_numItems</Item>
+      <Item Name="Buckets">m_buckets</Item>
+      <CustomListItems>
+        <Variable Name="bucketIndex" InitialValue="0" />
+        <Variable Name="entry" InitialValue="m_buckets[0]" />
+        <Size>m_numItems</Size>
+        <Loop>
+
+          <Loop>
+            <Item Condition="entry != nullptr" Name="[Key: {entry->key}]">*(entry->data)</Item>
+            <Exec>entry = entry->next</Exec>
+          </Loop>
+          
+          <Break Condition="bucketIndex == m_numBuckets - 1" />
+          <Exec>
+            entry = m_buckets[++bucketIndex]
+          </Exec>
+        </Loop>
+      </CustomListItems>
+    </Expand>
+  </Type>
+
+
 </AutoVisualizer>

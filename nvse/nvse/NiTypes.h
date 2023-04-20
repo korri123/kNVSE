@@ -208,27 +208,27 @@ struct NiTSet
 // 10
 // this is a NiTPointerMap <UInt32, T_Data>
 // todo: generalize key
-template <typename T_Data>
-class NiTPointerMap
+template <typename T_Key, typename T_Data>
+class NiTPointerMap_t
 {
 public:
-	NiTPointerMap();
-	virtual ~NiTPointerMap();
+	NiTPointerMap_t();
+	virtual ~NiTPointerMap_t();
 
 	struct Entry
 	{
 		Entry	* next;
-		UInt32	key;
+		T_Key	key;
 		T_Data	* data;
 	};
 
 	// note: traverses in non-numerical order
 	class Iterator
 	{
-		friend NiTPointerMap;
+		friend NiTPointerMap_t;
 
 	public:
-		Iterator(NiTPointerMap<T_Data>* table, Entry * entry = NULL, UInt32 bucket = 0)
+		Iterator(NiTPointerMap_t* table, Entry * entry = nullptr, UInt32 bucket = 0)
 			:m_table(table), m_entry(entry), m_bucket(bucket) { FindValid(); }
 		~Iterator() { }
 
@@ -256,7 +256,7 @@ public:
 	private:
 		void		FindValid(void);
 
-		NiTPointerMap<T_Data>* m_table;
+		NiTPointerMap_t* m_table;
 		Entry		* m_entry;
 		UInt32		m_bucket;
 	};
@@ -268,10 +268,10 @@ public:
 	virtual void	Fn_05(void);	// locked operations
 	virtual void	Fn_06(void);	// locked operations
 
-	T_Data *	Lookup(UInt32 key);
+	T_Data *	Lookup(T_Key key);
 	bool		Insert(Entry* nuEntry);
 
-	void Replace(UInt32 key, T_Data* data)
+	void Replace(T_Key key, T_Data* data)
 	{
 		for (Entry* traverse = m_buckets[key % m_numBuckets]; traverse; traverse = traverse->next)
 			if (traverse->key == key)
@@ -298,8 +298,8 @@ public:
 	UInt32	m_numItems;		// C
 };
 
-template <typename T_Data>
-T_Data* NiTPointerMap <T_Data>::Lookup(UInt32 key)
+template <typename T_Key, typename T_Data>
+T_Data* NiTPointerMap_t <T_Key, T_Data>::Lookup(T_Key key)
 {
 	for(Entry * traverse = m_buckets[key % m_numBuckets]; traverse; traverse = traverse->next)
 		if(traverse->key == key)
@@ -308,8 +308,8 @@ T_Data* NiTPointerMap <T_Data>::Lookup(UInt32 key)
 	return NULL;
 }
 
-template <typename T_Data>
-bool NiTPointerMap<T_Data>::Insert(Entry* nuEntry)
+template <typename T_Key, typename T_Data>
+bool NiTPointerMap_t <T_Key, T_Data>::Insert(Entry* nuEntry)
 {
 	// game code does not appear to care about ordering of entries in buckets
 	UInt32 bucket = nuEntry->key % m_numBuckets;
@@ -335,8 +335,8 @@ bool NiTPointerMap<T_Data>::Insert(Entry* nuEntry)
 	return true;
 }
 
-template <typename T_Data>
-T_Data * NiTPointerMap <T_Data>::Iterator::Get(void)
+template <typename T_Key, typename T_Data>
+T_Data * NiTPointerMap_t <T_Key, T_Data>::Iterator::Get(void)
 {
 	if(m_entry)
 		return m_entry->data;
@@ -344,8 +344,8 @@ T_Data * NiTPointerMap <T_Data>::Iterator::Get(void)
 	return NULL;
 }
 
-template <typename T_Data>
-UInt32 NiTPointerMap <T_Data>::Iterator::GetKey(void)
+template <typename T_Key, typename T_Data>
+UInt32 NiTPointerMap_t <T_Key, T_Data>::Iterator::GetKey(void)
 {
 	if(m_entry)
 		return m_entry->key;
@@ -353,8 +353,8 @@ UInt32 NiTPointerMap <T_Data>::Iterator::GetKey(void)
 	return 0;
 }
 
-template <typename T_Data>
-bool NiTPointerMap <T_Data>::Iterator::Next(void)
+template <typename T_Key, typename T_Data>
+bool NiTPointerMap_t <T_Key, T_Data>::Iterator::Next(void)
 {
 	if(m_entry)
 		m_entry = m_entry->next;
@@ -369,14 +369,14 @@ bool NiTPointerMap <T_Data>::Iterator::Next(void)
 	return m_entry != NULL;
 }
 
-template <typename T_Data>
-bool NiTPointerMap <T_Data>::Iterator::Done(void)
+template <typename T_Key, typename T_Data>
+bool NiTPointerMap_t <T_Key, T_Data>::Iterator::Done(void)
 {
 	return m_entry == NULL;
 }
 
-template <typename T_Data>
-void NiTPointerMap <T_Data>::Iterator::FindValid(void)
+template <typename T_Key, typename T_Data>
+void NiTPointerMap_t <T_Key, T_Data>::Iterator::FindValid(void)
 {
 	// validate bucket
 	if(m_bucket >= m_table->m_numBuckets) return;
@@ -392,6 +392,9 @@ void NiTPointerMap <T_Data>::Iterator::FindValid(void)
 		m_entry = m_table->m_buckets[m_bucket];
 	}
 }
+
+template <typename T_Data>
+using NiTPointerMap = NiTPointerMap_t <UInt32, T_Data>;
 
 // 10
 // todo: NiTPointerMap should derive from this
@@ -428,7 +431,7 @@ public:
 
 // 14
 template <typename T_Data>
-class NiTStringPointerMap : public NiTPointerMap <T_Data>
+class NiTStringPointerMap : public NiTPointerMap_t <const char*, T_Data>
 {
 public:
 	NiTStringPointerMap();

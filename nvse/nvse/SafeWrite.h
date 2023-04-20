@@ -30,6 +30,12 @@ void WriteVirtualCall(UInt32 jumpSrc, T jumpTgt)
 	SafeWrite8(jumpSrc - 1, 0x90); // nop
 }
 
+template <typename T>
+void SafeWrite32(UInt32 addr, T data)
+{
+	SafeWrite32(addr, (UInt32)data);
+}
+
 // 6 bytes
 void WriteRelJnz(UInt32 jumpSrc, UInt32 jumpTgt);
 void WriteRelJle(UInt32 jumpSrc, UInt32 jumpTgt);
