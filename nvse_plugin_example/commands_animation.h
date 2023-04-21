@@ -208,7 +208,7 @@ struct ActorSequenceKey
 };
 
 
-extern std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
+extern std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
 extern std::map<ActorSequenceKey, SavedAnimsTime> g_timeTrackedGroups;
 
 enum class AnimKeySetting

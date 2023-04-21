@@ -338,7 +338,7 @@ AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
 
 std::list<BurstFireData> g_burstFireQueue;
 
-std::map<BSAnimGroupSequence*, AnimTime> g_timeTrackedAnims;
+std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
 
 
 std::map<ActorSequenceKey, SavedAnimsTime> g_timeTrackedGroups;
@@ -379,10 +379,8 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	{
 		if (!animTimePtr)
 		{
-			auto iter = g_timeTrackedAnims.emplace(anim, AnimTime(actor, anim));
-			if (!iter.second)
-				iter.first->second = AnimTime(actor, anim);
-			animTimePtr = &iter.first->second;
+			const auto iter = g_timeTrackedAnims.emplace(anim, std::make_shared<AnimTime>(actor, anim));
+			animTimePtr = iter.first->second.get();
 		}
 		return *animTimePtr;
 	};

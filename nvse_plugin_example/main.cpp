@@ -87,14 +87,15 @@ void HandleAnimTimes()
 	{
 		return !actor || actor->IsDying(true) || actor->IsDeleted() || !actor->baseProcess;
 	};
-	for (auto iter = g_timeTrackedAnims.begin(); iter != g_timeTrackedAnims.end();)
+	const auto timeTrackedAnims = std::map(g_timeTrackedAnims);
+	for (auto iter = timeTrackedAnims.begin(); iter != timeTrackedAnims.end(); ++iter)
 	{
 		const auto erase = [&]()
 		{
-			iter = g_timeTrackedAnims.erase(iter);
+			g_timeTrackedAnims.erase(iter);
 		};
 
-		auto& animTime = iter->second;
+		auto& animTime = *iter->second;
 		auto* anim = animTime.anim;
 		if (!anim)
 		{
@@ -197,7 +198,6 @@ void HandleAnimTimes()
 		{
 			animTime.scriptLines.Update(time, animData, _L(Script* script, ThisStdCall(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, false)));
 		}
-		++iter;
 	}
 
 
@@ -672,6 +672,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		g_timeTrackedGroups.clear();
 	}
 }
+
 
 bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 {
