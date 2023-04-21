@@ -374,7 +374,6 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	std::span textKeys{ anim->textKeyData->m_pKeys, anim->textKeyData->m_uiNumKeys };
 	auto* actor = animData->actor;
 	AnimTime* animTimePtr = nullptr;
-	const auto* animInfo = GetGroupInfo(anim->animGroup->groupID);
 	const auto getAnimTimeStruct = [&]() -> AnimTime&
 	{
 		if (!animTimePtr)

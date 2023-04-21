@@ -88,14 +88,14 @@ void HandleAnimTimes()
 		return !actor || actor->IsDying(true) || actor->IsDeleted() || !actor->baseProcess;
 	};
 	const auto timeTrackedAnims = std::map(g_timeTrackedAnims);
-	for (auto iter = timeTrackedAnims.begin(); iter != timeTrackedAnims.end(); ++iter)
+	for (const auto& timeTrackedAnim : timeTrackedAnims)
 	{
 		const auto erase = [&]()
 		{
-			g_timeTrackedAnims.erase(iter);
+			g_timeTrackedAnims.erase(timeTrackedAnim.first);
 		};
 
-		auto& animTime = *iter->second;
+		auto& animTime = *timeTrackedAnim.second;
 		auto* anim = animTime.anim;
 		if (!anim)
 		{
@@ -202,13 +202,13 @@ void HandleAnimTimes()
 
 
 	const auto timeTrackedGroups = std::map(g_timeTrackedGroups); // copy to avoid iterator invalidation
-	for (auto iter = timeTrackedGroups.cbegin(); iter != timeTrackedGroups.cend(); ++iter)
+	for (const auto& timeTrackedGroup : timeTrackedGroups)
 	{
 		const auto erase = [&]
 		{
-			g_timeTrackedGroups.erase(iter->first);
+			g_timeTrackedGroups.erase(timeTrackedGroup.first);
 		};
-		auto& [seqType, animTime] = *iter;
+		auto& [seqType, animTime] = timeTrackedGroup;
 		auto& [conditionScript, groupId, realGroupId, anim, actorId, lastNiTime, firstPerson] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 		if (!actor)
