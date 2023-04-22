@@ -73,7 +73,8 @@ void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim)
 			animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
 		}
 	}
-	if ((anim->animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
+	const auto* animGroup = anim->animGroup;
+	if (animGroup && (animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
 	{
 		g_fixHolster = true;
 		g_fixHolsterUnequipAnim3rd = animTime.anim3rdCounterpart;
@@ -97,7 +98,7 @@ void HandleAnimTimes()
 
 		auto& animTime = *timeTrackedAnim.second;
 		auto* anim = animTime.anim;
-		if (!anim)
+		if (!anim || !anim->animGroup)
 		{
 			erase();
 			continue;
@@ -225,7 +226,7 @@ void HandleAnimTimes()
 
 		const auto* animInfo = GetGroupInfo(groupId);
 		const auto* curAnim = animData->animSequence[animInfo->sequenceType];
-		if (!curAnim)
+		if (!curAnim || !curAnim->animGroup)
 		{
 			erase();
 			continue;

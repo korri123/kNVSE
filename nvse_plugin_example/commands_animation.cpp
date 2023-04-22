@@ -368,7 +368,7 @@ std::unordered_map<std::string, TimedExecution<Sound>> g_scriptSoundExecutions;
 
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPath& ctx)
 {
-	if (!anim)
+	if (!anim || !anim->animGroup)
 		return false;
 	auto applied = false;
 	std::span textKeys{ anim->textKeyData->m_pKeys, anim->textKeyData->m_uiNumKeys };

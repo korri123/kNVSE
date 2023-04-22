@@ -294,13 +294,13 @@ std::unordered_set<std::string> g_reloadStartBlendFixes;
 bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
 {
 	const static std::unordered_set ids = { kAnimGroup_ReloadWStart, kAnimGroup_ReloadYStart, kAnimGroup_ReloadXStart, kAnimGroup_ReloadZStart };
-	auto* anim = *reinterpret_cast<BSAnimGroupSequence**>(basePointer - 0xA0);
+	const auto* anim = *reinterpret_cast<BSAnimGroupSequence**>(basePointer - 0xA0);
 	const auto queuedId = *reinterpret_cast<AnimGroupID*>(basePointer - 0x30);
 	const auto currentId = *reinterpret_cast<AnimGroupID*>(basePointer - 0x34);
 	auto* animData = *reinterpret_cast<AnimData**>(basePointer - 0x18c);
 	const auto newCondition = _L(, queuedId == 0xFF && !ids.contains(currentId));
 	const auto defaultCondition = _L(, queuedId == 0xFF);
-	if (!anim)
+	if (!anim || !anim->animGroup)
 		return defaultCondition();
 	if (!g_reloadStartBlendFixes.contains(anim->sequenceName))
 	{
