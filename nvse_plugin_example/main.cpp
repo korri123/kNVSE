@@ -278,7 +278,7 @@ void HandleBurstFire()
 			iter = g_burstFireQueue.erase(iter);
 		};
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
-		if (!actor || actor->IsDeleted() || actor->IsDying(true) || anim->lastScaledTime - lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP)
+		if (!actor || actor->IsDeleted() || actor->IsDying(true) || !anim || !anim->animGroup || anim->lastScaledTime - lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP)
 		{
 			erase();
 			continue;
