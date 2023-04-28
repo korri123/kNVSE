@@ -402,7 +402,7 @@ void __fastcall HandleOnReload(Actor* actor)
 	//std::erase_if(g_burstFireQueue, _L(BurstFireData & b, b.actorId == g_thePlayer->refID));
 }
 
-bool __fastcall AllowAttacksEarlierInReloadHook(BaseProcess* baseProcess)
+bool __fastcall AllowAttacksEarlierInAnimHook(BaseProcess* baseProcess)
 {
 	// allow attacks before reload anim is done
 	if (!baseProcess)
@@ -524,9 +524,9 @@ void ApplyHooks()
 
 
 	// PlayerCharacter::Update -> IsReadyForAttack
-	WriteVirtualCall(0x9420E4, AllowAttacksEarlierInReloadHook);
+	WriteVirtualCall(0x9420E4, AllowAttacksEarlierInAnimHook);
 	// FiresWeapon -> IsReadyForAttack
-	WriteVirtualCall(0x893E86, AllowAttacksEarlierInReloadHook);
+	WriteVirtualCall(0x893E86, AllowAttacksEarlierInAnimHook);
 
 #if 0
 	// DEBUG npcs sprint

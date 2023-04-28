@@ -563,7 +563,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			anim->animGroup->groupID = newGroupId;
 		}
 	}
-	if (IsAnimGroupReload(baseGroupID) && hasKey({"allowAttack"}, ctx.hasAllowAttack))
+	if (hasKey({"allowAttack"}, ctx.hasAllowAttack))
 	{
 		const auto iter = ra::find_if(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.CStr(), "allowAttack") == 0));
 		if (iter != textKeys.end())
