@@ -191,7 +191,9 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 gr
 
 bool __fastcall IsCustomAnimKey(const char* key)
 {
-	const static auto customKeys = { "noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:", "blendToReloadLoop", "scriptLine:", "replaceWithGroup:"};
+	const static auto customKeys = {
+		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:", "blendToReloadLoop", "scriptLine:", "replaceWithGroup:", "allowAttack"
+	};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }
 
@@ -400,9 +402,30 @@ void __fastcall HandleOnReload(Actor* actor)
 	//std::erase_if(g_burstFireQueue, _L(BurstFireData & b, b.actorId == g_thePlayer->refID));
 }
 
-#if _DEBUG
-std::vector<std::string> g_niNames;
-#endif
+bool __fastcall AllowAttacksEarlierInReloadHook(BaseProcess* baseProcess)
+{
+	// allow attacks before reload anim is done
+	if (!baseProcess)
+		return false; // test
+	if (baseProcess == g_thePlayer->baseProcess)
+	{
+		const auto iter = ra::find_if(g_timeTrackedAnims, [](auto& p)
+		{
+			const auto& animTime = *p.second;
+			const auto anim = animTime.anim;
+			const auto currentTime = GetAnimTime(animTime.GetAnimData(g_thePlayer), anim);
+			return animTime.allowAttackTime != -FLT_MAX && currentTime >= animTime.allowAttackTime && animTime.IsPlayer();
+
+		});
+		if (iter != g_timeTrackedAnims.end() && GameFuncs::GetControlState(ControlCode::Attack, Decoding::IsDXKeyState::IsPressed))
+		{
+			g_thePlayer->GetHighProcess()->currentAction = Decoding::AnimAction::kAnimAction_None; // required due to 0x893E32 check
+			return true;
+		}
+	}
+	return baseProcess->IsReadyForAnim();
+}
+
 
 void ApplyHooks()
 {
@@ -498,6 +521,13 @@ void ApplyHooks()
 		return form->flags;
 	}));
 
+
+
+	// PlayerCharacter::Update -> IsReadyForAttack
+	WriteVirtualCall(0x9420E4, AllowAttacksEarlierInReloadHook);
+	// FiresWeapon -> IsReadyForAttack
+	WriteVirtualCall(0x893E86, AllowAttacksEarlierInReloadHook);
+
 #if 0
 	// DEBUG npcs sprint
 	WriteRelJump(0x9DE060, INLINE_HOOK(void, __fastcall, ActorMover * mover, void* _edx, UInt32 flags)
@@ -522,28 +552,6 @@ void ApplyHooks()
 	}));
 #endif
 
-#if _DEBUG && 0
-	// IsReadyForAttack
-	WriteVirtualCall(0x9420E4, INLINE_HOOK(bool, __fastcall, BaseProcess*)
-	{
-		return true;
-	}));
-	WriteVirtualCall(0x893E86, INLINE_HOOK(bool, __fastcall, BaseProcess*)
-	{
-		return true;
-	}));
-
-	SafeWrite32(0x1096310, INLINE_HOOK(UInt32*, __fastcall, void* _this, void* _edx, char** name)
-	{
-		g_niNames.emplace_back(*name);
-		const auto result = ThisStdCall<UInt32*>(0xA2EE00, _this, name);
-		if (result && *result == 0xDDDDDD)
-		{
-			int i = 0;
-		}
-		return result;
-	}));
-#endif
 
 	ini.SaveFile(iniPath.c_str(), false);
 }

@@ -152,6 +152,7 @@ struct AnimTime
 	TimedExecution<Script*>::Context scriptCalls;
 	std::optional<TimedExecution<Sound>> soundPathsBase;
 	TimedExecution<Sound>::Context soundPaths;
+	float allowAttackTime = -FLT_MAX;
 
 	using TimedCallbacks = TimedExecution<std::function<void()>>;
 	std::optional<TimedCallbacks> callbacksBase;
@@ -162,6 +163,11 @@ struct AnimTime
 		if (firstPerson)
 			return g_thePlayer->firstPersonAnimData;
 		return actor->baseProcess->GetAnimData();
+	}
+
+	bool IsPlayer() const
+	{
+		return actorId == g_thePlayer->refID;
 	}
 
 	explicit AnimTime(Actor* actor, BSAnimGroupSequence* anim)
@@ -228,6 +234,7 @@ struct AnimPath
 	AnimKeySetting hasBlendToReloadLoop{};
 	AnimKeySetting hasScriptLine{};
 	AnimKeySetting hasReplaceWithGroup{};
+	AnimKeySetting hasAllowAttack{};
 	bool partialReload = false;
 };
 

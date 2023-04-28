@@ -10,3 +10,5 @@ extern std::deque<std::function<void()>> g_executionQueue;
 void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim);
 
 bool IsGodMode();
+
+float GetAnimTime(const AnimData* animData, const BSAnimGroupSequence* anim);
