@@ -329,7 +329,7 @@ void LoadFileAnimPaths()
 				{
 					if ((mod = DataHandler::Get()->LookupModByName(fileName.string().c_str())))
 						LoadModAnimPaths(path, mod);
-					else if (isMod)
+					else
 						DebugPrint(FormatString("Mod with name %s is not loaded!", fileName.string().c_str()));
 				}
 				
