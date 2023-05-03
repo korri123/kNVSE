@@ -15,9 +15,7 @@
 #include "hooks.h"
 #include "main.h"
 #include "MemoizedMap.h"
-#include "SafeWrite.h"
 #include "utility.h"
-#include "common/IDirectoryIterator.h"
 #include "PluginAPI.h"
 #include "stack_allocator.h"
 #include <array>
@@ -123,16 +121,16 @@ std::vector<std::string> GetAnimationVariantPaths(const std::string& kfFilePath)
 		throw std::exception("Animation file does not end with .KF");
 	}
 	std::vector<std::string> result;
-	for (IDirectoryIterator iter(FormatString("Data\\Meshes\\%s", folderPath.c_str()).c_str()); !iter.Done(); iter.Next())
+	const auto fullFolderPath = FormatString("Data\\Meshes\\%s", folderPath.c_str());
+	for (std::filesystem::directory_iterator iter(fullFolderPath), end; iter != end; ++iter)
 	{
 		std::string iterExtension;
-		auto iterFileName = GetFileNameNoExtension(iter.GetFileName(), iterExtension);
-		if (_stricmp(iterExtension.c_str(), "kf") == 0)
+		if (_stricmp(iter->path().extension().string().c_str(), ".kf") == 0)
 		{
+			const auto& iterFileName = iter->path().filename().string();
 			if (iterFileName.rfind(animName + '_', 0) == 0)
 			{
-				auto fullPath = iter.GetFullPath();
-				result.push_back(fullPath.substr(strlen("Data\\Meshes\\")));
+				result.push_back(iterFileName.substr(strlen("Data\\Meshes\\")));
 			}
 		}
 	}
@@ -837,12 +835,14 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstP
 
 MemoizedMap<const char*, int> s_animGroupNameToIDMap;
 
-std::span<const char*> s_moveTypeNames{ reinterpret_cast<const char**>(0x1197794), 4 };
-std::span<const char*> s_handTypeNames{ reinterpret_cast<const char**>(0x11977A4), 12 };
+std::span<const char*> s_moveTypeNames{ reinterpret_cast<const char**>(0x1197798), 3 };
+std::span<const char*> s_handTypeNames{ reinterpret_cast<const char**>(0x11977A8), 11 };
 
 std::string GetBaseAnimGroupName(const std::string& name)
 {
 	std::string oName = name;
+	if (StartsWith(oName.c_str(), "pa"))
+		oName = oName.substr(2);
 	for (auto* moveTypeName : s_moveTypeNames)
 	{
 		if (StartsWith(oName.c_str(), moveTypeName))
@@ -878,6 +878,11 @@ int SimpleGroupNameToId(const char* name)
 			alt = std::string(name, underscorePos - name);
 			name = alt.c_str();
 		}
+		if (auto* spacePos = strchr(name, ' '))
+		{
+			alt = std::string(name, spacePos - name);
+			name = alt.c_str();
+		}
 		const auto iter = ra::find_if(g_animGroupInfos, _L(TESAnimGroup::AnimGroupInfo & i, _stricmp(i.name, name) == 0));
 		if (iter == g_animGroupInfos.end())
 			return -1;
@@ -909,10 +914,10 @@ int GetAnimGroupId(const std::filesystem::path& path)
 		return groupId + (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8);
 	};
 
-	const auto& baseName = GetBaseAnimGroupName(path.stem().string());
+	const auto& name = path.stem().string();
+	const auto& baseName = GetBaseAnimGroupName(name);
 	if (const auto id = SimpleGroupNameToId(baseName.c_str()); id != -1)
 		return toFullId(id);
-
 	char bsStream[1492];
 	auto pathStr = FormatString("Meshes\\%s", path.string().c_str());
 	std::ranges::replace(pathStr, '/', '\\');
@@ -1194,17 +1199,10 @@ void OverrideAnimsFromScript(const char* path, const bool enable, F&& overrideAn
 			constexpr size_t len = sizeof "Data\\Meshes\\";		
 			overrideAnim(iter->path().string().c_str() + (len-1));
 		}
-
 	}
 	else
 	{
 		overrideAnim(path);
-		if (enable)
-		{
-			const auto paths = GetAnimationVariantPaths(path);
-			for (auto& pathIter : paths)
-				overrideAnim(pathIter.c_str());
-		}
 	}
 }
 

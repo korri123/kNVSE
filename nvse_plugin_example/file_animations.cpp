@@ -9,6 +9,7 @@
 #include <fstream>
 #include <utility>
 #include <type_traits>
+#include <ranges>
 
 template <typename T>
 requires std::is_same_v<T, nullptr_t> || std::is_same_v<T, UInt8> || std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*>
@@ -16,11 +17,11 @@ requires std::is_same_v<T, nullptr_t> || std::is_same_v<T, UInt8> || std::is_sam
 void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, bool firstPerson)
 {
 	std::unordered_set<UInt16> variantIds;
-	for (std::filesystem::recursive_directory_iterator iter(dirPath), end; iter != end; ++iter)
+	for (const auto& iter : std::filesystem::recursive_directory_iterator(dirPath))
 	{
-		if (_stricmp(iter->path().extension().string().c_str(), ".kf") != 0)
+		if (_stricmp(iter.path().extension().string().c_str(), ".kf") != 0)
 			continue;
-		const auto& path = iter->path().string();
+		const auto& path = iter.path().string();
 		const auto& relPath = std::filesystem::path(path.substr(path.find("AnimGroupOverride\\")));
 		Log("Loading animation path " + dirPath.string() + "...");
 		try
@@ -44,14 +45,20 @@ void LogForm(const TESForm* form)
 	Log(FormatString("Detected in-game form %X %s %s", form->refID, form->GetName(), form->GetFullName() ? form->GetFullName()->name.CStr() : "<no name>"));
 }
 
+
 template <typename T>
 void LoadPathsForPOV(const std::filesystem::path& path, const T identifier)
 {
-	for (const auto& pair : {std::make_pair("\\_male", false), std::make_pair("\\_1stperson", true)})
+
+	for (const auto& iter : std::filesystem::directory_iterator(path))
 	{
-		auto iterPath = path.string() + std::string(pair.first);
-		if (std::filesystem::exists(iterPath))
-			LoadPathsForType(iterPath, identifier, pair.second);
+		if (!iter.is_directory()) continue;
+
+		const auto& str = iter.path().filename().string();
+		if (_stricmp(str.c_str(), "_male") == 0)
+			LoadPathsForType(iter.path(), identifier, false);
+		else if (_stricmp(str.c_str(), "_1stperson") == 0)
+			LoadPathsForType(iter.path(), identifier, true);
 	}
 }
 
@@ -293,6 +300,8 @@ void LoadJsonEntries()
 		const auto path = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride\)" + entry.folderName;
 		if (!entry.form) // global
 			LoadPathsForPOV(path, nullptr);
+		else if (!std::filesystem::exists(path))
+			Log(FormatString("Path %s does not exist yet it is present in JSON", path.c_str()));
 		else if (!LoadForForm(path, entry.form))
 			Log(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
 		g_jsonContext.Reset();
@@ -307,28 +316,27 @@ void LoadFileAnimPaths()
 	const auto then = std::chrono::system_clock::now();
 	if (std::filesystem::exists(dir))
 	{
-		for (std::filesystem::directory_iterator iter(dir.c_str()), end; iter != end; ++iter)
+		for (const auto& iter: std::filesystem::directory_iterator(dir.c_str()))
 		{
-			const auto& path = iter->path();
-			const auto& fileName = path.filename();
-			if (iter->is_directory())
+			const auto& path = iter.path();
+			if (iter.is_directory())
 			{
-				Log(iter->path().string() + " found");
-				
-				const auto* mod = DataHandler::Get()->LookupModByName(fileName.string().c_str());
-				
-				if (mod)
-					LoadModAnimPaths(path, mod);
-				else if (_stricmp(fileName.extension().string().c_str(), ".esp") == 0 || _stricmp(fileName.extension().string().c_str(), ".esm") == 0)
-					DebugPrint(FormatString("Mod with name %s is not loaded!", fileName.string().c_str()));
-				else if (_stricmp(fileName.string().c_str(), "_male") != 0 && _stricmp(fileName.string().c_str(), "_1stperson") != 0)
+				const auto& fileName = path.filename();
+				const auto& extension = fileName.extension().string();
+				const auto isMod = _stricmp(extension.c_str(), ".esp") == 0 || _stricmp(extension.c_str(), ".esm") == 0;
+				const ModInfo* mod;
+				if (isMod)
 				{
-					Log("Found anim folder " + fileName.string() + " which can be used in JSON");
+					if ((mod = DataHandler::Get()->LookupModByName(fileName.string().c_str())))
+						LoadModAnimPaths(path, mod);
+					else if (isMod)
+						DebugPrint(FormatString("Mod with name %s is not loaded!", fileName.string().c_str()));
 				}
+				
 			}
 			else if (_stricmp(path.extension().string().c_str(), ".json") == 0)
 			{
-				HandleJson(iter->path());
+				HandleJson(iter.path());
 			}
 		}
 	}
