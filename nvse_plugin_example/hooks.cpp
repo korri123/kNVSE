@@ -376,17 +376,15 @@ bool LookupAnimFromMap(NiTPointerMap<AnimSequenceBase>* animMap, UInt16 groupId,
 template <int AnimDataOffset>
 bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void* _EDX, UInt16 groupId, AnimSequenceBase** base)
 {
-	if ((*base = animMap->Lookup(groupId)))
-		return true;
-	// check kNVSE - since we don't have access to animData we'll do some stack abuse to get it
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
-	
-	if (!animData->actor)
-		return false;
 
-	if (LookupAnimFromMap(animMap, groupId, base, animData))
+	if (animData->actor && LookupAnimFromMap(animMap, groupId, base, animData))
 		return true;
+
+	if ((*base = animMap->Lookup(groupId)))
+		return true;
+
 	return false;
 }
 
