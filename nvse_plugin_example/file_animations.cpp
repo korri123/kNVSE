@@ -298,10 +298,10 @@ void LoadJsonEntries()
 		else
 			Log("JSON: Loading animations for global override in path " + entry.folderName);
 		const auto path = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride\)" + entry.folderName;
-		if (!entry.form) // global
-			LoadPathsForPOV(path, nullptr);
-		else if (!std::filesystem::exists(path))
+		if (!std::filesystem::exists(path))
 			Log(FormatString("Path %s does not exist yet it is present in JSON", path.c_str()));
+		else if (!entry.form) // global
+			LoadPathsForPOV(path, nullptr);
 		else if (!LoadForForm(path, entry.form))
 			Log(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
 		g_jsonContext.Reset();
