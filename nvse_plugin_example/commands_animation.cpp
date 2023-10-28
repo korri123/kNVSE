@@ -34,9 +34,6 @@ AnimOverrideMap g_animGroupFirstPersonMap;
 AnimOverrideMap g_animGroupModIdxThirdPersonMap;
 AnimOverrideMap g_animGroupModIdxFirstPersonMap;
 
-std::array<AnimOverrideMap*, 2> g_firstPersonMaps = {&g_animGroupFirstPersonMap, &g_animGroupFirstPersonMap};
-std::array<AnimOverrideMap*, 2> g_thirdPersonMaps = {&g_animGroupThirdPersonMap, &g_animGroupThirdPersonMap};
-
 std::unordered_map<AnimData*, GameAnimMap*> g_customMaps;
 
 
@@ -1433,9 +1430,56 @@ bool Cmd_GetAnimationTraitNumeric_Execute(COMMAND_ARGS)
 	return true;
 }
 
-std::array<AnimOverrideMap*, 2>& GetAnimOverrideMap(bool firstPerson)
+NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* anim, Script* callingScript)
 {
-	return firstPerson ? g_firstPersonMaps : g_thirdPersonMaps;
+	NVSEStringMapBuilder builder;
+
+	builder.Add("sequenceName", anim->sequenceName);
+	builder.Add("seqWeight", anim->seqWeight);
+	builder.Add("cycleType", anim->cycleType);
+	builder.Add("frequency", anim->frequency);
+	builder.Add("beginKeyTime", anim->beginKeyTime);
+	builder.Add("endKeyTime", anim->endKeyTime);
+	builder.Add("lastTime", anim->lastTime);
+	builder.Add("weightedLastTime", anim->weightedLastTime);
+	builder.Add("lastScaledTime", anim->lastScaledTime);
+	builder.Add("state", anim->state);
+	builder.Add("offset", anim->offset);
+	builder.Add("startTime", anim->startTime);
+	builder.Add("endTime", anim->endTime);
+	builder.Add("destFrame", anim->destFrame);
+	builder.Add("accumRootName", anim->accumRootName);
+
+
+	const auto* textKeyData = anim->textKeyData;
+	if (textKeyData)
+	{
+		NVSEMapBuilder textKeyMapBuilder;
+
+		for (int i = 0; i < textKeyData->m_uiNumKeys; ++i)
+		{
+			auto& key = textKeyData->m_pKeys[i];
+			textKeyMapBuilder.Add(key.m_fTime, key.m_kText.CStr());
+		}
+
+		auto* textKeyMap = textKeyMapBuilder.Build(g_arrayVarInterface, callingScript);
+
+		builder.Add("textKeyData", textKeyMap);
+	}
+	
+
+	return builder.Build(g_arrayVarInterface, callingScript);
+}
+
+bool Cmd_GetAnimationByPath_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+	char path[0x400];
+	if (!ExtractArgs(EXTRACT_ARGS, &path))
+		return true;
+	if (auto* anim = GetAnimationByPath(path))
+		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj));
+	return true;
 }
 
 #if 0

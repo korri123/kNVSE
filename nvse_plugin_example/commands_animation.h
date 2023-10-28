@@ -523,6 +523,7 @@ DEFINE_COMMAND_PLUGIN(CreateIdleAnimForm, "", false, 2, kParams_CreateIdleAnimFo
 DEFINE_COMMAND_PLUGIN(EjectWeapon, "", true, 0, nullptr);
 DEFINE_COMMAND_PLUGIN(SetAnimationTraitNumeric, "", false, 3, kParams_SetAnimationTraitNumeric);
 DEFINE_COMMAND_PLUGIN(GetAnimationTraitNumeric, "", false, 2, kParams_GetAnimationTraitNumeric);
+DEFINE_COMMAND_PLUGIN(GetAnimationByPath, "", false, 1, kParams_OneString);
 #if _DEBUG
 
 DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);

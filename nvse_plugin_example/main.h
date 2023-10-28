@@ -1,9 +1,12 @@
 #pragma once
 #include <functional>
 #include <deque>
+#include <PluginAPI.h>
+
 #include "commands_animation.h"
 
 extern std::deque<std::function<void()>> g_executionQueue;
+extern NVSEArrayVarInterface* g_arrayVarInterface;
 
 #define IS_TRANSITION_FIX 0
 

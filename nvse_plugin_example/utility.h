@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <functional>
+#include <PluginAPI.h>
 #include <string>
 #include "GameAPI.h"
 #include "SafeWrite.h"
@@ -142,3 +143,39 @@ __declspec(naked) void Hook_##name() \
 #define _A __asm
 
 #define INLINE_HOOK(retnType, callingConv, ...) static_cast<retnType(callingConv*)(__VA_ARGS__)>([](__VA_ARGS__) [[msvc::forceinline]] -> retnType
+
+class NVSEStringMapBuilder {
+public:
+	void Add(const std::string& key, const NVSEArrayVarInterface::Element& value) {
+		keys.emplace_back(key);
+		values.emplace_back(value);
+	}
+
+	NVSEArrayVarInterface::Array* Build(NVSEArrayVarInterface* arrayVarInterface, Script* callingScript) {
+		std::vector<const char*> cstr_keys;
+		ra::transform(keys, std::back_inserter(cstr_keys),
+		                       [](const std::string& str) { return str.c_str(); });
+
+		return arrayVarInterface->CreateStringMap(cstr_keys.data(), values.data(), keys.size(), callingScript);
+	}
+
+private:
+	std::vector<std::string> keys;
+	std::vector<NVSEArrayVarInterface::Element> values;
+};
+
+class NVSEMapBuilder {
+public:
+	void Add(double key, const NVSEArrayVarInterface::Element& value) {
+		keys.emplace_back(key);
+		values.emplace_back(value);
+	}
+
+	NVSEArrayVarInterface::Array* Build(NVSEArrayVarInterface* arrayVarInterface, Script* callingScript) {
+		return arrayVarInterface->CreateMap(keys.data(), values.data(), keys.size(), callingScript);
+	}
+
+private:
+	std::vector<double> keys;
+	std::vector<NVSEArrayVarInterface::Element> values;
+};
