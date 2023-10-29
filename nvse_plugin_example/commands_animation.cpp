@@ -830,6 +830,30 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstP
 	return std::nullopt;
 }
 
+bool Cmd_GetActorAnimation_Execute(COMMAND_ARGS)
+{
+	*result = 0;
+	UInt32 animGroupId = -1;
+	UInt32 firstPerson = -1;
+	if (!ExtractArgs(EXTRACT_ARGS, &animGroupId, &firstPerson) || !thisObj || animGroupId == -1)
+		return true;
+	const auto actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+	if (!actor)
+		return true;
+	if (firstPerson == -1)
+	{
+		firstPerson = actor == g_thePlayer && !g_thePlayer->IsThirdPerson();
+	}
+	const auto realGroupId = GetActorRealAnimGroup(actor, animGroupId);
+	const auto animResult = GetActorAnimation(realGroupId, firstPerson, firstPerson ? g_thePlayer->firstPersonAnimData : actor->GetAnimData());
+	if (animResult && animResult->parent && !animResult->parent->anims.empty())
+	{
+		const auto* path = animResult->parent->anims.front().path.c_str();
+		*result = g_stringVarInterface->CreateString(path, scriptObj);
+	}
+	return true;
+}
+
 MemoizedMap<const char*, int> s_animGroupNameToIDMap;
 
 std::span<const char*> s_moveTypeNames{ reinterpret_cast<const char**>(0x1197798), 3 };

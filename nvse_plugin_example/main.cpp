@@ -39,6 +39,7 @@ std::deque<std::function<void()>> g_executionQueue;
 #if RUNTIME
 NVSEScriptInterface* g_script;
 NVSEArrayVarInterface* g_arrayVarInterface = nullptr;
+NVSEStringVarInterface* g_stringVarInterface = nullptr;
 #endif
 
 _CaptureLambdaVars CaptureLambdaVars;
@@ -735,6 +736,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_messagingInterface->RegisterListener(g_pluginHandle, "NVSE", MessageHandler);
 	g_script = (NVSEScriptInterface*)nvse->QueryInterface(kInterface_Script);
 	g_arrayVarInterface = (NVSEArrayVarInterface*)nvse->QueryInterface(kInterface_ArrayVar);
+	g_stringVarInterface = (NVSEStringVarInterface*)nvse->QueryInterface(kInterface_StringVar);
 
 	nvse->SetOpcodeBase(0x3920);
 	
@@ -750,6 +752,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	RegisterScriptCommand(SetAnimationTraitNumeric);
 	RegisterScriptCommand(GetAnimationTraitNumeric);
 	nvse->RegisterTypedCommand(&kCommandInfo_GetAnimationByPath, kRetnType_Array);
+	nvse->RegisterTypedCommand(&kCommandInfo_GetActorAnimation, kRetnType_String);
 
 #if _DEBUG
 	RegisterScriptCommand(kNVSETest);

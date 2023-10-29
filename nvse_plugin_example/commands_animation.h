@@ -512,6 +512,12 @@ static ParamInfo kParams_GetAnimationTraitNumeric[] =
 	{"trait", kParamType_Integer, 0},
 };
 
+
+static ParamInfo kParams_GetActorAnimation[] = {
+	{	"anim group", kParamType_AnimationGroup, 0 },
+	{	"int", kParamType_Integer, 1 },
+};
+
 DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 2, kParams_OneForm_OneOptionalInt)
 DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof kParams_SetWeaponAnimationPath / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
 DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", false, sizeof kParams_SetActorAnimationPath / sizeof(ParamInfo), kParams_SetActorAnimationPath)
@@ -524,6 +530,7 @@ DEFINE_COMMAND_PLUGIN(EjectWeapon, "", true, 0, nullptr);
 DEFINE_COMMAND_PLUGIN(SetAnimationTraitNumeric, "", false, 3, kParams_SetAnimationTraitNumeric);
 DEFINE_COMMAND_PLUGIN(GetAnimationTraitNumeric, "", false, 2, kParams_GetAnimationTraitNumeric);
 DEFINE_COMMAND_PLUGIN(GetAnimationByPath, "", false, 1, kParams_OneString);
+DEFINE_COMMAND_PLUGIN(GetActorAnimation, "", false, 2, kParams_GetActorAnimation);
 #if _DEBUG
 
 DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
