@@ -133,11 +133,13 @@ void HandleAnimTimes()
 			{
 				Revert3rdPersonAnimTimes(animTime, anim);
 			};
-			if (actor->GetWeaponForm() != animTime.actorWeapon 
-				|| animTime.anim3rdCounterpart && animTime.anim3rdPlaying && g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType] != animTime.anim3rdCounterpart)
+			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
+			const auto* currentWeapon = actor->GetWeaponForm();
+			
+			if (currentWeapon != animTime.actorWeapon
+				|| !current3rdPersonAnim || !current3rdPersonAnim->animGroup
+				|| animTime.anim3rdCounterpart && animTime.anim3rdPlaying && current3rdPersonAnim->animGroup->groupID != animTime.anim3rdCounterpart->animGroup->groupID)
 			{
-				//if (!g_thePlayer->IsThirdPerson())
-				//	GameFuncs::DeactivateSequence(nullptr, animTime.anim3rdCounterpart, 0);
 				erase();
 				continue;
 			}
@@ -146,12 +148,12 @@ void HandleAnimTimes()
 				const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
 				auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
 				animTime.anim3rdPlaying = anim3rd != nullptr;
-				if (!anim3rd || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
+				if (!anim3rd || !anim3rd->animGroup || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
 				{
 					anim3rd = anim->Get3rdPersonCounterpart();
 					animTime.anim3rdPlaying = false;
 				}
-				if (!anim3rd)
+				if (!anim3rd || !anim3rd->animGroup)
 				{
 					erase();
 					continue;
