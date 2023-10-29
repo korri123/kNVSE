@@ -145,7 +145,6 @@ struct AnimTime
 	bool respectEndKey = false;
 	bool firstPerson = false;
 	BSAnimGroupSequence* anim3rdCounterpart = nullptr;
-	bool anim3rdPlaying = false;
 	POVSwitchState povState = POVSwitchState::NotSet;
 	TESObjectWEAP* actorWeapon = nullptr;
 	TimedExecution<Script*>::Context scriptLines;

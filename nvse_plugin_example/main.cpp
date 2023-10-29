@@ -138,7 +138,7 @@ void HandleAnimTimes()
 			
 			if (currentWeapon != animTime.actorWeapon
 				|| !current3rdPersonAnim || !current3rdPersonAnim->animGroup
-				|| animTime.anim3rdCounterpart && animTime.anim3rdPlaying && current3rdPersonAnim->animGroup->groupID != animTime.anim3rdCounterpart->animGroup->groupID)
+				|| animTime.anim3rdCounterpart && current3rdPersonAnim->animGroup->groupID != animTime.anim3rdCounterpart->animGroup->groupID)
 			{
 				erase();
 				continue;
@@ -147,11 +147,9 @@ void HandleAnimTimes()
 			{
 				const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
 				auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
-				animTime.anim3rdPlaying = anim3rd != nullptr;
 				if (!anim3rd || !anim3rd->animGroup || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
 				{
 					anim3rd = anim->Get3rdPersonCounterpart();
-					animTime.anim3rdPlaying = false;
 				}
 				if (!anim3rd || !anim3rd->animGroup)
 				{
