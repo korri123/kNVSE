@@ -410,11 +410,14 @@ bool __fastcall AllowAttacksEarlierInAnimHook(BaseProcess* baseProcess)
 		const auto iter = ra::find_if(g_timeTrackedAnims, [](auto& p)
 		{
 			const auto& animTime = *p.second;
-			if (animTime.allowAttackTime == -FLT_MAX)
+			if (animTime.allowAttackTime == -FLT_MAX || !animTime.anim || animTime.anim->state == kAnimState_Inactive || !animTime.IsPlayer())
 				return false;
 			const auto anim = animTime.anim;
+			// prevent first person / 3rd person mismatch
+			if (animTime.firstPerson && g_thePlayer->IsThirdPerson())
+				return false;
 			const auto currentTime = GetAnimTime(animTime.GetAnimData(g_thePlayer), anim);
-			return currentTime >= animTime.allowAttackTime && animTime.IsPlayer();
+			return currentTime >= animTime.allowAttackTime;
 
 		});
 		if (iter != g_timeTrackedAnims.end() && GameFuncs::GetControlState(ControlCode::Attack, Decoding::IsDXKeyState::IsPressed))
