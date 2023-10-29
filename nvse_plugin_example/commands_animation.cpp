@@ -845,11 +845,26 @@ bool Cmd_GetActorAnimation_Execute(COMMAND_ARGS)
 		firstPerson = actor == g_thePlayer && !g_thePlayer->IsThirdPerson();
 	}
 	const auto realGroupId = GetActorRealAnimGroup(actor, animGroupId);
-	const auto animResult = GetActorAnimation(realGroupId, firstPerson, firstPerson ? g_thePlayer->firstPersonAnimData : actor->GetAnimData());
+	const auto animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->GetAnimData();
+	if (!animData)
+		return true;
+	const auto animResult = GetActorAnimation(realGroupId, firstPerson, animData);
 	if (animResult && animResult->parent && !animResult->parent->anims.empty())
 	{
 		const auto* path = animResult->parent->anims.front().path.c_str();
 		*result = g_stringVarInterface->CreateString(path, scriptObj);
+		return true;
+	}
+	auto* vanillaAnimBase = animData->mapAnimSequenceBase->Lookup(realGroupId);
+	if (vanillaAnimBase)
+	{
+		const auto* anim = vanillaAnimBase->GetSequenceByIndex(-1);
+		if (anim)
+		{
+			const auto* path = anim->sequenceName;
+			*result = g_stringVarInterface->CreateString(path, scriptObj);
+			return true;
+		}
 	}
 	return true;
 }
