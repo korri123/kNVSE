@@ -1374,7 +1374,7 @@ public:
 
 	NiTArray<NiControllerSequence*>				sequences;		// 34
 	NiTSet<NiControllerSequence*> m_kActiveSequences;
-	UInt32										unk4C;			// 4C
+	UInt32										numActiveSequences;			// 4C
 	NiTStringPointerMap<NiControllerSequence*>	seqStrMap;		// 50
 	NiTArray<void*>* arr64;			// 64
 	UInt32										unk68;			// 68

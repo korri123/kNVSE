@@ -90,7 +90,7 @@ public:
 		template <typename F>
 		void Update(float time, AnimData* animData, F&& f)
 		{
-			if (!execution)
+			if (!execution || execution->items.empty())
 				return;
 			const auto lastTime = this->lastTime;
 			this->lastTime = time;
@@ -410,6 +410,8 @@ namespace GameFuncs
 	inline auto DeactivateSequence = THISCALL(0x47B220, int, NiControllerManager * mgr, NiControllerSequence * pkSequence, float fEaseOut);
 	inline auto GetActorAnimGroupId = THISCALL(0x897910, UInt16, Actor* actor, UInt32 groupId, BaseProcess::WeaponInfo* weapInfo, bool aFalse, AnimData* animData);
 	inline auto NiControllerManager_RemoveSequence = THISCALL(0xA2EC50, NiControllerSequence*, NiControllerManager * mgr, NiControllerSequence * anim);
+	inline auto GetNearestGroupID = THISCALL(0x495740, UInt16, AnimData* animData, UInt16 groupID, bool noRecurse);
+	inline auto NiControllerManager_LookupSequence = THISCALL(0x47A520, NiControllerSequence*, NiControllerManager* mgr, const char** animGroupName);
 }
 
 BSAnimGroupSequence* GetAnimationByPath(const char* path);
@@ -517,6 +519,10 @@ static ParamInfo kParams_GetActorAnimation[] = {
 	{	"int", kParamType_Integer, 1 },
 };
 
+static ParamInfo kParams_OneAnimGroup[] = {
+	{	"anim group", kParamType_AnimationGroup, 0 },
+};
+
 DEFINE_COMMAND_PLUGIN(ForcePlayIdle, "", true, 2, kParams_OneForm_OneOptionalInt)
 DEFINE_COMMAND_PLUGIN(SetWeaponAnimationPath, "", false, sizeof kParams_SetWeaponAnimationPath / sizeof(ParamInfo), kParams_SetWeaponAnimationPath)
 DEFINE_COMMAND_PLUGIN(SetActorAnimationPath, "", false, sizeof kParams_SetActorAnimationPath / sizeof(ParamInfo), kParams_SetActorAnimationPath)
@@ -528,8 +534,9 @@ DEFINE_COMMAND_PLUGIN(CreateIdleAnimForm, "", false, 2, kParams_CreateIdleAnimFo
 DEFINE_COMMAND_PLUGIN(EjectWeapon, "", true, 0, nullptr);
 DEFINE_COMMAND_PLUGIN(SetAnimationTraitNumeric, "", false, 3, kParams_SetAnimationTraitNumeric);
 DEFINE_COMMAND_PLUGIN(GetAnimationTraitNumeric, "", false, 2, kParams_GetAnimationTraitNumeric);
-DEFINE_COMMAND_PLUGIN(GetAnimationByPath, "", false, 1, kParams_OneString);
-DEFINE_COMMAND_PLUGIN(GetActorAnimation, "", false, 2, kParams_GetActorAnimation);
+DEFINE_COMMAND_PLUGIN(GetAnimationByPath, "", true, 1, kParams_OneString);
+DEFINE_COMMAND_PLUGIN(GetActorAnimation, "", true, 2, kParams_GetActorAnimation);
+DEFINE_COMMAND_PLUGIN(GetAnimationsByAnimGroup, "", true, 1, kParams_OneAnimGroup);
 #if _DEBUG
 
 DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);

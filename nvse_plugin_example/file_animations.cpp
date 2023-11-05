@@ -169,18 +169,8 @@ Script* CompileConditionScript(const std::string& condString, const std::string&
 	*buffer.scriptData = 0x1D;
 	buffer.dataOffset = 4;
 	buffer.currentScript = condition.get();
-	auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
-	const auto patchEndOfLineCheck = [&](bool bDisableCheck)
-	{
-		// remove this when xNVSE 6.1.10/6.2 releases
-		if (bDisableCheck)
-			SafeWrite8(0x5B3A8D, 0xEB);
-		else
-			SafeWrite8(0x5B3A8D, 0x73);
-	};
-	patchEndOfLineCheck(true);
-	auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition.get(), &buffer);
-	patchEndOfLineCheck(false);
+	const auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
+	const auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition.get(), &buffer);
 	buffer.scriptText = nullptr;
 	condition->text = nullptr;
 	if (!result)

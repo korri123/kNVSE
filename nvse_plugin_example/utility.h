@@ -144,7 +144,8 @@ __declspec(naked) void Hook_##name() \
 
 #define INLINE_HOOK(retnType, callingConv, ...) static_cast<retnType(callingConv*)(__VA_ARGS__)>([](__VA_ARGS__) [[msvc::forceinline]] -> retnType
 
-class NVSEStringMapBuilder {
+class NVSEStringMapBuilder
+{
 public:
 	void Add(const std::string& key, const NVSEArrayVarInterface::Element& value) {
 		keys.emplace_back(key);
@@ -164,7 +165,8 @@ private:
 	std::vector<NVSEArrayVarInterface::Element> values;
 };
 
-class NVSEMapBuilder {
+class NVSEMapBuilder
+{
 public:
 	void Add(double key, const NVSEArrayVarInterface::Element& value) {
 		keys.emplace_back(key);
@@ -177,5 +179,20 @@ public:
 
 private:
 	std::vector<double> keys;
+	std::vector<NVSEArrayVarInterface::Element> values;
+};
+
+class NVSEArrayBuilder
+{
+public:
+	void Add(const NVSEArrayVarInterface::Element& value)
+	{
+		values.emplace_back(value);
+	}
+	NVSEArrayVarInterface::Array* Build(NVSEArrayVarInterface* arrayVarInterface, Script* callingScript)
+	{
+		return arrayVarInterface->CreateArray(values.data(), values.size(), callingScript);
+	}
+private:
 	std::vector<NVSEArrayVarInterface::Element> values;
 };

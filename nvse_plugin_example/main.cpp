@@ -22,7 +22,8 @@
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
 
-#define RegisterScriptCommand(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
+#define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
+#define REG_CMD_TYPED(name, type) 	nvse->RegisterTypedCommand(&kCommandInfo_ ##name, type)
 
 IDebugLog		gLog("kNVSE.log");
 
@@ -243,7 +244,7 @@ void HandleAnimTimes()
 				NVSEArrayVarInterface::Element arrResult;
 				if (g_script->CallFunction(conditionScript, actor, nullptr, &arrResult, 0))
 				{
-					const auto result = static_cast<bool>(arrResult.Number());
+					const auto result = static_cast<bool>(arrResult.GetNumber());
 					const auto customAnimState = anim ? anim->state : kAnimState_Inactive;
 					if (customAnimState == kAnimState_Inactive && result && curAnim != anim
 						|| customAnimState != kAnimState_Inactive && !result && curAnim == anim)
@@ -740,22 +741,24 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 
 	nvse->SetOpcodeBase(0x3920);
 	
-	RegisterScriptCommand(ForcePlayIdle);
-	RegisterScriptCommand(SetWeaponAnimationPath);
-	RegisterScriptCommand(SetActorAnimationPath);
-	RegisterScriptCommand(PlayAnimationPath);
-	RegisterScriptCommand(ForceStopIdle);
-	RegisterScriptCommand(kNVSEReset);
-	RegisterScriptCommand(PlayGroupAlt);
-	RegisterScriptCommand(CreateIdleAnimForm);
-	RegisterScriptCommand(EjectWeapon);
-	RegisterScriptCommand(SetAnimationTraitNumeric);
-	RegisterScriptCommand(GetAnimationTraitNumeric);
-	nvse->RegisterTypedCommand(&kCommandInfo_GetAnimationByPath, kRetnType_Array);
-	nvse->RegisterTypedCommand(&kCommandInfo_GetActorAnimation, kRetnType_String);
+	REG_CMD(ForcePlayIdle);
+	REG_CMD(SetWeaponAnimationPath);
+	REG_CMD(SetActorAnimationPath);
+	REG_CMD(PlayAnimationPath);
+	REG_CMD(ForceStopIdle);
+	REG_CMD(kNVSEReset);
+	REG_CMD(PlayGroupAlt);
+	REG_CMD(CreateIdleAnimForm);
+	REG_CMD(EjectWeapon);
+	REG_CMD(SetAnimationTraitNumeric);
+	REG_CMD(GetAnimationTraitNumeric);
+	REG_CMD_TYPED(GetAnimationByPath, kRetnType_Array);
+	REG_CMD_TYPED(GetActorAnimation, kRetnType_String);
+	REG_CMD_TYPED(GetAnimationsByAnimGroup, kRetnType_Array);
+
 
 #if _DEBUG
-	RegisterScriptCommand(kNVSETest);
+	REG_CMD(kNVSETest);
 	if (false)
 	{
 		//g_thePlayer->baseProcess->GetWeaponBone();

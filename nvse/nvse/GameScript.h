@@ -249,13 +249,14 @@ struct ScriptBuffer
 	UInt32			curLineNumber;		// 01C
 	UInt8			* scriptData;		// 020 pointer to 0x4000-byte array
 	UInt32			dataOffset;			// 024
-	UInt32			unk028;				// 028
+	UInt32			lastId;				// 028
 	UInt32			numRefs;			// 02C
-	UInt32			unk030;				// 030
+	UInt32			dataLength;				// 030
 	UInt32			varCount;			// 034 script->varCount
-	UInt8			scriptType;			// 038 script->type
-	UInt8			unk039;				// 039 script->unk35
-	UInt8			unk03A[2];
+	UInt8			isQuestScript;			// 038 script->type
+	UInt8			isEffectScript;				// 039 script->unk35
+	UInt8			compiled;
+	UInt8			pad03B;
 	Script::VarInfoEntry	vars;		// 03C
 	Script::RefListEntry	refVars;	// 044 probably ref vars
 	Script*			currentScript;				// 04C num lines?
