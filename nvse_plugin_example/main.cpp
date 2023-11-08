@@ -136,10 +136,15 @@ void HandleAnimTimes()
 			};
 			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
 			const auto* currentWeapon = actor->GetWeaponForm();
-			
-			if (currentWeapon != animTime.actorWeapon
-				|| !current3rdPersonAnim || !current3rdPersonAnim->animGroup
-				|| animTime.anim3rdCounterpart && current3rdPersonAnim->animGroup->groupID != animTime.anim3rdCounterpart->animGroup->groupID)
+
+			const auto changedWeapon = _L(, currentWeapon != animTime.actorWeapon);
+			const auto current3rdPersonAnimIsNull = _L(, !current3rdPersonAnim || !current3rdPersonAnim->animGroup);
+			const auto old3rdPersonAnimIsNotNull = _L(, animTime.anim3rdCounterpart && animTime.anim3rdCounterpart->animGroup);
+			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim->animGroup->groupID != animTime.anim3rdCounterpart->animGroup->groupID);
+			const auto animHasEnded = _L(, anim->state == NiControllerSequence::kAnimState_Inactive);
+			if (changedWeapon()
+				|| current3rdPersonAnimIsNull()
+				|| (old3rdPersonAnimIsNotNull() && current3rdPersonAnimHasChanged() && animHasEnded()))
 			{
 				erase();
 				continue;
