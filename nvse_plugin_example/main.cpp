@@ -755,11 +755,9 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	REG_CMD(PlayGroupAlt);
 	REG_CMD(CreateIdleAnimForm);
 	REG_CMD(EjectWeapon);
-	REG_CMD(SetAnimationTraitNumeric);
-	REG_CMD(GetAnimationTraitNumeric);
-	REG_CMD_TYPED(GetAnimationByPath, kRetnType_Array);
-	REG_CMD_TYPED(GetActorAnimation, kRetnType_String);
-	REG_CMD_TYPED(GetAnimationsByAnimGroup, kRetnType_Array);
+
+	NVSECommandBuilder commandBuilder(nvse);
+	CreateCommands(commandBuilder);
 
 
 #if _DEBUG

@@ -201,6 +201,7 @@ void HandleGarbageCollection()
 	}
 }
 
+
 /*
  * BSAnimGroupSequence ref count is 3 after LoadAnimation; it has the following references:
  * - The AnimSequenceBase
@@ -813,56 +814,6 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstP
 	return std::nullopt;
 }
 
-bool Cmd_GetActorAnimation_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-	UInt32 animGroupId = -1;
-	UInt32 firstPerson = -1;
-	if (!ExtractArgs(EXTRACT_ARGS, &animGroupId, &firstPerson) || !thisObj || animGroupId == -1)
-		return true;
-	const auto actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
-	if (!actor)
-		return true;
-	if (firstPerson == -1)
-	{
-		firstPerson = actor == g_thePlayer && !g_thePlayer->IsThirdPerson();
-	}
-	const auto animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->GetAnimData();
-	if (!animData)
-		return true;
-
-	const auto fullGroupId = GetActorRealAnimGroup(actor, animGroupId);
-	const auto nearestGroupId = GameFuncs::GetNearestGroupID(animData, fullGroupId, false);
-
-	const auto animResult = GetActorAnimation(nearestGroupId, firstPerson, animData);
-	if (animResult && animResult->parent && !animResult->parent->anims.empty())
-	{
-		const auto* path = animResult->parent->anims.front().path.c_str();
-		*result = g_stringVarInterface->CreateString(path, scriptObj);
-		return true;
-	}
-
-	auto* vanillaAnimBase = animData->mapAnimSequenceBase->Lookup(nearestGroupId);
-	if (vanillaAnimBase)
-	{
-		const auto* anim = vanillaAnimBase->GetSequenceByIndex(0);
-		if (anim)
-		{
-			const auto* path = anim->sequenceName;
-			*result = g_stringVarInterface->CreateString(path, scriptObj);
-			return true;
-		}
-	}
-	*result = g_stringVarInterface->CreateString("", scriptObj);
-	return true;
-}
-
-
-bool Cmd_GetSequenceAnimations_Execute(COMMAND_ARGS)
-{
-	return true;
-}
-
 MemoizedMap<const char*, int> s_animGroupNameToIDMap;
 
 std::span<const char*> s_moveTypeNames{ reinterpret_cast<const char**>(0x1197798), 3 };
@@ -1414,56 +1365,7 @@ bool Cmd_EjectWeapon_Execute(COMMAND_ARGS)
 	return true;
 }
 
-enum class AnimationTrait
-{
-	None = -1, StartTime = 0
-};
-
-bool Cmd_SetAnimationTraitNumeric_Execute(COMMAND_ARGS)
-{
-
-	char path[0x400];
-	auto trait = AnimationTrait::None;
-	float value = 0;
-	if (!ExtractArgs(EXTRACT_ARGS, &path, &trait, &value) || trait == AnimationTrait::None)
-		return true;
-	auto* anim = GetAnimationByPath(path);
-	if (!anim)
-		return true;
-	switch (trait) {
-	case AnimationTrait::StartTime:
-	{
-		anim->SetStartOffset(value);
-		*result = 1;
-		break;
-	}
-	default: break;
-	}
-	return true;
-}
-
-bool Cmd_GetAnimationTraitNumeric_Execute(COMMAND_ARGS)
-{
-
-	char path[0x400];
-	auto trait = AnimationTrait::None;
-	if (!ExtractArgs(EXTRACT_ARGS, &path, &trait) || trait == AnimationTrait::None)
-		return true;
-	auto* anim = GetAnimationByPath(path);
-	if (!anim)
-		return true;
-	switch (trait) {
-	case AnimationTrait::StartTime:
-	{
-		*result = anim->lastTime;
-		break;
-	}
-	default: break;
-	}
-	return true;
-}
-
-NVSEArrayVarInterface::Array* CreateAnimationObjectArray(NiControllerSequence* anim, Script* callingScript)
+NVSEArrayVarInterface::Array* CreateAnimationObjectArray(NiControllerSequence* anim, Script* callingScript, bool includeDynamic = true)
 {
 	NVSEStringMapBuilder builder;
 
@@ -1473,15 +1375,26 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(NiControllerSequence* a
 	builder.Add("frequency", anim->frequency);
 	builder.Add("beginKeyTime", anim->beginKeyTime);
 	builder.Add("endKeyTime", anim->endKeyTime);
-	builder.Add("lastTime", anim->lastTime);
-	builder.Add("weightedLastTime", anim->weightedLastTime);
-	builder.Add("lastScaledTime", anim->lastScaledTime);
-	builder.Add("state", anim->state);
-	builder.Add("offset", anim->offset);
-	builder.Add("startTime", anim->startTime);
-	builder.Add("endTime", anim->endTime);
-	builder.Add("destFrame", anim->destFrame);
+	if (includeDynamic)
+	{
+		builder.Add("lastTime", anim->lastTime);
+		builder.Add("weightedLastTime", anim->weightedLastTime);
+		builder.Add("lastScaledTime", anim->lastScaledTime);
+		builder.Add("state", anim->state);
+		builder.Add("offset", anim->offset);
+		builder.Add("startTime", anim->startTime);
+		builder.Add("endTime", anim->endTime);
+	}
 	builder.Add("accumRootName", anim->accumRootName);
+	if (const auto* animGroupSeq = DYNAMIC_CAST(anim, NiControllerSequence, BSAnimGroupSequence); animGroupSeq && animGroupSeq->animGroup)
+	{
+		builder.Add("animGroupId", animGroupSeq->animGroup->groupID);
+		if (const auto* animGroupInfo = animGroupSeq->animGroup->GetGroupInfo())
+		{
+			builder.Add("sequenceType", animGroupInfo->sequenceType);
+			builder.Add("keyType", animGroupInfo->keyType);
+		}
+	}
 
 
 	const auto* textKeyData = anim->textKeyData;
@@ -1504,44 +1417,6 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(NiControllerSequence* a
 	return builder.Build(g_arrayVarInterface, callingScript);
 }
 
-
-bool Cmd_GetAnimationByPath_Execute(COMMAND_ARGS)
-{
-	*result = 0;
-	char path[0x400];
-	if (!ExtractArgs(EXTRACT_ARGS, &path) || !thisObj)
-		return true;
-	auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
-	if (!actor)
-		return true;
-	auto* animData = actor == g_thePlayer && !g_thePlayer->IsThirdPerson() ? g_thePlayer->firstPersonAnimData : actor->GetAnimData();
-	if (!animData)
-		return true;
-	auto* controllerManager = animData->controllerManager;
-	if (!controllerManager)
-		return true;
-	for (int i = 0; i < controllerManager->numActiveSequences; ++i)
-	{
-		auto* anim = controllerManager->m_kActiveSequences.data[i];
-		if (anim && anim->sequenceName && !strcmp(anim->sequenceName, path))
-		{
-			*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj));
-			return true;
-		}
-	}
-	for (int i = 0; i < controllerManager->sequences.Length(); ++i)
-	{
-		auto* anim = controllerManager->sequences[i];
-		if (anim && anim->sequenceName && !strcmp(anim->sequenceName, path))
-		{
-			*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj));
-			return true;
-		}
-	}
-
-	return true;
-}
-
 std::vector<BSAnimGroupSequence*> FindCustomAnimations(AnimData* animData, const UInt16 nearestGroupId)
 {
 	std::vector<BSAnimGroupSequence*> result;
@@ -1557,56 +1432,120 @@ std::vector<BSAnimGroupSequence*> FindCustomAnimations(AnimData* animData, const
 				result.push_back(iter->second.anim);
 			}
 		}
-		
+
 	}
 	return result;
 }
 
-bool Cmd_GetAnimationsByAnimGroup_Execute(COMMAND_ARGS)
+AnimData* GetAnimData(TESObjectREFR* actor)
 {
-	*result = 0;
-	UInt32 animGroupId = -1;
-	if (!ExtractArgs(EXTRACT_ARGS, &animGroupId) || !thisObj)
-		return true;
-	auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 	if (!actor)
-		return true;
-	auto* animData = actor == g_thePlayer && !g_thePlayer->IsThirdPerson() ? g_thePlayer->firstPersonAnimData : actor->GetAnimData();
-	if (!animData)
-		return true;
-	const auto fullGroupId = GetActorRealAnimGroup(actor, animGroupId);
-	const auto nearestGroupId = GameFuncs::GetNearestGroupID(animData, fullGroupId, false);
-	const auto customAnims = FindCustomAnimations(animData, nearestGroupId);
-	if (!customAnims.empty())
+		return nullptr;
+	if (actor == g_thePlayer && !g_thePlayer->IsThirdPerson())
+		return g_thePlayer->firstPersonAnimData;
+	return actor->GetAnimData();
+}
+
+void CreateCommands(NVSECommandBuilder& builder)
+{
+	builder.Create("GetPlayingAnimBySequenceType", kRetnType_Array, { ParamInfo{"sequence id", kParamType_Integer, false} }, true, [](COMMAND_ARGS)
 	{
-		NVSEArrayBuilder builder;
-		for (const auto& customAnim : customAnims)
+		*result = 0;
+		UInt32 sequenceId = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequenceId))
+			return false;
+		if (sequenceId < 0 || sequenceId > kSequence_SpecialIdle)
+			return true;
+		const auto* animData = GetAnimData(thisObj);
+		if (!animData)
+			return true;
+		auto* anim = animData->animSequence[sequenceId];
+		if (!anim)
+			return true;
+		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj));
+		return true;
+	});
+
+	builder.Create("GetPlayingAnimSequencePaths", kRetnType_Array, {}, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		if (const auto* animData = GetAnimData(thisObj))
 		{
-			builder.Add(CreateAnimationObjectArray(customAnim, scriptObj));
+			NVSEArrayBuilder arr;
+			for (const auto* anim : animData->animSequence)
+			{
+				if (anim)
+					arr.Add(anim->sequenceName);
+				else
+					arr.Add("");
+			}
+			*result = reinterpret_cast<UInt32>(arr.Build(g_arrayVarInterface, scriptObj));
 		}
-		*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
 		return true;
-	}
-	if (auto* base = animData->mapAnimSequenceBase->Lookup(nearestGroupId))
+	});
+
+	builder.Create("GetAnimationAttributes", kRetnType_Array, { ParamInfo{"path", kParamType_String, false} }, false, [](COMMAND_ARGS)
 	{
-		NVSEArrayBuilder builder;
-		if (base->IsSingle())
+		*result = 0;
+		char path[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &path))
+			return false;
+		auto* anim = GetAnimationByPath(path);
+		if (!anim)
+			return true;
+		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj, false));
+		return true;
+	});
+
+	builder.Create("GetAnimationsByAnimGroup", kRetnType_Array, { ParamInfo{"anim group id", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		UInt32 animGroupId = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &animGroupId) || !thisObj)
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* animData = GetAnimData(actor);
+		if (!animData)
+			return true;
+		const auto fullGroupId = GetActorRealAnimGroup(actor, animGroupId);
+		const auto nearestGroupId = GameFuncs::GetNearestGroupID(animData, fullGroupId, false);
+		const auto customAnims = FindCustomAnimations(animData, nearestGroupId);
+		if (!customAnims.empty())
 		{
-			builder.Add(CreateAnimationObjectArray(base->GetSequenceByIndex(0), scriptObj));
+			NVSEArrayBuilder builder;
+			for (const auto& customAnim : customAnims)
+			{
+				builder.Add(customAnim->sequenceName);
+			}
 			*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
 			return true;
 		}
-		const auto* multi = static_cast<AnimSequenceMultiple*>(base);
-		multi->anims->ForEach([&](BSAnimGroupSequence* sequence)
+		if (auto* base = animData->mapAnimSequenceBase->Lookup(nearestGroupId))
 		{
-			builder.Add(CreateAnimationObjectArray(sequence, scriptObj));
-		});
-		*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
+			NVSEArrayBuilder builder;
+			if (base->IsSingle())
+			{
+				const auto* anim = base->GetSequenceByIndex(0);
+				builder.Add(anim->sequenceName);
+				*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
+				return true;
+			}
+			const auto* multi = static_cast<AnimSequenceMultiple*>(base);
+			multi->anims->ForEach([&](BSAnimGroupSequence* sequence)
+			{
+				builder.Add(sequence->sequenceName);
+			});
+			*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
+			return true;
+		}
+
 		return true;
-	}
-	
-	return true;
+	});	
 }
+
+
 
 #if 0
 bool Cmd_GetOverrideAnimations_Execute(COMMAND_ARGS)

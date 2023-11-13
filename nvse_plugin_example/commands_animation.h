@@ -500,25 +500,6 @@ static ParamInfo kParams_CreateIdleAnimForm[] =
 	{"type", kParamType_Integer, 1},
 };
 
-static ParamInfo kParams_SetAnimationTraitNumeric[] = 
-{
-	{"path", kParamType_String, 0},
-	{"trait", kParamType_Integer, 0},
-	{"value", kParamType_Float, 0}
-};
-
-static ParamInfo kParams_GetAnimationTraitNumeric[] =
-{
-	{"path", kParamType_String, 0},
-	{"trait", kParamType_Integer, 0},
-};
-
-
-static ParamInfo kParams_GetActorAnimation[] = {
-	{	"anim group", kParamType_AnimationGroup, 0 },
-	{	"int", kParamType_Integer, 1 },
-};
-
 static ParamInfo kParams_OneAnimGroup[] = {
 	{	"anim group", kParamType_AnimationGroup, 0 },
 };
@@ -532,11 +513,6 @@ DEFINE_COMMAND_PLUGIN(ForceStopIdle, "", true, 1, kParams_OneOptionalInt)
 DEFINE_COMMAND_PLUGIN(PlayGroupAlt, "", true, 2, kParams_PlayGroupAlt)
 DEFINE_COMMAND_PLUGIN(CreateIdleAnimForm, "", false, 2, kParams_CreateIdleAnimForm);
 DEFINE_COMMAND_PLUGIN(EjectWeapon, "", true, 0, nullptr);
-DEFINE_COMMAND_PLUGIN(SetAnimationTraitNumeric, "", false, 3, kParams_SetAnimationTraitNumeric);
-DEFINE_COMMAND_PLUGIN(GetAnimationTraitNumeric, "", false, 2, kParams_GetAnimationTraitNumeric);
-DEFINE_COMMAND_PLUGIN(GetAnimationByPath, "", true, 1, kParams_OneString);
-DEFINE_COMMAND_PLUGIN(GetActorAnimation, "", true, 2, kParams_GetActorAnimation);
-DEFINE_COMMAND_PLUGIN(GetAnimationsByAnimGroup, "", true, 1, kParams_OneAnimGroup);
 #if _DEBUG
 
 DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
@@ -594,3 +570,5 @@ extern PartialLoopingReloadState g_partialLoopReloadState;
 void HandleOnSequenceDestroy(BSAnimGroupSequence* anim);
 
 void HandleGarbageCollection();
+
+void CreateCommands(NVSECommandBuilder& builder);

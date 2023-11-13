@@ -196,3 +196,32 @@ public:
 private:
 	std::vector<NVSEArrayVarInterface::Element> values;
 };
+
+
+
+class NVSECommandBuilder
+{
+	const NVSEInterface* scriptInterface;
+public:
+	NVSECommandBuilder(const NVSEInterface* scriptInterface) : scriptInterface(scriptInterface) {}
+
+	void Create(const char* name, CommandReturnType returnType, std::initializer_list<ParamInfo> params, bool refRequired, Cmd_Execute fn)
+	{
+		ParamInfo* paramCopy = nullptr;
+		if (params.size())
+		{
+			paramCopy = new ParamInfo[params.size()];
+			int index = 0;
+			for (const auto& param : params)
+			{
+				paramCopy[index++] = param;
+			}
+		}
+		
+		auto commandInfo = CommandInfo{
+			name, "", 0, "", refRequired, static_cast<UInt16>(params.size()), paramCopy, fn, nullptr, nullptr, 0
+		};
+		scriptInterface->RegisterTypedCommand(&commandInfo, returnType);
+	}
+
+};
