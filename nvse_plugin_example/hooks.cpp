@@ -405,6 +405,11 @@ bool __fastcall AllowAttacksEarlierInAnimHook(BaseProcess* baseProcess)
 	// allow attacks before reload anim is done
 	if (!baseProcess)
 		return false; // test
+	if (g_allowedNextAnims.contains(baseProcess))
+	{
+		// should be allowed except in exceptional cases
+		return true;
+	}
 	if (baseProcess == g_thePlayer->baseProcess)
 	{
 		const auto iter = ra::find_if(g_timeTrackedAnims, [](auto& p)
@@ -526,10 +531,15 @@ void ApplyHooks()
 
 
 
+
 	// PlayerCharacter::Update -> IsReadyForAttack
 	WriteVirtualCall(0x9420E4, AllowAttacksEarlierInAnimHook);
 	// FiresWeapon -> IsReadyForAttack
 	WriteVirtualCall(0x893E86, AllowAttacksEarlierInAnimHook);
+
+	// Actor::Attack - Allow next anim
+	WriteVirtualCall(0x89371B, AllowAttacksEarlierInAnimHook);
+
 
 #if 0
 	// DEBUG npcs sprint

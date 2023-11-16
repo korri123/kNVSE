@@ -36,6 +36,7 @@ NVSECommandTableInterface* g_cmdTable;
 const CommandInfo* g_TFC;
 PlayerCharacter* g_player;
 std::deque<std::function<void()>> g_executionQueue;
+ExpressionEvaluatorUtils s_expEvalUtils;
 
 #if RUNTIME
 NVSEScriptInterface* g_script;
@@ -48,7 +49,7 @@ _UncaptureLambdaVars UncaptureLambdaVars;
 
 bool isEditor = false;
 
-float GetAnimTime(const AnimData* animData, const BSAnimGroupSequence* anim)
+float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 {
 	auto time = anim->offset + animData->timePassed;
 	if (anim->state == NiControllerSequence::kAnimState_TransDest)
@@ -743,6 +744,8 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_script = (NVSEScriptInterface*)nvse->QueryInterface(kInterface_Script);
 	g_arrayVarInterface = (NVSEArrayVarInterface*)nvse->QueryInterface(kInterface_ArrayVar);
 	g_stringVarInterface = (NVSEStringVarInterface*)nvse->QueryInterface(kInterface_StringVar);
+
+	nvse->InitExpressionEvaluatorUtils(&s_expEvalUtils);
 
 	nvse->SetOpcodeBase(0x3920);
 	

@@ -412,6 +412,7 @@ namespace GameFuncs
 	inline auto NiControllerManager_RemoveSequence = THISCALL(0xA2EC50, NiControllerSequence*, NiControllerManager * mgr, NiControllerSequence * anim);
 	inline auto GetNearestGroupID = THISCALL(0x495740, UInt16, AnimData* animData, UInt16 groupID, bool noRecurse);
 	inline auto NiControllerManager_LookupSequence = THISCALL(0x47A520, NiControllerSequence*, NiControllerManager* mgr, const char** animGroupName);
+	inline auto Actor_Attack = THISCALL(0x8935F0, bool, Actor* actor, UInt32 animGroupId);
 }
 
 BSAnimGroupSequence* GetAnimationByPath(const char* path);
@@ -530,7 +531,7 @@ bool IsCustomAnim(BSAnimGroupSequence* sequence);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPath& ctx);
-float GetAnimMult(AnimData* animData, UInt8 animGroupID);
+float GetAnimMult(const AnimData* animData, UInt8 animGroupID);
 bool IsAnimGroupReload(UInt8 animGroupId);
 bool IsAnimGroupMovement(UInt8 animGroupId);
 
@@ -572,3 +573,5 @@ void HandleOnSequenceDestroy(BSAnimGroupSequence* anim);
 void HandleGarbageCollection();
 
 void CreateCommands(NVSECommandBuilder& builder);
+
+extern std::unordered_set<BaseProcess*> g_allowedNextAnims;

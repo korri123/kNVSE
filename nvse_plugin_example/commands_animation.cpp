@@ -21,7 +21,8 @@
 #include <array>
 #include "NiNodes.h"
 #include "NiTypes.h"
-
+#include "ScriptUtils.h"
+#include "thunk_builder.h"
 
 std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<TESAnimGroup::AnimGroupInfo*>(0x11977D8), 245 };
 JSONAnimContext g_jsonContext;
@@ -1024,7 +1025,7 @@ void OverrideModIndexAnimation(const UInt8 modIdx, const std::filesystem::path& 
 	SetOverrideAnimation(modIdx, path, map, enable, groupIdFillSet, conditionScript, pollCondition);
 }
 
-float GetAnimMult(AnimData* animData, UInt8 animGroupID)
+float GetAnimMult(const AnimData* animData, UInt8 animGroupID)
 {
 	if (animGroupID < kAnimGroup_Forward || animGroupID > kAnimGroup_TurnRight)
 	{
@@ -1365,7 +1366,7 @@ bool Cmd_EjectWeapon_Execute(COMMAND_ARGS)
 	return true;
 }
 
-NVSEArrayVarInterface::Array* CreateAnimationObjectArray(NiControllerSequence* anim, Script* callingScript, bool includeDynamic = true)
+NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* anim, Script* callingScript, const AnimData* animData, bool includeDynamic = true)
 {
 	NVSEStringMapBuilder builder;
 
@@ -1384,12 +1385,21 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(NiControllerSequence* a
 		builder.Add("offset", anim->offset);
 		builder.Add("startTime", anim->startTime);
 		builder.Add("endTime", anim->endTime);
+		if (animData)
+		{
+			builder.Add("calculatedTime", GetAnimTime(animData, anim));
+			if (anim->animGroup)
+			{
+				builder.Add("multiplier", GetAnimMult(animData, anim->animGroup->groupID));
+
+			}
+		}
 	}
 	builder.Add("accumRootName", anim->accumRootName);
-	if (const auto* animGroupSeq = DYNAMIC_CAST(anim, NiControllerSequence, BSAnimGroupSequence); animGroupSeq && animGroupSeq->animGroup)
+	if (anim->animGroup)
 	{
-		builder.Add("animGroupId", animGroupSeq->animGroup->groupID);
-		if (const auto* animGroupInfo = animGroupSeq->animGroup->GetGroupInfo())
+		builder.Add("animGroupId", anim->animGroup->groupID);
+		if (const auto* animGroupInfo = anim->animGroup->GetGroupInfo())
 		{
 			builder.Add("sequenceType", animGroupInfo->sequenceType);
 			builder.Add("keyType", animGroupInfo->keyType);
@@ -1417,20 +1427,16 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(NiControllerSequence* a
 	return builder.Build(g_arrayVarInterface, callingScript);
 }
 
-std::vector<BSAnimGroupSequence*> FindCustomAnimations(AnimData* animData, const UInt16 nearestGroupId)
+std::vector<std::string_view> FindCustomAnimations(AnimData* animData, const UInt16 nearestGroupId)
 {
-	std::vector<BSAnimGroupSequence*> result;
+	std::vector<std::string_view> result;
 	const auto animationResult = GetActorAnimation(nearestGroupId, animData == g_thePlayer->firstPersonAnimData, animData);
 	if (animationResult && animationResult->parent && !animationResult->parent->anims.empty())
 	{
 		const auto& animPaths = animationResult->parent->anims;
 		for (const auto& animPath : animPaths)
 		{
-			const auto iter = g_cachedAnimMap.find(std::make_pair(animPath.path, animData));
-			if (iter != g_cachedAnimMap.end())
-			{
-				result.push_back(iter->second.anim);
-			}
+			result.push_back(animPath.path);
 		}
 
 	}
@@ -1446,6 +1452,8 @@ AnimData* GetAnimData(TESObjectREFR* actor)
 	return actor->GetAnimData();
 }
 
+std::unordered_set<BaseProcess*> g_allowedNextAnims;
+
 void CreateCommands(NVSECommandBuilder& builder)
 {
 	builder.Create("GetPlayingAnimBySequenceType", kRetnType_Array, { ParamInfo{"sequence id", kParamType_Integer, false} }, true, [](COMMAND_ARGS)
@@ -1456,13 +1464,13 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return false;
 		if (sequenceId < 0 || sequenceId > kSequence_SpecialIdle)
 			return true;
-		const auto* animData = GetAnimData(thisObj);
+		auto* animData = GetAnimData(thisObj);
 		if (!animData)
 			return true;
 		auto* anim = animData->animSequence[sequenceId];
 		if (!anim)
 			return true;
-		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj));
+		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj, animData, true));
 		return true;
 	});
 
@@ -1493,7 +1501,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = GetAnimationByPath(path);
 		if (!anim)
 			return true;
-		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj, false));
+		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj, nullptr, false));
 		return true;
 	});
 
@@ -1515,9 +1523,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!customAnims.empty())
 		{
 			NVSEArrayBuilder builder;
-			for (const auto& customAnim : customAnims)
+			for (auto& customAnim : customAnims)
 			{
-				builder.Add(customAnim->sequenceName);
+				builder.Add(customAnim.data());
 			}
 			*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
 			return true;
@@ -1542,7 +1550,98 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 
 		return true;
-	});	
+	});
+
+	builder.Create("ForceFireWeapon", kRetnType_Default, {}, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		if (auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor))
+		{
+			actor->FireWeapon();
+			*result = 1;
+		}
+		return true;
+	});
+#if _DEBUG
+	builder.Create("ForceAttack", kRetnType_Default, { ParamInfo{"animGroup", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		UInt32 animGroupId = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &animGroupId) || !thisObj)
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor || !actor->GetAnimData())
+			return true;
+		auto* baseProcess = actor->baseProcess;
+		if (!baseProcess || !baseProcess->animData)
+			return true;
+		g_allowedNextAnims.insert(baseProcess);
+		g_executionQueue.emplace_back([=]
+		{
+			g_allowedNextAnims.erase(baseProcess);
+		});
+		*result = GameFuncs::Actor_Attack(actor, animGroupId);
+		return true;
+	});
+
+
+	static std::initializer_list<ParamInfo> kParams_ThisCall = {
+		{ "address", kNVSEParamType_Number, 0 },
+		{"arg0", kNVSEParamType_FormOrNumber, 1},
+		{"arg1", kNVSEParamType_FormOrNumber, 1},
+		{"arg2", kNVSEParamType_FormOrNumber, 1},
+		{"arg3", kNVSEParamType_FormOrNumber, 1},
+		{"arg4", kNVSEParamType_FormOrNumber, 1},
+		{"arg5", kNVSEParamType_FormOrNumber, 1},
+
+	};
+	builder.Create("ThisCall", kRetnType_Default, kParams_ThisCall, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		if (PluginExpressionEvaluator eval(PASS_COMMAND_ARGS); eval.ExtractArgs() && thisObj)
+		{
+			const auto address = static_cast<UInt32>(eval.GetNthArg(0)->GetInt());
+			const auto* ref = thisObj;
+			std::vector<unsigned int> args;
+			for (int i = 1; i < eval.NumArgs(); ++i)
+			{
+				const auto arg = eval.GetNthArg(i);
+				if (arg->GetType() == kTokenType_Number)
+					args.push_back(arg->GetInt());
+				else if (arg->GetType() == kTokenType_Form)
+					args.push_back(reinterpret_cast<UInt32>(arg->GetTESForm()));
+				else
+					return true;
+			}
+			*result = 1;
+			switch (args.size())
+			{
+			case 0:
+				*result = ThisStdCall<UInt32>(address, ref);
+				break;
+			case 1:
+				*result = ThisStdCall<UInt32>(address, ref, args[0]);
+				break;
+			case 2:
+				*result = ThisStdCall<UInt32>(address, ref, args[0], args[1]);
+				break;
+			case 3:
+				*result = ThisStdCall<UInt32>(address, ref, args[0], args[1], args[2]);
+				break;
+			case 4:
+				*result = ThisStdCall<UInt32>(address, ref, args[0], args[1], args[2], args[3]);
+				break;
+			case 5:
+				*result = ThisStdCall<UInt32>(address, ref, args[0], args[1], args[2], args[3], args[4]);
+				break;
+			default:
+				*result = 0;
+				break;
+			}
+		}
+		return true;
+	}, Cmd_Expression_Plugin_Parse);
+#endif
 }
 
 

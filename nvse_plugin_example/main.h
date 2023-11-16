@@ -15,4 +15,4 @@ void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim);
 
 bool IsGodMode();
 
-float GetAnimTime(const AnimData* animData, const BSAnimGroupSequence* anim);
+float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim);

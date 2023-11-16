@@ -205,7 +205,7 @@ class NVSECommandBuilder
 public:
 	NVSECommandBuilder(const NVSEInterface* scriptInterface) : scriptInterface(scriptInterface) {}
 
-	void Create(const char* name, CommandReturnType returnType, std::initializer_list<ParamInfo> params, bool refRequired, Cmd_Execute fn)
+	void Create(const char* name, CommandReturnType returnType, std::initializer_list<ParamInfo> params, bool refRequired, Cmd_Execute fn, Cmd_Parse parse = nullptr)
 	{
 		ParamInfo* paramCopy = nullptr;
 		if (params.size())
@@ -219,7 +219,7 @@ public:
 		}
 		
 		auto commandInfo = CommandInfo{
-			name, "", 0, "", refRequired, static_cast<UInt16>(params.size()), paramCopy, fn, nullptr, nullptr, 0
+			name, "", 0, "", refRequired, static_cast<UInt16>(params.size()), paramCopy, fn, parse, nullptr, 0
 		};
 		scriptInterface->RegisterTypedCommand(&commandInfo, returnType);
 	}

@@ -196,6 +196,9 @@ bool Cmd_Default_Parse(UInt32 numParams, ParamInfo * paramInfo, ScriptLineBuffer
 typedef bool (* Cmd_Eval)(COMMAND_ARGS_EVAL);
 bool Cmd_Default_Eval(COMMAND_ARGS_EVAL);
 
+const Cmd_Parse Cmd_Expression_Plugin_Parse = reinterpret_cast<Cmd_Parse>(0x08000000);
+
+
 
 #ifdef RUNTIME
 #define HANDLER(x)	x
