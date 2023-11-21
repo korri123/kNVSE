@@ -402,6 +402,49 @@ struct NVSEArrayVarInterface
 			}
 		}
 
+		template<typename T>
+		requires std::is_same_v<T, std::string> ||
+			std::is_same_v<T, const char*> ||
+			std::is_same_v<T, Array*> ||
+			std::is_same_v<T, UInt32> ||
+			std::is_same_v<T, TESForm*> ||
+			std::is_same_v<T, double>
+		T Get() const {
+			if constexpr (std::is_same_v<T, const char*>)
+			{
+				return GetString();
+			}
+			else if constexpr (std::is_same_v<T, Array*>)
+			{
+				return GetArray();
+			}
+			else if constexpr (std::is_same_v<T, UInt32>)
+			{
+				return GetFormID();
+			}
+			else if constexpr (std::is_same_v<T, TESForm*>)
+			{
+				return GetTESForm();
+			}
+			else if constexpr (std::is_same_v<T, double>)
+			{
+				return GetNumber();
+			}
+			else if constexpr (std::is_same_v<T, std::string>)
+			{
+				return std::string(GetString());
+			}
+			else 
+			{
+				// Handle unsupported types, possibly with a static assertion
+				static_assert(dependent_false<T>::value, __FUNCTION__ ": Unsupported type for Get<Type> function");
+			}
+		}
+
+		template <typename T>
+		struct dependent_false : std::false_type {};
+
+
 		CommandReturnType GetReturnType() const
 		{
 			switch (GetType())

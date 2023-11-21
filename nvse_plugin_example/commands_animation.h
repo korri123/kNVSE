@@ -369,6 +369,7 @@ enum AnimAction : SInt16
 };
 
 #define THISCALL(address, returnType, ...) reinterpret_cast<returnType(__thiscall*)(__VA_ARGS__)>(address)
+#define _CDECL(address, returnType, ...) reinterpret_cast<returnType(__cdecl*)(__VA_ARGS__)>(address)
 
 namespace GameFuncs
 {
@@ -413,6 +414,14 @@ namespace GameFuncs
 	inline auto GetNearestGroupID = THISCALL(0x495740, UInt16, AnimData* animData, UInt16 groupID, bool noRecurse);
 	inline auto NiControllerManager_LookupSequence = THISCALL(0x47A520, NiControllerSequence*, NiControllerManager* mgr, const char** animGroupName);
 	inline auto Actor_Attack = THISCALL(0x8935F0, bool, Actor* actor, UInt32 animGroupId);
+
+	inline auto InitAnimGroup = _CDECL(0x5F3A20, TESAnimGroup*, BSAnimGroupSequence* anim, const char* path);
+	inline auto BSFixedString_CreateFromPool = _CDECL(0xA5B690, const char*, const char* str);
+	inline auto NiTextKeyExtraData_Destroy = THISCALL(0xA46D50, UInt32, NiTextKeyExtraData * textKeys);
+	inline auto TESAnimGroup_Destroy = THISCALL(0x5F22A0, void, TESAnimGroup * animGroup, bool free);
+	inline auto NiRefObject_Replace = THISCALL(0x66B0D0, void, void* target, void* src);
+	inline auto NiRefObject_IncRefCount = THISCALL(0x40F6E0, void, void* target);
+	inline auto NiRefObject_DecRefCount_FreeIfZero = THISCALL(0x401970, void, void* target);
 }
 
 BSAnimGroupSequence* GetAnimationByPath(const char* path);
@@ -458,7 +467,7 @@ struct BSAnimationContext
 std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 
-std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData);
+std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData);
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {

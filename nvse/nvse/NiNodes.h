@@ -941,11 +941,16 @@ public:
 struct NiFixedString
 {
 private:
-	char* data;
+	const char* data;
 public:
 	const char* CStr() const
 	{
 		return data ? data : "";
+	}
+
+	explicit NiFixedString(const char* data)
+		: data(data)
+	{
 	}
 };
 
@@ -1387,7 +1392,7 @@ STATIC_ASSERT(sizeof(NiControllerManager) == 0x7C);
 
 
 // 02C+
-class TESAnimGroup : NiRefObject
+class TESAnimGroup : public NiRefObject
 {
 public:
 	// derived from NiRefObject
@@ -1694,6 +1699,12 @@ class NiTextKey : public NiMemObject
 public:
 	float m_fTime;
 	NiFixedString m_kText;
+
+	NiTextKey(float mFTime, const NiFixedString& mKText)
+		: m_fTime(mFTime),
+		  m_kText(mKText)
+	{
+	}
 };
 
 
@@ -1701,6 +1712,8 @@ class NiExtraData : public NiObject
 {
 public:
 	NiFixedString m_kName;
+
+
 };
 
 class NiTextKeyExtraData : public NiExtraData
@@ -1709,6 +1722,7 @@ public:
 	unsigned int m_uiNumKeys;
 	NiTextKey* m_pKeys;
 };
+static_assert(sizeof(NiTextKeyExtraData) == 0x14);
 
 
 struct NiQuatTransform

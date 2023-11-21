@@ -76,7 +76,7 @@ bool __fastcall HandleAnimationChange(AnimData* animData, void* _edx, BSAnimGrou
 			g_firstPersonAnimId = -1;
 		}
 		std::optional<AnimationResult> animResult;
-		if (!g_doNotSwapAnims && (animResult = GetActorAnimation(animGroupId, firstPerson, animData)))
+		if (!g_doNotSwapAnims && (animResult = GetActorAnimation(animGroupId, animData)))
 		{
 			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
 			if (newAnim)
@@ -334,7 +334,7 @@ __declspec(naked) void NoAimInReloadLoop()
 	}
 }
 
-bool LookupAnimFromMap(NiTPointerMap<AnimSequenceBase>* animMap, UInt16 groupId, AnimSequenceBase** base, AnimData* animData)
+bool LookupAnimFromMap(UInt16 groupId, AnimSequenceBase** base, AnimData* animData)
 {
 	// we do not want non existing 3rd anim data to try to get played as nothing gets played if it can't find it
 	//if (animData == g_thePlayer->firstPersonAnimData)
@@ -342,7 +342,7 @@ bool LookupAnimFromMap(NiTPointerMap<AnimSequenceBase>* animMap, UInt16 groupId,
 
 	const auto findCustomAnim = [&](AnimData* animData) -> bool
 	{
-		if (const auto animResult = GetActorAnimation(groupId, animData == g_thePlayer->firstPersonAnimData, animData))
+		if (const auto animResult = GetActorAnimation(groupId, animData))
 		{
 			const auto& animPaths = animResult->parent->anims;
 			auto* animPath = !animPaths.empty() ? &animPaths.at(0) : nullptr;
@@ -357,7 +357,7 @@ bool LookupAnimFromMap(NiTPointerMap<AnimSequenceBase>* animMap, UInt16 groupId,
 		if (animData->actor == g_thePlayer && animData != g_thePlayer->firstPersonAnimData && groupId != GetActorRealAnimGroup(g_thePlayer, groupId))
 		{
 			// hack to allow pollCondition to work correctly in first person when groupid is decayed
-			GetActorAnimation(groupId, true, g_thePlayer->firstPersonAnimData);
+			GetActorAnimation(groupId, g_thePlayer->firstPersonAnimData);
 		}
 		return false;
 	};
@@ -379,7 +379,7 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
 
-	if (animData->actor && LookupAnimFromMap(animMap, groupId, base, animData))
+	if (animData->actor && LookupAnimFromMap(groupId, base, animData))
 		return true;
 
 	if ((*base = animMap->Lookup(groupId)))

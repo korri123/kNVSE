@@ -225,3 +225,41 @@ public:
 	}
 
 };
+
+template <typename K, typename V>
+std::map<K, V> NVSEMapToMap(const NVSEArrayVarInterface* arrayVarInterface, NVSEArrayVarInterface::Array* arr)
+{
+	std::map<K, V> map;
+	const auto size = arrayVarInterface->GetArraySize(arr);
+	std::vector<NVSEArrayVarInterface::Element> keys(size);
+	std::vector<NVSEArrayVarInterface::Element> values(size);
+	if (!arrayVarInterface->GetElements(arr, values.data(), keys.data()))
+		return map;
+	for (int i = 0; i < size; ++i)
+	{
+		auto keyElem = keys.at(i);
+		auto valueElem = values.at(i);
+		map.emplace(keyElem.Get<K>(), valueElem.Get<V>());
+	}
+	return map;
+}
+
+template <typename T>
+std::vector<T> NVSEArrayToVector(const NVSEArrayVarInterface* arrayVarInterface, NVSEArrayVarInterface::Array* arr)
+{
+	std::vector<T> vec;
+	const auto size = arrayVarInterface->GetArraySize(arr);
+	if (size <= 0)
+		return vec;
+	vec.reserve(size);
+	std::vector<NVSEArrayVarInterface::Element> keys(size);
+	std::vector<NVSEArrayVarInterface::Element> elements(size);
+	if (!arrayVarInterface->GetElements(arr, elements.data(), keys.data()))
+		return vec;
+	for (int i = 0; i < size; ++i)
+	{
+		auto elem = elements.at(i);
+		vec.emplace_back(elem.Get<T>());
+	}
+	return vec;
+}

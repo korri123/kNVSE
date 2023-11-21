@@ -530,11 +530,42 @@ private:
 	Node		*last;
 	UInt32		count;
 
+	// Iterator class
+	class Iterator {
+	public:
+		Iterator(Node* ptr) : current(ptr) {}
+
+		// Increment operator (prefix)
+		Iterator& operator++() {
+			current = current->next;
+			return *this;
+		}
+
+		// Dereference operator
+		Item*& operator*() const {
+			return current->data;
+		}
+
+		// Comparison operator
+		bool operator!=(const Iterator& other) const {
+			return current != other.current;
+		}
+
+	private:
+		Node* current;
+	};
+
+
 public:
 	bool Empty() const {return !first;}
 	Node *Head() {return first;}
 	Node *Tail() {return last;}
 	UInt32 Size() const {return count;}
+
+	// Begin and end methods for iterator
+	Iterator begin() { return Iterator(first); }
+	Iterator end() { return Iterator(nullptr); }  // Assuming end is represented by nullptr
+
 
 	template <typename F>
 	void ForEach(const F& f)

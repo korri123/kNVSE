@@ -154,9 +154,14 @@ BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID)
 	return nullptr;
 }
 
+KFModel* GetKFModel(const char* path)
+{
+	return GameFuncs::LoadKFModel(*g_modelLoader, path);
+}
+
 BSAnimGroupSequence* GetAnimationByPath(const char* path)
 {
-	const auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path);
+	const auto* kfModel = GetKFModel(path);
 	return kfModel ? kfModel->controllerSequence : nullptr;
 }
 
@@ -270,12 +275,13 @@ std::optional<BSAnimationContext> LoadAnimation(const std::string& path, AnimDat
 				DebugPrint("Map returned null anim");
 			}
 			else
-			{
 				DebugPrint("Failed to lookup anim");
-			}
 		}
+		else
+			DebugPrint(FormatString("Failed to load anim %s for anim data of actor %X", path.c_str(), animData->actor->refID));
 	}
-	DebugPrint("Failed to load KF Model " + path);
+	else 
+		DebugPrint("Failed to load KF Model " + path);
 	return std::nullopt;
 }
 
@@ -767,13 +773,14 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 	return nullptr;
 }
 
-std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, bool firstPerson, AnimData* animData)
+std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData)
 {
 	if (!animData || !animData->actor)
 		return std::nullopt;
 	std::optional<AnimationResult> result;
 	std::optional<AnimationResult> modIndexResult;
 
+	const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
 	auto& map = GetMap(firstPerson);
 	auto* actor = animData->actor;
 	auto& modIndexMap = GetModIndexMap(firstPerson);
@@ -1100,7 +1107,7 @@ void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber)
 {
 	auto& handler = g_reloadTracker[actor->refID];
 	handler.subscribers.emplace(subscriber, false);
-	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+	// auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
 }
 
 bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
@@ -1403,24 +1410,28 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 		{
 			builder.Add("sequenceType", animGroupInfo->sequenceType);
 			builder.Add("keyType", animGroupInfo->keyType);
+			builder.Add("animGroupName", animGroupInfo->name);
 		}
 	}
-
 
 	const auto* textKeyData = anim->textKeyData;
 	if (textKeyData)
 	{
-		NVSEMapBuilder textKeyMapBuilder;
+		NVSEArrayBuilder textKeyTimeBuilder;
+		NVSEArrayBuilder textKeyValueBuilder;
 
 		for (int i = 0; i < textKeyData->m_uiNumKeys; ++i)
 		{
 			auto& key = textKeyData->m_pKeys[i];
-			textKeyMapBuilder.Add(key.m_fTime, key.m_kText.CStr());
+			textKeyTimeBuilder.Add(key.m_fTime);
+			textKeyValueBuilder.Add(key.m_kText.CStr());
 		}
 
-		auto* textKeyMap = textKeyMapBuilder.Build(g_arrayVarInterface, callingScript);
+		auto* textKeyTimes = textKeyTimeBuilder.Build(g_arrayVarInterface, callingScript);
+		auto* textKeyValues = textKeyValueBuilder.Build(g_arrayVarInterface, callingScript);
 
-		builder.Add("textKeyData", textKeyMap);
+		builder.Add("textKeyTimes", textKeyTimes);
+		builder.Add("textKeyValues", textKeyValues);
 	}
 	
 
@@ -1430,7 +1441,7 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 std::vector<std::string_view> FindCustomAnimations(AnimData* animData, const UInt16 nearestGroupId)
 {
 	std::vector<std::string_view> result;
-	const auto animationResult = GetActorAnimation(nearestGroupId, animData == g_thePlayer->firstPersonAnimData, animData);
+	const auto animationResult = GetActorAnimation(nearestGroupId, animData);
 	if (animationResult && animationResult->parent && !animationResult->parent->anims.empty())
 	{
 		const auto& animPaths = animationResult->parent->anims;
@@ -1453,6 +1464,62 @@ AnimData* GetAnimData(TESObjectREFR* actor)
 }
 
 std::unordered_set<BaseProcess*> g_allowedNextAnims;
+
+BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const std::string& path, const UInt32 groupId)
+{
+	if (const auto iter = g_cachedAnimMap.find(std::make_pair(path, animData)); iter != g_cachedAnimMap.end())
+	{
+		return iter->second.anim;
+	}
+	if (const auto customAnim = GetActorAnimation(groupId, animData))
+	{
+		const auto& animPaths = customAnim->parent->anims;
+		const auto iter = ra::find_if(animPaths, _L(const auto& p, p.path == path));
+		if (iter != animPaths.end())
+		{
+			const auto animCtx = LoadCustomAnimation(iter->path, animData);
+			if (animCtx)
+			{
+				return animCtx->anim;
+			}
+			return nullptr;
+		}
+	}
+	const auto animSequenceBase = animData->mapAnimSequenceBase->Lookup(groupId);
+	if (animSequenceBase)
+	{
+		if (const auto* single = DYNAMIC_CAST(animSequenceBase, AnimSequenceBase, AnimSequenceSingle))
+		{
+			if (single->anim && _stricmp(single->anim->sequenceName, path.c_str()) == 0)
+			{
+				return single->anim;
+			}
+		}
+		else if (const auto* multiple = DYNAMIC_CAST(animSequenceBase, AnimSequenceBase, AnimSequenceMultiple))
+		{
+			for (const auto& anim : *multiple->anims)
+			{
+				if (anim && _stricmp(anim->sequenceName, path.c_str()) == 0)
+				{
+					return anim;
+				}
+			}
+		}
+	}
+	return nullptr;
+}
+
+template <typename T>
+T* AllocateNiArray(UInt32 numElems)
+{
+	const auto msize = sizeof(T) * numElems + sizeof(UInt32);
+	auto* arr = static_cast<UInt32*>(GameHeapAlloc(msize));
+#if _DEBUG
+	memset(arr, 0xCD, msize);
+#endif
+	*arr = numElems;
+	return reinterpret_cast<T*>(arr + 1);
+}
 
 void CreateCommands(NVSECommandBuilder& builder)
 {
@@ -1562,6 +1629,100 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 		return true;
 	});
+
+	builder.Create("SetAnimationTextKeys", kRetnType_Default, { ParamInfo{"anim path", kNVSEParamType_String, false}, ParamInfo{"text key times", kNVSEParamType_Array, false}, ParamInfo{"text key values", kNVSEParamType_Array, false} }, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		PluginExpressionEvaluator eval(PASS_COMMAND_ARGS);
+		if (!eval.ExtractArgs() || eval.NumArgs() != 3)
+			return true;
+		auto* path = eval.GetNthArg(0)->GetString();
+		auto* textKeyTimesArray = eval.GetNthArg(1)->GetArrayVar();
+		auto* textKeyValuesArray = eval.GetNthArg(2)->GetArrayVar();
+		if (!path || !textKeyTimesArray || !textKeyValuesArray)
+			return true;
+		const auto* kfModel = GetKFModel(path);
+		auto* anim = kfModel->controllerSequence;
+		const auto groupId = anim ? anim->animGroup->groupID : -1;
+		if (thisObj && anim && anim->animGroup)
+		{
+			auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+			if (!actor)
+				return true;
+			auto* animData = actor->baseProcess->GetAnimData();
+			if (!animData)
+				return true;
+			anim = FindActiveAnimationByPath(animData, path, groupId);
+			if (!anim && actor == g_thePlayer)
+			{
+				anim = FindActiveAnimationByPath(g_thePlayer->firstPersonAnimData, path, groupId);
+			}
+		}
+		
+		if (!anim)
+		{
+			DebugPrint("SetAnimationTextKeys: animation not found");
+			return true;
+		}
+
+		const auto textKeyTimesVector= NVSEArrayToVector<double>(g_arrayVarInterface, textKeyTimesArray);
+		const auto textKeyValuesVector = NVSEArrayToVector<std::string>(g_arrayVarInterface, textKeyValuesArray);
+
+		if (textKeyTimesVector.size() != textKeyValuesVector.size())
+		{
+			DebugPrint("SetAnimationTextKeys: text key times and values arrays must be the same size");
+			return true;
+		}
+
+		std::vector<NiTextKey> textKeyVector;
+		for (auto i = 0; i < textKeyTimesVector.size(); ++i)
+		{
+			const auto key = textKeyTimesVector.at(i);
+			const auto& value = textKeyValuesVector.at(i);
+			auto* newStr = GameFuncs::BSFixedString_CreateFromPool(value.c_str());
+			textKeyVector.emplace_back(key, NiFixedString(newStr));
+		}
+
+		const auto textKeySize = textKeyVector.size() * sizeof(NiTextKey);
+		auto* textKeys = AllocateNiArray<NiTextKey>(textKeyVector.size());
+		memcpy_s(textKeys, textKeySize, textKeyVector.data(), textKeySize);
+
+		auto* textKeyData = CdeclCall<NiTextKeyExtraData*>(0xA46B70); // NiTextKeyExtraData::Create
+
+		auto* oldTextKeyData = anim->textKeyData;
+
+		textKeyData->m_uiNumKeys = textKeyVector.size();
+		textKeyData->m_pKeys = textKeys;
+
+		++oldTextKeyData->m_uiRefCount;
+		GameFuncs::NiRefObject_Replace(&anim->textKeyData, textKeyData);
+
+		auto* oldAnimGroup = anim->animGroup;
+
+		const auto& animGroupInfo = g_animGroupInfos[groupId & 0xFF];
+
+		anim->animGroup = nullptr;
+		auto* oldSequenceName = anim->sequenceName;
+		anim->sequenceName = animGroupInfo.name; // yes, the game initially has the sequence name set to the anim group name
+		auto* animGroup = GameFuncs::InitAnimGroup(anim, kfModel->path);
+		anim->sequenceName = oldSequenceName;
+
+		if (!animGroup)
+		{
+			DebugPrint("SetAnimationTextKeys: Game failed to parse text key data, see falloutnv_error.log");
+			GameFuncs::NiRefObject_Replace(&anim->textKeyData, oldTextKeyData);
+			GameFuncs::NiRefObject_Replace(&anim->animGroup, oldAnimGroup);
+			*result = 0;
+			return true;
+		}
+
+		GameFuncs::NiRefObject_Replace(&anim->animGroup, animGroup);
+		GameFuncs::NiRefObject_DecRefCount_FreeIfZero(oldAnimGroup); // required since the replace above will replace null
+		GameFuncs::NiRefObject_DecRefCount_FreeIfZero(oldTextKeyData);
+		*result = 1;
+		return true;
+	}, Cmd_Expression_Plugin_Parse);
+
 #if _DEBUG
 	builder.Create("ForceAttack", kRetnType_Default, { ParamInfo{"animGroup", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)
 	{
