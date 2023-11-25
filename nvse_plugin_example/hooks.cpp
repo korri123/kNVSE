@@ -23,6 +23,10 @@ BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
 bool g_doNotSwapAnims = false;
 
+#if _DEBUG
+MapNode<const char*, NiControllerSequence> g_mapNode__;
+NiTStringPointerMap<UInt32>* g_stringPointerMap__ = nullptr;
+#endif
 
 UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
 {
@@ -400,6 +404,7 @@ void __fastcall HandleOnReload(Actor* actor)
 	//std::erase_if(g_burstFireQueue, _L(BurstFireData & b, b.actorId == g_thePlayer->refID));
 }
 
+#if 0
 bool __fastcall AllowAttacksEarlierInAnimHook(BaseProcess* baseProcess)
 {
 	// allow attacks before reload anim is done
@@ -415,24 +420,27 @@ bool __fastcall AllowAttacksEarlierInAnimHook(BaseProcess* baseProcess)
 		const auto iter = ra::find_if(g_timeTrackedAnims, [](auto& p)
 		{
 			const auto& animTime = *p.second;
-			if (animTime.allowAttackTime == -FLT_MAX || !animTime.anim || animTime.anim->state == kAnimState_Inactive || !animTime.IsPlayer())
+			if (animTime.allowAttack == -FLT_MAX || !animTime.anim || animTime.anim->state == kAnimState_Inactive || !animTime.IsPlayer())
 				return false;
 			const auto anim = animTime.anim;
 			// prevent first person / 3rd person mismatch
 			if (animTime.firstPerson && g_thePlayer->IsThirdPerson())
 				return false;
 			const auto currentTime = GetAnimTime(animTime.GetAnimData(g_thePlayer), anim);
-			return currentTime >= animTime.allowAttackTime;
+			return currentTime >= animTime.allowAttack;
 
 		});
 		if (iter != g_timeTrackedAnims.end() && GameFuncs::GetControlState(ControlCode::Attack, Decoding::IsDXKeyState::IsPressed))
 		{
-			g_thePlayer->GetHighProcess()->currentAction = Decoding::AnimAction::kAnimAction_None; // required due to 0x893E32 check
+			auto* highProcess = g_thePlayer->GetHighProcess();
+			highProcess->currentSequence = nullptr;
+			highProcess->currentAction = Decoding::AnimAction::kAnimAction_None; // required due to 0x893E32 check
 			return true;
 		}
 	}
 	return baseProcess->IsReadyForAnim();
 }
+#endif
 
 
 void ApplyHooks()
@@ -532,13 +540,14 @@ void ApplyHooks()
 
 
 
-	// PlayerCharacter::Update -> IsReadyForAttack
-	WriteVirtualCall(0x9420E4, AllowAttacksEarlierInAnimHook);
-	// FiresWeapon -> IsReadyForAttack
-	WriteVirtualCall(0x893E86, AllowAttacksEarlierInAnimHook);
+	// No longer needed since AllowAttack
 
+	// PlayerCharacter::Update -> IsReadyForAttack
+	//WriteVirtualCall(0x9420E4, AllowAttacksEarlierInAnimHook);
+	// FiresWeapon -> IsReadyForAttack
+	//WriteVirtualCall(0x893E86, AllowAttacksEarlierInAnimHook);
 	// Actor::Attack - Allow next anim
-	WriteVirtualCall(0x89371B, AllowAttacksEarlierInAnimHook);
+	//WriteVirtualCall(0x89371B, AllowAttacksEarlierInAnimHook);
 
 
 #if 0

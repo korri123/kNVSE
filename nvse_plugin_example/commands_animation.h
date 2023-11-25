@@ -151,7 +151,7 @@ struct AnimTime
 	TimedExecution<Script*>::Context scriptCalls;
 	std::optional<TimedExecution<Sound>> soundPathsBase;
 	TimedExecution<Sound>::Context soundPaths;
-	float allowAttackTime = -FLT_MAX;
+	bool allowAttack = false;
 
 	using TimedCallbacks = TimedExecution<std::function<void()>>;
 	std::optional<TimedCallbacks> callbacksBase;

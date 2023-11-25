@@ -122,11 +122,13 @@
         <Loop>
 
           <Loop>
-            <Item Condition="entry != nullptr" Name="[Key: {entry->key}]">*(entry->data)</Item>
+            <Break Condition="entry == nullptr"/>
+            <Item Condition="entry != nullptr" Name="{entry->key}">entry->data</Item>
             <Exec>entry = entry->next</Exec>
           </Loop>
-          
+
           <Break Condition="bucketIndex == m_numBuckets - 1" />
+
           <Exec>
             entry = m_buckets[++bucketIndex]
           </Exec>

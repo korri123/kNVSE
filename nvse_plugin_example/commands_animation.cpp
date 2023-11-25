@@ -377,13 +377,6 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	};
 	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
 	{
-		if (setting == AnimKeySetting::Set)
-		{
-			applied = true;
-			return true;
-		}
-		if (setting == AnimKeySetting::NotSet)
-			return false;
 		auto result = false;
 		for (const char* keyText : keyTexts)
 		{
@@ -508,13 +501,26 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	{
 		g_reloadStartBlendFixes.insert(anim->sequenceName);
 	}
-	if (hasKey({"scriptLine:"}, ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
+	if (hasKey({"scriptLine:", "allowAttack" }, ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
 	{
+		auto& animTime = getAnimTimeStruct();
 		auto [scriptLineKeys, uninitialized] = createTimedExecution(g_scriptLineExecutions);
 		if (uninitialized)
 		{
 			*scriptLineKeys = TimedExecution<Script*>(textKeys, [&](const char* key, Script*& result)
 			{
+				if (StartsWith(key, "allowAttack"))
+				{
+					// already released this as beta with custom key but in future encourage scriptLine: AllowAttack
+					result = Script::CompileFromText("AllowAttack", "ScriptLineKey");
+					animTime.allowAttack = true;
+					if (!result)
+					{
+						DebugPrint("Failed to compile script in allowAttack key");
+						return false;
+					}
+					return true;
+				}
 				if (!StartsWith(key, "scriptLine:"))
 					return false;
 				auto line = GetTextAfterColon(key);
@@ -531,7 +537,6 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 				return true;
 			});
 		}
-		auto& animTime = getAnimTimeStruct();
 		animTime.scriptLines = scriptLineKeys->CreateContext();
 	}
 	if (hasKey({"replaceWithGroup:"}, ctx.hasReplaceWithGroup, KeyCheckType::KeyStartsWith))
@@ -549,15 +554,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			anim->animGroup->groupID = newGroupId;
 		}
 	}
-	if (hasKey({"allowAttack"}, ctx.hasAllowAttack))
-	{
-		const auto iter = ra::find_if(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.CStr(), "allowAttack") == 0));
-		if (iter != textKeys.end())
-		{
-			auto& animTime = getAnimTimeStruct();
-			animTime.allowAttackTime = iter->m_fTime;
-		}
-	}
+	
 	if (applied)
 	{
 		auto& animTime = getAnimTimeStruct();
@@ -1414,6 +1411,11 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 		}
 	}
 
+#if _DEBUG
+	const auto address = FormatString("0x%X", reinterpret_cast<UInt32>(anim));
+	builder.Add("address", address.c_str());
+#endif
+
 	const auto* textKeyData = anim->textKeyData;
 	if (textKeyData)
 	{
@@ -1474,7 +1476,7 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const std::st
 	if (const auto customAnim = GetActorAnimation(groupId, animData))
 	{
 		const auto& animPaths = customAnim->parent->anims;
-		const auto iter = ra::find_if(animPaths, _L(const auto& p, p.path == path));
+		auto iter = ra::find_if(animPaths, _L(const auto& p, p.path == path));
 		if (iter != animPaths.end())
 		{
 			const auto animCtx = LoadCustomAnimation(iter->path, animData);
@@ -1485,28 +1487,26 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const std::st
 			return nullptr;
 		}
 	}
-	const auto animSequenceBase = animData->mapAnimSequenceBase->Lookup(groupId);
-	if (animSequenceBase)
+	if (auto* sequence = animData->controllerManager->m_kSequenceMap.Lookup(path.c_str()))
 	{
-		if (const auto* single = DYNAMIC_CAST(animSequenceBase, AnimSequenceBase, AnimSequenceSingle))
-		{
-			if (single->anim && _stricmp(single->anim->sequenceName, path.c_str()) == 0)
-			{
-				return single->anim;
-			}
-		}
-		else if (const auto* multiple = DYNAMIC_CAST(animSequenceBase, AnimSequenceBase, AnimSequenceMultiple))
-		{
-			for (const auto& anim : *multiple->anims)
-			{
-				if (anim && _stricmp(anim->sequenceName, path.c_str()) == 0)
-				{
-					return anim;
-				}
-			}
-		}
+		return static_cast<BSAnimGroupSequence*>(sequence);
 	}
 	return nullptr;
+}
+
+BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, BSAnimGroupSequence* baseAnim)
+{
+	auto* animData = actor->baseProcess->GetAnimData();
+	const auto* path = baseAnim->sequenceName;
+	const auto groupId = baseAnim->animGroup->groupID;
+	if (!animData)
+		return nullptr;
+	baseAnim = FindActiveAnimationByPath(animData, path, groupId);
+	if (!baseAnim && actor == g_thePlayer)
+	{
+		baseAnim = FindActiveAnimationByPath(g_thePlayer->firstPersonAnimData, path, groupId);
+	}
+	return baseAnim;
 }
 
 template <typename T>
@@ -1566,9 +1566,18 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return false;
 		auto* anim = GetAnimationByPath(path);
+		const AnimData* animData = nullptr;
+		if (thisObj)
+		{
+			if (auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor))
+			{
+				anim = FindActiveAnimationForActor(actor, anim);
+				animData = actor->baseProcess->GetAnimData();
+			}
+		}
 		if (!anim)
 			return true;
-		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj, nullptr, false));
+		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj, animData, thisObj != nullptr));
 		return true;
 	});
 
@@ -1643,25 +1652,22 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		const auto* kfModel = GetKFModel(path);
 		auto* anim = kfModel->controllerSequence;
-		const auto groupId = anim ? anim->animGroup->groupID : -1;
 		if (thisObj && anim && anim->animGroup)
 		{
 			auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 			if (!actor)
 				return true;
-			auto* animData = actor->baseProcess->GetAnimData();
-			if (!animData)
-				return true;
-			anim = FindActiveAnimationByPath(animData, path, groupId);
-			if (!anim && actor == g_thePlayer)
-			{
-				anim = FindActiveAnimationByPath(g_thePlayer->firstPersonAnimData, path, groupId);
-			}
+			anim = FindActiveAnimationForActor(actor, anim);
 		}
 		
 		if (!anim)
 		{
 			DebugPrint("SetAnimationTextKeys: animation not found");
+			return true;
+		}
+		if (anim->state != NiControllerSequence::kAnimState_Inactive)
+		{
+			DebugPrint("SetAnimationKeys: you can not call this function while the animation is playing.");
 			return true;
 		}
 
@@ -1699,11 +1705,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 
 		auto* oldAnimGroup = anim->animGroup;
 
-		const auto& animGroupInfo = g_animGroupInfos[groupId & 0xFF];
+		const auto* animGroupInfo = oldAnimGroup->GetGroupInfo();
 
 		anim->animGroup = nullptr;
 		auto* oldSequenceName = anim->sequenceName;
-		anim->sequenceName = animGroupInfo.name; // yes, the game initially has the sequence name set to the anim group name
+		anim->sequenceName = animGroupInfo->name; // yes, the game initially has the sequence name set to the anim group name
 		auto* animGroup = GameFuncs::InitAnimGroup(anim, kfModel->path);
 		anim->sequenceName = oldSequenceName;
 
@@ -1716,12 +1722,53 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		}
 
+
 		GameFuncs::NiRefObject_Replace(&anim->animGroup, animGroup);
 		GameFuncs::NiRefObject_DecRefCount_FreeIfZero(oldAnimGroup); // required since the replace above will replace null
 		GameFuncs::NiRefObject_DecRefCount_FreeIfZero(oldTextKeyData);
 		*result = 1;
 		return true;
 	}, Cmd_Expression_Plugin_Parse);
+
+	builder.Create("SetAnimationCycleType", kRetnType_Default, {ParamInfo{"animation path", kParamType_String, false}, ParamInfo{"cycle type", kParamType_Integer, false} }, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char path[0x400];
+		UInt32 cycleType = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &path, &cycleType) || !thisObj || cycleType == -1)
+			return true;
+		if (cycleType >= NiControllerSequence::CycleType::MAX_CYCLE_TYPES)
+			return true;
+		auto* anim = GetAnimationByPath(path);
+		if (!anim || anim->animGroup)
+			return true;
+		if (thisObj && anim && anim->animGroup)
+		{
+			auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+			if (!actor)
+				return true;
+			anim = FindActiveAnimationForActor(actor, anim);
+		}
+		if (!anim)
+		{
+			DebugPrint("SetAnimationCycleType: animation not found");
+			return true;
+		}
+		anim->cycleType = static_cast<NiControllerSequence::CycleType>(cycleType);
+		return true;
+	});
+
+	builder.Create("AllowAttack", kRetnType_Default, {}, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor || !actor->baseProcess)
+			return true;
+		actor->baseProcess->currentAction = Decoding::kAnimAction_None;
+		actor->baseProcess->currentSequence = nullptr;
+		*result = 1;
+		return true;
+	});
 
 #if _DEBUG
 	builder.Create("ForceAttack", kRetnType_Default, { ParamInfo{"animGroup", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)

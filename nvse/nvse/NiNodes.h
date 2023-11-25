@@ -878,7 +878,7 @@ public:
 };
 
 /* 12659 */
-class NiTimeController : NiObject
+class NiTimeController : public NiObject
 {
 public:
 	UInt16 m_uFlags;
@@ -893,6 +893,7 @@ public:
 	NiObjectNET* m_pkTarget;
 	NiPointer<NiTimeController> m_spNext;
 };
+static_assert(sizeof(NiTimeController) == 0x34);
 
 class NiInterpController : public NiTimeController
 {
@@ -1377,18 +1378,15 @@ class NiControllerManager : public NiTimeController
 public:
 	virtual void	Unk_2D(void);
 
-	NiTArray<NiControllerSequence*>				sequences;		// 34
+	NiTArray<NiControllerSequence*>	sequences;		// 34
 	NiTSet<NiControllerSequence*> m_kActiveSequences;
-	UInt32										numActiveSequences;			// 4C
-	NiTStringPointerMap<NiControllerSequence*>	seqStrMap;		// 50
-	NiTArray<void*>* arr64;			// 64
-	UInt32										unk68;			// 68
-	UInt32										unk6C;			// 6C
-	UInt32										unk70;			// 70
-	UInt32										unk74;			// 74
-	NiDefaultAVObjectPalette* defObjPlt;		// 78
+	NiTStringPointerMap<NiControllerSequence> m_kSequenceMap;
+	NiTArray<void*> *pListener;
+	bool m_bCumulitive;
+	NiTSet<NiControllerSequence*> m_kTempBlendSeqs;
+	NiDefaultAVObjectPalette* m_spObjectPalette;
 };
-STATIC_ASSERT(sizeof(NiControllerManager) == 0x7C);
+static_assert(sizeof(NiControllerManager) == 0x7C);
 
 
 // 02C+

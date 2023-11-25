@@ -206,7 +206,10 @@ void HandleAnimTimes()
 		}
 		if (animTime.scriptLines.Exists())
 		{
-			animTime.scriptLines.Update(time, animData, _L(Script* script, ThisStdCall(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, false)));
+			animTime.scriptLines.Update(time, animData, [&](Script* script)
+			{
+				ThisStdCall<bool>(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, true);
+			});
 		}
 	}
 

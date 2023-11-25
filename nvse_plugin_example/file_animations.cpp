@@ -267,7 +267,7 @@ void HandleJson(const std::filesystem::path& path)
 	}
 	catch (nlohmann::json::exception& e)
 	{
-		DebugPrint("The JSON is incorrectly formatted! It will not be applied.");
+		DebugPrint("The JSON is incorrectly formatted! It will not be applied. Path: " + path.string());
 		DebugPrint(FormatString("JSON error: %s\n", e.what()));
 	}
 	

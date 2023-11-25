@@ -201,8 +201,16 @@ template <typename T>
 struct NiTSet
 {
 	T		* data;		// 00
-	UInt16	capacity;	// 04
-	UInt16	length;		// 06
+	UInt32	capacity;	// 04
+	UInt32	length;		// 06
+};
+
+template <typename T_Key, typename T_Data>
+struct MapNode
+{
+	MapNode* next;
+	T_Key	key;
+	T_Data* data;
 };
 
 // 10
@@ -212,15 +220,9 @@ template <typename T_Key, typename T_Data>
 class NiTPointerMap_t
 {
 public:
-	NiTPointerMap_t();
 	virtual ~NiTPointerMap_t();
 
-	struct Entry
-	{
-		Entry	* next;
-		T_Key	key;
-		T_Data	* data;
-	};
+	typedef MapNode<T_Key, T_Data> Entry;
 
 	// note: traverses in non-numerical order
 	class Iterator
@@ -301,11 +303,41 @@ public:
 template <typename T_Key, typename T_Data>
 T_Data* NiTPointerMap_t <T_Key, T_Data>::Lookup(T_Key key)
 {
-	for(Entry * traverse = m_buckets[key % m_numBuckets]; traverse; traverse = traverse->next)
-		if(traverse->key == key)
+	const auto hashNiString = [](const char* str)
+	{
+		// 0x486DF0
+		UInt32 hash = 0;
+		while (*str)
+		{
+			hash = *str + 33 * hash;
+			++str;
+		}
+		return hash;
+	};
+	UInt32 hashIndex;
+	if constexpr (std::is_same_v<T_Key, const char*>)
+	{
+		hashIndex = hashNiString(key) % m_numBuckets;
+	}
+	else
+	{
+		hashIndex = key % m_numBuckets;
+	}
+	for(Entry * traverse = m_buckets[hashIndex]; traverse; traverse = traverse->next)
+	{
+		if constexpr (std::is_same_v<T_Key, const char*>)
+		{
+			if (!_stricmp(traverse->key, key))
+			{
+				return traverse->data;
+			}
+		}
+		else if (traverse->key == key)
+		{
 			return traverse->data;
-	
-	return NULL;
+		}
+	}
+	return nullptr;
 }
 
 template <typename T_Key, typename T_Data>
@@ -434,8 +466,7 @@ template <typename T_Data>
 class NiTStringPointerMap : public NiTPointerMap_t <const char*, T_Data>
 {
 public:
-	NiTStringPointerMap();
-	~NiTStringPointerMap();
+	virtual ~NiTStringPointerMap();
 
 	UInt32	unk010;
 };
