@@ -190,7 +190,7 @@ namespace Decoding
 		UInt32								unk128;				// 128 Gets copied over during TESNPC.CopyFromBase
 		NiNode* weaponNode;		// 12C
 		NiNode* projectileNode;	// 130
-		UInt8								byt134;				// 134
+		UInt8								wantsWeaponOut;				// 134
 		bool								isWeaponOut;		// 135
 		UInt8								byt136;				// 136
 		UInt8								byt137;				// 137

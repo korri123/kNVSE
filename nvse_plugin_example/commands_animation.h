@@ -288,14 +288,16 @@ struct AnimStacks
 
 };
 
+using FormID = UInt32;
+using FullAnimGroupID = UInt32;
 // Per ref ID there is a stack of animation variants per group ID
 class AnimOverrideStruct
 {
 public:
-	std::unordered_map<UInt32, AnimStacks> stacks;
+	std::unordered_map<FullAnimGroupID, AnimStacks> stacks;
 };
 
-using AnimOverrideMap = std::unordered_map<UInt32, AnimOverrideStruct>;
+using AnimOverrideMap = std::unordered_map<FormID, AnimOverrideStruct>;
 
 struct SavedAnims
 {

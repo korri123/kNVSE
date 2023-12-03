@@ -1509,6 +1509,12 @@ BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, BSAnimGroupSequen
 	return baseAnim;
 }
 
+BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path)
+{
+	auto* baseAnim = GetAnimationByPath(path);
+	return FindActiveAnimationForActor(actor, baseAnim);
+}
+
 template <typename T>
 T* AllocateNiArray(UInt32 numElems)
 {
@@ -1730,34 +1736,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	}, Cmd_Expression_Plugin_Parse);
 
-	builder.Create("SetAnimationCycleType", kRetnType_Default, {ParamInfo{"animation path", kParamType_String, false}, ParamInfo{"cycle type", kParamType_Integer, false} }, false, [](COMMAND_ARGS)
-	{
-		*result = 0;
-		char path[0x400];
-		UInt32 cycleType = -1;
-		if (!ExtractArgs(EXTRACT_ARGS, &path, &cycleType) || !thisObj || cycleType == -1)
-			return true;
-		if (cycleType >= NiControllerSequence::CycleType::MAX_CYCLE_TYPES)
-			return true;
-		auto* anim = GetAnimationByPath(path);
-		if (!anim || anim->animGroup)
-			return true;
-		if (thisObj && anim && anim->animGroup)
-		{
-			auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
-			if (!actor)
-				return true;
-			anim = FindActiveAnimationForActor(actor, anim);
-		}
-		if (!anim)
-		{
-			DebugPrint("SetAnimationCycleType: animation not found");
-			return true;
-		}
-		anim->cycleType = static_cast<NiControllerSequence::CycleType>(cycleType);
-		return true;
-	});
-
 	builder.Create("AllowAttack", kRetnType_Default, {}, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
@@ -1767,6 +1745,61 @@ void CreateCommands(NVSECommandBuilder& builder)
 		actor->baseProcess->currentAction = Decoding::kAnimAction_None;
 		actor->baseProcess->currentSequence = nullptr;
 		*result = 1;
+		return true;
+	});
+
+	builder.Create("SetAnimOffset", kRetnType_Default, { ParamInfo{"path", kParamType_String, false}, ParamInfo{"offset", kParamType_Float, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char path[0x400];
+		float offset;
+		if (!ExtractArgs(EXTRACT_ARGS, &path, &offset))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* anim = FindActiveAnimationForActor(actor, path);
+		if (!anim)
+			return true;
+		anim->offset = offset;
+		return true;
+	});
+
+	builder.Create("CopyAnimationsToForm", kRetnType_Default, { ParamInfo{"from form", kParamType_AnyForm, false}, ParamInfo{"to form", kParamType_AnyForm, false} }, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		TESForm* fromForm = nullptr;
+		TESForm* toForm = nullptr;
+		if (!ExtractArgs(EXTRACT_ARGS, &fromForm, &toForm))
+			return true;
+		
+		for (auto* map : {&g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap})
+		{
+			if (const auto iter = map->find(fromForm->refID); iter != map->end())
+			{
+				auto& entry = iter->second;
+				for (auto& stacks : entry.stacks | std::views::values)
+				{
+					for (auto i = static_cast<int>(AnimCustom::None); i < static_cast<int>(AnimCustom::Max) + 1; ++(i))
+					{
+						auto& stack = stacks.GetCustom(static_cast<AnimCustom>(i));
+						for (auto& anims : stack)
+						{
+							std::unordered_set<UInt16> variants;
+							for (auto& anim : anims.anims)
+							{
+								Script* condition = nullptr;
+								if (anims.conditionScript)
+									condition = **anims.conditionScript;
+								SetOverrideAnimation(toForm->refID, anim.path, *map, true, variants, condition, anims.pollCondition);
+								*result = 1;
+							}
+						}
+					}
+				}
+			}
+			
+		}
 		return true;
 	});
 

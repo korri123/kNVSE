@@ -442,6 +442,48 @@ bool __fastcall AllowAttacksEarlierInAnimHook(BaseProcess* baseProcess)
 }
 #endif
 
+bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
+{
+	auto* anim = kfModel->controllerSequence;
+	if (base->IsSingle()) // single anims are always valid
+		return false;
+	auto* multiple = static_cast<AnimSequenceMultiple*>(base);
+	for (auto* entry : *multiple->anims)
+	{
+		if (_stricmp(entry->sequenceName, anim->sequenceName) == 0)
+			return true;
+	}
+	return false;
+}
+
+HOOK PreventDuplicateAnimationsHook()
+{
+	const static UInt32 skipAddress = 0x490D7E;
+	const static UInt32 retnAddress = 0x490A4D;
+    __asm
+    {
+        mov edx, [ebp+0x8]   // Load KFModel* into edx
+        mov ecx, [ebp-0x10]  // Load AnimSequenceBase* into ecx
+        call HasAnimBaseDuplicate
+
+        test al, al
+        jnz skip_to_address  // Jump if AL is not zero (HasAnimBaseDuplicate returned true)
+
+        // Original code path
+        mov eax, 0x43B300    // Load Ni_IsKindOf address into eax
+        call eax             // Call Ni_IsKindOf
+        jmp finish
+
+    skip_to_address:
+		add esp, 8          
+        jmp skipAddress      // Jump to skipAddress
+
+    finish:
+        add esp, 8           // Adjust the stack pointer once for both branches
+        jmp retnAddress      // Jump to return address
+    }
+}
+
 
 void ApplyHooks()
 {
@@ -537,7 +579,25 @@ void ApplyHooks()
 		return form->flags;
 	}));
 
+	WriteRelJump(0x490A45, PreventDuplicateAnimationsHook);
 
+
+#if _DEBUG && 0
+	WriteRelJump(0x48F3A0, INLINE_HOOK(void, __fastcall, AnimSequenceMultiple * mult, void* _edx, BSAnimGroupSequence * sequence)
+	{
+		for (auto* anim : *mult->anims)
+		{
+			if (!_stricmp(anim->sequenceName, sequence->sequenceName))
+			{
+				//tList<const char> test;
+				// auto* anims = ThisStdCall<tList<const char>*>(0x566970, g_thePlayer, 0xC);
+				return;
+			}
+		}
+		++sequence->m_uiRefCount;
+		ThisStdCall(0x5597D0, mult->anims, &sequence);
+	}));
+#endif
 
 
 	// No longer needed since AllowAttack
@@ -573,6 +633,7 @@ void ApplyHooks()
 		mover->moveFlagStrafe38 = flags;
 	}));
 #endif
+
 
 
 	ini.SaveFile(iniPath.c_str(), false);
