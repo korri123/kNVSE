@@ -22,7 +22,6 @@
 #include "NiNodes.h"
 #include "NiTypes.h"
 #include "ScriptUtils.h"
-#include "thunk_builder.h"
 
 std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<TESAnimGroup::AnimGroupInfo*>(0x11977D8), 245 };
 JSONAnimContext g_jsonContext;
@@ -1512,7 +1511,27 @@ BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, BSAnimGroupSequen
 BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path)
 {
 	auto* baseAnim = GetAnimationByPath(path);
+	if (!baseAnim)
+		return nullptr;
 	return FindActiveAnimationForActor(actor, baseAnim);
+}
+
+BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path)
+{
+	if (auto* anim = animData->controllerManager->m_kSequenceMap.Lookup(path))
+		return static_cast<BSAnimGroupSequence*>(anim);
+	const auto& ctx = LoadCustomAnimation(path, animData);
+	if (ctx)
+		return ctx->anim;
+	return nullptr;
+}
+
+BSAnimGroupSequence* FindOrLoadAnim(Actor* actor, const char* path, bool firstPerson)
+{
+	auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
+	if (!animData)
+		return nullptr;
+	return FindOrLoadAnim(animData, path);
 }
 
 template <typename T>
@@ -1525,6 +1544,25 @@ T* AllocateNiArray(UInt32 numElems)
 #endif
 	*arr = numElems;
 	return reinterpret_cast<T*>(arr + 1);
+}
+
+float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence = nullptr)
+{
+	// 0x49502A
+	const auto sourceBlend = sourceSequence ? max(sourceSequence->animGroup->blend, sourceSequence->animGroup->blendOut) : 0;
+	const auto destBlend = max(destSequence->animGroup->blend, destSequence->animGroup->blendOut);
+	if (destBlend > sourceBlend)
+	{
+		return static_cast<float>(destBlend) / 30.0f;
+	}
+	return static_cast<float>(sourceBlend) / 30.0f;
+}
+
+bool IsPlayerInFirstPerson(Actor* actor)
+{
+	if (actor != g_thePlayer)
+		return false;
+	return !g_thePlayer->IsThirdPerson();
 }
 
 void CreateCommands(NVSECommandBuilder& builder)
@@ -1780,7 +1818,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 				auto& entry = iter->second;
 				for (auto& stacks : entry.stacks | std::views::values)
 				{
-					for (auto i = static_cast<int>(AnimCustom::None); i < static_cast<int>(AnimCustom::Max) + 1; ++(i))
+					for (auto i = static_cast<int>(AnimCustom::None); i < static_cast<int>(AnimCustom::Max) + 1; ++i)
 					{
 						auto& stack = stacks.GetCustom(static_cast<AnimCustom>(i));
 						for (auto& anims : stack)
@@ -1800,6 +1838,288 @@ void CreateCommands(NVSECommandBuilder& builder)
 			}
 			
 		}
+		return true;
+	});
+
+
+	builder.Create("IsAnimSequencePlaying", kRetnType_Default, { ParamInfo{"path", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char path[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &path))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		const auto* anim = FindActiveAnimationForActor(actor, path);
+		if (!anim)
+			return true;
+		if (anim->state != kAnimState_Inactive) 
+			*result = 1;
+		return true;
+	});
+
+	constexpr auto activateAnimParams = {
+		ParamInfo{"anim sequence path", kParamType_String, false},
+		ParamInfo{"bIsFirstPerson", kParamType_Integer, false},
+		ParamInfo{"iPriority", kParamType_Integer, true},
+		ParamInfo{"bStartOver", kParamType_Integer, true},
+		ParamInfo{"fWeight", kParamType_Float, true},
+		ParamInfo{"fEaseInTime", kParamType_Float, true},
+		ParamInfo{"time sync sequence path", kParamType_Integer, true}
+
+	};
+	builder.Create("ActivateAnim", kRetnType_Default, activateAnimParams, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char sequencePath[0x400]{};
+		int firstPerson = -1;
+		int priority = 0;
+		int startOver = 1;
+		float weight = FLT_MIN;
+		float easeInTime = 0.0f;
+		char timeSyncSequence[0x400]{};
+		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &firstPerson, &priority, &startOver, &weight, &easeInTime, &timeSyncSequence))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		if (firstPerson == -1)
+		{
+			firstPerson = IsPlayerInFirstPerson(actor);
+		}
+		auto* anim = FindOrLoadAnim(actor, sequencePath, firstPerson);
+		if (!anim)
+			return true;
+		if (weight == FLT_MIN)
+			weight = anim->seqWeight;
+		BSAnimGroupSequence* timeSyncSeq = nullptr;
+		if (timeSyncSequence[0])
+		{
+			timeSyncSeq = FindOrLoadAnim(actor, timeSyncSequence, firstPerson);
+			if (!timeSyncSeq)
+				return true;
+		}
+		const auto* manager = anim->owner;
+		*result = ThisStdCall<bool>(
+			0x47AAB0,
+			manager,
+			anim,
+			priority,
+			startOver,
+			weight,
+			easeInTime,
+			timeSyncSeq
+		);
+		return true;
+	});
+
+	/*
+	 NiControllerManager::DeactivateSequence(
+        NiControllerManager *unused,
+        NiControllerSequence *pkSequence,
+        float fEaseOutTime)
+	 */
+	constexpr auto deactivateAnimParams = {
+			ParamInfo{"anim sequence path", kParamType_String, false},
+			ParamInfo{"fEaseOutTime", kParamType_Float, true}
+	};
+	builder.Create("DeactivateAnim", kRetnType_Default, deactivateAnimParams, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char sequencePath[0x400]{};
+		float easeOutTime = 0.0f;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &easeOutTime))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* anim = FindActiveAnimationForActor(actor, sequencePath);
+		if (!anim)
+			return true;
+		const auto* manager = anim->owner;
+		*result = ThisStdCall<bool>(
+			0x47B220,
+			manager,
+			anim,
+			easeOutTime
+		);
+		return true;
+	});
+
+	constexpr auto crossFadeParams = {
+		ParamInfo{"source sequence path", kParamType_String, false},
+		ParamInfo{"dest sequence path", kParamType_String, false},
+		ParamInfo{"bFirstPerson", kParamType_Integer, true},
+		ParamInfo{"fEaseInTime", kParamType_Float, true},
+		ParamInfo{"iPriority", kParamType_Integer, true},
+		ParamInfo{"bStartOver", kParamType_Integer, true},
+		ParamInfo{"fWeight", kParamType_Float, true},
+		ParamInfo{"time sync sequence path", kParamType_Integer, true}
+	};
+
+	builder.Create("CrossFadeAnims", kRetnType_Default, crossFadeParams, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		int firstPerson = -1;
+		char sourceSequence[0x400]{};
+		char destSequence[0x400]{};
+		char timeSyncSequence[0x400]{};
+		float easeInTime = FLT_MIN;
+		int priority = 0;
+		float weight = FLT_MIN;
+		int startOver = 1;
+		if (!ExtractArgs(EXTRACT_ARGS, &sourceSequence, &destSequence, &firstPerson, &easeInTime, &priority, &startOver, &weight, &timeSyncSequence))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		if (firstPerson == -1)
+			firstPerson = IsPlayerInFirstPerson(actor);
+		auto* sourceAnim = FindOrLoadAnim(actor, sourceSequence, firstPerson);
+		auto* destAnim = FindOrLoadAnim(actor, destSequence, firstPerson);
+		BSAnimGroupSequence* timeSyncAnim = nullptr;
+
+		if (strlen(timeSyncSequence))
+		{
+			timeSyncAnim = FindOrLoadAnim(actor, timeSyncSequence, firstPerson);
+			if (!timeSyncAnim)
+				return true;
+		}
+
+		if (!sourceAnim || !destAnim)
+			return true;
+
+		if (weight == FLT_MIN)
+			weight = destAnim->seqWeight;
+
+		if (easeInTime == FLT_MIN)
+			easeInTime = GetDefaultBlendTime(destAnim, sourceAnim);
+
+		const auto* manager = sourceAnim->owner;
+
+		*result = ThisStdCall<bool>(
+			0xA2E280,
+			manager,
+			sourceAnim,
+			destAnim,
+			easeInTime,
+			priority,
+			startOver,
+			weight,
+			timeSyncAnim
+		);
+		return true;
+	});
+
+	constexpr auto blendToAnimSequenceParams = {
+		ParamInfo{"sequence path", kParamType_String, false},
+		ParamInfo{"bFirstPerson", kParamType_String, true},
+		ParamInfo{"fDuration", kParamType_Float, true},
+		ParamInfo{"fDestFrame", kParamType_Float, true},
+		ParamInfo{"iPriority", kParamType_Integer, true},
+		ParamInfo{"time sync sequence path", kParamType_String, true}
+	};
+
+	builder.Create("BlendToAnimFromPose", kRetnType_Default, blendToAnimSequenceParams, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		int firstPerson = -1;
+		char sequencePath[0x400]{};
+		char timeSyncSequence[0x400]{};
+		float destFrame = 0.0f;
+		float duration = FLT_MIN;
+		int priority = 0;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &firstPerson, &duration, &destFrame, &priority, &timeSyncSequence))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		if (firstPerson == -1)
+			firstPerson = IsPlayerInFirstPerson(actor);
+		auto* anim = FindOrLoadAnim(actor, sequencePath, firstPerson);
+		if (!anim)
+			return true;
+		BSAnimGroupSequence* timeSyncAnim = nullptr;
+		if (strlen(timeSyncSequence))
+		{
+			timeSyncAnim = FindOrLoadAnim(actor, timeSyncSequence, firstPerson);
+			if (!timeSyncAnim)
+				return true;
+		}
+		if (duration == FLT_MIN)
+			duration = GetDefaultBlendTime(anim);
+		const auto* manager = anim->owner;
+		*result = ThisStdCall<bool>(
+			0xA2F800,
+			manager,
+			anim,
+			destFrame,
+			duration,
+			priority,
+			timeSyncAnim
+		);
+		return true;
+	});
+
+	/**
+inline bool NiControllerManager::BlendFromSequence(
+	NiControllerSequence* pkSourceSequence,
+	NiControllerSequence* pkDestSequence, float fDuration, float fDestFrame,
+	int iPriority, float fSourceWeight, float fDestWeight,
+	NiControllerSequence* pkTimeSyncSeq)
+	 */
+
+	constexpr auto blendFromAnimSequenceParams = {
+		ParamInfo{"source sequence path", kParamType_String, false},
+		ParamInfo{"dest sequence path", kParamType_String, false},
+		ParamInfo{"bFirstPerson", kParamType_Integer, true},
+		ParamInfo{"fDuration", kParamType_Float, true},
+		ParamInfo{"fDestFrame", kParamType_Float, true},
+		ParamInfo{"fSourceWeight", kParamType_Float, true},
+		ParamInfo{"fDestWeight", kParamType_Float, true},
+		ParamInfo{"iPriority", kParamType_Integer, true},
+		ParamInfo{"time sync sequence path", kParamType_String, true}
+	};
+
+	builder.Create("BlendToAnim", kRetnType_Default, blendFromAnimSequenceParams, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char sourceSequence[0x400]{};
+		char destSequence[0x400]{};
+		char timeSyncSequence[0x400]{};
+		int firstPerson = -1;
+		float duration = FLT_MIN;
+		float destFrame = 0.0f;
+		float sourceWeight = FLT_MIN;
+		float destWeight = FLT_MIN;
+		int priority = 0;
+		if (!ExtractArgs(EXTRACT_ARGS, &sourceSequence, &destSequence, &firstPerson, &duration, &destFrame, &sourceWeight,
+		                 &destWeight, &priority, &timeSyncSequence))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		if (firstPerson == -1)
+			firstPerson = IsPlayerInFirstPerson(actor);
+		auto* sourceAnim = FindOrLoadAnim(actor, sourceSequence, firstPerson);
+		auto* destAnim = FindOrLoadAnim(actor, destSequence, firstPerson);
+		if (!sourceAnim || !destAnim)
+			return true;
+		BSAnimGroupSequence* timeSyncAnim = nullptr;
+		if (strlen(timeSyncSequence))
+		{
+			timeSyncAnim = FindOrLoadAnim(actor, timeSyncSequence, firstPerson);
+			if (!timeSyncAnim)
+				return true;
+		}
+		if (duration == FLT_MIN)
+			duration = GetDefaultBlendTime(destAnim, sourceAnim);
+		if (sourceWeight == FLT_MIN)
+			sourceWeight = sourceAnim->seqWeight;
+		if (destWeight == FLT_MIN)
+			destWeight = destAnim->seqWeight;
+		*result = ThisStdCall(0xA350D0, sourceAnim, destAnim, duration, destFrame, priority, sourceWeight, destWeight, timeSyncAnim);
 		return true;
 	});
 
