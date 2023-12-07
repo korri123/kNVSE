@@ -1861,7 +1861,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 
 	constexpr auto activateAnimParams = {
 		ParamInfo{"anim sequence path", kParamType_String, false},
-		ParamInfo{"bIsFirstPerson", kParamType_Integer, false},
+		ParamInfo{"bIsFirstPerson", kParamType_Integer, true},
 		ParamInfo{"iPriority", kParamType_Integer, true},
 		ParamInfo{"bStartOver", kParamType_Integer, true},
 		ParamInfo{"fWeight", kParamType_Float, true},
