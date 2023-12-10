@@ -1455,13 +1455,25 @@ std::vector<std::string_view> FindCustomAnimations(AnimData* animData, const UIn
 	return result;
 }
 
-AnimData* GetAnimData(TESObjectREFR* actor)
+
+AnimData* GetAnimData(Actor* actor, int firstPerson)
 {
 	if (!actor)
 		return nullptr;
-	if (actor == g_thePlayer && !g_thePlayer->IsThirdPerson())
-		return g_thePlayer->firstPersonAnimData;
-	return actor->GetAnimData();
+	switch (firstPerson)
+	{
+	case -1:
+		if (actor != g_thePlayer)
+			return actor->GetAnimData();
+		return !g_thePlayer->IsThirdPerson() ? g_thePlayer->firstPersonAnimData : g_thePlayer->baseProcess->GetAnimData();
+	case 0:
+		return actor->baseProcess->GetAnimData();
+	case 1:
+	default:
+		if (actor == g_thePlayer)
+			return g_thePlayer->firstPersonAnimData;
+		return actor->GetAnimData();
+	}
 }
 
 std::unordered_set<BaseProcess*> g_allowedNextAnims;
@@ -1567,15 +1579,23 @@ bool IsPlayerInFirstPerson(Actor* actor)
 
 void CreateCommands(NVSECommandBuilder& builder)
 {
-	builder.Create("GetPlayingAnimBySequenceType", kRetnType_Array, { ParamInfo{"sequence id", kParamType_Integer, false} }, true, [](COMMAND_ARGS)
+	constexpr auto getAnimBySequenceTypeParams = {
+		ParamInfo{"sequence id", kParamType_Integer, false},
+		ParamInfo{"bIsFirstPerson", kParamType_Integer, true}
+	};
+	builder.Create("GetPlayingAnimBySequenceType", kRetnType_Array, getAnimBySequenceTypeParams, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		UInt32 sequenceId = -1;
-		if (!ExtractArgs(EXTRACT_ARGS, &sequenceId))
+		int firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequenceId, &firstPerson))
 			return false;
 		if (sequenceId < 0 || sequenceId > kSequence_SpecialIdle)
 			return true;
-		auto* animData = GetAnimData(thisObj);
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* animData = GetAnimData(actor, firstPerson);
 		if (!animData)
 			return true;
 		auto* anim = animData->animSequence[sequenceId];
@@ -1585,10 +1605,16 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	builder.Create("GetPlayingAnimSequencePaths", kRetnType_Array, {}, true, [](COMMAND_ARGS)
+	builder.Create("GetPlayingAnimSequencePaths", kRetnType_Array, { ParamInfo{"bIsFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
-		if (const auto* animData = GetAnimData(thisObj))
+		int firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &firstPerson))
+			return false;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		if (const auto* animData = GetAnimData(actor, firstPerson))
 		{
 			NVSEArrayBuilder arr;
 			for (const auto* anim : animData->animSequence)
@@ -1625,16 +1651,21 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	builder.Create("GetAnimationsByAnimGroup", kRetnType_Array, { ParamInfo{"anim group id", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)
+	constexpr auto getAnimsByAnimGroupParams = {
+		ParamInfo{"anim group id", kParamType_AnimationGroup, false},
+		ParamInfo{"bIsFirstPerson", kParamType_Integer, true}
+	};
+	builder.Create("GetAnimationsByAnimGroup", kRetnType_Array, getAnimsByAnimGroupParams, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		UInt32 animGroupId = -1;
-		if (!ExtractArgs(EXTRACT_ARGS, &animGroupId) || !thisObj)
+		int firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &animGroupId, &firstPerson) || !thisObj)
 			return true;
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
-		auto* animData = GetAnimData(actor);
+		auto* animData = GetAnimData(actor, firstPerson);
 		if (!animData)
 			return true;
 		const auto fullGroupId = GetActorRealAnimGroup(actor, animGroupId);
@@ -1836,7 +1867,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 					}
 				}
 			}
-			
 		}
 		return true;
 	});
@@ -1867,7 +1897,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		ParamInfo{"fWeight", kParamType_Float, true},
 		ParamInfo{"fEaseInTime", kParamType_Float, true},
 		ParamInfo{"time sync sequence path", kParamType_Integer, true}
-
 	};
 	builder.Create("ActivateAnim", kRetnType_Default, activateAnimParams, true, [](COMMAND_ARGS)
 	{
@@ -2014,7 +2043,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 
 	constexpr auto blendToAnimSequenceParams = {
 		ParamInfo{"sequence path", kParamType_String, false},
-		ParamInfo{"bFirstPerson", kParamType_String, true},
+		ParamInfo{"bFirstPerson", kParamType_Integer, true},
 		ParamInfo{"fDuration", kParamType_Float, true},
 		ParamInfo{"fDestFrame", kParamType_Float, true},
 		ParamInfo{"iPriority", kParamType_Integer, true},
@@ -2120,6 +2149,68 @@ inline bool NiControllerManager::BlendFromSequence(
 		if (destWeight == FLT_MIN)
 			destWeight = destAnim->seqWeight;
 		*result = ThisStdCall(0xA350D0, sourceAnim, destAnim, duration, destFrame, priority, sourceWeight, destWeight, timeSyncAnim);
+		return true;
+	});
+
+	builder.Create("SetAnimWeight", kRetnType_Default, { ParamInfo{"anim sequence path", kParamType_String, false }, ParamInfo{"weight", kParamType_Float, false} }, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char sequencePath[0x400]{};
+		float weight = 0.0f;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &weight) || !thisObj)
+			return true;
+		BSAnimGroupSequence* anim;
+		if (thisObj)
+		{
+			auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+			if (!actor)
+				return true;
+			anim = FindActiveAnimationForActor(actor, sequencePath);
+		}
+		else
+			anim = GetAnimationByPath(sequencePath);
+		if (!anim)
+			return true;
+		anim->seqWeight = weight;
+		*result = 1;
+		return true;
+	});
+
+	builder.Create("SetAnimsTimePassed", kRetnType_Default, { ParamInfo{"timePassed", kParamType_Float, false}, ParamInfo{"bFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		float timePassed;
+		int firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &timePassed, &firstPerson))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		if (firstPerson == -1)
+			firstPerson = IsPlayerInFirstPerson(actor);
+		auto* animData = GetAnimData(actor, firstPerson);
+		if (!animData)
+			return true;
+		animData->timePassed = timePassed;
+		*result = 1;
+		return true;
+	});
+
+	builder.Create("GetAnimsTimePassed", kRetnType_Default, { ParamInfo{"bFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		int firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &firstPerson))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		if (firstPerson == -1)
+			firstPerson = IsPlayerInFirstPerson(actor);
+		auto* animData = GetAnimData(actor, firstPerson);
+		if (!animData)
+			return true;
+		*result = animData->timePassed;
 		return true;
 	});
 

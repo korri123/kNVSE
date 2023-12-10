@@ -633,7 +633,23 @@ void ApplyHooks()
 		mover->moveFlagStrafe38 = flags;
 	}));
 #endif
-
+	// AnimData::GetNextWeaponSequenceKey
+	// fixes respectEndKey not working for a: keys
+	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
+	{
+		auto* defaultData = sequence->textKeyData;
+		if (sequence->owner != g_thePlayer->firstPersonAnimData->controllerManager)
+			return defaultData;
+		auto* firstPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[kSequence_Weapon];
+		if (!firstPersonAnim)
+			return defaultData;
+		if (const auto iter = g_timeTrackedAnims.find(firstPersonAnim); iter != g_timeTrackedAnims.end())
+		{
+			if (iter->second->respectEndKey)
+				return firstPersonAnim->textKeyData;
+		}
+		return defaultData;
+	}));
 
 
 	ini.SaveFile(iniPath.c_str(), false);
