@@ -638,7 +638,7 @@ void ApplyHooks()
 	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
 	{
 		auto* defaultData = sequence->textKeyData;
-		if (sequence->owner != g_thePlayer->firstPersonAnimData->controllerManager)
+		if (sequence->owner != g_thePlayer->baseProcess->animData->controllerManager || g_thePlayer->IsThirdPerson())
 			return defaultData;
 		auto* firstPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[kSequence_Weapon];
 		if (!firstPersonAnim)
