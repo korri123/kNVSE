@@ -1589,7 +1589,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		UInt32 sequenceId = -1;
 		int firstPerson = -1;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequenceId, &firstPerson))
-			return false;
+			return true;
 		if (sequenceId < 0 || sequenceId > kSequence_SpecialIdle)
 			return true;
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
@@ -1610,7 +1610,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = 0;
 		int firstPerson = -1;
 		if (!ExtractArgs(EXTRACT_ARGS, &firstPerson))
-			return false;
+			return true;
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -1634,8 +1634,10 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = 0;
 		char path[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
-			return false;
+			return true;
 		auto* anim = GetAnimationByPath(path);
+		if (!anim)
+			return true;
 		const AnimData* animData = nullptr;
 		if (thisObj)
 		{
@@ -1817,12 +1819,12 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	builder.Create("SetAnimOffset", kRetnType_Default, { ParamInfo{"path", kParamType_String, false}, ParamInfo{"offset", kParamType_Float, false} }, true, [](COMMAND_ARGS)
+	builder.Create("SetAnimCurrentTime", kRetnType_Default, { ParamInfo{"path", kParamType_String, false}, ParamInfo{"time", kParamType_Float, false} }, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		char path[0x400];
-		float offset;
-		if (!ExtractArgs(EXTRACT_ARGS, &path, &offset))
+		float time;
+		if (!ExtractArgs(EXTRACT_ARGS, &path, &time))
 			return true;
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
@@ -1830,7 +1832,27 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindActiveAnimationForActor(actor, path);
 		if (!anim)
 			return true;
-		anim->offset = offset;
+		AnimData* animData;
+		if (actor == g_thePlayer && anim->owner == g_thePlayer->firstPersonAnimData->controllerManager)
+			animData = g_thePlayer->firstPersonAnimData;
+		else
+			animData = actor->baseProcess->GetAnimData();
+		if (anim->state == NiControllerSequence::kAnimState_TransDest)
+		{
+			anim->endTime = time + animData->timePassed;
+		}
+		else
+		{
+			anim->offset = time - animData->timePassed;
+			if (GetAnimTime(animData, anim) < anim->beginKeyTime)
+			{
+				anim->offset = anim->endKeyTime - (anim->beginKeyTime - anim->offset);
+			}
+			else if (GetAnimTime(animData, anim) > anim->endKeyTime)
+			{
+				anim->offset = anim->beginKeyTime + (anim->offset - anim->endKeyTime);
+			}
+		}
 		return true;
 	});
 
@@ -2176,7 +2198,7 @@ inline bool NiControllerManager::BlendFromSequence(
 		return true;
 	});
 
-	builder.Create("SetAnimsTimePassed", kRetnType_Default, { ParamInfo{"timePassed", kParamType_Float, false}, ParamInfo{"bFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
+	builder.Create("SetGlobalAnimTime", kRetnType_Default, { ParamInfo{"timePassed", kParamType_Float, false}, ParamInfo{"bFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		float timePassed;
@@ -2196,7 +2218,7 @@ inline bool NiControllerManager::BlendFromSequence(
 		return true;
 	});
 
-	builder.Create("GetAnimsTimePassed", kRetnType_Default, { ParamInfo{"bFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
+	builder.Create("GetGlobalAnimTime", kRetnType_Default, { ParamInfo{"bFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		int firstPerson = -1;
@@ -2211,6 +2233,27 @@ inline bool NiControllerManager::BlendFromSequence(
 		if (!animData)
 			return true;
 		*result = animData->timePassed;
+		return true;
+	});
+
+	builder.Create("GetAnimCurrentTime", kRetnType_Default, { ParamInfo{"path", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char path[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &path))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* anim = FindActiveAnimationForActor(actor, path);
+		if (!anim)
+			return true;
+		AnimData* animData;
+		if (actor == g_thePlayer && anim->owner == g_thePlayer->firstPersonAnimData->controllerManager)
+			animData = g_thePlayer->firstPersonAnimData;
+		else
+			animData = actor->baseProcess->GetAnimData();
+		*result = GetAnimTime(animData, anim);
 		return true;
 	});
 
