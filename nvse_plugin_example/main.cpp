@@ -229,13 +229,16 @@ void HandleAnimTimes()
 						auto& scripts = scriptsIter->second;
 						for (auto& script : scripts)
 						{
-							g_script->CallFunctionAlt(*script, actor, 1, animPath.c_str());
+							g_script->CallFunctionAlt(*script, actor, 2, animPath.c_str(), animTime.firstPerson);
 						}
 					}
 				}
 			}
 		}
+
 	}
+
+	
 
 
 	const auto timeTrackedGroups = std::map(g_timeTrackedGroups); // copy to avoid iterator invalidation

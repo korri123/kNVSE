@@ -1959,7 +1959,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto* anim = FindActiveAnimationForActor(actor, path);
 		if (!anim)
 			return true;
-		if (anim->state != kAnimState_Inactive || (anim->lastScaledTime == anim->endKeyTime && anim->cycleType == NiControllerSequence::CLAMP)) 
+		if (anim->state != kAnimState_Inactive) 
 			*result = 1;
 		return true;
 	});
@@ -2318,6 +2318,58 @@ inline bool NiControllerManager::BlendFromSequence(
 		{
 			scripts.push_back(script);
 			*result = 1;
+		}
+		return true;
+	});
+
+	builder.Create("QueueNextAnim", kRetnType_Default, { ParamInfo { "sAnimPath", kParamType_String, false }, ParamInfo { "bFirstPerson", kParamType_Integer, true } }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char animPath[0x400];
+		int firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &firstPerson))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		if (firstPerson == -1)
+			firstPerson = IsPlayerInFirstPerson(actor);
+		auto* animData = GetAnimData(actor, firstPerson);
+		if (!animData)
+			return true;
+		auto* anim = FindOrLoadAnim(animData, animPath);
+		if (!anim || !anim->animGroup)
+			return true;
+		auto& queue = g_queuedReplaceAnims[std::make_pair(anim->animGroup->groupID, animData)];
+		queue.push_back(anim);
+		*result = 1;
+		return true;
+	});
+
+	builder.Create("IsAnimQueued", kRetnType_Default, { ParamInfo { "sAnimPath", kParamType_String, false } }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char animPath[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		
+		auto* anim = FindActiveAnimationForActor(actor, animPath);
+		if (!anim || !anim->animGroup)
+			return true;
+		auto* animData = actor->baseProcess->GetAnimData();
+		if (animData->controllerManager != anim->owner)
+		{
+			if (actor != g_thePlayer || anim->owner != g_thePlayer->firstPersonAnimData->controllerManager)
+				return true;
+			animData = g_thePlayer->firstPersonAnimData;
+		}
+		if (const auto iter = g_queuedReplaceAnims.find(std::make_pair(anim->animGroup->groupID, animData)); iter != g_queuedReplaceAnims.end())
+		{
+			const auto& queue = iter->second;
+			*result = ra::find(queue, anim) != queue.end();
 		}
 		return true;
 	});

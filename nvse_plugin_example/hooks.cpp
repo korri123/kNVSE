@@ -14,14 +14,14 @@
 #include "utility.h"
 #include "main.h"
 
-// allow first person anims to override even if their 3rd person counterpart is missing
-SInt32 g_firstPersonAnimId = -1;
 
 AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
 bool g_doNotSwapAnims = false;
+
+std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
 
 #if _DEBUG
 MapNode<const char*, NiControllerSequence> g_mapNode__;
@@ -38,72 +38,60 @@ UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
 	return *reinterpret_cast<UInt8**>(basePtr);
 }
 
-// UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
-bool __fastcall HandleAnimationChange(AnimData* animData, void* _edx, BSAnimGroupSequence* toReplace)
+BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroupId)
 {
-	auto* basePointer = GetParentBasePtr(_AddressOfReturnAddress());
-	auto** toMorph = reinterpret_cast<BSAnimGroupSequence**>(basePointer + 0x8);
-	auto animGroupId = *reinterpret_cast<UInt32*>(basePointer + 0xC);
-	// auto* toReplace = toMorph ? *toMorph : nullptr;
-#if _DEBUG
-	auto& groupInfo = g_animGroupInfos[animGroupId & 0xFF];
-	auto* curSeq = animData->animSequence[groupInfo.sequenceType];
-	if (animData->actor->baseForm->refID == 0xE5958)
+	const auto key = std::make_pair(animGroupId, animData);
+	const auto it = g_queuedReplaceAnims.find(key);
+	if (it != g_queuedReplaceAnims.end())
 	{
-		if (groupInfo.sequenceType != eAnimSequence::kSequence_WeaponUp && groupInfo.sequenceType != kSequence_WeaponDown)
+		auto& queue = it->second;
+		if (!queue.empty())
 		{
-			static std::string lastFromName;
-			static std::string lastToName;
-			std::string fromStr = curSeq ? curSeq->sequenceName: "\\None";
-			std::string toStr = toReplace ? toReplace->sequenceName : "\\None";
-			auto fromName = fromStr.substr(fromStr.find_last_of('\\'));
-			auto toName = toStr.substr(toStr.find_last_of('\\'));
-			
-			if (fromName != lastFromName && toName != lastToName)
-			//if (curSeq && curSeq->animGroup->GetBaseGroupID() == kAnimGroup_FastForward || toReplace && toReplace->animGroup->GetBaseGroupID() == kAnimGroup_Idle)
-				Console_Print("%s %s -> %s", animData->actor->GetFullName()->name.CStr(), fromName.c_str(), toName.c_str());
-			lastFromName = fromName;
-			lastToName = toName;
+			auto* anim = queue.front();
+			queue.pop_front();
+			return anim;
 		}
 	}
-#endif
+	return nullptr;
+}
+
+// UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
+bool __fastcall HandleAnimationChange(AnimData* animData, void* _edx, void* arg0)
+{
+	auto* basePointer = GetParentBasePtr(_AddressOfReturnAddress());
+	auto** toReplaceRef = reinterpret_cast<BSAnimGroupSequence**>(basePointer + 0x8);
+	const auto animGroupId = *reinterpret_cast<UInt32*>(basePointer + 0xC);
+	// auto* toReplace = toMorph ? *toMorph : nullptr;
+
 	g_animationHookContext = AnimationContext(basePointer);
 
 	if (animData && animData->actor)
 	{
 		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
 			g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
-		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
-		if (firstPerson && g_firstPersonAnimId != -1)
-		{
-			animGroupId = g_firstPersonAnimId;
-			g_firstPersonAnimId = -1;
-		}
 		std::optional<AnimationResult> animResult;
-		if (!g_doNotSwapAnims && (animResult = GetActorAnimation(animGroupId, animData)))
+
+		auto* queuedAnim = GetQueuedAnim(animData, animGroupId);
+		if (queuedAnim)
+		{
+			*toReplaceRef = queuedAnim;
+		}
+
+		if (!g_doNotSwapAnims && !queuedAnim && (animResult = GetActorAnimation(animGroupId, animData)))
 		{
 			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
 			if (newAnim)
-				*toMorph = newAnim;
+				*toReplaceRef = newAnim;
 		}
-		else if (toReplace)
+		else if (*toReplaceRef)
 		{
-			// allow non animgroupoverride anims to use custom text keys
-			static std::unordered_map<std::string, AnimPath> customKeyAnims;
-			if (auto iter = customKeyAnims.find(toReplace->sequenceName); iter != customKeyAnims.end())
-				HandleExtraOperations(animData, toReplace, iter->second);
-			else
-			{
-				AnimPath ctx;
-				if (HandleExtraOperations(animData, toReplace, ctx))
-				{
-					customKeyAnims.emplace(toReplace->sequenceName, std::move(ctx));
-				}
-			}
+			// allow non AnimGroupOverride anims to use custom text keys
+			AnimPath ctx{};
+			HandleExtraOperations(animData, *toReplaceRef, ctx);
 		}
 	}
 	// hooked call
-	return ThisStdCall(0x498EA0, animData, toReplace);
+	return ThisStdCall(0x498EA0, animData, *toReplaceRef);
 }
 
 #if 0
