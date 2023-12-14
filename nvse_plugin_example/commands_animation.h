@@ -157,6 +157,8 @@ struct AnimTime
 	std::optional<TimedCallbacks> callbacksBase;
 	TimedCallbacks::Context callbacks;
 
+	bool hasCustomAnimGroups = false;
+
 	AnimData* GetAnimData(Actor* actor) const
 	{
 		if (firstPerson)
@@ -407,9 +409,13 @@ namespace GameFuncs
 	inline auto IsDoingAttackAnimation = THISCALL(0x894900, bool, Actor* actor);
 	inline auto HandleQueuedAnimFlags = THISCALL(0x8BA600, void, Actor* actor);
 
-	inline auto ActivateSequence = THISCALL(0xA2E280, bool, NiControllerManager* manager, NiControllerSequence* source, NiControllerSequence* destination, float blend, int priority, bool startOver, float morphWeight, NiControllerSequence* pkTimeSyncSeq);
+	inline auto CrossFade = THISCALL(0xA2E280, bool, NiControllerManager* manager, NiControllerSequence* source, NiControllerSequence* destination, float blend, int priority, bool startOver, float morphWeight, NiControllerSequence* pkTimeSyncSeq);
+	inline auto ActivateSequence = THISCALL(0x47AAB0, bool, NiControllerManager* manager, NiControllerSequence* source, int priority, bool bStartOver, float fWeight, float fEaseInTime, NiControllerSequence* pkTimeSyncSeq);
+
 	inline auto MorphSequence = THISCALL(0xA351D0, bool, NiControllerSequence *source, NiControllerSequence *pkDestSequence, float fDuration, int iPriority, float fSourceWeight, float fDestWeight);
 	inline auto BlendFromPose = THISCALL(0xA2F800, bool, NiControllerManager * mgr, NiControllerSequence * pkSequence, float fDestFrame, float fDuration, int iPriority, NiControllerSequence * pkSequenceToSynchronize);
+	inline auto StartBlend = THISCALL(0xA350D0, bool, NiControllerSequence * pkSourceSequence, NiControllerSequence * pkDestSequence, float fDuration, float fDestFrame, int iPriority, float fSourceWeight,
+		float fDestWeight, NiControllerSequence * pkSequenceToSynchronize);
 	inline auto DeactivateSequence = THISCALL(0x47B220, int, NiControllerManager * mgr, NiControllerSequence * pkSequence, float fEaseOut);
 	inline auto GetActorAnimGroupId = THISCALL(0x897910, UInt16, Actor* actor, UInt32 groupId, BaseProcess::WeaponInfo* weapInfo, bool aFalse, AnimData* animData);
 	inline auto NiControllerManager_RemoveSequence = THISCALL(0xA2EC50, NiControllerSequence*, NiControllerManager * mgr, NiControllerSequence * anim);
@@ -586,3 +592,6 @@ void HandleGarbageCollection();
 void CreateCommands(NVSECommandBuilder& builder);
 
 extern std::unordered_set<BaseProcess*> g_allowedNextAnims;
+
+std::string GetAnimBasePath(const std::string& path);
+std::string ExtractCustomAnimGroupName(const std::filesystem::path& path);

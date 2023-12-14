@@ -553,7 +553,14 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			anim->animGroup->groupID = newGroupId;
 		}
 	}
-	
+
+	const auto basePath = GetAnimBasePath(anim->sequenceName);
+	if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
+	{
+		auto& animTime = getAnimTimeStruct();
+		animTime.hasCustomAnimGroups = true;
+	}
+		
 	if (applied)
 	{
 		auto& animTime = getAnimTimeStruct();
@@ -927,6 +934,43 @@ int GetAnimGroupId(const std::filesystem::path& path)
 	return -1;
 }
 
+std::unordered_map<std::string, std::unordered_set<std::string>> g_customAnimGroupPaths;
+
+std::string GetAnimBasePath(const std::string& path)
+{
+	for (auto& it : {"_1stperson", "_male"})
+	{
+		auto basePath = ExtractUntilStringMatches(path, it, true);
+		if (!basePath.empty())
+			return basePath;
+	}
+	return "";
+}
+
+std::string ExtractCustomAnimGroupName(const std::filesystem::path& path)
+{
+	const auto stem = path.stem().string();
+	const auto pos = stem.find("__");
+	if (pos != std::string::npos && pos + 2 < stem.size()) {
+		return stem.substr(pos + 2);
+	}
+	return "";
+}
+
+bool RegisterCustomAnimGroupAnim(const std::filesystem::path& path)
+{
+	if (!ExtractCustomAnimGroupName(path).empty())
+	{
+		const auto basePath = GetAnimBasePath(path.string());
+		if (!basePath.empty())
+		{
+			g_customAnimGroupPaths[basePath].insert(path.string());
+			return true;
+		}
+	}
+	return false;
+}
+
 void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath, AnimOverrideMap& map, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false)
 {
 	if (!conditionScript && g_jsonContext.script)
@@ -983,6 +1027,15 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 		}
 		return;
 	}
+
+	const auto isCustomAnimGroupAnim = RegisterCustomAnimGroupAnim(fPath);
+	if (isCustomAnimGroupAnim)
+	{
+		Log("Found custom anim group animation");
+		// we do not want to add custom anim group anims to the stack or otherwise they'll play
+		return;
+	}
+
 	// if not inserted before, treat as variant; else add to stack as separate set
 	auto [_, newItem] = groupIdFillSet.emplace(groupId);
 	if (newItem || stack.empty())
@@ -1603,7 +1656,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj, animData, true));
 		return true;
-	});
+	}, nullptr, "GetAnimByType");
 
 	builder.Create("GetPlayingAnimSequencePaths", kRetnType_Array, { ParamInfo{"bIsFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
 	{
@@ -1627,7 +1680,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			*result = reinterpret_cast<UInt32>(arr.Build(g_arrayVarInterface, scriptObj));
 		}
 		return true;
-	});
+	}, nullptr, "GetAnimsByType");
 
 	builder.Create("GetAnimationAttributes", kRetnType_Array, { ParamInfo{"path", kParamType_String, false} }, false, [](COMMAND_ARGS)
 	{
@@ -1651,7 +1704,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		*result = reinterpret_cast<UInt32>(CreateAnimationObjectArray(anim, scriptObj, animData, thisObj != nullptr));
 		return true;
-	});
+	}, nullptr, "GetAnimAttrs");
 
 	constexpr auto getAnimsByAnimGroupParams = {
 		ParamInfo{"anim group id", kParamType_AnimationGroup, false},
@@ -1703,7 +1756,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 
 		return true;
-	});
+	}, nullptr, "GetAnimsByGroup");
 
 	builder.Create("ForceFireWeapon", kRetnType_Default, {}, true, [](COMMAND_ARGS)
 	{
@@ -1906,7 +1959,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto* anim = FindActiveAnimationForActor(actor, path);
 		if (!anim)
 			return true;
-		if (anim->state != kAnimState_Inactive) 
+		if (anim->state != kAnimState_Inactive || (anim->lastScaledTime == anim->endKeyTime && anim->cycleType == NiControllerSequence::CLAMP)) 
 			*result = 1;
 		return true;
 	});
@@ -1951,17 +2004,13 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (!timeSyncSeq)
 				return true;
 		}
-		const auto* manager = anim->owner;
-		*result = ThisStdCall<bool>(
-			0x47AAB0,
-			manager,
-			anim,
-			priority,
-			startOver,
-			weight,
-			easeInTime,
-			timeSyncSeq
-		);
+		auto* manager = anim->owner;
+
+		if (anim->state != NiControllerSequence::kAnimState_Inactive)
+			// Deactivate sequence
+			GameFuncs::DeactivateSequence(manager, anim, 0.0);
+
+		GameFuncs::ActivateSequence(manager, anim, priority, startOver, weight, easeInTime, timeSyncSeq);
 		return true;
 	});
 
@@ -1988,13 +2037,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindActiveAnimationForActor(actor, sequencePath);
 		if (!anim)
 			return true;
-		const auto* manager = anim->owner;
-		*result = ThisStdCall<bool>(
-			0x47B220,
-			manager,
-			anim,
-			easeOutTime
-		);
+		auto* manager = anim->owner;
+		*result = GameFuncs::DeactivateSequence(manager, anim, easeOutTime);
 		return true;
 	});
 
@@ -2047,10 +2091,12 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (easeInTime == FLT_MIN)
 			easeInTime = GetDefaultBlendTime(destAnim, sourceAnim);
 
-		const auto* manager = sourceAnim->owner;
+		auto* manager = sourceAnim->owner;
 
-		*result = ThisStdCall<bool>(
-			0xA2E280,
+		if (destAnim->state != NiControllerSequence::kAnimState_Inactive)
+			GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
+
+		*result = GameFuncs::CrossFade(
 			manager,
 			sourceAnim,
 			destAnim,
@@ -2100,9 +2146,10 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 		if (duration == FLT_MIN)
 			duration = GetDefaultBlendTime(anim);
-		const auto* manager = anim->owner;
-		*result = ThisStdCall<bool>(
-			0xA2F800,
+		auto* manager = anim->owner;
+		if (anim->state != NiControllerSequence::kAnimState_Inactive)
+			GameFuncs::DeactivateSequence(manager, anim, 0.0f);
+		*result = GameFuncs::BlendFromPose(
 			manager,
 			anim,
 			destFrame,
@@ -2170,7 +2217,9 @@ inline bool NiControllerManager::BlendFromSequence(
 			sourceWeight = sourceAnim->seqWeight;
 		if (destWeight == FLT_MIN)
 			destWeight = destAnim->seqWeight;
-		*result = ThisStdCall(0xA350D0, sourceAnim, destAnim, duration, destFrame, priority, sourceWeight, destWeight, timeSyncAnim);
+		if (destAnim->state != NiControllerSequence::kAnimState_Inactive)
+			GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
+		*result = GameFuncs::StartBlend(sourceAnim, destAnim, duration, destFrame, priority, sourceWeight, destWeight, timeSyncAnim);
 		return true;
 	});
 
@@ -2254,6 +2303,22 @@ inline bool NiControllerManager::BlendFromSequence(
 		else
 			animData = actor->baseProcess->GetAnimData();
 		*result = GetAnimTime(animData, anim);
+		return true;
+	});
+
+	builder.Create("RegisterCustomAnimGroup", kRetnType_Default, { ParamInfo{"name", kParamType_String, false}, ParamInfo{"script", kParamType_AnyForm, false} }, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char name[0x400];
+		Script* script;
+		if (!ExtractArgs(EXTRACT_ARGS, &name, &script) || NOT_TYPE(script, Script))
+			return true;
+		auto& scripts = g_customAnimGroups[ToLower(name)];
+		if (ra::find(scripts, script) == scripts.end())
+		{
+			scripts.push_back(script);
+			*result = 1;
+		}
 		return true;
 	});
 

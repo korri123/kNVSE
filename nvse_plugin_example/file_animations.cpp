@@ -17,6 +17,7 @@ requires std::is_same_v<T, nullptr_t> || std::is_same_v<T, UInt8> || std::is_sam
 void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, bool firstPerson)
 {
 	std::unordered_set<UInt16> variantIds;
+
 	for (const auto& iter : std::filesystem::recursive_directory_iterator(dirPath))
 	{
 		if (_stricmp(iter.path().extension().string().c_str(), ".kf") != 0)

@@ -18,6 +18,10 @@ std::string ReplaceAll(std::string str, const std::string& from, const std::stri
 /// Try to find in the Haystack the Needle - ignore case
 bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle);
 
+size_t FindStringPosCI(const std::string& strHaystack, const std::string& strNeedle);
+
+std::string ExtractUntilStringMatches(const std::string& str, const std::string& match, bool includeMatch = false);
+
 void Log(const std::string& msg);
 
 int HexStringToInt(const std::string& str);
@@ -45,7 +49,7 @@ bool In(T t, std::initializer_list<T> l)
 
 namespace ra = std::ranges;
 
-std::string& ToLower(std::string&& data);
+std::string ToLower(const std::string& data);
 std::string& StripSpace(std::string&& data);
 
 bool StartsWith(const char* left, const char* right);
@@ -205,7 +209,7 @@ class NVSECommandBuilder
 public:
 	NVSECommandBuilder(const NVSEInterface* scriptInterface) : scriptInterface(scriptInterface) {}
 
-	void Create(const char* name, CommandReturnType returnType, std::initializer_list<ParamInfo> params, bool refRequired, Cmd_Execute fn, Cmd_Parse parse = nullptr)
+	void Create(const char* name, CommandReturnType returnType, std::initializer_list<ParamInfo> params, bool refRequired, Cmd_Execute fn, Cmd_Parse parse = nullptr, const char* altName = "")
 	{
 		ParamInfo* paramCopy = nullptr;
 		if (params.size())
@@ -219,7 +223,7 @@ public:
 		}
 		
 		auto commandInfo = CommandInfo{
-			name, "", 0, "", refRequired, static_cast<UInt16>(params.size()), paramCopy, fn, parse, nullptr, 0
+			name, altName, 0, "", refRequired, static_cast<UInt16>(params.size()), paramCopy, fn, parse, nullptr, 0
 		};
 		scriptInterface->RegisterTypedCommand(&commandInfo, returnType);
 	}

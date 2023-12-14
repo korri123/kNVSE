@@ -37,6 +37,7 @@ const CommandInfo* g_TFC;
 PlayerCharacter* g_player;
 std::deque<std::function<void()>> g_executionQueue;
 ExpressionEvaluatorUtils s_expEvalUtils;
+std::unordered_map<std::string, std::vector<LambdaVariableContext>> g_customAnimGroups;
 
 #if RUNTIME
 NVSEScriptInterface* g_script;
@@ -211,6 +212,29 @@ void HandleAnimTimes()
 				ThisStdCall<bool>(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, true);
 			});
 		}
+
+		if (animTime.hasCustomAnimGroups)
+		{
+			const auto basePath = GetAnimBasePath(animTime.anim->sequenceName);
+			if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
+			{
+				const auto& animPaths = iter->second;
+				for (const auto& animPath : animPaths)
+				{
+					const auto name = ExtractCustomAnimGroupName(animPath);
+					if (name.empty())
+						continue;
+					if (auto scriptsIter = g_customAnimGroups.find(ToLower(name)); scriptsIter != g_customAnimGroups.end())
+					{
+						auto& scripts = scriptsIter->second;
+						for (auto& script : scripts)
+						{
+							g_script->CallFunctionAlt(*script, actor, 1, animPath.c_str());
+						}
+					}
+				}
+			}
+		}
 	}
 
 
@@ -272,6 +296,7 @@ void HandleAnimTimes()
 	}
 	
 }
+
 
 bool IsGodMode()
 {

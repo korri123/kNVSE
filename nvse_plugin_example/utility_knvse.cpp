@@ -25,6 +25,21 @@ std::string ReplaceAll(std::string str, const std::string& from, const std::stri
 	return str;
 }
 
+size_t FindStringPosCI(const std::string& strHaystack, const std::string& strNeedle)
+{
+	const auto lowerHaystack = ToLower(std::string(strHaystack));
+	const auto lowerNeedle = ToLower(std::string(strNeedle));
+	return lowerHaystack.find(lowerNeedle);
+}
+
+std::string ExtractUntilStringMatches(const std::string& str, const std::string& match, bool includeMatch)
+{
+	const auto pos = FindStringPosCI(str, match);
+	if (pos == std::string::npos)
+		return "";
+	return str.substr(0, pos + (includeMatch ? match.length() : 0));
+}
+
 /// Try to find in the Haystack the Needle - ignore case
 bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle)
 {
@@ -76,10 +91,11 @@ void PatchPause(UInt32 ptr)
 	SafeWriteBuf(ptr, "\xEB\xFE", 2);
 }
 
-std::string& ToLower(std::string&& data)
+std::string ToLower(const std::string& data)
 {
-	ra::transform(data, data.begin(),[](const unsigned char c) { return std::tolower(c); });
-	return data;
+	std::string newData = data;
+	ra::transform(newData, newData.begin(),[](const unsigned char c) { return std::tolower(c); } );
+	return newData;
 }
 
 std::string& StripSpace(std::string&& data)

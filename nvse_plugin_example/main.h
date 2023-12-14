@@ -8,7 +8,8 @@
 extern std::deque<std::function<void()>> g_executionQueue;
 extern NVSEArrayVarInterface* g_arrayVarInterface;
 extern NVSEStringVarInterface* g_stringVarInterface;
-
+extern std::unordered_map<std::string, std::vector<LambdaVariableContext>> g_customAnimGroups;
+extern std::unordered_map<std::string, std::unordered_set<std::string>> g_customAnimGroupPaths;
 #define IS_TRANSITION_FIX 0
 
 void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim);

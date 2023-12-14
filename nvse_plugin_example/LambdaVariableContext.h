@@ -19,5 +19,9 @@ public:
 	LambdaVariableContext& operator=(LambdaVariableContext&& other) noexcept;
 	~LambdaVariableContext();
 
+	friend bool operator==(const LambdaVariableContext& lhs, const LambdaVariableContext& rhs);
+
+	friend bool operator!=(const LambdaVariableContext& lhs, const LambdaVariableContext& rhs);
+
 	Script*& operator*();
 };

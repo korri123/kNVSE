@@ -32,3 +32,13 @@ Script*& LambdaVariableContext::operator*()
 {
 	return scriptLambda;
 }
+
+bool operator==(const LambdaVariableContext& lhs, const LambdaVariableContext& rhs)
+{
+	return lhs.scriptLambda == rhs.scriptLambda;
+}
+
+bool operator!=(const LambdaVariableContext& lhs, const LambdaVariableContext& rhs)
+{
+	return !(lhs == rhs);
+}
