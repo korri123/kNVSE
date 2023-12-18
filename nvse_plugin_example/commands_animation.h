@@ -4,6 +4,7 @@
 #include <chrono>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <span>
 #include <unordered_set>
 
@@ -158,6 +159,7 @@ struct AnimTime
 	TimedCallbacks::Context callbacks;
 
 	bool hasCustomAnimGroups = false;
+	std::set<std::pair<Script*, std::string>> cleanUpScripts;
 
 	AnimData* GetAnimData(Actor* actor) const
 	{

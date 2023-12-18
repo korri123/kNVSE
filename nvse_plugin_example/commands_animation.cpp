@@ -559,6 +559,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	{
 		auto& animTime = getAnimTimeStruct();
 		animTime.hasCustomAnimGroups = true;
+		applied = true;
 	}
 		
 	if (applied)
@@ -1959,7 +1960,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto* anim = FindActiveAnimationForActor(actor, path);
 		if (!anim)
 			return true;
-		if (anim->state != kAnimState_Inactive) 
+		if (anim->state != kAnimState_Inactive && anim->state != kAnimState_EaseOut) 
 			*result = 1;
 		return true;
 	});
@@ -2306,17 +2307,22 @@ inline bool NiControllerManager::BlendFromSequence(
 		return true;
 	});
 
-	builder.Create("RegisterCustomAnimGroup", kRetnType_Default, { ParamInfo{"name", kParamType_String, false}, ParamInfo{"script", kParamType_AnyForm, false} }, false, [](COMMAND_ARGS)
+	builder.Create("RegisterCustomAnimGroup", kRetnType_Default, { 
+		ParamInfo{"name", kParamType_String, false},
+		ParamInfo{"script", kParamType_AnyForm, false},
+		ParamInfo{"clean up script", kParamType_AnyForm, true},
+	}, false, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		char name[0x400];
 		Script* script;
-		if (!ExtractArgs(EXTRACT_ARGS, &name, &script) || NOT_TYPE(script, Script))
+		Script* cleanupScript = nullptr;
+		if (!ExtractArgs(EXTRACT_ARGS, &name, &script, &cleanupScript) || NOT_TYPE(script, Script) || (cleanupScript && NOT_TYPE(cleanupScript, Script)))
 			return true;
 		auto& scripts = g_customAnimGroups[ToLower(name)];
-		if (ra::find(scripts, script) == scripts.end())
+		if (ra::find(scripts, CustomAnimGroupScript{script, cleanupScript}) == scripts.end())
 		{
-			scripts.push_back(script);
+			scripts.emplace_back(script, cleanupScript);
 			*result = 1;
 		}
 		return true;

@@ -37,7 +37,8 @@ const CommandInfo* g_TFC;
 PlayerCharacter* g_player;
 std::deque<std::function<void()>> g_executionQueue;
 ExpressionEvaluatorUtils s_expEvalUtils;
-std::unordered_map<std::string, std::vector<LambdaVariableContext>> g_customAnimGroups;
+
+std::unordered_map<std::string, std::vector<CustomAnimGroupScript>> g_customAnimGroups;
 
 #if RUNTIME
 NVSEScriptInterface* g_script;
@@ -96,13 +97,22 @@ void HandleAnimTimes()
 	const auto timeTrackedAnims = std::map(g_timeTrackedAnims);
 	for (const auto& timeTrackedAnim : timeTrackedAnims)
 	{
-		const auto erase = [&]()
+		auto& animTime = *timeTrackedAnim.second;
+		auto* anim = animTime.anim;
+		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
+
+		const auto erase = [&]
 		{
+			if (!animTime.cleanUpScripts.empty())
+			{
+				for (const auto& [cleanUpScript, path] : animTime.cleanUpScripts)
+				{
+					g_script->CallFunctionAlt(cleanUpScript, actor, 2, path.c_str(), animTime.firstPerson);
+				}
+			}
 			g_timeTrackedAnims.erase(timeTrackedAnim.first);
 		};
 
-		auto& animTime = *timeTrackedAnim.second;
-		auto* anim = animTime.anim;
 		if (!anim || !anim->animGroup)
 		{
 			erase();
@@ -112,7 +122,6 @@ void HandleAnimTimes()
 #if _DEBUG
 		auto animTimeDupl = TempObject(animTime); // see vals in debugger after erase
 #endif
-		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
 		if (!actor)
 		{
 			erase();
@@ -137,16 +146,10 @@ void HandleAnimTimes()
 				Revert3rdPersonAnimTimes(animTime, anim);
 			};
 			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
-			const auto* currentWeapon = actor->GetWeaponForm();
 
-			const auto changedWeapon = _L(, currentWeapon != animTime.actorWeapon);
-			const auto current3rdPersonAnimIsNull = _L(, !current3rdPersonAnim || !current3rdPersonAnim->animGroup);
-			const auto old3rdPersonAnimIsNotNull = _L(, animTime.anim3rdCounterpart && animTime.anim3rdCounterpart->animGroup);
-			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim->animGroup->groupID != animTime.anim3rdCounterpart->animGroup->groupID);
+			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim != animTime.anim3rdCounterpart);
 			const auto animHasEnded = _L(, anim->state == NiControllerSequence::kAnimState_Inactive);
-			if (changedWeapon()
-				|| current3rdPersonAnimIsNull()
-				|| (old3rdPersonAnimIsNotNull() && current3rdPersonAnimHasChanged() && animHasEnded()))
+			if (current3rdPersonAnimHasChanged() && animHasEnded())
 			{
 				erase();
 				continue;
@@ -229,7 +232,11 @@ void HandleAnimTimes()
 						auto& scripts = scriptsIter->second;
 						for (auto& script : scripts)
 						{
-							g_script->CallFunctionAlt(*script, actor, 2, animPath.c_str(), animTime.firstPerson);
+							g_script->CallFunctionAlt(*script.script, actor, 2, animPath.c_str(), animTime.firstPerson);
+							if (*script.cleanUpScript)
+							{
+								animTime.cleanUpScripts.emplace(std::make_pair(*script.cleanUpScript, animPath));
+							}
 						}
 					}
 				}

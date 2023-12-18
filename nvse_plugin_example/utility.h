@@ -207,9 +207,9 @@ class NVSECommandBuilder
 {
 	const NVSEInterface* scriptInterface;
 public:
-	NVSECommandBuilder(const NVSEInterface* scriptInterface) : scriptInterface(scriptInterface) {}
+	explicit NVSECommandBuilder(const NVSEInterface* scriptInterface) : scriptInterface(scriptInterface) {}
 
-	void Create(const char* name, CommandReturnType returnType, std::initializer_list<ParamInfo> params, bool refRequired, Cmd_Execute fn, Cmd_Parse parse = nullptr, const char* altName = "")
+	void Create(const char* name, CommandReturnType returnType, std::initializer_list<ParamInfo> params, bool refRequired, Cmd_Execute fn, Cmd_Parse parse = nullptr, const char* altName = "") const
 	{
 		ParamInfo* paramCopy = nullptr;
 		if (params.size())

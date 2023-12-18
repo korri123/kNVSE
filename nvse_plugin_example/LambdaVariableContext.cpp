@@ -28,6 +28,8 @@ LambdaVariableContext::~LambdaVariableContext()
 		UncaptureLambdaVars(this->scriptLambda);
 }
 
+
+
 Script*& LambdaVariableContext::operator*()
 {
 	return scriptLambda;
