@@ -822,6 +822,5 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	UncaptureLambdaVars = (_UncaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaUnsaveVariableList);
 
 	ApplyHooks();
-	ApplyNiHooks();
 	return true;
 }
