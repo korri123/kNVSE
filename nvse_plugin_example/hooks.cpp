@@ -27,6 +27,9 @@ std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>
 #if _DEBUG
 MapNode<const char*, NiControllerSequence> g_mapNode__;
 NiTStringPointerMap<UInt32>* g_stringPointerMap__ = nullptr;
+std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
+std::unordered_map<NiInterpolator*, const char*> g_debugInterpNames;
+std::unordered_map<NiInterpolator*, const char*> g_debugInterpSequences;
 #endif
 
 UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
@@ -65,6 +68,27 @@ bool __fastcall HandleAnimationChange(AnimData* animData, void* _edx, void* arg0
 	// auto* toReplace = toMorph ? *toMorph : nullptr;
 
 	g_animationHookContext = AnimationContext(basePointer);
+
+#if _DEBUG
+	if (*toReplaceRef)
+	{
+		auto* anim = *toReplaceRef;
+		for (int i = 0; i < anim->numControlledBlocks; ++i)
+		{
+			auto& block = anim->controlledBlocks[i];
+			if (block.blendInterpolator)
+			{
+				g_debugInterpMap[block.blendInterpolator].insert(anim);
+			}
+			if (block.interpolator)
+			{
+				auto& info = anim->IDTagArray[i];
+				g_debugInterpNames[block.interpolator] = info.m_kAVObjectName.CStr();
+				g_debugInterpSequences[block.interpolator] = anim->sequenceName;
+			}
+		}
+	}
+#endif
 
 	if (animData && animData->actor)
 	{
