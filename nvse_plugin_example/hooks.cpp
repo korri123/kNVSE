@@ -543,6 +543,8 @@ void ApplyHooks()
 	//WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelCall(0x494989, HandleAnimationChange);
 
+	SpineSnapFix::ApplyHooks();
+
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
 
