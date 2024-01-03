@@ -14,6 +14,11 @@
 #include "utility.h"
 #include "main.h"
 #include "nihooks.h"
+#include "spine_snap.h"
+
+#define CALL_EAX(addr) __asm mov eax, addr __asm call eax
+#define JMP_EAX(addr)  __asm mov eax, addr __asm jmp eax
+#define JMP_EDX(addr)  __asm mov edx, addr __asm jmp edx
 
 
 AnimationContext g_animationHookContext;
@@ -59,36 +64,17 @@ BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroup
 	return nullptr;
 }
 
+
+
 // UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
-bool __fastcall HandleAnimationChange(AnimData* animData, void* _edx, void* arg0)
+BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
 {
 	auto* basePointer = GetParentBasePtr(_AddressOfReturnAddress());
-	auto** toReplaceRef = reinterpret_cast<BSAnimGroupSequence**>(basePointer + 0x8);
-	const auto animGroupId = *reinterpret_cast<UInt32*>(basePointer + 0xC);
+	
 	// auto* toReplace = toMorph ? *toMorph : nullptr;
 
 	g_animationHookContext = AnimationContext(basePointer);
-
-#if _DEBUG
-	if (*toReplaceRef)
-	{
-		auto* anim = *toReplaceRef;
-		for (int i = 0; i < anim->numControlledBlocks; ++i)
-		{
-			auto& block = anim->controlledBlocks[i];
-			if (block.blendInterpolator)
-			{
-				g_debugInterpMap[block.blendInterpolator].insert(anim);
-			}
-			if (block.interpolator)
-			{
-				auto& info = anim->IDTagArray[i];
-				g_debugInterpNames[block.interpolator] = info.m_kAVObjectName.CStr();
-				g_debugInterpSequences[block.interpolator] = anim->sequenceName;
-			}
-		}
-	}
-#endif
+	ra::copy(animData->animSequence, std::begin(g_animationHookContext.previousSequences));
 
 	if (animData && animData->actor)
 	{
@@ -99,24 +85,28 @@ bool __fastcall HandleAnimationChange(AnimData* animData, void* _edx, void* arg0
 		auto* queuedAnim = GetQueuedAnim(animData, animGroupId);
 		if (queuedAnim)
 		{
-			*toReplaceRef = queuedAnim;
+			destAnim = queuedAnim;
 		}
 
 		if (!g_doNotSwapAnims && !queuedAnim && (animResult = GetActorAnimation(animGroupId, animData)))
 		{
 			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
 			if (newAnim)
-				*toReplaceRef = newAnim;
+				destAnim = newAnim;
 		}
-		else if (*toReplaceRef)
+		else if (destAnim)
 		{
 			// allow non AnimGroupOverride anims to use custom text keys
 			AnimPath ctx{};
-			HandleExtraOperations(animData, *toReplaceRef, ctx);
+			HandleExtraOperations(animData, destAnim, ctx);
 		}
 	}
+
+	if (SpineSnapFix::ApplyFix(animData, destAnim) == SpineSnapFix::SKIP)
+		return destAnim;
+
 	// hooked call
-	return ThisStdCall(0x498EA0, animData, *toReplaceRef);
+	return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
 }
 
 #if 0
@@ -256,21 +246,30 @@ void __fastcall FixBlendMult()
 
 extern float g_destFrame;
 
-void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void* _EDX, float fTime, bool bUpdateInterpolators)
+void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
 {
 
 	if (sequence->state == kAnimState_Inactive)
 		return;
-	if (g_destFrame != -FLT_MAX && sequence->kNVSEFlags & NiControllerSequence::kFlag_DestframeStartTime)
+	if (sequence->destFrame != -FLT_MAX)
 	{
 		if (sequence->offset == -FLT_MAX)
 		{
 			sequence->offset = -fTime;
 		}
-		sequence->offset += g_destFrame;
-		g_destFrame = -FLT_MAX;
-		sequence->kNVSEFlags ^= NiControllerSequence::kFlag_DestframeStartTime;
+
+		if (sequence->startTime == -FLT_MAX)
+		{
+			const float easeTime = sequence->endTime;
+			sequence->endTime = fTime + easeTime - sequence->destFrame;
+			sequence->startTime = fTime - sequence->destFrame;
+		}
+		sequence->offset += sequence->destFrame;
 		sequence->destFrame = -FLT_MAX; // end my suffering
+		float fEaseSpinnerIn = (fTime - sequence->startTime) / (sequence->endTime - sequence->startTime);
+		float fEaseSpinnerOut = (sequence->endTime - fTime) / (sequence->endTime - sequence->startTime);
+		int i = 0;
+
 	}
 	ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
 }
@@ -389,6 +388,16 @@ bool LookupAnimFromMap(UInt16 groupId, AnimSequenceBase** base, AnimData* animDa
 	return false;
 }
 
+BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, UInt32 groupId)
+{
+	if (groupId == 0xFF)
+		return nullptr;
+	AnimSequenceBase* base = nullptr;
+	if (animData->actor && LookupAnimFromMap(groupId, &base, animData) || (base = animData->mapAnimSequenceBase->Lookup(groupId)))
+		return base->GetSequenceByIndex(-1);
+	return nullptr;
+}
+
 // attempt to fix anims that don't get loaded since they aren't in the game to begin with
 template <int AnimDataOffset>
 bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void* _EDX, UInt16 groupId, AnimSequenceBase** base)
@@ -497,6 +506,31 @@ HOOK PreventDuplicateAnimationsHook()
     }
 }
 
+#if 0
+bool __fastcall ShouldActivateAimSequence(UInt8* _ebp)
+{
+	const auto* _currentSequence = *reinterpret_cast<BSAnimGroupSequence**>(_ebp - 0x20);
+	const auto sequenceId = *reinterpret_cast<eAnimSequence*>(_ebp - 0x1c);
+	if (!_currentSequence && (sequenceId == kSequence_WeaponUp || sequenceId == kSequence_WeaponDown)) // vanilla code
+		return true;
+	return g_animationHookContext.fixSpineSnap;
+}
+
+HOOK FixSpineBlendBug()
+{
+	__asm
+	{
+		lea ecx, [ebp]
+		call ShouldActivateAimSequence
+		test al, al
+		jz skip
+		JMP_EAX(0x4951E9)
+	skip:
+		JMP_EAX(0x495220)
+	}
+}
+#endif
+
 
 void ApplyHooks()
 {
@@ -507,10 +541,12 @@ void ApplyHooks()
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
 
 	//WriteRelJump(0x4949D0, AnimationHook);
-	WriteRelCall(0x4949D0, HandleAnimationChange);
+	WriteRelCall(0x494989, HandleAnimationChange);
 
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
+
+	// WriteRelJump(0x4951D7, FixSpineBlendBug);
 
 	if (ini.GetOrCreate("General", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{
@@ -535,6 +571,7 @@ void ApplyHooks()
 		WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
 	}
 #endif
+	WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
 
 	WriteRelJump(0x492BF2, NoAimInReloadLoop);
 
@@ -666,6 +703,8 @@ void ApplyHooks()
 		}
 		return defaultData;
 	}));
+
+
 
 
 	ini.SaveFile(iniPath.c_str(), false);

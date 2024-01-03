@@ -4,6 +4,9 @@
     <Filter Include="nvse">
       <UniqueIdentifier>{92a4f350-f2ec-4fca-bdd3-927732d91b34}</UniqueIdentifier>
     </Filter>
+    <Filter Include="bug_fixes">
+      <UniqueIdentifier>{d2c2f625-07f3-44d6-813b-5f7012e54b4b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\nvse\nvse\GameAPI.cpp">
@@ -69,6 +72,9 @@
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="LambdaVariableContext.cpp" />
     <ClCompile Include="nihooks.cpp" />
+    <ClCompile Include="spine_snap.cpp">
+      <Filter>bug_fixes</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">
@@ -155,6 +161,9 @@
     <ClInclude Include="LambdaVariableContext.h" />
     <ClInclude Include="nihooks.h" />
     <ClInclude Include="class_vtbls.h" />
+    <ClInclude Include="spine_snap.h">
+      <Filter>bug_fixes</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

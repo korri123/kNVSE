@@ -54,9 +54,13 @@ bool isEditor = false;
 float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 {
 	auto time = anim->offset + animData->timePassed;
-	if (anim->state == NiControllerSequence::kAnimState_TransDest)
+	if (anim->state == NiControllerSequence::kAnimState_TransSource || anim->state == NiControllerSequence::kAnimState_EaseOut)
 	{
 		time = anim->endTime - animData->timePassed;
+	}
+	else if (anim->state == NiControllerSequence::kAnimState_TransDest || anim->state == NiControllerSequence::kAnimState_EaseIn)
+	{
+		time = animData->timePassed - anim->startTime;
 	}
 	return time;
 }

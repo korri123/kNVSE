@@ -424,6 +424,7 @@ namespace GameFuncs
 	inline auto GetNearestGroupID = THISCALL(0x495740, UInt16, AnimData* animData, UInt16 groupID, bool noRecurse);
 	inline auto NiControllerManager_LookupSequence = THISCALL(0x47A520, NiControllerSequence*, NiControllerManager* mgr, const char** animGroupName);
 	inline auto Actor_Attack = THISCALL(0x8935F0, bool, Actor* actor, UInt32 animGroupId);
+	inline auto AnimData_ResetSequenceState = THISCALL(0x496080, void, AnimData* animData, eAnimSequence sequenceId, float blendAmound);
 
 	inline auto InitAnimGroup = _CDECL(0x5F3A20, TESAnimGroup*, BSAnimGroupSequence* anim, const char* path);
 	inline auto BSFixedString_CreateFromPool = _CDECL(0xA5B690, const char*, const char* str);
@@ -597,3 +598,5 @@ extern std::unordered_set<BaseProcess*> g_allowedNextAnims;
 
 std::string GetAnimBasePath(const std::string& path);
 std::string ExtractCustomAnimGroupName(const std::filesystem::path& path);
+
+float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence = nullptr);

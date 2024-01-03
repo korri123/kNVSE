@@ -1612,16 +1612,41 @@ T* AllocateNiArray(UInt32 numElems)
 	return reinterpret_cast<T*>(arr + 1);
 }
 
-float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence = nullptr)
+struct SettingT
 {
-	// 0x49502A
+	union Info
+	{
+		unsigned int uint;
+		int i;
+		float f;
+		char* str;
+		bool b;
+		UInt16 us;
+	};
+
+	virtual ~SettingT();
+	Info uValue;
+	const char* pKey;
+};
+
+float GetIniFloat(UInt32 addr)
+{
+	return ThisStdCall<SettingT::Info*>(0x403E20, reinterpret_cast<void*>(addr))->f;
+}
+
+float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence)
+{
+	const auto defaultBlend = GetIniFloat(0x11C56FC);
+	const auto blendMult = GetIniFloat(0x11C5724);
 	const auto sourceBlend = sourceSequence ? max(sourceSequence->animGroup->blend, sourceSequence->animGroup->blendOut) : 0;
 	const auto destBlend = max(destSequence->animGroup->blend, destSequence->animGroup->blendOut);
 	if (destBlend > sourceBlend)
 	{
-		return static_cast<float>(destBlend) / 30.0f;
+		return static_cast<float>(destBlend) / 30.0f / blendMult;
 	}
-	return static_cast<float>(sourceBlend) / 30.0f;
+	if (!sourceBlend)
+		return defaultBlend;
+	return static_cast<float>(sourceBlend) / 30.0f / blendMult;
 }
 
 bool IsPlayerInFirstPerson(Actor* actor)

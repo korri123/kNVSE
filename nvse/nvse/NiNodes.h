@@ -925,6 +925,7 @@ public:
 	float m_fNextHighSumOfWeights;
 	float m_fHighEaseSpinner;
 };
+static_assert(sizeof(NiBlendInterpolator) == 0x30);
 
 class NiBlendTransformInterpolator : public NiBlendInterpolator
 {

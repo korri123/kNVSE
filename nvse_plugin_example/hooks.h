@@ -31,6 +31,8 @@ struct AnimationContext
 	BSAnimGroupSequence** toAnim = nullptr;
 	BSAnimGroupSequence** fromAnim = nullptr;
 	eAnimSequence* sequenceId = nullptr;
+	BSAnimGroupSequence* previousSequences[8] = { nullptr };
+	bool fixSpineSnap = false;
 };
 
 extern AnimationContext g_animationHookContext;
@@ -38,3 +40,5 @@ extern bool g_startedAnimation;
 extern BSAnimGroupSequence* g_lastLoopSequence;
 void ApplyHooks();
 extern bool g_doNotSwapAnims;
+
+BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, UInt32 groupId);

@@ -276,6 +276,6 @@ unsigned char __fastcall AddInterpInfoHook(NiBlendInterpolator* interp, void*, N
 
 void FixPriorityBug()
 {
-    WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
-    WriteVirtualCall(0xA3094E, AddInterpInfoHook);
+    //WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
+    //WriteVirtualCall(0xA3094E, AddInterpInfoHook);
 }
