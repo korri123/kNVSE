@@ -21,7 +21,6 @@
 #define JMP_EDX(addr)  __asm mov edx, addr __asm jmp edx
 
 
-AnimationContext g_animationHookContext;
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
@@ -47,6 +46,23 @@ UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
 	return *reinterpret_cast<UInt8**>(basePtr);
 }
 
+template <typename T>
+T GetVariableOfCallerStack(void* addressOfReturnAddress, int offset, bool lambda = false)
+{
+	auto* basePtr = GetParentBasePtr(addressOfReturnAddress, lambda);
+	return *reinterpret_cast<T*>(basePtr + offset);
+}
+
+template <typename T>
+T GetVariablePtrOfCallerStack(void* addressOfReturnAddress, int offset, bool lambda = false)
+{
+	auto* basePtr = GetParentBasePtr(addressOfReturnAddress, lambda);
+	return reinterpret_cast<T>(basePtr + offset);
+}
+
+#define GET_CALLER_VAR(type, offset, lambda) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
+#define GET_CALLER_VAR_PTR(type, offset, lambda) GetVariablePtrOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
+
 BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroupId)
 {
 	const auto key = std::make_pair(animGroupId, animData);
@@ -69,13 +85,6 @@ BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroup
 // UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
 BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
 {
-	auto* basePointer = GetParentBasePtr(_AddressOfReturnAddress());
-	
-	// auto* toReplace = toMorph ? *toMorph : nullptr;
-
-	g_animationHookContext = AnimationContext(basePointer);
-	ra::copy(animData->animSequence, std::begin(g_animationHookContext.previousSequences));
-
 	if (animData && animData->actor)
 	{
 		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
@@ -102,7 +111,10 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		}
 	}
 
-	if (SpineSnapFix::ApplyFix(animData, destAnim) == SpineSnapFix::SKIP)
+	if (g_fixBlendSamePriority && SpineSnapFix::ApplySamePriorityFix(animData, destAnim) == SpineSnapFix::SKIP)
+		return destAnim;
+
+	if (g_fixSpineBlendBug && SpineSnapFix::ApplyAimBlendFix(animData, destAnim) == SpineSnapFix::SKIP)
 		return destAnim;
 
 	// hooked call
@@ -232,30 +244,27 @@ void FixIdleAnimStrafe()
 
 #define HOOK __declspec(naked) void
 
-void __fastcall FixBlendMult()
+void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool bUpdateInterpolators)
 {
-	const auto mult = GetAnimMult(g_animationHookContext.animData, *g_animationHookContext.groupID);
+	const auto* animData = GET_CALLER_VAR(AnimData*, -0x5C, false);
+	auto* animBlend = GET_CALLER_VAR_PTR(float*, -0x34, false);
+	const auto mult = GetAnimMult(animData, static_cast<UInt8>(anim->animGroup->groupID));
 	if (mult > 1.0f)
 	{
-		*g_animationHookContext.blendAmount /= mult;
-#if _DEBUG
-		//Console_Print("applied mult %g, %g >> %g", mult, (*g_animationHookContext.blendAmount *= mult), *g_animationHookContext.blendAmount);
-#endif
+		*animBlend /= mult;
 	}
+	// hooked call
+	ThisStdCall(0xA328B0, anim, fTime, bUpdateInterpolators);
 }
-
-extern float g_destFrame;
 
 void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
 {
 
-	if (sequence->state == kAnimState_Inactive)
-		return;
-	if (sequence->destFrame != -FLT_MAX)
+	if (sequence->state != kAnimState_Inactive && sequence->destFrame != -FLT_MAX)
 	{
-		if (sequence->offset == -FLT_MAX)
+		if (sequence->offset == -FLT_MAX || sequence->state == kAnimState_TransDest)
 		{
-			sequence->offset = -fTime;
+			sequence->offset = -fTime + sequence->destFrame;
 		}
 
 		if (sequence->startTime == -FLT_MAX)
@@ -264,28 +273,15 @@ void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* se
 			sequence->endTime = fTime + easeTime - sequence->destFrame;
 			sequence->startTime = fTime - sequence->destFrame;
 		}
-		sequence->offset += sequence->destFrame;
 		sequence->destFrame = -FLT_MAX; // end my suffering
+#if _DEBUG
 		float fEaseSpinnerIn = (fTime - sequence->startTime) / (sequence->endTime - sequence->startTime);
 		float fEaseSpinnerOut = (sequence->endTime - fTime) / (sequence->endTime - sequence->startTime);
 		int i = 0;
-
+#endif
 	}
 	ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
 }
-
-HOOK BlendMultHook()
-{
-	const static auto hookedCall = 0xA328B0;
-	const static auto retnAddr = 0x4951D7;
-	__asm
-	{
-		call hookedCall
-		call FixBlendMult
-		jmp retnAddr
-	}
-}
-
 
 #if 0
 bool __fastcall ProlongedAimFix(UInt8* basePointer)
@@ -306,49 +302,6 @@ JMP_HOOK(0x8BB96A, ProlongedAimFix, 0x8BB974, {
 	})
 
 #endif
-
-std::unordered_set<std::string> g_reloadStartBlendFixes;
-
-bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
-{
-	const static std::unordered_set ids = { kAnimGroup_ReloadWStart, kAnimGroup_ReloadYStart, kAnimGroup_ReloadXStart, kAnimGroup_ReloadZStart };
-	const auto* anim = *reinterpret_cast<BSAnimGroupSequence**>(basePointer - 0xA0);
-	const auto queuedId = *reinterpret_cast<AnimGroupID*>(basePointer - 0x30);
-	const auto currentId = *reinterpret_cast<AnimGroupID*>(basePointer - 0x34);
-	auto* animData = *reinterpret_cast<AnimData**>(basePointer - 0x18c);
-	const auto newCondition = _L(, queuedId == 0xFF && !ids.contains(currentId));
-	const auto defaultCondition = _L(, queuedId == 0xFF);
-	if (!anim || !anim->animGroup)
-		return defaultCondition();
-	if (!g_reloadStartBlendFixes.contains(anim->sequenceName))
-	{
-		if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
-		{
-			const auto seqType = GetSequenceType(anim->animGroup->groupID);
-			auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
-			if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->sequenceName))
-				return newCondition();
-		}
-		return defaultCondition();
-	}
-	return newCondition();
-}
-
-__declspec(naked) void NoAimInReloadLoop()
-{
-	constexpr static auto jumpIfTrue = 0x492CB1;
-	constexpr static auto jumpIfFalse = 0x492BF8;
-	__asm
-	{
-		lea ecx, [ebp]
-		call ShouldPlayAimAnim
-		test al, al
-		jz isFalse
-		jmp jumpIfTrue
-	isFalse:
-		jmp jumpIfFalse
-	}
-}
 
 bool LookupAnimFromMap(UInt16 groupId, AnimSequenceBase** base, AnimData* animData)
 {
@@ -388,12 +341,15 @@ bool LookupAnimFromMap(UInt16 groupId, AnimSequenceBase** base, AnimData* animDa
 	return false;
 }
 
-BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, UInt32 groupId)
+BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID groupId)
 {
 	if (groupId == 0xFF)
 		return nullptr;
+	const auto nearestGroupId = GetNearestGroupID(animData, groupId);
+	if (nearestGroupId == 0xFFFF)
+		return nullptr;
 	AnimSequenceBase* base = nullptr;
-	if (animData->actor && LookupAnimFromMap(groupId, &base, animData) || (base = animData->mapAnimSequenceBase->Lookup(groupId)))
+	if (animData->actor && LookupAnimFromMap(nearestGroupId, &base, animData) || (base = animData->mapAnimSequenceBase->Lookup(nearestGroupId)))
 		return base->GetSequenceByIndex(-1);
 	return nullptr;
 }
@@ -425,44 +381,6 @@ void __fastcall HandleOnReload(Actor* actor)
 	}
 	//std::erase_if(g_burstFireQueue, _L(BurstFireData & b, b.actorId == g_thePlayer->refID));
 }
-
-#if 0
-bool __fastcall AllowAttacksEarlierInAnimHook(BaseProcess* baseProcess)
-{
-	// allow attacks before reload anim is done
-	if (!baseProcess)
-		return false; // test
-	if (g_allowedNextAnims.contains(baseProcess))
-	{
-		// should be allowed except in exceptional cases
-		return true;
-	}
-	if (baseProcess == g_thePlayer->baseProcess)
-	{
-		const auto iter = ra::find_if(g_timeTrackedAnims, [](auto& p)
-		{
-			const auto& animTime = *p.second;
-			if (animTime.allowAttack == -FLT_MAX || !animTime.anim || animTime.anim->state == kAnimState_Inactive || !animTime.IsPlayer())
-				return false;
-			const auto anim = animTime.anim;
-			// prevent first person / 3rd person mismatch
-			if (animTime.firstPerson && g_thePlayer->IsThirdPerson())
-				return false;
-			const auto currentTime = GetAnimTime(animTime.GetAnimData(g_thePlayer), anim);
-			return currentTime >= animTime.allowAttack;
-
-		});
-		if (iter != g_timeTrackedAnims.end() && GameFuncs::GetControlState(ControlCode::Attack, Decoding::IsDXKeyState::IsPressed))
-		{
-			auto* highProcess = g_thePlayer->GetHighProcess();
-			highProcess->currentSequence = nullptr;
-			highProcess->currentAction = Decoding::AnimAction::kAnimAction_None; // required due to 0x893E32 check
-			return true;
-		}
-	}
-	return baseProcess->IsReadyForAnim();
-}
-#endif
 
 bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
 {
@@ -506,31 +424,10 @@ HOOK PreventDuplicateAnimationsHook()
     }
 }
 
-#if 0
-bool __fastcall ShouldActivateAimSequence(UInt8* _ebp)
-{
-	const auto* _currentSequence = *reinterpret_cast<BSAnimGroupSequence**>(_ebp - 0x20);
-	const auto sequenceId = *reinterpret_cast<eAnimSequence*>(_ebp - 0x1c);
-	if (!_currentSequence && (sequenceId == kSequence_WeaponUp || sequenceId == kSequence_WeaponDown)) // vanilla code
-		return true;
-	return g_animationHookContext.fixSpineSnap;
-}
-
-HOOK FixSpineBlendBug()
-{
-	__asm
-	{
-		lea ecx, [ebp]
-		call ShouldActivateAimSequence
-		test al, al
-		jz skip
-		JMP_EAX(0x4951E9)
-	skip:
-		JMP_EAX(0x495220)
-	}
-}
-#endif
-
+bool g_fixSpineBlendBug = true;
+bool g_fixAttackISTransition = true;
+bool g_fixBlendSamePriority = true;
+bool g_fixLoopingReloadStart = true;
 
 void ApplyHooks()
 {
@@ -540,15 +437,26 @@ void ApplyHooks()
 	const auto errVal = ini.LoadFile(iniPath.c_str());
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
 
+	g_fixSpineBlendBug = ini.GetOrCreate("General", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down");
+	g_fixBlendSamePriority = ini.GetOrCreate("General", "bFixBlendSamePriority", 1, "; fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with mtidle.kf");
+	g_fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim control");
+	g_fixLoopingReloadStart = ini.GetOrCreate("General", "bFixLoopingReloadStart", 1, "; fix looping reload start anims transitioning to aim anim before main looping reload anim");
+
 	//WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelCall(0x494989, HandleAnimationChange);
+	WriteRelCall(0x495E2A, HandleAnimationChange);
+	WriteRelCall(0x4956FF, HandleAnimationChange);
+	WriteRelCall(0x4973B4, HandleAnimationChange);
 
-	SpineSnapFix::ApplyHooks();
 
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
 
 	// WriteRelJump(0x4951D7, FixSpineBlendBug);
+
+
+	if (g_fixSpineBlendBug)
+		SpineSnapFix::ApplyHooks();
 
 	if (ini.GetOrCreate("General", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{
@@ -560,22 +468,30 @@ void ApplyHooks()
 		FixIdleAnimStrafe();
 
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
-		WriteRelJump(0x4951D2, BlendMultHook);
+		WriteRelCall(0x4951D2, FixBlendMult);
 
 	if (ini.GetOrCreate("General", "bFixPriority", 1 , "; fix engine bug where anims with same priority will flicker for a millisecond if blended together"))
 		FixPriorityBug();
-
-#if IS_TRANSITION_FIX
-	//if (ini.GetOrCreate("General", "bFixAimAfterShooting", 1, "; stops the player from being stuck in irons sight aim mode after shooting a weapon while aiming"))
-	{
-		//APPLY_JMP(ProlongedAimFix);
-		//SafeWriteBuf(0x491275, "\xEB\x0B", 2);
-		WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
-	}
-#endif
+	
 	WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
 
-	WriteRelJump(0x492BF2, NoAimInReloadLoop);
+
+	if (g_fixLoopingReloadStart)
+	{
+		// fix reloadloopstart blending into aim before reloadloop
+		WriteRelCall(0x492CF6, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, eAnimSequence sequenceId, bool bChar)
+		{
+			const auto* anim = GET_CALLER_VAR(BSAnimGroupSequence*, -0xA0, true);
+			if (anim && anim->animGroup)
+			{
+				const auto groupId = anim->animGroup->GetBaseGroupID();
+				if (groupId >= kAnimGroup_ReloadWStart && groupId <= kAnimGroup_ReloadZStart)
+					return; // do nothing
+			}
+			// original call; blends to aim anim
+			ThisStdCall(0x4994F0, animData, sequenceId, bChar);
+		}));
+	}
 
 #if 1
 	// attempt to fix anims that don't get loaded since they aren't in the game to begin with

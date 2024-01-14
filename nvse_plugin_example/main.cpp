@@ -21,6 +21,7 @@
 #include "nihooks.h"
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
+#include "spine_snap.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
 #define REG_CMD_TYPED(name, type) 	nvse->RegisterTypedCommand(&kCommandInfo_ ##name, type)
@@ -54,13 +55,16 @@ bool isEditor = false;
 float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 {
 	auto time = anim->offset + animData->timePassed;
-	if (anim->state == NiControllerSequence::kAnimState_TransSource || anim->state == NiControllerSequence::kAnimState_EaseOut)
+	if (anim->startTime != -FLT_MAX)
 	{
-		time = anim->endTime - animData->timePassed;
-	}
-	else if (anim->state == NiControllerSequence::kAnimState_TransDest || anim->state == NiControllerSequence::kAnimState_EaseIn)
-	{
-		time = animData->timePassed - anim->startTime;
+		if (anim->state == NiControllerSequence::kAnimState_TransSource || anim->state == NiControllerSequence::kAnimState_EaseOut)
+		{
+			time = anim->endTime - animData->timePassed;
+		}
+		else if (anim->state == NiControllerSequence::kAnimState_TransDest || anim->state == NiControllerSequence::kAnimState_EaseIn)
+		{
+			time = animData->timePassed - anim->startTime;
+		}
 	}
 	return time;
 }
@@ -246,11 +250,7 @@ void HandleAnimTimes()
 				}
 			}
 		}
-
 	}
-
-	
-
 
 	const auto timeTrackedGroups = std::map(g_timeTrackedGroups); // copy to avoid iterator invalidation
 	for (const auto& timeTrackedGroup : timeTrackedGroups)
@@ -308,9 +308,7 @@ void HandleAnimTimes()
 			}
 		}
 	}
-	
 }
-
 
 bool IsGodMode()
 {
@@ -412,200 +410,6 @@ void HandleBurstFire()
 	}
 }
 
-float g_destFrame = -FLT_MAX;
-void HandleProlongedAim()
-{
-	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
-	auto* animData1st = g_thePlayer->firstPersonAnimData;
-	auto* highProcess = g_thePlayer->GetHighProcess();
-	auto* curWeaponAnim = animData3rd->animSequence[kSequence_Weapon];
-	/*static bool waitUntilReload = false;
-	static bool doOnce = false;
-	if (!doOnce)
-	{
-		SubscribeOnActorReload(g_thePlayer, ReloadSubscriber::AimTransition);
-		doOnce = true;
-	}
-	if (waitUntilReload)
-	{
-		if (!g_thePlayer->IsAnimActionReload())
-			return;
-		waitUntilReload = false;
-	}*/
-	if (!curWeaponAnim)
-		return;
-	const auto curGroupId = curWeaponAnim->animGroup->groupID;
-	UInt16 destId;
-	bool toIS = false;
-	if (curWeaponAnim->animGroup->IsAttackIS() && !highProcess->isAiming)
-	{
-		destId = curGroupId - 3; // hipfire
-		ThisStdCall(0x8BB650, g_thePlayer, false, false, false);
-	}
-	else if (curWeaponAnim->animGroup->IsAttackNonIS() && GameFuncs::GetControlState(ControlCode::Aim, Decoding::IsDXKeyState::IsHeld))
-	{
-		destId = curGroupId + 3;
-		ThisStdCall(0x8BB650, g_thePlayer, true, false, false);
-		toIS = true;
-		//g_test = true;
-		//ThisStdCall(0xA24280, *g_OSInputGlobals, ControlCode::Aim);
-	}
-	else
-		return;
-	auto* weapon = g_thePlayer->GetWeaponForm();
-	if (!weapon)
-		return;
-	auto* ammoInfo = g_thePlayer->baseProcess->GetAmmoInfo();
-	if (!ammoInfo)
-		return;
-	
-	/*if (DidActorReload(g_thePlayer, ReloadSubscriber::AimTransition))
-	{
-		waitUntilReload = true;
-		return;
-	}*/
-	
-	for (auto* animData : {animData3rd, animData1st})
-	{
-		auto* base = animData->mapAnimSequenceBase->Lookup(destId);
-		auto* mult = DYNAMIC_CAST(base, AnimSequenceBase, AnimSequenceMultiple);
-
-		const auto getAnim = [&](UInt16 groupId)
-		{
-			auto* anim = GetGameAnimation(animData, groupId);
-			BSAnimGroupSequence* overrideAnim;
-			std::optional<AnimationResult> overrideAnimPath;
-			if ((overrideAnimPath = GetActorAnimation(groupId, animData)) && (overrideAnim = LoadAnimationPath(*overrideAnimPath, animData, groupId)))
-				anim = overrideAnim;
-			return anim;
-		};
-		auto* destAnim = getAnim(destId);
-		auto* sourceAnim = animData->animSequence[kSequence_Weapon];
-
-		if (!destAnim || !sourceAnim)
-			return;
-
-		const auto applyStartTime = [&](BSAnimGroupSequence* seq)
-		{
-			//seq->destFrame = sourceAnim->lastScaledTime / destAnim->frequency;
-			g_destFrame = sourceAnim->lastScaledTime / destAnim->frequency;
-			seq->kNVSEFlags |= NiControllerSequence::kFlag_DestframeStartTime; // start at the destFrameTime
-		};
-
-		//applyStartTime(destAnim);
-		std::span blocks{ destAnim->controlledBlocks, destAnim->numControlledBlocks };
-		
-		const auto increasePriority = _L(NiControllerSequence::ControlledBlock & block, block.blendInterpolator ? block.blendInterpolator->m_cHighPriority += 1 : 0);
-		const auto decreasePriority = _L(NiControllerSequence::ControlledBlock & block, block.blendInterpolator ? block.blendInterpolator->m_cHighPriority -= 1 : 0);
-
-		const auto oldBlend = destAnim->animGroup->blendIn;
-		if (!toIS)
-			destAnim->animGroup->blendIn = 8;
-		else
-			destAnim->animGroup->blendIn = 8;
-
-		if (toIS)
-		{
-			animData->timePassed = 0;
-			GameFuncs::DeactivateSequence(animData->controllerManager, destAnim, 0.0f);
-		}
-		/*/if (toIS)
-		{
-			PatchMemoryNop(0xA350AC, 6);
-			PatchMemoryNop(0xA350B4, 3);
-		}*/
-		//animData->noBlend120 = true;
-		const auto applyStartTimesForAll = [&]()
-		{
-			if (mult)
-			{
-				mult->anims->ForEach([&](BSAnimGroupSequence* seq)
-				{
-					/*std::span b{seq->controlledBlocks, seq->numControlledBlocks};
-					if (!toIS)
-						ra::for_each(b, increasePriority);
-					else
-						ra::for_each(b, decreasePriority);*/
-					applyStartTime(seq);
-				});
-			}
-			else
-			{
-				/*if (!toIS)
-					ra::for_each(blocks, increasePriority);
-				else
-					ra::for_each(blocks, decreasePriority);*/
-				applyStartTime(destAnim);
-			}
-		};
-		
-		
-		//GameFuncs::PlayAnimGroup(animData, hipfireId, 1, -1, -1);
-		/*if (animData == animData3rd)
-		{
-			auto* upAnim = getAnim(hipfireId + 1);
-			auto* downAnim = getAnim(hipfireId + 2);
-			highProcess->animSequence[0] = hipfireAnim;
-			highProcess->animSequence[1] = upAnim;
-			highProcess->animSequence[2] = downAnim;
-			applyStartTime(upAnim);
-			applyStartTime(downAnim);
-			GameFuncs::MorphToSequence(animData, upAnim, hipfireId, -1);
-			GameFuncs::MorphToSequence(animData, downAnim, hipfireId, -1);
-		}*/
-		//GameFuncs::MorphToSequence(animData, hipfireAnim, hipfireId, -1);
-		//ThisStdCall(0x49BCA0, animData, animData->timePassed, 0, 1);
-
-		if (animData == animData1st)
-		{
-			applyStartTimesForAll();
-			ThisStdCall(0x9520F0, g_thePlayer, destId, 1);
-		}
-		else
-		{
-			applyStartTimesForAll();
-			auto id = highProcess->isAiming ? destId - 3 : destId; // function already increments this
-			ThisStdCall(0x8B28C0, g_thePlayer, (id & 0xFF), animData3rd);
-			/*if (destAnim->destFrame < destAnim->animGroup->keyTimes[kSeqState_EjectOrUnequipEnd])
-			{
-				animData->actor->baseProcess->SetQueuedIdleFlag(kIdleFlag_AttackEjectEaseInFollowThrough);
-			
-				GameFuncs::HandleQueuedAnimFlags(animData->actor);
-			}*/
-		}
-
-		/*if (toIS)
-		{
-			SafeWriteBuf(0xA350AC, "\xD9\x05\x5C\x5F\x01\x01", 6);
-			SafeWriteBuf(0xA350B4, "\xD9\x5E\x54", 3);
-		}*/
-		//GameFuncs::PlayAnimGroup(animData, hipfireId, 1, -1, -1);
-		
-		//ra::for_each(blocks, _L(NiControllerSequence::ControlledBlock & block, block.blendInterpolator ? block.blendInterpolator->m_cHighPriority -= 10 : 0));
-		/*if (mult)
-		{
-			mult->anims->ForEach([&](BSAnimGroupSequence* seq)
-			{
-				std::span b{ seq->controlledBlocks, seq->numControlledBlocks };
-				if (!toIS)
-					ra::for_each(b, decreasePriority);
-				else
-					ra::for_each(b, increasePriority);
-			});
-		}
-		else
-		{
-			if (!toIS)
-				ra::for_each(blocks, decreasePriority);
-			else
-				ra::for_each(blocks, increasePriority);
-		}*/
-
-		destAnim->animGroup->blendIn = oldBlend;
-	}
-	highProcess->SetCurrentActionAndSequence(destId, GetGameAnimation(animData3rd, destId));
-}
-
 void HandleExecutionQueue()
 {
 	while (!g_executionQueue.empty())
@@ -614,8 +418,6 @@ void HandleExecutionQueue()
 		g_executionQueue.pop_front();
 	}
 }
-
-NiNode* g_weaponBone = nullptr;
 
 void HandleMisc()
 {
@@ -635,58 +437,6 @@ void HandleMisc()
 	}
 }
 
-#if _DEBUG
-
-std::ofstream out("_upperarm.csv");
-bool g_init = false;
-std::string g_cur;
-
-#if 0
-void LogNodes(NiNode* node)
-{
-	for (auto iter = node->m_children.Begin(); iter; ++iter)
-	{
-		std::span s{ reinterpret_cast<float*>(&iter->m_localRotate), 13 };
-		if (g_init)
-		{
-			g_cur += FormatString("%g,", std::accumulate(s.begin(), s.end(), 0.0));
-		}
-		else
-		{
-			g_cur += std::string(iter->m_pcName) + ',';
-		}
-		if (auto* niNode = iter->GetAsNiNode())
-			LogNodes(niNode);
-	}
-}
-
-#endif
-
-void LogNodes(NiNode* node)
-{
-	for (auto iter = node->m_children.Begin(); iter; ++iter)
-	{
-		if (_stricmp(iter->m_pcName, "Bip01 L UpperArm") == 0)
-		{
-			std::span s{ reinterpret_cast<float*>(&iter->m_localRotate), 13 };
-			for (auto f : s)
-			{
-				g_cur += FormatString("%g,", f);
-			}
-		}
-		if (auto* niNode = iter->GetAsNiNode())
-			LogNodes(niNode);
-	}
-}
-
-void HandleDebug()
-{
-	if (!g_weaponBone)
-	{
-		g_weaponBone = g_thePlayer->baseProcess->GetWeaponBone(g_thePlayer->validBip01Names);
-	}
-}
-#endif
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
@@ -706,13 +456,9 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleAnimTimes();
 			HandleExecutionQueue();
 			HandleMisc();
-			// HandleGarbageCollection(); this causes FileIO on each knvse anim play, no perf impact noticed on SSD
-#if _DEBUG
-			HandleDebug();
-#endif
-#if IS_TRANSITION_FIX
-			HandleProlongedAim();
-#endif
+			if (g_fixAttackISTransition)
+				SpineSnapFix::ApplyAttackISToAttackFix();
+
 		}
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)

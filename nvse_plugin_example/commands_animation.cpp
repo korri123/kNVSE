@@ -440,7 +440,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	if (hasKey({"interruptLoop"}, ctx.hasInterruptLoop) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS))
 	{
 		// IS allowed so that anims can finish after releasing LMB (handled in hook)
-		*reinterpret_cast<UInt8*>(g_animationHookContext.groupID) = kAnimGroup_AttackLoopIS;
+		// *reinterpret_cast<UInt8*>(g_animationHookContext.groupID) = kAnimGroup_AttackLoopIS;
 		if (animData == g_thePlayer->firstPersonAnimData)
 		{
 			g_thePlayer->baseProcess->GetAnimData()->groupIDs[kSequence_Weapon] = kAnimGroup_AttackLoopIS;
@@ -450,7 +450,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	}
 	if (hasKey({"noBlend"}, ctx.hasNoBlend))
 	{
-		g_animationHookContext.animData->noBlend120 = true;
+		animData->noBlend120 = true;
 	}
 	if (hasKey({"Script:"}, ctx.hasCallScript, KeyCheckType::KeyStartsWith))
 	{
@@ -498,7 +498,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	}
 	if (hasKey({"blendToReloadLoop"}, ctx.hasBlendToReloadLoop))
 	{
-		g_reloadStartBlendFixes.insert(anim->sequenceName);
+		// do nothing
 	}
 	if (hasKey({"scriptLine:", "allowAttack" }, ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
 	{
@@ -537,21 +537,6 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			});
 		}
 		animTime.scriptLines = scriptLineKeys->CreateContext();
-	}
-	if (hasKey({"replaceWithGroup:"}, ctx.hasReplaceWithGroup, KeyCheckType::KeyStartsWith))
-	{
-		const auto keyText = ra::find_if(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), "replaceWithGroup:")))->m_kText.CStr();
-		const auto& line = GetTextAfterColon(keyText);
-		const auto newGroupId = GroupNameToId(line);
-		if (newGroupId != -1)
-		{
-			*g_animationHookContext.groupID = newGroupId;
-			if (*g_animationHookContext.sequenceId != -1)
-			{
-				*g_animationHookContext.sequenceId = static_cast<eAnimSequence>(GetSequenceType(newGroupId));
-			}
-			anim->animGroup->groupID = newGroupId;
-		}
 	}
 
 	const auto basePath = GetAnimBasePath(anim->sequenceName);
@@ -1638,15 +1623,20 @@ float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimG
 {
 	const auto defaultBlend = GetIniFloat(0x11C56FC);
 	const auto blendMult = GetIniFloat(0x11C5724);
-	const auto sourceBlend = sourceSequence ? max(sourceSequence->animGroup->blend, sourceSequence->animGroup->blendOut) : 0;
-	const auto destBlend = max(destSequence->animGroup->blend, destSequence->animGroup->blendOut);
-	if (destBlend > sourceBlend)
-	{
-		return static_cast<float>(destBlend) / 30.0f / blendMult;
-	}
-	if (!sourceBlend)
+
+	const float sourceBlendOut = sourceSequence ? max(destSequence->animGroup->blend, destSequence->animGroup->blendOut) : 0;
+	const float destBlendIn = max(destSequence->animGroup->blend, destSequence->animGroup->blendIn);
+
+	float blendValue;
+
+	if (destBlendIn > sourceBlendOut)
+		blendValue = destBlendIn;
+	else if (sourceBlendOut > 0)
+		blendValue = sourceBlendOut;
+	else
 		return defaultBlend;
-	return static_cast<float>(sourceBlend) / 30.0f / blendMult;
+
+	return blendValue / 30.0f / blendMult;
 }
 
 bool IsPlayerInFirstPerson(Actor* actor)
@@ -1654,6 +1644,13 @@ bool IsPlayerInFirstPerson(Actor* actor)
 	if (actor != g_thePlayer)
 		return false;
 	return !g_thePlayer->IsThirdPerson();
+}
+
+UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId)
+{
+	const auto fullGroupId = GetActorRealAnimGroup(animData->actor, animGroupId);
+	const auto nearestGroupId = GameFuncs::GetNearestGroupID(animData, fullGroupId, false);
+	return nearestGroupId;
 }
 
 void CreateCommands(NVSECommandBuilder& builder)
@@ -1749,8 +1746,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* animData = GetAnimData(actor, firstPerson);
 		if (!animData)
 			return true;
-		const auto fullGroupId = GetActorRealAnimGroup(actor, animGroupId);
-		const auto nearestGroupId = GameFuncs::GetNearestGroupID(animData, fullGroupId, false);
+		const auto nearestGroupId = GetNearestGroupID(animData, static_cast<AnimGroupID>(animGroupId));
 		const auto customAnims = FindCustomAnimations(animData, nearestGroupId);
 		if (!customAnims.empty())
 		{

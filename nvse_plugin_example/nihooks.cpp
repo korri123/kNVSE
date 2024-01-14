@@ -251,7 +251,7 @@ unsigned char __fastcall AddInterpInfoHook(NiBlendInterpolator* interp, void*, N
 
 
 #endif
-#if 1
+#if _DEBUG
     if (interp->m_ucInterpCount == 2)
     {
         for (int i = 0; i < interp->m_ucInterpCount; ++i)

@@ -203,6 +203,37 @@ struct NiTSet
 	T		* data;		// 00
 	UInt32	capacity;	// 04
 	UInt32	length;		// 06
+
+	struct Iterator
+	{
+		friend NiTSet;
+
+		UInt32 index;
+		NiTSet* set;
+
+		T& operator*() const { return set->data[index]; }
+
+		Iterator& operator++()
+		{
+			index++;
+			return *this;
+		}
+
+		bool operator!=(const Iterator& other)
+		{
+			return index != other.index;
+		}
+	};
+
+	Iterator begin()
+	{
+		return Iterator{ 0, this };
+	}
+
+	Iterator end()
+	{
+		return Iterator{ length, this };
+	}
 };
 
 template <typename T_Key, typename T_Data>

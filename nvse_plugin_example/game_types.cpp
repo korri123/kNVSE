@@ -5,6 +5,7 @@
 #include "GameOSDepend.h"
 #include "GameProcess.h"
 #include "NiObjects.h"
+
 AnimGroupID AnimData::GetNextAttackGroupID() const
 {
 	const auto type = ThisStdCall<char>(0x495E40, this, 0);

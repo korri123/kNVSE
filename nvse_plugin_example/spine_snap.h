@@ -9,6 +9,8 @@ namespace SpineSnapFix
 		RESUME, SKIP
 	};
 
-	Result ApplyFix(AnimData* animData, BSAnimGroupSequence* destAnim);
+	Result ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim);
+	Result ApplySamePriorityFix(AnimData* animData, BSAnimGroupSequence* destAnim);
+	void ApplyAttackISToAttackFix();
 	void ApplyHooks();
 }

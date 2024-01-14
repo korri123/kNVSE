@@ -98,7 +98,6 @@ bool PlayerCharacter::SetSkeletonPath_v1c(const char* newPath)
 bool TESObjectREFR::Update3D_v1c()
 {
 	static const UInt32 kPlayerUpdate3Dpatch = 0x0094EB7A;
-
 	UInt8 kPlayerUpdate3DpatchFrom = 0x0B6;
 	UInt8 kPlayerUpdate3DpatchTo = 0x0EB;
 

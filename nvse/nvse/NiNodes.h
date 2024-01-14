@@ -1024,11 +1024,6 @@ public:
 		NiFixedString m_kInterpolatorID;
 	};
 
-	enum FlagsKNVSE
-	{
-		kFlag_DestframeStartTime = 1
-	};
-
 	enum AnimState
 	{
 		kAnimState_Inactive = 0x0,
@@ -1071,7 +1066,7 @@ public:
 	NiControllerSequence* partnerSequence;
 	const char* accumRootName;
 	UInt32 node60_maybeAccumRoot;
-	UInt32 kNVSEFlags; // deprecated string palette
+	UInt32 deprecatedStringPalette; // deprecated string palette
 	SInt16 curAnimNIdx;
 	UInt16 wrd6A;
 	UInt32 spNotesA;
@@ -1079,11 +1074,6 @@ public:
 	UInt8 hasHashHashAtStartOfNodeName;
 	UInt8 byte73;
 
-	void SetStartOffset(float offset)
-	{
-		destFrame = offset;
-		kNVSEFlags |= kFlag_DestframeStartTime;
-	}
 };
 
 // 06C
