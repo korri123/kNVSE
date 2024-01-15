@@ -50,27 +50,6 @@ bool GetOnlyUseHighestWeight(NiBlendInterpolator *_this)
 
 const unsigned char INVALID_INDEX = UCHAR_MAX;
 
-void NormalizeSamePriorityWeights(NiBlendInterpolator* _this, unsigned char priority, float sumOfWeights) {
-    unsigned char count = 0;
-    // First, count how many animations have the same priority
-    for (unsigned char uc = 0; uc < _this->m_ucArraySize; uc++) {
-	    NiBlendInterpolator::InterpArrayItem& interpArrayItem = _this->m_pkInterpArray[uc];
-        if (interpArrayItem.m_spInterpolator != NULL &&
-            interpArrayItem.m_cPriority == priority) {
-            count++;
-        }
-    }
-    // Then, distribute weights equally among them
-    float equalWeight = sumOfWeights / static_cast<float>(count);
-    for (unsigned char uc = 0; uc < _this->m_ucArraySize; uc++) {
-	    NiBlendInterpolator::InterpArrayItem& interpArrayItem = _this->m_pkInterpArray[uc];
-        if (interpArrayItem.m_spInterpolator != NULL &&
-            interpArrayItem.m_cPriority == priority) {
-            interpArrayItem.m_fNormalizedWeight = equalWeight;
-        }
-    }
-}
-
 void ComputeNormalizedEvenWeights(
     NiBlendInterpolator& _this,
     NiBlendInterpolator::InterpArrayItem& apItem1,
@@ -205,6 +184,11 @@ bool ComputeTwoBlendingHighPriorityInterpolators(NiBlendInterpolator* _this)
             }
         }
         ComputeNormalizedEvenWeights(*_this, *highPriorityInterps[0], *highPriorityInterps[1]);
+        for (auto& item : interpItems)
+        {
+            if (&item != highPriorityInterps[0] && &item != highPriorityInterps[1])
+                item.m_fNormalizedWeight = 0.0f;
+        }
         return true;
     }
     return false;
@@ -233,7 +217,6 @@ void __fastcall NiBlendInterpolator_ComputeNormalizedWeights(NiBlendInterpolator
     // hacky way to fix flickering when two interpolators share the same priority
     if (ComputeTwoBlendingHighPriorityInterpolators(_this))
         return;
-
 
     unsigned char uc;
 

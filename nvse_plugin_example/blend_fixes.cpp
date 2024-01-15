@@ -324,9 +324,6 @@ void TransitionToAttack(AnimData* animData, AnimGroupID attackIsGroupId, AnimGro
 	attackSequence->destFrame = attackISTime / attackSequence->frequency;
 	//ThisStdCall(0x4948C0, animData, attackGroupId, -1);
 	GameFuncs::ActivateSequence(attackSequence->owner, attackSequence, 0, true, attackSequence->seqWeight, blend, nullptr);
-	auto* idleSequence = animData->animSequence[kSequence_Idle];
-	if (idleSequence && idleSequence->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(idleSequence->owner, idleSequence, 0.0f);
 	SetCurrentSequence(animData, attackSequence, false);//
 
 	const auto sequenceType = attackSequence->animGroup->GetGroupInfo()->sequenceType;
@@ -374,7 +371,7 @@ void BlendFixes::ApplyAttackISToAttackFix()
 	TransitionToAttack(g_thePlayer->firstPersonAnimData, attackISGroupID, attackGroupId);
 	
 	auto* attackSequence = GetAnimByGroupID(animData3rd, attackGroupId);
-	highProcess->SetCurrentActionAndSequence(curGroupId - 3, attackSequence);
+	GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, Decoding::kAnimAction_Attack_Follow_Through, attackSequence);
 }
 
 
