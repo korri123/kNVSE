@@ -396,3 +396,5 @@ ipch
 
 *.tlog
 *.recipe
+
+**/.idea
