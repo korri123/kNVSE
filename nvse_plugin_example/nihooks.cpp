@@ -1,6 +1,7 @@
 #include "nihooks.h"
 
 #include "commands_animation.h"
+#include "hooks.h"
 #include "NiNodes.h"
 #include "SafeWrite.h"
 
@@ -70,24 +71,147 @@ void NormalizeSamePriorityWeights(NiBlendInterpolator* _this, unsigned char prio
     }
 }
 
+void ComputeNormalizedEvenWeights(
+    NiBlendInterpolator& _this,
+    NiBlendInterpolator::InterpArrayItem& apItem1,
+    NiBlendInterpolator::InterpArrayItem& apItem2
+)
+{
+    // Calculate the real weight of each item.
+    float fRealWeight1 = apItem1.m_fWeight * apItem1.m_fEaseSpinner;
+    float fRealWeight2 = apItem2.m_fWeight * apItem2.m_fEaseSpinner;
+    if (fRealWeight1 == 0.0f && fRealWeight2 == 0.0f)
+    {
+        apItem1.m_fNormalizedWeight = 0.0f;
+        apItem2.m_fNormalizedWeight = 0.0f;
+        return;
+    }
+
+    // Compute normalized weights.
+    if (apItem1.m_cPriority > apItem2.m_cPriority)
+    {
+        if (apItem1.m_fEaseSpinner == 1.0f)
+        {
+            apItem1.m_fNormalizedWeight = 1.0f;
+            apItem2.m_fNormalizedWeight = 0.0f;
+            return;
+        }
+
+        float fOneMinusEaseSpinner = 1.0f - apItem1.m_fEaseSpinner;
+        float fOneOverSumOfWeights = 1.0f / (apItem1.m_fEaseSpinner *
+            fRealWeight1 + fOneMinusEaseSpinner * fRealWeight2);
+        apItem1.m_fNormalizedWeight = apItem1.m_fEaseSpinner * fRealWeight1
+            * fOneOverSumOfWeights;
+        apItem2.m_fNormalizedWeight = fOneMinusEaseSpinner * fRealWeight2 *
+            fOneOverSumOfWeights;
+    }
+    else if (apItem1.m_cPriority < apItem2.m_cPriority)
+    {
+        if (apItem2.m_fEaseSpinner == 1.0f)
+        {
+            apItem1.m_fNormalizedWeight = 0.0f;
+            apItem2.m_fNormalizedWeight = 1.0f;
+            return;
+        }
+
+        float fOneMinusEaseSpinner = 1.0f - apItem2.m_fEaseSpinner;
+        float fOneOverSumOfWeights = 1.0f / (apItem2.m_fEaseSpinner *
+            fRealWeight2 + fOneMinusEaseSpinner * fRealWeight1);
+        apItem1.m_fNormalizedWeight = fOneMinusEaseSpinner * fRealWeight1 *
+            fOneOverSumOfWeights;
+        apItem2.m_fNormalizedWeight = apItem2.m_fEaseSpinner * fRealWeight2
+            * fOneOverSumOfWeights;
+    }
+    else
+    {
+        float fOneOverSumOfWeights = 1.0f / (fRealWeight1 + fRealWeight2);
+        apItem1.m_fNormalizedWeight = fRealWeight1 * fOneOverSumOfWeights;
+        apItem2.m_fNormalizedWeight = fRealWeight2 * fOneOverSumOfWeights;
+    }
+
+    // Only use the highest weight, if so desired.
+    if (GetOnlyUseHighestWeight(&_this))
+    {
+        if (apItem1.m_fNormalizedWeight >= apItem2.m_fNormalizedWeight)
+        {
+            apItem1.m_fNormalizedWeight = 1.0f;
+            apItem2.m_fNormalizedWeight = 0.0f;
+        }
+        else
+        {
+            apItem1.m_fNormalizedWeight = 0.0f;
+            apItem2.m_fNormalizedWeight = 1.0f;
+        }
+        return;
+    }
+
+    // Exclude weights below threshold.
+    if (_this.m_fWeightThreshold > 0.0f)
+    {
+        bool bReduced1 = false;
+        if (apItem1.m_fNormalizedWeight < _this.m_fWeightThreshold)
+        {
+            apItem1.m_fNormalizedWeight = 0.0f;
+            bReduced1 = true;
+        }
+
+        bool bReduced2 = false;
+        if (apItem2.m_fNormalizedWeight < _this.m_fWeightThreshold)
+        {
+            apItem2.m_fNormalizedWeight = 0.0f;
+            bReduced1 = true;
+        }
+
+        if (bReduced1 && bReduced2)
+        {
+            return;
+        }
+        else if (bReduced1)
+        {
+            apItem2.m_fNormalizedWeight = 1.0f;
+            return;
+        }
+        else if (bReduced2)
+        {
+            apItem1.m_fNormalizedWeight = 1.0f;
+            return;
+        }
+    }
+}
+
+bool ComputeTwoBlendingHighPriorityInterpolators(NiBlendInterpolator* _this)
+{
+    const auto isBlendingHighInterpItem = [&](const NiBlendInterpolator::InterpArrayItem& item)
+    {
+        return item.m_spInterpolator != nullptr && item.m_cPriority == _this->m_cHighPriority
+            && item.m_fEaseSpinner != 0.0f && item.m_fEaseSpinner != 1.0f;
+    };
+    std::span interpItems(_this->m_pkInterpArray, _this->m_ucArraySize);
+    const auto numHighPriorityInterps = ra::count_if(interpItems, isBlendingHighInterpItem);
+    if (numHighPriorityInterps == 2)
+    {
+        NiBlendInterpolator::InterpArrayItem* highPriorityInterps[2] {nullptr};
+        for (auto& item : interpItems)
+        {
+            if (isBlendingHighInterpItem(item))
+            {
+                if (highPriorityInterps[0] == nullptr)
+                    highPriorityInterps[0] = &item;
+                else
+                {
+                    highPriorityInterps[1] = &item;
+                    break;
+                }
+            }
+        }
+        ComputeNormalizedEvenWeights(*_this, *highPriorityInterps[0], *highPriorityInterps[1]);
+        return true;
+    }
+    return false;
+}
 
 void __fastcall NiBlendInterpolator_ComputeNormalizedWeights(NiBlendInterpolator *_this)
 {
-#if _DEBUG
-	auto& sequences = g_debugInterpMap[_this];
-    std::vector <const char*> interpNames;
-    std::vector <const char*> sequenceNames;
-	for (int i = 0; i < _this->m_ucArraySize; ++i)
-	{
-		auto& item = _this->m_pkInterpArray[i];
-        if (item.m_spInterpolator)
-        {
-	        interpNames.emplace_back(g_debugInterpNames[item.m_spInterpolator.data]);
-            sequenceNames.emplace_back(g_debugInterpSequences[item.m_spInterpolator.data]);
-        }
-	}
-
-#endif
     if (!GetComputeNormalizedWeights(_this))
     {
         return;
@@ -105,6 +229,10 @@ void __fastcall NiBlendInterpolator_ComputeNormalizedWeights(NiBlendInterpolator
         ThisStdCall(0xA36BD0, _this); // NiBlendInterpolator::ComputeNormalizedWeightsFor2
         return;
     }
+
+    // hacky way to fix flickering when two interpolators share the same priority
+    if (ComputeTwoBlendingHighPriorityInterpolators(_this))
+        return;
 
 
     unsigned char uc;
@@ -230,52 +358,8 @@ void __fastcall NiBlendInterpolator_ComputeNormalizedWeights(NiBlendInterpolator
     }
 }
 
-unsigned char __fastcall AddInterpInfoHook(NiBlendInterpolator* interp, void*, NiInterpolator* spInterp, float fWeight, unsigned char cPriority, float fEaseSpinner)
-{
-#if _DEBUG 
-    auto& sequences = g_debugInterpMap[interp];
-    const auto* name = g_debugInterpNames[spInterp];
-
-    std::vector <const char*> interpNames;
-    std::vector <const char*> sequenceNames;
-    auto* owner = g_debugInterpSequences[spInterp];
-    for (int i = 0; i < interp->m_ucArraySize; ++i)
-    {
-        auto& item = interp->m_pkInterpArray[i];
-        if (item.m_spInterpolator)
-        {
-            interpNames.emplace_back(g_debugInterpNames[item.m_spInterpolator.data]);
-            sequenceNames.emplace_back(g_debugInterpSequences[item.m_spInterpolator.data]);
-        }
-    }
-
-
-#endif
-#if _DEBUG
-    if (interp->m_ucInterpCount == 2)
-    {
-        for (int i = 0; i < interp->m_ucInterpCount; ++i)
-        {
-            auto& item = interp->m_pkInterpArray[i];
-            if (!item.m_spInterpolator || item.m_spInterpolator == spInterp)
-				continue;
-            auto* itemName = g_debugInterpNames[item.m_spInterpolator];
-            auto& sequences = g_debugInterpMap[interp];
-            auto* owner = g_debugInterpSequences[item.m_spInterpolator.data];
-            if (item.m_cPriority == cPriority)
-            {
-	            // ++cPriority;
-                break;
-            }
-        }
-    }
-#endif
-	const auto result = ThisStdCall<bool>(0xA36970, interp, spInterp, fWeight, cPriority, fEaseSpinner);
-    return result;
-}
-
 void FixPriorityBug()
 {
-    //WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
-    //WriteVirtualCall(0xA3094E, AddInterpInfoHook);
+    if (g_fixBlendSamePriority)
+		WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
 }

@@ -2,7 +2,7 @@
 #include "commands_animation.h"
 #include "GameProcess.h"
 
-namespace SpineSnapFix
+namespace BlendFixes
 {
 	enum Result
 	{
@@ -10,7 +10,6 @@ namespace SpineSnapFix
 	};
 
 	Result ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim);
-	Result ApplySamePriorityFix(AnimData* animData, BSAnimGroupSequence* destAnim);
 	void ApplyAttackISToAttackFix();
-	void ApplyHooks();
+	void ApplyAimBlendHooks();
 }

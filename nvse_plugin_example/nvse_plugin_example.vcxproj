@@ -410,7 +410,7 @@
     <ClCompile Include="LambdaVariableContext.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="nihooks.cpp" />
-    <ClCompile Include="spine_snap.cpp" />
+    <ClCompile Include="blend_fixes.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -450,7 +450,7 @@
     <ClInclude Include="nihooks.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="SimpleINILibrary.h" />
-    <ClInclude Include="spine_snap.h" />
+    <ClInclude Include="blend_fixes.h" />
     <ClInclude Include="stack_allocator.h" />
     <ClInclude Include="utility.h" />
   </ItemGroup>

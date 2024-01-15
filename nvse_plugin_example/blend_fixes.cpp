@@ -1,4 +1,4 @@
-﻿#include "spine_snap.h"
+﻿#include "blend_fixes.h"
 
 #include "commands_animation.h"
 #include "GameObjects.h"
@@ -148,7 +148,7 @@ float GetIniBlend()
 	return GetIniFloat(0x11C56FC);
 }
 
-SpineSnapFix::Result SpineSnapFix::ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim)
+BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim)
 {
 	if (!destAnim || !destAnim->animGroup)
 		return RESUME;
@@ -310,45 +310,6 @@ UInt32 CountAnimsWithSequenceType(AnimData* animData, eAnimSequence sequenceId)
 	return count;
 }
 
-SpineSnapFix::Result SpineSnapFix::ApplySamePriorityFix(AnimData* animData, BSAnimGroupSequence* destAnim)
-{
-#if _DEBUG
-	{
-		BSAnimGroupSequence* srcAnim = animData->animSequence[kSequence_Weapon];
-		auto* srcGroupInfo = srcAnim ? srcAnim->animGroup->GetGroupInfo() : nullptr;
-		auto* dstGroupInfo = destAnim ? destAnim->animGroup->GetGroupInfo() : nullptr;
-		if (dstGroupInfo && dstGroupInfo->sequenceType == kSequence_Weapon && animData == g_thePlayer->firstPersonAnimData)
-			Console_Print("%s -> %s", srcGroupInfo ? srcGroupInfo->name : "null", dstGroupInfo ? dstGroupInfo->name : "null");
-	}
-#endif
-	auto* idleAnim = animData->animSequence[kSequence_Idle];
-	if (!destAnim || !idleAnim)
-		return RESUME;
-	if (idleAnim == destAnim)
-	{
-		const auto numWeaponSequences = CountAnimsWithSequenceType(animData, kSequence_Weapon);
-		if (numWeaponSequences < 2)
-			// carry on idle
-			return RESUME;
-	}
-
-	if (idleAnim == destAnim && idleAnim->state == kAnimState_Inactive)
-	{
-		// don't activate idle anim while 2 weapon anims are active
-		return SKIP;
-	}
-	
-	const auto sequenceId = destAnim->animGroup->GetGroupInfo()->sequenceType;
-	if (sequenceId != kSequence_Weapon)
-		return RESUME;
-	const auto* srcAnim = animData->animSequence[kSequence_Weapon];
-	if (!srcAnim || srcAnim == destAnim)
-		return RESUME;
-		
-	GameFuncs::DeactivateSequence(idleAnim->owner, idleAnim, 0.0f);
-	return RESUME;
-}
-
 void TransitionToAttack(AnimData* animData, AnimGroupID attackIsGroupId, AnimGroupID attackGroupId)
 {
 	auto* attackISSequence = GetAnimByGroupID(animData, attackIsGroupId);
@@ -387,7 +348,7 @@ float GetKeyTime(BSAnimGroupSequence* anim, SequenceState1 keyTime)
 	return keyTimes[keyTime];
 }
 
-void SpineSnapFix::ApplyAttackISToAttackFix()
+void BlendFixes::ApplyAttackISToAttackFix()
 {
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
 	auto* curWeaponAnim = animData3rd->animSequence[kSequence_Weapon];
@@ -417,7 +378,7 @@ void SpineSnapFix::ApplyAttackISToAttackFix()
 }
 
 
-void SpineSnapFix::ApplyHooks()
+void BlendFixes::ApplyAimBlendHooks()
 {
 	// JMP 0x4996E7 -> 0x499709
 	// disable the game resetting sequence state for aimup and aimdown as we will do it ourselves

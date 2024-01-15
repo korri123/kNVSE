@@ -14,7 +14,7 @@
 #include "utility.h"
 #include "main.h"
 #include "nihooks.h"
-#include "spine_snap.h"
+#include "blend_fixes.h"
 
 #define CALL_EAX(addr) __asm mov eax, addr __asm call eax
 #define JMP_EAX(addr)  __asm mov eax, addr __asm jmp eax
@@ -111,10 +111,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		}
 	}
 
-	if (g_fixBlendSamePriority && SpineSnapFix::ApplySamePriorityFix(animData, destAnim) == SpineSnapFix::SKIP)
-		return destAnim;
-
-	if (g_fixSpineBlendBug && SpineSnapFix::ApplyAimBlendFix(animData, destAnim) == SpineSnapFix::SKIP)
+	if (g_fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		return destAnim;
 
 	// hooked call
@@ -438,7 +435,7 @@ void ApplyHooks()
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
 
 	g_fixSpineBlendBug = ini.GetOrCreate("General", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down");
-	g_fixBlendSamePriority = ini.GetOrCreate("General", "bFixBlendSamePriority", 1, "; fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with mtidle.kf");
+	g_fixBlendSamePriority = ini.GetOrCreate("General", "bFixBlendSamePriority", 1, "; fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority");
 	g_fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim control");
 	g_fixLoopingReloadStart = ini.GetOrCreate("General", "bFixLoopingReloadStart", 1, "; fix looping reload start anims transitioning to aim anim before main looping reload anim");
 
@@ -456,7 +453,7 @@ void ApplyHooks()
 
 
 	if (g_fixSpineBlendBug)
-		SpineSnapFix::ApplyHooks();
+		BlendFixes::ApplyAimBlendHooks();
 
 	if (ini.GetOrCreate("General", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{

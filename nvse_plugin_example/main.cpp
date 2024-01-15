@@ -21,7 +21,7 @@
 #include "nihooks.h"
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
-#include "spine_snap.h"
+#include "blend_fixes.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
 #define REG_CMD_TYPED(name, type) 	nvse->RegisterTypedCommand(&kCommandInfo_ ##name, type)
@@ -457,7 +457,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleExecutionQueue();
 			HandleMisc();
 			if (g_fixAttackISTransition)
-				SpineSnapFix::ApplyAttackISToAttackFix();
+				BlendFixes::ApplyAttackISToAttackFix();
 
 		}
 	}
