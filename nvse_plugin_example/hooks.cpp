@@ -85,6 +85,9 @@ BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroup
 // UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
 BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
 {
+	const auto baseAnimGroup = static_cast<AnimGroupID>(animGroupId);
+	if (g_disableFirstPersonTurningAnims && animData == g_thePlayer->firstPersonAnimData && (baseAnimGroup == kAnimGroup_TurnLeft || baseAnimGroup == kAnimGroup_TurnRight))
+		return destAnim;
 	if (animData && animData->actor)
 	{
 		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
@@ -254,28 +257,40 @@ void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool
 	ThisStdCall(0xA328B0, anim, fTime, bUpdateInterpolators);
 }
 
+std::unordered_set<NiControllerSequence*> g_appliedDestFrameAnims;
+
+void ApplyDestFrame(NiControllerSequence* sequence, float destFrame)
+{
+	sequence->destFrame = destFrame;
+	g_appliedDestFrameAnims.insert(sequence);
+}
+
 void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
 {
-
 	if (sequence->state != kAnimState_Inactive && sequence->destFrame != -FLT_MAX)
 	{
-		if (sequence->offset == -FLT_MAX || sequence->state == kAnimState_TransDest)
+		if (auto iter = g_appliedDestFrameAnims.find(sequence); iter != g_appliedDestFrameAnims.end())
 		{
-			sequence->offset = -fTime + sequence->destFrame;
-		}
+			g_appliedDestFrameAnims.erase(iter);
+			if (sequence->offset == -FLT_MAX || sequence->state == kAnimState_TransDest)
+			{
+				sequence->offset = -fTime + sequence->destFrame;
+			}
 
-		if (sequence->startTime == -FLT_MAX)
-		{
-			const float easeTime = sequence->endTime;
-			sequence->endTime = fTime + easeTime - sequence->destFrame;
-			sequence->startTime = fTime - sequence->destFrame;
-		}
-		sequence->destFrame = -FLT_MAX; // end my suffering
+			if (sequence->startTime == -FLT_MAX)
+			{
+				const float easeTime = sequence->endTime;
+				sequence->endTime = fTime + easeTime - sequence->destFrame;
+				sequence->startTime = fTime - sequence->destFrame;
+			}
+			sequence->destFrame = -FLT_MAX; // end my suffering
 #if _DEBUG
-		float fEaseSpinnerIn = (fTime - sequence->startTime) / (sequence->endTime - sequence->startTime);
-		float fEaseSpinnerOut = (sequence->endTime - fTime) / (sequence->endTime - sequence->startTime);
-		int i = 0;
+			float fEaseSpinnerIn = (fTime - sequence->startTime) / (sequence->endTime - sequence->startTime);
+			float fEaseSpinnerOut = (sequence->endTime - fTime) / (sequence->endTime - sequence->startTime);
+			int i = 0;
 #endif
+		}
+		
 	}
 	ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
 }
@@ -425,6 +440,7 @@ bool g_fixSpineBlendBug = true;
 bool g_fixAttackISTransition = true;
 bool g_fixBlendSamePriority = true;
 bool g_fixLoopingReloadStart = true;
+bool g_disableFirstPersonTurningAnims = true;
 
 void ApplyHooks()
 {
@@ -439,6 +455,7 @@ void ApplyHooks()
 	g_fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim control");
 	g_fixLoopingReloadStart = ini.GetOrCreate("General", "bFixLoopingReloadStart", 1, "; fix looping reload start anims transitioning to aim anim before main looping reload anim");
 
+	g_disableFirstPersonTurningAnims = ini.GetOrCreate("General", "bDisableFirstPersonTurningAnims", 1, "; disable first person turning anims (they mess with shit and serve barely any purpose)");
 	//WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelCall(0x494989, HandleAnimationChange);
 	WriteRelCall(0x495E2A, HandleAnimationChange);

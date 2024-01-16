@@ -274,8 +274,8 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 		if (weaponAnim) // shouldn't ever be null
 			destFrame = GetAnimTime(animData, weaponAnim);
 	}
-	destAnim->destFrame = destFrame / destAnim->frequency;
-	srcAnim->destFrame = destFrame / srcAnim->frequency;
+	ApplyDestFrame(destAnim, destFrame / destAnim->frequency);
+	ApplyDestFrame(srcAnim, destFrame / srcAnim->frequency);
 
 	GameFuncs::ActivateSequence(destAnim->owner, destAnim, 0, true, destAnim->seqWeight, blend, nullptr);
 	SetCurrentSequence(animData, destAnim, false);
@@ -321,10 +321,12 @@ void TransitionToAttack(AnimData* animData, AnimGroupID attackIsGroupId, AnimGro
 
 	if (attackISSequence->state != kAnimState_Inactive)
 		GameFuncs::DeactivateSequence(attackISSequence->owner, attackISSequence, blend);
-	attackSequence->destFrame = attackISTime / attackSequence->frequency;
-	//ThisStdCall(0x4948C0, animData, attackGroupId, -1);
+	ApplyDestFrame(attackSequence, attackISTime / attackSequence->frequency);
 	GameFuncs::ActivateSequence(attackSequence->owner, attackSequence, 0, true, attackSequence->seqWeight, blend, nullptr);
-	SetCurrentSequence(animData, attackSequence, false);//
+
+	AnimPath ctx{};
+	HandleExtraOperations(animData, attackSequence, ctx);
+	SetCurrentSequence(animData, attackSequence, false);
 
 	const auto sequenceType = attackSequence->animGroup->GetGroupInfo()->sequenceType;
 	if (animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon && sequenceType <= kSequence_WeaponDown)
@@ -337,6 +339,7 @@ void TransitionToAttack(AnimData* animData, AnimGroupID attackIsGroupId, AnimGro
 			highProcess->animSequence[sequenceType - kSequence_Weapon] = attackSequence;
 		}
 	}
+
 }
 
 float GetKeyTime(BSAnimGroupSequence* anim, SequenceState1 keyTime)

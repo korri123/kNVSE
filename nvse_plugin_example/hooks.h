@@ -13,8 +13,10 @@ void ApplyHooks();
 extern bool g_doNotSwapAnims;
 
 BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID ani);
+void ApplyDestFrame(NiControllerSequence* sequence, float destFrame);
 
 extern bool g_fixSpineBlendBug;
 extern bool g_fixAttackISTransition;
 extern bool g_fixBlendSamePriority;
 extern bool g_fixLoopingReloadStart;
+extern bool g_disableFirstPersonTurningAnims;
