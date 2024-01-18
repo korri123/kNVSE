@@ -267,3 +267,38 @@ std::vector<T> NVSEArrayToVector(const NVSEArrayVarInterface* arrayVarInterface,
 	}
 	return vec;
 }
+
+
+inline UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
+{
+	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;
+#if _DEBUG
+	if (lambda) // in debug mode, lambdas are wrapped inside a closure wrapper function, so one more step needed
+		basePtr = *reinterpret_cast<UInt8**>(basePtr);
+#endif
+	return *reinterpret_cast<UInt8**>(basePtr);
+}
+
+template <typename T>
+T GetVariableOfCallerStack(void* addressOfReturnAddress, int offset, bool lambda = false)
+{
+	auto* basePtr = GetParentBasePtr(addressOfReturnAddress, lambda);
+	return *reinterpret_cast<T*>(basePtr + offset);
+}
+
+template <typename T>
+T GetVariablePtrOfCallerStack(void* addressOfReturnAddress, int offset, bool lambda = false)
+{
+	auto* basePtr = GetParentBasePtr(addressOfReturnAddress, lambda);
+	return reinterpret_cast<T>(basePtr + offset);
+}
+
+template <typename T>
+T GetOptimizedVariableOfCallerStack(void* addressOfReturnAddress, int offset, bool lambda = false)
+{
+	return *reinterpret_cast<T*>(static_cast<UInt8*>(addressOfReturnAddress) + offset);
+}
+
+#define GET_CALLER_VAR(type, offset, lambda) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
+#define GET_CALLER_VAR_PTR(type, offset, lambda) GetVariablePtrOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
+#define NI_GET_CALLER_VAR(type, offset, lambda) GetOptimizedVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)

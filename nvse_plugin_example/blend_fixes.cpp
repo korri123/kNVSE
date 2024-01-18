@@ -5,6 +5,7 @@
 #include "GameRTTI.h"
 #include "hooks.h"
 #include "main.h"
+#include "nihooks.h"
 
 bool IsAnimGroupAim(AnimGroupID groupId)
 {
@@ -177,6 +178,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	if (!isAimOrAttack && !isDestUpOrDown)
 		return RESUME;
 
+
 	auto srcGroupId = srcAnim->animGroup->groupID;
 	auto srcBaseGroupId = static_cast<AnimGroupID>(srcGroupId & 0xFF);
 
@@ -244,6 +246,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	}
 
 
+	if (animData != g_thePlayer->firstPersonAnimData)
 	{
 		// fix variant bs
 		const auto* baseProcess = animData->actor->baseProcess;
@@ -266,6 +269,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	if (destAnim->state != kAnimState_Inactive)
 		GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
 
+	
 	float destFrame = blend - currentAnimTime;
 	if (isDestUpOrDown)
 	{
@@ -276,38 +280,14 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	}
 	ApplyDestFrame(destAnim, destFrame / destAnim->frequency);
 	ApplyDestFrame(srcAnim, destFrame / srcAnim->frequency);
-
+	
+	
 	GameFuncs::ActivateSequence(destAnim->owner, destAnim, 0, true, destAnim->seqWeight, blend, nullptr);
+	FixConflictingPriorities(srcAnim, destAnim);
+	
 	SetCurrentSequence(animData, destAnim, false);
 
 	return SKIP;
-}
-
-#define NOMINMAX
-
-UInt32 GetHighestPriority(const BSAnimGroupSequence* anim)
-{
-	const std::span interpItems{ anim->controlledBlocks, anim->numControlledBlocks };
-	const auto result = ra::max_element(interpItems, [](const auto& interp1, const auto& interp2)
-	{
-		return interp1.priority < interp2.priority;
-	});
-
-	if (result != interpItems.end())
-		return result->priority;
-	return -1;
-}
-
-UInt32 CountAnimsWithSequenceType(AnimData* animData, eAnimSequence sequenceId)
-{
-	UInt32 count = 0;
-	for (auto* sequence : animData->controllerManager->m_kActiveSequences)
-	{
-		auto* bsSequence = static_cast<BSAnimGroupSequence*>(sequence);
-		if (IS_TYPE(bsSequence, BSAnimGroupSequence) && bsSequence && bsSequence->animGroup->GetGroupInfo()->sequenceType == sequenceId)
-			count++;
-	}
-	return count;
 }
 
 void TransitionToAttack(AnimData* animData, AnimGroupID attackIsGroupId, AnimGroupID attackGroupId)
@@ -323,6 +303,8 @@ void TransitionToAttack(AnimData* animData, AnimGroupID attackIsGroupId, AnimGro
 		GameFuncs::DeactivateSequence(attackISSequence->owner, attackISSequence, blend);
 	ApplyDestFrame(attackSequence, attackISTime / attackSequence->frequency);
 	GameFuncs::ActivateSequence(attackSequence->owner, attackSequence, 0, true, attackSequence->seqWeight, blend, nullptr);
+	FixConflictingPriorities(attackISSequence, attackSequence);
+	//GameFuncs::CrossFade(attackISSequence->owner, attackISSequence, attackSequence, blend, 0, false, attackSequence->seqWeight, nullptr);
 
 	AnimPath ctx{};
 	HandleExtraOperations(animData, attackSequence, ctx);
@@ -365,13 +347,13 @@ void BlendFixes::ApplyAttackISToAttackFix()
 	ThisStdCall(0x8BB650, g_thePlayer, false, false, false); // Actor::AimWeapon
 
 	const auto attackGroupId = static_cast<AnimGroupID>(curGroupId - 3);
-	const auto attackISGroupID = static_cast<AnimGroupID>(curGroupId);
+	const auto attackISGroupId = static_cast<AnimGroupID>(curGroupId);
 	
-	TransitionToAttack(animData3rd, attackISGroupID, attackGroupId);
-	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackISGroupID + 1), static_cast<AnimGroupID>(attackGroupId + 1)); // up
-	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackISGroupID + 2), static_cast<AnimGroupID>(attackGroupId + 2)); // down
+	TransitionToAttack(animData3rd, attackISGroupId, attackGroupId);
+	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackISGroupId + 1), static_cast<AnimGroupID>(attackGroupId + 1)); // up
+	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackISGroupId + 2), static_cast<AnimGroupID>(attackGroupId + 2)); // down
 
-	TransitionToAttack(g_thePlayer->firstPersonAnimData, attackISGroupID, attackGroupId);
+	TransitionToAttack(g_thePlayer->firstPersonAnimData, attackISGroupId, attackGroupId);
 	
 	auto* attackSequence = GetAnimByGroupID(animData3rd, attackGroupId);
 	GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, Decoding::kAnimAction_Attack_Follow_Through, attackSequence);

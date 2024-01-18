@@ -36,32 +36,6 @@ std::unordered_map<NiInterpolator*, const char*> g_debugInterpNames;
 std::unordered_map<NiInterpolator*, const char*> g_debugInterpSequences;
 #endif
 
-UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
-{
-	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;
-#if _DEBUG
-	if (lambda) // in debug mode, lambdas are wrapped inside a closure wrapper function, so one more step needed
-		basePtr = *reinterpret_cast<UInt8**>(basePtr);
-#endif
-	return *reinterpret_cast<UInt8**>(basePtr);
-}
-
-template <typename T>
-T GetVariableOfCallerStack(void* addressOfReturnAddress, int offset, bool lambda = false)
-{
-	auto* basePtr = GetParentBasePtr(addressOfReturnAddress, lambda);
-	return *reinterpret_cast<T*>(basePtr + offset);
-}
-
-template <typename T>
-T GetVariablePtrOfCallerStack(void* addressOfReturnAddress, int offset, bool lambda = false)
-{
-	auto* basePtr = GetParentBasePtr(addressOfReturnAddress, lambda);
-	return reinterpret_cast<T>(basePtr + offset);
-}
-
-#define GET_CALLER_VAR(type, offset, lambda) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
-#define GET_CALLER_VAR_PTR(type, offset, lambda) GetVariablePtrOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
 
 BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroupId)
 {
@@ -471,7 +445,7 @@ void ApplyHooks()
 
 	if (g_fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
-
+	
 	if (ini.GetOrCreate("General", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{
 		WriteRelCall(0x8BABCA, LoopingReloadFixHook);
@@ -484,7 +458,7 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelCall(0x4951D2, FixBlendMult);
 
-	if (ini.GetOrCreate("General", "bFixPriority", 1 , "; fix engine bug where anims with same priority will flicker for a millisecond if blended together"))
+	if (g_fixBlendSamePriority)
 		FixPriorityBug();
 	
 	WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);

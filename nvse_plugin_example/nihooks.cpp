@@ -4,6 +4,7 @@
 #include "hooks.h"
 #include "NiNodes.h"
 #include "SafeWrite.h"
+#include "utility.h"
 
 #if _DEBUG
 extern std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
@@ -158,12 +159,14 @@ void ComputeNormalizedEvenWeights(
     }
 }
 
+std::unordered_set<NiInterpolator*> g_easingInterps;
+
 bool ComputeTwoBlendingHighPriorityInterpolators(NiBlendInterpolator* _this)
 {
     const auto isBlendingHighInterpItem = [&](const NiBlendInterpolator::InterpArrayItem& item)
     {
         return item.m_spInterpolator != nullptr && item.m_cPriority == _this->m_cHighPriority
-            && item.m_fEaseSpinner != 0.0f && item.m_fEaseSpinner != 1.0f;
+            && item.m_fEaseSpinner != 0.0f && item.m_fEaseSpinner != 1.0f && g_easingInterps.contains(item.m_spInterpolator.data);
     };
     std::span interpItems(_this->m_pkInterpArray, _this->m_ucArraySize);
     const auto numHighPriorityInterps = ra::count_if(interpItems, isBlendingHighInterpItem);
@@ -194,6 +197,7 @@ bool ComputeTwoBlendingHighPriorityInterpolators(NiBlendInterpolator* _this)
     return false;
 }
 
+
 void __fastcall NiBlendInterpolator_ComputeNormalizedWeights(NiBlendInterpolator *_this)
 {
     if (!GetComputeNormalizedWeights(_this))
@@ -214,10 +218,11 @@ void __fastcall NiBlendInterpolator_ComputeNormalizedWeights(NiBlendInterpolator
         return;
     }
 
+#if 0
     // hacky way to fix flickering when two interpolators share the same priority
     if (ComputeTwoBlendingHighPriorityInterpolators(_this))
         return;
-
+#endif
     unsigned char uc;
 
     if (_this->m_fHighSumOfWeights == -NI_INFINITY)
@@ -341,8 +346,97 @@ void __fastcall NiBlendInterpolator_ComputeNormalizedWeights(NiBlendInterpolator
     }
 }
 
+bool IsInterpHighPriority(NiControllerSequence::ControlledBlock& interp)
+{
+    return interp.interpolator && interp.blendInterpolator && interp.priority != 0xFF
+        && interp.priority == interp.blendInterpolator->m_cHighPriority;
+}
+
+void __fastcall NiControllerSequence_AttachInterpolatorsHook(NiControllerSequence* _this, void*,  char cPriority)
+{
+#if 0
+    auto* addressOfReturnAddress = _AddressOfReturnAddress();
+    const auto fEaseInTime = NI_GET_CALLER_VAR(float, 0x20, false);
+    ThisStdCall(0xA30900, _this, cPriority);
+    std::span interpItems(_this->controlledBlocks, _this->numControlledBlocks);
+    for (auto& interp: interpItems)
+    {
+        if (!IsInterpHighPriority(interp))
+            continue;
+        g_easingInterps.insert(interp.interpolator);
+    }
+#else
+    ThisStdCall(0xA30900, _this, cPriority);
+#endif
+}
+
+void __fastcall NiControllerSequence_DetachInterpolatorsHook(NiControllerSequence* _this, void*)
+{
+    ThisStdCall(0xA30540, _this);
+    std::span interpItems(_this->controlledBlocks, _this->numControlledBlocks);
+    for (auto& interp: interpItems)
+    {
+        if (!IsInterpHighPriority(interp))
+            continue;
+        g_easingInterps.erase(interp.interpolator);
+    }
+}
+
+void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequence* pkDest)
+{
+    std::span sourceInterpItems(pkSource->controlledBlocks, pkSource->numControlledBlocks);
+    std::unordered_map<NiBlendInterpolator*, NiControllerSequence::ControlledBlock*> sourceInterpMap;
+    for (auto& interp : sourceInterpItems)
+    {
+        if (!interp.interpolator || !interp.blendInterpolator || interp.priority == 0xFF)
+            continue;
+        sourceInterpMap.emplace(interp.blendInterpolator, &interp);
+    }
+    const std::span destInterpItems(pkDest->controlledBlocks, pkDest->numControlledBlocks);
+    for (auto& interp : destInterpItems)
+    {
+        auto blendInterpolator = interp.blendInterpolator;
+        if (!interp.interpolator || !blendInterpolator || interp.priority == 0xFF)
+            continue;
+        if (auto it = sourceInterpMap.find(blendInterpolator); it != sourceInterpMap.end())
+        {
+            const auto sourceInterp = *it->second;
+            if (interp.priority != sourceInterp.priority || interp.priority != blendInterpolator->m_cHighPriority)
+                continue;
+            std::span blendInterpItems(blendInterpolator->m_pkInterpArray, blendInterpolator->m_ucArraySize);
+            auto destInterpItem = std::ranges::find_if(blendInterpItems, [&](const NiBlendInterpolator::InterpArrayItem& item)
+            {
+                return item.m_spInterpolator == interp.interpolator;
+            });
+            if (destInterpItem == blendInterpItems.end())
+                continue;
+            destInterpItem->m_cPriority++;
+            blendInterpolator->m_cHighPriority = destInterpItem->m_cPriority;
+            blendInterpolator->m_cNextHighPriority = interp.priority;
+        }
+    }
+}
+
+bool __fastcall CrossFadeHook(NiControllerManager*, void*, NiControllerSequence* pkSourceSequence, NiControllerSequence* pkDestSequence,
+    float fEaseInTime, char iPriority, bool bStartOver, float fWeight, NiControllerSequence* pkTimeSyncSeq)
+{
+    if (pkSourceSequence->state == NiControllerSequence::kAnimState_Inactive
+        || pkDestSequence->state != NiControllerSequence::kAnimState_Inactive)
+        return false;
+    pkSourceSequence->Deactivate(fEaseInTime, false);
+    const auto result = ThisStdCall<bool>(0xA34F20, pkDestSequence, iPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, false);
+    if (result)
+        FixConflictingPriorities(pkSourceSequence, pkDestSequence);
+    return result;
+}
+
 void FixPriorityBug()
 {
     if (g_fixBlendSamePriority)
-		WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
+    {
+        //WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
+        //WriteRelCall(0xA34F71, NiControllerSequence_AttachInterpolatorsHook);
+        //WriteRelCall(0xA350C5, NiControllerSequence_DetachInterpolatorsHook);
+        WriteRelJump(0xA2E280, CrossFadeHook);
+    }
 }

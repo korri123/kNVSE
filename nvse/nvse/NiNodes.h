@@ -1074,6 +1074,7 @@ public:
 	UInt8 hasHashHashAtStartOfNodeName;
 	UInt8 byte73;
 
+	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
 };
 
 // 06C
