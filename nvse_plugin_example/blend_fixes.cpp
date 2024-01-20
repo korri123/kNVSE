@@ -6,6 +6,7 @@
 #include "hooks.h"
 #include "main.h"
 #include "nihooks.h"
+#include <array>
 
 bool IsAnimGroupAim(AnimGroupID groupId)
 {
@@ -149,6 +150,20 @@ float GetIniBlend()
 	return GetIniFloat(0x11C56FC);
 }
 
+std::unordered_map<NiControllerManager*, std::array<NiControllerSequence*, 8>> g_tempBlendSequences;
+
+void ManageTempBlendSequence(BSAnimGroupSequence* destAnim)
+{
+	const auto sequenceType = destAnim->animGroup->GetGroupInfo()->sequenceType;
+	auto* manager = destAnim->owner;
+	auto* lastTempBlendSequence = g_lastTempBlendSequence[manager];
+	auto& tempBlendSequenceArray = g_tempBlendSequences[manager];
+	auto* currentSequence = tempBlendSequenceArray[sequenceType];
+	if (currentSequence && currentSequence != lastTempBlendSequence && currentSequence->state != kAnimState_Inactive)
+		GameFuncs::DeactivateSequence(manager, currentSequence, 0.0f);
+	tempBlendSequenceArray[sequenceType] = lastTempBlendSequence;
+}
+
 BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim)
 {
 	if (!destAnim || !destAnim->animGroup)
@@ -173,78 +188,24 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	if (!srcAnim || !srcAnim->animGroup || srcAnim == destAnim)
 		return RESUME;
 
+	const auto srcBaseGroupId = static_cast<AnimGroupID>(srcAnim->animGroup->groupID & 0xFF);
+
 	const auto isAimOrAttack = !isDestUpOrDown && (isDestAim || isDestAttack);
 
 	if (!isAimOrAttack && !isDestUpOrDown)
 		return RESUME;
 
+	const auto isDestIS = IsAnimGroupIS(destBaseGroupId);
+	const auto isSrcIS = IsAnimGroupIS(srcBaseGroupId);
 
-	auto srcGroupId = srcAnim->animGroup->groupID;
-	auto srcBaseGroupId = static_cast<AnimGroupID>(srcGroupId & 0xFF);
-
-	if (srcAnim->state != kAnimState_EaseIn && srcAnim->state != kAnimState_Inactive)
-		// spine snap issue only happens when easing in aim/is anims
+	const auto isSrcEasing = srcAnim->state == kAnimState_EaseIn || srcAnim->state == kAnimState_TransDest;
+	
+	if (!isSrcEasing && ((isDestIS && isSrcIS) || (!isDestIS && !isSrcIS)))
 		return RESUME;
 
-	const auto isDestAttackIS = isDestAttack && IsAnimGroupIS(destBaseGroupId);
-	if (srcBaseGroupId != kAnimGroup_Aim && isDestAttackIS)
-	{
-		// allow blend mid aim to attack without snapping
-		auto* aimAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_Aim);
-		if (aimAnim)
-		{
-			GameFuncs::DeactivateSequence(srcAnim->owner, srcAnim, 0.0f);
-			DeactivateUpDownVariants(animData, srcBaseGroupId);
-
-			srcAnim = aimAnim;
-			srcGroupId = srcAnim->animGroup->groupID;
-			srcBaseGroupId = static_cast<AnimGroupID>(srcGroupId & 0xFF);
-		}
-	}
-	else if (srcBaseGroupId == kAnimGroup_Aim && isDestAttack && !IsAnimGroupIS(destBaseGroupId))
-	{
-		// when transitioning to normal attack from attackIS after releasing the iron sight, transition smoothly
-		auto* prevWeapSeq = GetOtherActiveWeaponSequence(animData);
-
-		if (prevWeapSeq)
-		{
-			GameFuncs::DeactivateSequence(srcAnim->owner, srcAnim, 0.0f);
-			DeactivateUpDownVariants(animData, srcBaseGroupId);
-
-			srcAnim = prevWeapSeq;
-			srcGroupId = srcAnim->animGroup->groupID;
-			srcBaseGroupId = static_cast<AnimGroupID>(srcGroupId & 0xFF);
-		}
-	}
-
-	if (destAnim == srcAnim)
-	{
-		auto* aimAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_Aim);
-		if (aimAnim)
-		{
-			if (aimAnim->state == kAnimState_Inactive)
-				GameFuncs::ActivateSequence(aimAnim->owner, aimAnim, 0, true, aimAnim->seqWeight, 0.0, nullptr);
-			srcAnim = aimAnim;
-			srcGroupId = srcAnim->animGroup->groupID;
-			srcBaseGroupId = static_cast<AnimGroupID>(srcGroupId & 0xFF);
-		}
-	}
-
-	if (sequenceId == kSequence_Weapon)
-	{
-		const auto activeSequences = GetActiveSequencesBySequenceId(animData, kSequence_Weapon);
-		for (auto* sequence : activeSequences)
-		{
-			// prevent irrelevant sequences from messing with our blend
-			const auto baseGroupID = static_cast<AnimGroupID>(sequence->animGroup->GetBaseGroupID());
-			if (baseGroupID != srcBaseGroupId && baseGroupID != destBaseGroupId)
-			{
-				GameFuncs::DeactivateSequence(sequence->owner, sequence, 0.0f);
-				DeactivateUpDownVariants(animData, baseGroupID);
-			}
-		}
-	}
-
+	//if (srcAnim->state != kAnimState_EaseIn && srcAnim->state != kAnimState_Inactive)
+		// spine snap issue only happens when easing in aim/is anims
+	//	return RESUME;
 
 	if (animData != g_thePlayer->firstPersonAnimData)
 	{
@@ -256,37 +217,29 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	}
 
 	auto blend = GetIniBlend();
-	auto currentAnimTime = GetAnimTime(animData, srcAnim);
-	if (currentAnimTime == -FLT_MAX)
-	{
-		currentAnimTime = 0.0f;
-		blend = 0.0f;
-	}
 
-	if (srcAnim->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(srcAnim->owner, srcAnim, blend);
+	if (isSrcEasing)
+	{
+		float animTime = GetAnimTime(animData, srcAnim);
+		if ((isSrcIS && !isDestIS) || (!isSrcIS && isDestIS))
+			blend = animTime;
+		else
+			blend = blend - animTime;
+	}
 
 	if (destAnim->state != kAnimState_Inactive)
 		GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
+	
+	if (srcAnim->state != kAnimState_Inactive)
+		GameFuncs::DeactivateSequence(srcAnim->owner, srcAnim, 0.0f);
 
-	
-	float destFrame = blend - currentAnimTime;
-	if (isDestUpOrDown)
-	{
-		// really annoyed with these desyncing
-		const auto* weaponAnim = animData->animSequence[kSequence_Weapon];
-		if (weaponAnim) // shouldn't ever be null
-			destFrame = GetAnimTime(animData, weaponAnim);
-	}
-	ApplyDestFrame(destAnim, destFrame / destAnim->frequency);
-	ApplyDestFrame(srcAnim, destFrame / srcAnim->frequency);
-	
-	
-	GameFuncs::ActivateSequence(destAnim->owner, destAnim, 0, true, destAnim->seqWeight, blend, nullptr);
-	FixConflictingPriorities(srcAnim, destAnim);
-	
-	SetCurrentSequence(animData, destAnim, false);
+	GameFuncs::BlendFromPose(destAnim->owner, destAnim, 0.0f, blend, 0, nullptr);
 
+	ManageTempBlendSequence(destAnim);
+	
+	SetCurrentSequence(animData, destAnim, true);
+
+	Console_Print("AimBlendFix: %s -> %s", srcAnim->animGroup->GetGroupInfo()->name, destAnim->animGroup->GetGroupInfo()->name);
 	return SKIP;
 }
 

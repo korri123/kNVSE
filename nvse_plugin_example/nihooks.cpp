@@ -1,10 +1,12 @@
 #include "nihooks.h"
 
+#include "blend_fixes.h"
 #include "commands_animation.h"
 #include "hooks.h"
 #include "NiNodes.h"
 #include "SafeWrite.h"
 #include "utility.h"
+#include <array>
 
 #if _DEBUG
 extern std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
@@ -382,6 +384,62 @@ void __fastcall NiControllerSequence_DetachInterpolatorsHook(NiControllerSequenc
     }
 }
 
+std::unordered_set<NiControllerSequence*> g_appliedDestFrameAnims;
+
+void ApplyDestFrame(NiControllerSequence* sequence, float destFrame)
+{
+    sequence->destFrame = destFrame;
+    g_appliedDestFrameAnims.insert(sequence);
+}
+
+
+void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
+{
+    const auto lastState = sequence->state;
+    if (sequence->state != kAnimState_Inactive && sequence->destFrame != -FLT_MAX)
+    {
+        if (auto iter = g_appliedDestFrameAnims.find(sequence); iter != g_appliedDestFrameAnims.end())
+        {
+            g_appliedDestFrameAnims.erase(iter);
+            if (sequence->offset == -FLT_MAX || sequence->state == kAnimState_TransDest)
+            {
+                sequence->offset = -fTime + sequence->destFrame;
+            }
+
+            if (sequence->startTime == -FLT_MAX)
+            {
+                const float easeTime = sequence->endTime;
+                sequence->endTime = fTime + easeTime - sequence->destFrame;
+                sequence->startTime = fTime - sequence->destFrame;
+            }
+            sequence->destFrame = -FLT_MAX; // end my suffering
+#if _DEBUG
+            float fEaseSpinnerIn = (fTime - sequence->startTime) / (sequence->endTime - sequence->startTime);
+            float fEaseSpinnerOut = (sequence->endTime - fTime) / (sequence->endTime - sequence->startTime);
+            int i = 0;
+#endif
+        }
+		
+    }
+    ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
+    if (lastState == kAnimState_TransSource && sequence->state == kAnimState_Inactive)
+    {
+        if (auto it = g_tempBlendSequences.find(sequence->owner); it != g_tempBlendSequences.end())
+        {
+            int index = 0;
+            auto& tempBlendSeqs = it->second;
+            for (auto* tempBlendSeq : tempBlendSeqs)
+            {
+                if (tempBlendSeq == sequence)
+                {
+                    tempBlendSeqs[index] = nullptr;
+                }
+                ++index;
+            }
+        }
+    }
+}
+
 void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequence* pkDest)
 {
     std::span sourceInterpItems(pkSource->controlledBlocks, pkSource->numControlledBlocks);
@@ -430,7 +488,30 @@ bool __fastcall CrossFadeHook(NiControllerManager*, void*, NiControllerSequence*
     return result;
 }
 
-void FixPriorityBug()
+#if _DEBUG
+
+std::string GetLastSubstringAfterSlash(const std::string& str)
+{
+    const auto pos = str.find_last_of('\\');
+    if (pos == std::string::npos)
+        return str;
+    return str.substr(pos + 1);
+}
+
+std::unordered_map<NiControllerManager*, NiControllerSequence*> g_lastTempBlendSequence;
+
+NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager, void*, NiControllerSequence* source, NiControllerSequence* timeSync)
+{
+    auto* tempBlendSeq = ThisStdCall<NiControllerSequence*>(0xA2F170, manager, source, timeSync);
+    const auto& str = "TMP_BLEND_" + GetLastSubstringAfterSlash(source->sequenceName);
+    tempBlendSeq->sequenceName = GameFuncs::BSFixedString_CreateFromPool(str.c_str());
+    g_lastTempBlendSequence[manager] = tempBlendSeq;
+    return tempBlendSeq;
+}
+
+#endif
+
+void ApplyNiHooks()
 {
     if (g_fixBlendSamePriority)
     {
@@ -439,4 +520,12 @@ void FixPriorityBug()
         //WriteRelCall(0xA350C5, NiControllerSequence_DetachInterpolatorsHook);
         WriteRelJump(0xA2E280, CrossFadeHook);
     }
+
+    WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
+
+
+#if _DEBUG
+    WriteRelCall(0xA2F817, TempBlendDebugHook);
+    SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
+#endif
 }

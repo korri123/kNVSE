@@ -231,43 +231,6 @@ void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool
 	ThisStdCall(0xA328B0, anim, fTime, bUpdateInterpolators);
 }
 
-std::unordered_set<NiControllerSequence*> g_appliedDestFrameAnims;
-
-void ApplyDestFrame(NiControllerSequence* sequence, float destFrame)
-{
-	sequence->destFrame = destFrame;
-	g_appliedDestFrameAnims.insert(sequence);
-}
-
-void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
-{
-	if (sequence->state != kAnimState_Inactive && sequence->destFrame != -FLT_MAX)
-	{
-		if (auto iter = g_appliedDestFrameAnims.find(sequence); iter != g_appliedDestFrameAnims.end())
-		{
-			g_appliedDestFrameAnims.erase(iter);
-			if (sequence->offset == -FLT_MAX || sequence->state == kAnimState_TransDest)
-			{
-				sequence->offset = -fTime + sequence->destFrame;
-			}
-
-			if (sequence->startTime == -FLT_MAX)
-			{
-				const float easeTime = sequence->endTime;
-				sequence->endTime = fTime + easeTime - sequence->destFrame;
-				sequence->startTime = fTime - sequence->destFrame;
-			}
-			sequence->destFrame = -FLT_MAX; // end my suffering
-#if _DEBUG
-			float fEaseSpinnerIn = (fTime - sequence->startTime) / (sequence->endTime - sequence->startTime);
-			float fEaseSpinnerOut = (sequence->endTime - fTime) / (sequence->endTime - sequence->startTime);
-			int i = 0;
-#endif
-		}
-		
-	}
-	ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
-}
 
 #if 0
 bool __fastcall ProlongedAimFix(UInt8* basePointer)
@@ -458,10 +421,8 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelCall(0x4951D2, FixBlendMult);
 
-	if (g_fixBlendSamePriority)
-		FixPriorityBug();
+	ApplyNiHooks();
 	
-	WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
 
 
 	if (g_fixLoopingReloadStart)

@@ -13,3 +13,5 @@ namespace BlendFixes
 	void ApplyAttackISToAttackFix();
 	void ApplyAimBlendHooks();
 }
+
+extern std::unordered_map<NiControllerManager*, std::array<NiControllerSequence*, 8>> g_tempBlendSequences;
