@@ -844,6 +844,7 @@ public:
 };
 
 class ControlledBlock;
+struct NiQuatTransform;
 
 // 0C
 class NiInterpolator : public NiObject
@@ -852,7 +853,7 @@ public:
 	NiInterpolator();
 	~NiInterpolator();
 
-	virtual void	Unk_23(void);
+	virtual bool	Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform* kValue);
 	virtual void	Unk_24(void);
 	virtual void	Unk_25(void);
 	virtual void	Unk_26(void);
@@ -1074,6 +1075,8 @@ public:
 	UInt8 hasHashHashAtStartOfNodeName;
 	UInt8 byte73;
 
+	ControlledBlock* GetControlledBlock(const char* name) const;
+
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
 };
 
@@ -1093,11 +1096,6 @@ STATIC_ASSERT(sizeof(BSAnimGroupSequence) == 0x78);
 const auto s = sizeof(BSAnimGroupSequence);
 
 class NiNode;
-
-struct NiPoint3
-{
-	float x, y, z;
-};
 
 enum AnimGroupID : UInt8
 {
@@ -1775,13 +1773,15 @@ struct NiKeyBasedInterpolator : NiInterpolator
 {
 };
 
-class NiTransformInterpolator : public NiKeyBasedInterpolator
-{
+class NiTransformInterpolator : public NiKeyBasedInterpolator {
 public:
-	NiQuatTransform m_kTransformValue;
+	NiQuatTransform		m_kTransformValue;
 	NiPointer<NiTransformData> m_spData;
-	unsigned __int16 m_usLastTransIdx;
-	unsigned __int16 m_usLastRotIdx;
-	unsigned __int16 m_usLastScaleIdx;
-	bool bPose;
+	UInt32				m_uiLastTransIdx;
+	UInt16				unk34;
+	UInt32				m_uiLastRotIdx;
+	UInt32				m_uiLastScaleIdx;
+	UInt32				unk40;
+	bool				bPose;
 };
+static_assert(sizeof(NiTransformInterpolator) == 0x48);

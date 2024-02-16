@@ -11,6 +11,7 @@ namespace BlendFixes
 
 	Result ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim);
 	void ApplyAttackISToAttackFix();
+	void ApplyAttackToAttackISFix();
 	void ApplyAimBlendHooks();
 }
 

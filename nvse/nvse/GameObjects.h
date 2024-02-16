@@ -837,8 +837,8 @@ public:
 	UInt32								unkD84[12];				// D84
 	NiNode* niNodeDB4;				// DB4
 	UInt32								unkDB8[7];				// DB8
-	NiVector3							vectorDD4;				// DD4
-	NiVector3							cameraPos;				// DE0
+	NiPoint3							vectorDD4;				// DD4
+	NiPoint3							cameraPos;				// DE0
 	void* rigidBody;				// DEC
 	bool								pcInCombat;				// DF0
 	bool								pcUnseen;				// DF1

@@ -602,3 +602,4 @@ std::string ExtractCustomAnimGroupName(const std::filesystem::path& path);
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence = nullptr);
 UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);
 float GetIniFloat(UInt32 addr);
+NiControllerSequence::ControlledBlock* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);

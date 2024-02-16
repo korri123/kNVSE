@@ -64,7 +64,7 @@ class NiAVObject : public NiObjectNET
 {
 public:
 	/*08C*/virtual void		Unk_23(UInt32 arg1);
-	/*090*/virtual void		Unk_24(NiMatrix33* arg1, NiVector3* arg2, bool arg3);
+	/*090*/virtual void		Unk_24(NiMatrix33* arg1, NiPoint3* arg2, bool arg3);
 	/*094*/virtual void		Unk_25(UInt32 arg1);
 	/*098*/virtual void		Unk_26(UInt32 arg1);
 	/*09C*/virtual NiAVObject* GetObjectByName(void* objName);
@@ -126,10 +126,10 @@ public:
 	DList<NiProperty>		m_propertyList;			// 24
 	UInt32					m_flags;				// 30
 	NiMatrix33				m_localRotate;			// 34
-	NiVector3				m_localTranslate;		// 58
+	NiPoint3				m_localTranslate;		// 58
 	float					m_localScale;			// 64
 	NiMatrix33				m_worldRotate;			// 68
-	NiVector3				m_worldTranslate;		// 8C
+	NiPoint3				m_worldTranslate;		// 8C
 	float					m_worldScale;			// 98
 
 	void Update();

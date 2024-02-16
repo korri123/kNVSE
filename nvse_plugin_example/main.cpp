@@ -457,7 +457,10 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleExecutionQueue();
 			HandleMisc();
 			if (g_fixAttackISTransition)
+			{
 				BlendFixes::ApplyAttackISToAttackFix();
+				BlendFixes::ApplyAttackToAttackISFix();
+			}
 
 		}
 	}

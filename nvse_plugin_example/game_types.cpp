@@ -5,6 +5,7 @@
 #include "GameOSDepend.h"
 #include "GameProcess.h"
 #include "NiObjects.h"
+#include <span>
 
 AnimGroupID AnimData::GetNextAttackGroupID() const
 {
@@ -67,6 +68,17 @@ OSInputGlobals** g_inputGlobals = reinterpret_cast<OSInputGlobals**>(0x11F35CC);
 bool TESObjectWEAP::IsMeleeWeapon() const
 {
 	return this->eWeaponType >= 0 && this->eWeaponType <= 2;
+}
+
+NiControllerSequence::ControlledBlock* NiControllerSequence::GetControlledBlock(const char* name) const
+{
+	std::span idTags(IDTagArray, numControlledBlocks);
+	const auto it = std::ranges::find_if(idTags, [&](const IDTag& tag) { return strcmp(tag.m_kAVObjectName.CStr(), name) == 0; });
+	if (it != idTags.end())
+	{
+		return controlledBlocks + std::distance(idTags.begin(), it);
+	}
+	return nullptr;
 }
 
 BSAnimGroupSequence* BSAnimGroupSequence::Get3rdPersonCounterpart() const

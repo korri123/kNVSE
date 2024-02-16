@@ -6,7 +6,10 @@
 #include "NiNodes.h"
 #include "SafeWrite.h"
 #include "utility.h"
+
 #include <array>
+#include <functional>
+#include <ranges>
 
 #if _DEBUG
 extern std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
@@ -161,44 +164,7 @@ void ComputeNormalizedEvenWeights(
     }
 }
 
-std::unordered_set<NiInterpolator*> g_easingInterps;
-
-bool ComputeTwoBlendingHighPriorityInterpolators(NiBlendInterpolator* _this)
-{
-    const auto isBlendingHighInterpItem = [&](const NiBlendInterpolator::InterpArrayItem& item)
-    {
-        return item.m_spInterpolator != nullptr && item.m_cPriority == _this->m_cHighPriority
-            && item.m_fEaseSpinner != 0.0f && item.m_fEaseSpinner != 1.0f && g_easingInterps.contains(item.m_spInterpolator.data);
-    };
-    std::span interpItems(_this->m_pkInterpArray, _this->m_ucArraySize);
-    const auto numHighPriorityInterps = ra::count_if(interpItems, isBlendingHighInterpItem);
-    if (numHighPriorityInterps == 2)
-    {
-        NiBlendInterpolator::InterpArrayItem* highPriorityInterps[2] {nullptr};
-        for (auto& item : interpItems)
-        {
-            if (isBlendingHighInterpItem(item))
-            {
-                if (highPriorityInterps[0] == nullptr)
-                    highPriorityInterps[0] = &item;
-                else
-                {
-                    highPriorityInterps[1] = &item;
-                    break;
-                }
-            }
-        }
-        ComputeNormalizedEvenWeights(*_this, *highPriorityInterps[0], *highPriorityInterps[1]);
-        for (auto& item : interpItems)
-        {
-            if (&item != highPriorityInterps[0] && &item != highPriorityInterps[1])
-                item.m_fNormalizedWeight = 0.0f;
-        }
-        return true;
-    }
-    return false;
-}
-
+std::unordered_map<NiInterpolator*, NiControllerSequence*> g_interpsToSequenceMap;
 
 void __fastcall NiBlendInterpolator_ComputeNormalizedWeights(NiBlendInterpolator *_this)
 {
@@ -354,33 +320,24 @@ bool IsInterpHighPriority(NiControllerSequence::ControlledBlock& interp)
         && interp.priority == interp.blendInterpolator->m_cHighPriority;
 }
 
+
 void __fastcall NiControllerSequence_AttachInterpolatorsHook(NiControllerSequence* _this, void*,  char cPriority)
 {
-#if 0
-    auto* addressOfReturnAddress = _AddressOfReturnAddress();
-    const auto fEaseInTime = NI_GET_CALLER_VAR(float, 0x20, false);
-    ThisStdCall(0xA30900, _this, cPriority);
     std::span interpItems(_this->controlledBlocks, _this->numControlledBlocks);
-    for (auto& interp: interpItems)
+    for (auto& interp : interpItems)
     {
-        if (!IsInterpHighPriority(interp))
-            continue;
-        g_easingInterps.insert(interp.interpolator);
+        g_interpsToSequenceMap[interp.interpolator] = _this;
     }
-#else
     ThisStdCall(0xA30900, _this, cPriority);
-#endif
 }
 
 void __fastcall NiControllerSequence_DetachInterpolatorsHook(NiControllerSequence* _this, void*)
 {
     ThisStdCall(0xA30540, _this);
     std::span interpItems(_this->controlledBlocks, _this->numControlledBlocks);
-    for (auto& interp: interpItems)
+    for (auto& interp : interpItems)
     {
-        if (!IsInterpHighPriority(interp))
-            continue;
-        g_easingInterps.erase(interp.interpolator);
+        g_interpsToSequenceMap.erase(interp.interpolator);
     }
 }
 
@@ -392,10 +349,30 @@ void ApplyDestFrame(NiControllerSequence* sequence, float destFrame)
     g_appliedDestFrameAnims.insert(sequence);
 }
 
+bool IsTempBlendSequence(const NiControllerSequence* sequence)
+{
+    return strncmp("__", sequence->sequenceName, 2) == 0;
+}
+
+void ClearTempBlendSequence(NiControllerSequence* sequence)
+{
+    if (auto it = g_tempBlendSequences.find(sequence->owner); it != g_tempBlendSequences.end())
+    {
+        int index = 0;
+        auto& tempBlendSeqs = it->second;
+        for (auto* tempBlendSeq : tempBlendSeqs)
+        {
+            if (tempBlendSeq == sequence)
+            {
+                tempBlendSeqs[index] = nullptr;
+            }
+            ++index;
+        }
+    }
+}
 
 void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
 {
-    const auto lastState = sequence->state;
     if (sequence->state != kAnimState_Inactive && sequence->destFrame != -FLT_MAX)
     {
         if (auto iter = g_appliedDestFrameAnims.find(sequence); iter != g_appliedDestFrameAnims.end())
@@ -422,21 +399,9 @@ void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* se
 		
     }
     ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
-    if (lastState == kAnimState_TransSource && sequence->state == kAnimState_Inactive)
+    if (IsTempBlendSequence(sequence) && sequence->state == kAnimState_Inactive)
     {
-        if (auto it = g_tempBlendSequences.find(sequence->owner); it != g_tempBlendSequences.end())
-        {
-            int index = 0;
-            auto& tempBlendSeqs = it->second;
-            for (auto* tempBlendSeq : tempBlendSeqs)
-            {
-                if (tempBlendSeq == sequence)
-                {
-                    tempBlendSeqs[index] = nullptr;
-                }
-                ++index;
-            }
-        }
+        ClearTempBlendSequence(sequence);
     }
 }
 
@@ -459,7 +424,7 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
         if (auto it = sourceInterpMap.find(blendInterpolator); it != sourceInterpMap.end())
         {
             const auto sourceInterp = *it->second;
-            if (interp.priority != sourceInterp.priority || interp.priority != blendInterpolator->m_cHighPriority)
+            if (interp.priority != sourceInterp.priority)
                 continue;
             std::span blendInterpItems(blendInterpolator->m_pkInterpArray, blendInterpolator->m_ucArraySize);
             auto destInterpItem = std::ranges::find_if(blendInterpItems, [&](const NiBlendInterpolator::InterpArrayItem& item)
@@ -468,9 +433,12 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
             });
             if (destInterpItem == blendInterpItems.end())
                 continue;
-            destInterpItem->m_cPriority++;
-            blendInterpolator->m_cHighPriority = destInterpItem->m_cPriority;
-            blendInterpolator->m_cNextHighPriority = interp.priority;
+            const auto newPriority = ++destInterpItem->m_cPriority;
+            if (newPriority > blendInterpolator->m_cHighPriority)
+            {
+                blendInterpolator->m_cHighPriority = newPriority;
+                blendInterpolator->m_cNextHighPriority = interp.priority;
+            }
         }
     }
 }
@@ -483,7 +451,7 @@ bool __fastcall CrossFadeHook(NiControllerManager*, void*, NiControllerSequence*
         return false;
     pkSourceSequence->Deactivate(fEaseInTime, false);
     const auto result = ThisStdCall<bool>(0xA34F20, pkDestSequence, iPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, false);
-    if (result)
+    if (result && fEaseInTime > 0.01f)
         FixConflictingPriorities(pkSourceSequence, pkDestSequence);
     return result;
 }
@@ -503,7 +471,7 @@ std::unordered_map<NiControllerManager*, NiControllerSequence*> g_lastTempBlendS
 NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager, void*, NiControllerSequence* source, NiControllerSequence* timeSync)
 {
     auto* tempBlendSeq = ThisStdCall<NiControllerSequence*>(0xA2F170, manager, source, timeSync);
-    const auto& str = "TMP_BLEND_" + GetLastSubstringAfterSlash(source->sequenceName);
+    const auto& str = "__TMP_BLEND_" + GetLastSubstringAfterSlash(source->sequenceName);
     tempBlendSeq->sequenceName = GameFuncs::BSFixedString_CreateFromPool(str.c_str());
     g_lastTempBlendSequence[manager] = tempBlendSeq;
     return tempBlendSeq;
@@ -516,9 +484,9 @@ void ApplyNiHooks()
     if (g_fixBlendSamePriority)
     {
         //WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
-        //WriteRelCall(0xA34F71, NiControllerSequence_AttachInterpolatorsHook);
-        //WriteRelCall(0xA350C5, NiControllerSequence_DetachInterpolatorsHook);
-        WriteRelJump(0xA2E280, CrossFadeHook);
+        WriteRelCall(0xA34F71, NiControllerSequence_AttachInterpolatorsHook);
+        WriteRelCall(0xA350C5, NiControllerSequence_DetachInterpolatorsHook);
+        //WriteRelJump(0xA2E280, CrossFadeHook);
     }
 
     WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);

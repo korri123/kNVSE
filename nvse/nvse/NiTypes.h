@@ -14,10 +14,34 @@ struct NiRTTI
 	NiRTTI		* parent;
 };
 
-// C
-struct NiVector3
+struct NiPoint3
 {
-	float	x, y, z;
+	float x, y, z;
+
+	float Dot(const NiPoint3& pt) const
+	{
+		return x * pt.x + y * pt.y + z * pt.z;
+	}
+
+	float Length() const
+	{
+		return sqrt(x * x + y * y + z * z);
+	}
+
+	float SqrLength() const
+	{
+		return x * x + y * y + z * z;
+	}
+
+	NiPoint3 operator-(const NiPoint3& pt) const
+	{
+		return NiPoint3{ x - pt.x, y - pt.y, z - pt.z };
+	}
+
+	NiPoint3 operator+(const NiPoint3& pt) const
+	{
+		return NiPoint3{ x + pt.x, y + pt.y, z + pt.z };
+	}
 };
 
 // 10 - always aligned?
@@ -42,7 +66,7 @@ struct NiMatrix33
 struct NiTransform
 {
 	NiMatrix33	rotate;		// 00
-	NiVector3	translate;	// 24
+	NiPoint3	translate;	// 24
 	float		scale;		// 30
 };
 
@@ -94,7 +118,7 @@ struct NiColorAlpha
 // 10
 struct NiPlane
 {
-	NiVector3	nrm;
+	NiPoint3	nrm;
 	float		offset;
 };
 

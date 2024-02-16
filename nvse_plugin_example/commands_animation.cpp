@@ -20,6 +20,7 @@
 #include "stack_allocator.h"
 #include <array>
 #include "NiNodes.h"
+#include "NiObjects.h"
 #include "NiTypes.h"
 #include "ScriptUtils.h"
 
@@ -1567,6 +1568,24 @@ BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path)
 	return FindActiveAnimationForActor(actor, baseAnim);
 }
 
+BSAnimGroupSequence* FindActivateAnimationForRef(TESObjectREFR* thisObj, const char* path)
+{
+	if (!thisObj)
+		return GetAnimationByPath(path);
+	if (thisObj->IsActor())
+		return FindActiveAnimationForActor(static_cast<Actor*>(thisObj), path);
+	auto* controller = thisObj->GetNiNode()->m_controller;
+	if (IS_TYPE(controller, NiControllerManager))
+	{
+		auto* controllerManager = static_cast<NiControllerManager*>(controller);
+		if (auto* sequence = controllerManager->m_kSequenceMap.Lookup(path))
+		{
+			return static_cast<BSAnimGroupSequence*>(sequence);
+		}
+	}
+	return nullptr;
+}
+
 BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path)
 {
 	if (auto* anim = animData->controllerManager->m_kSequenceMap.Lookup(path))
@@ -1651,6 +1670,28 @@ UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId)
 	const auto fullGroupId = GetActorRealAnimGroup(animData->actor, animGroupId);
 	const auto nearestGroupId = GameFuncs::GetNearestGroupID(animData, fullGroupId, false);
 	return nearestGroupId;
+}
+
+NiControllerSequence::ControlledBlock* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName)
+{
+	std::span idTags(anim->IDTagArray, anim->numControlledBlocks);
+	std::span interps(anim->controlledBlocks, anim->numControlledBlocks);
+	const auto iter = ra::find_if(idTags, [&](const auto& idTag)
+	{
+		return _stricmp(idTag.m_kAVObjectName.CStr(), interpName) == 0;
+	});
+	if (iter == idTags.end())
+		return nullptr;
+	const auto index = std::distance(idTags.begin(), iter);
+	return &interps[index];
+}
+
+NiControllerSequence::ControlledBlock* FindAnimInterp(TESObjectREFR* thisObj, const char* animPath, const char* interpName)
+{
+	auto* anim = FindActivateAnimationForRef(thisObj, animPath);
+	if (!anim)
+		return nullptr;
+	return FindAnimInterp(anim, interpName);
 }
 
 void CreateCommands(NVSECommandBuilder& builder)
@@ -1880,7 +1921,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		GameFuncs::NiRefObject_DecRefCount_FreeIfZero(oldTextKeyData);
 		*result = 1;
 		return true;
-	}, Cmd_Expression_Plugin_Parse);
+	}, Cmd_Expression_Plugin_Parse, "SetAnimTextKeys");
 
 	builder.Create("AllowAttack", kRetnType_Default, {}, true, [](COMMAND_ARGS)
 	{
@@ -2398,6 +2439,104 @@ inline bool NiControllerManager::BlendFromSequence(
 			const auto& queue = iter->second;
 			*result = ra::find(queue, anim) != queue.end();
 		}
+		return true;
+	});
+
+	const auto animPriorityParams = { ParamInfo{"sAnimPath", kParamType_String, false}, ParamInfo{"sInterpName", kParamType_String, false}};
+	builder.Create("GetAnimInterpPriority", kRetnType_Default, animPriorityParams,false, [](COMMAND_ARGS)
+	{
+		*result = -1;
+		char animPath[0x400];
+		char interpName[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &interpName))
+			return true;
+		auto* interp = FindAnimInterp(thisObj, animPath, interpName);
+		if (!interp)
+			return true;
+		*result = interp->priority;
+		return true;
+	});
+
+	builder.Create("SetAnimInterpPriority", kRetnType_Default, { ParamInfo{"sAnimPath", kParamType_String, false}, ParamInfo{"sInterpName", kParamType_String, false}, ParamInfo{"iPriority", kParamType_Integer, false} }, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char animPath[0x400];
+		char interpName[0x400];
+		UInt32 priority = 0;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &interpName, &priority) || priority > 255)
+			return true;
+		auto* interp = FindAnimInterp(thisObj, animPath, interpName);
+		if (!interp)
+			return true;
+		interp->priority = static_cast<UInt8>(priority);
+		*result = 1;
+		return true;
+	});
+
+	builder.Create("AddAnimTextKey", kRetnType_Default, { ParamInfo{"sAnimPath", kParamType_String, false}, ParamInfo{"fTime", kParamType_Float, false}, ParamInfo{"sTextKey", kParamType_String, false} }, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char animPath[0x400];
+		float time;
+		char textKey[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &time, &textKey))
+			return true;
+		const auto* anim = FindActivateAnimationForRef(thisObj, animPath);
+		if (!anim)
+			return true;
+		auto* textKeyData = anim->textKeyData;
+		if (!textKeyData)
+			return true;
+		auto* newStr = GameFuncs::BSFixedString_CreateFromPool(textKey);
+
+		std::span _v(textKeyData->m_pKeys, textKeyData->m_uiNumKeys);
+		std::vector<NiTextKey> textKeys;
+		
+		textKeys.assign(_v.begin(), _v.end());
+		textKeys.emplace_back(time, NiFixedString(newStr));
+
+		const auto textKeySize = textKeys.size() * sizeof(NiTextKey);
+		auto* newTextKeys = AllocateNiArray<NiTextKey>(textKeys.size());
+
+		FormHeap_Free(textKeyData->m_pKeys);
+		memcpy_s(newTextKeys, textKeySize, textKeys.data(), textKeySize);
+
+		textKeyData->m_uiNumKeys = textKeys.size();
+		textKeyData->m_pKeys = newTextKeys;
+		*result = 1;
+		return true;
+	});
+
+	builder.Create("RemoveAnimTextKey", kRetnType_Default, { ParamInfo{"sAnimPath", kParamType_String, false}, ParamInfo("iIndex", kParamType_Integer, false) }, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char animPath[0x400];
+		UInt32 index;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &index))
+			return true;
+		const auto* anim = FindActivateAnimationForRef(thisObj, animPath);
+		if (!anim)
+			return true;
+		auto* textKeyData = anim->textKeyData;
+		if (!textKeyData)
+			return true;
+		std::vector<NiTextKey> textKeys;
+		std::span _v(textKeyData->m_pKeys, textKeyData->m_uiNumKeys);
+		textKeys.assign(_v.begin(), _v.end());
+		if (index == -1)
+			index = textKeys.size() - 1;
+		if (index >= textKeys.size())
+			return true;
+		textKeys.erase(textKeys.begin() + index);
+		const auto textKeySize = textKeys.size() * sizeof(NiTextKey);
+		auto* newTextKeys = AllocateNiArray<NiTextKey>(textKeys.size());
+
+		FormHeap_Free(textKeyData->m_pKeys);
+		memcpy_s(newTextKeys, textKeySize, textKeys.data(), textKeySize);
+
+		textKeyData->m_uiNumKeys = textKeys.size();
+		textKeyData->m_pKeys = newTextKeys;
+		*result = 1;
 		return true;
 	});
 
