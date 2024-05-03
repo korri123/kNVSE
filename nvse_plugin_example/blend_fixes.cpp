@@ -306,15 +306,21 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	return SKIP;
 }
 
-void TransitionToAttack(AnimData* animData, AnimGroupID attackIsGroupId, AnimGroupID attackGroupId)
+void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGroupID targetGroupId)
 {
-	auto* attackISSequence = GetAnimByGroupID(animData, attackIsGroupId);
-	auto* attackSequence = GetAnimByGroupID(animData, attackGroupId);
-	if (!attackSequence || !attackISSequence || !attackISSequence->animGroup)
+	auto* currentSequence = GetAnimByGroupID(animData, currentGroupId);
+	auto* targetSequence = GetAnimByGroupID(animData, targetGroupId);
+	if (!targetSequence || !currentSequence || !currentSequence->animGroup)
 		return;
 	const auto blend = GetIniBlend();
-	const auto attackISTime = GetAnimTime(animData, attackISSequence);
-
+	const auto currentTime = GetAnimTime(animData, currentSequence);
+#if USE_BLEND_FROM_POSE
+	if (targetSequence->state != kAnimState_Inactive)
+		GameFuncs::DeactivateSequence(targetSequence->owner, targetSequence, 0.0f);
+	GameFuncs::BlendFromPose(targetSequence->owner, targetSequence, currentTime, blend, 0, nullptr);
+	if (currentSequence->state != kAnimState_Inactive)
+		GameFuncs::DeactivateSequence(currentSequence->owner, currentSequence, 0.0f);
+#else
 	if (attackISSequence->state != kAnimState_Inactive)
 		GameFuncs::DeactivateSequence(attackISSequence->owner, attackISSequence, blend);
 	if (attackSequence->state != kAnimState_Inactive)
@@ -322,21 +328,22 @@ void TransitionToAttack(AnimData* animData, AnimGroupID attackIsGroupId, AnimGro
 	ApplyDestFrame(attackSequence, attackISTime / attackSequence->frequency);
 	GameFuncs::ActivateSequence(attackSequence->owner, attackSequence, 0, true, attackSequence->seqWeight, blend, nullptr);
 	FixConflictingPriorities(attackISSequence, attackSequence);
+#endif
 	//GameFuncs::CrossFade(attackISSequence->owner, attackISSequence, attackSequence, blend, 0, false, attackSequence->seqWeight, nullptr);
 
 	AnimPath ctx{};
-	HandleExtraOperations(animData, attackSequence, ctx);
-	SetCurrentSequence(animData, attackSequence, false);
+	HandleExtraOperations(animData, targetSequence, ctx);
+	SetCurrentSequence(animData, targetSequence, false);
 
-	const auto sequenceType = attackSequence->animGroup->GetGroupInfo()->sequenceType;
+	const auto sequenceType = targetSequence->animGroup->GetGroupInfo()->sequenceType;
 	if (animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon && sequenceType <= kSequence_WeaponDown)
 	{
 		// handle up down variant weights
-		attackSequence->seqWeight = attackISSequence->seqWeight;
+		targetSequence->seqWeight = currentSequence->seqWeight;
 		auto* highProcess = animData->actor->baseProcess;
 		if (IS_TYPE(highProcess, HighProcess))
 		{
-			highProcess->animSequence[sequenceType - kSequence_Weapon] = attackSequence;
+			highProcess->animSequence[sequenceType - kSequence_Weapon] = targetSequence;
 		}
 	}
 }

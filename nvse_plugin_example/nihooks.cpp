@@ -456,7 +456,7 @@ bool __fastcall CrossFadeHook(NiControllerManager*, void*, NiControllerSequence*
     return result;
 }
 
-#if _DEBUG
+
 
 std::string GetLastSubstringAfterSlash(const std::string& str)
 {
@@ -468,6 +468,8 @@ std::string GetLastSubstringAfterSlash(const std::string& str)
 
 std::unordered_map<NiControllerManager*, NiControllerSequence*> g_lastTempBlendSequence;
 
+#define EXPERIMENTAL_HOOKS 0
+
 NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager, void*, NiControllerSequence* source, NiControllerSequence* timeSync)
 {
     auto* tempBlendSeq = ThisStdCall<NiControllerSequence*>(0xA2F170, manager, source, timeSync);
@@ -477,10 +479,11 @@ NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager
     return tempBlendSeq;
 }
 
-#endif
+
 
 void ApplyNiHooks()
 {
+#if EXPERIMENTAL_HOOKS
     if (g_fixBlendSamePriority)
     {
         //WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
@@ -495,5 +498,6 @@ void ApplyNiHooks()
 #if _DEBUG
     WriteRelCall(0xA2F817, TempBlendDebugHook);
     SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
+#endif
 #endif
 }

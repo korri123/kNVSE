@@ -20,3 +20,8 @@ extern bool g_fixAttackISTransition;
 extern bool g_fixBlendSamePriority;
 extern bool g_fixLoopingReloadStart;
 extern bool g_disableFirstPersonTurningAnims;
+
+namespace LoopingReloadPauseFix
+{
+    extern std::unordered_set<std::string> g_reloadStartBlendFixes;
+}

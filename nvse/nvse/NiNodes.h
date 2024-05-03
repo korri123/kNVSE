@@ -1427,10 +1427,10 @@ public:
 
 	struct __declspec(align(4)) AnimGroupSound
 	{
-		float unk00;
+		float playTime;
 		UInt8 soundID;
 		UInt8 gap05[3];
-		UInt32 unk08;
+		float unk08;
 		TESSound* sound;
 	};
 
@@ -1448,8 +1448,8 @@ public:
 	UInt8 decal;
 	UInt8 gap2D[3];
 	char* parentRootNode;
-	UInt32 numPtr38s;
-	AnimGroupSound* ptr38;
+	UInt32 numSounds;
+	AnimGroupSound* sounds;
 
 	static const char* StringForAnimGroupCode(UInt32 groupCode);
 	static UInt32 AnimGroupForString(const char* groupName);

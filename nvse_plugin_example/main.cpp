@@ -267,8 +267,16 @@ void HandleAnimTimes()
 			erase();
 			continue;
 		}
+		
+		if (shouldErase(actor) || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript)
+		{
+			erase();
+			continue;
+		}
+		
 		auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
-		if (shouldErase(actor) || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript || !animData)
+
+		if (!animData)
 		{
 			erase();
 			continue;
@@ -456,12 +464,13 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleAnimTimes();
 			HandleExecutionQueue();
 			HandleMisc();
+#if 0 // experimental fixes
 			if (g_fixAttackISTransition)
 			{
 				BlendFixes::ApplyAttackISToAttackFix();
 				BlendFixes::ApplyAttackToAttackISFix();
 			}
-
+#endif
 		}
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)

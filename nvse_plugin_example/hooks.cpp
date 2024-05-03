@@ -373,11 +373,57 @@ HOOK PreventDuplicateAnimationsHook()
     }
 }
 
-bool g_fixSpineBlendBug = true;
-bool g_fixAttackISTransition = true;
-bool g_fixBlendSamePriority = true;
-bool g_fixLoopingReloadStart = true;
-bool g_disableFirstPersonTurningAnims = true;
+bool g_fixSpineBlendBug = false;
+bool g_fixAttackISTransition = false;
+bool g_fixBlendSamePriority = false;
+bool g_fixLoopingReloadStart = false;
+bool g_disableFirstPersonTurningAnims = false;
+
+namespace LoopingReloadPauseFix
+{
+	std::unordered_set<std::string> g_reloadStartBlendFixes;
+
+	bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
+	{
+		const static std::unordered_set ids = { kAnimGroup_ReloadWStart, kAnimGroup_ReloadYStart, kAnimGroup_ReloadXStart, kAnimGroup_ReloadZStart };
+		const auto* anim = *reinterpret_cast<BSAnimGroupSequence**>(basePointer - 0xA0);
+		const auto queuedId = *reinterpret_cast<AnimGroupID*>(basePointer - 0x30);
+		const auto currentId = *reinterpret_cast<AnimGroupID*>(basePointer - 0x34);
+		auto* animData = *reinterpret_cast<AnimData**>(basePointer - 0x18c);
+		const auto newCondition = _L(, queuedId == 0xFF && !ids.contains(currentId));
+		const auto defaultCondition = _L(, queuedId == 0xFF);
+		if (!anim || !anim->animGroup)
+			return defaultCondition();
+		if (!g_reloadStartBlendFixes.contains(anim->sequenceName))
+		{
+			if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
+			{
+				const auto seqType = GetSequenceType(anim->animGroup->groupID);
+				auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
+				if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->sequenceName))
+					return newCondition();
+			}
+			return defaultCondition();
+		}
+		return newCondition();
+	}
+
+	__declspec(naked) void NoAimInReloadLoop()
+	{
+		constexpr static auto jumpIfTrue = 0x492CB1;
+		constexpr static auto jumpIfFalse = 0x492BF8;
+		__asm
+		{
+			lea ecx, [ebp]
+			call ShouldPlayAimAnim
+			test al, al
+			jz isFalse
+			jmp jumpIfTrue
+		isFalse:
+			jmp jumpIfFalse
+		}
+	}
+}
 
 void ApplyHooks()
 {
@@ -387,12 +433,14 @@ void ApplyHooks()
 	const auto errVal = ini.LoadFile(iniPath.c_str());
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
 
+#if 0
 	g_fixSpineBlendBug = ini.GetOrCreate("General", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down");
 	g_fixBlendSamePriority = ini.GetOrCreate("General", "bFixBlendSamePriority", 1, "; fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority");
 	g_fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim control");
 	g_fixLoopingReloadStart = ini.GetOrCreate("General", "bFixLoopingReloadStart", 1, "; fix looping reload start anims transitioning to aim anim before main looping reload anim");
 
 	g_disableFirstPersonTurningAnims = ini.GetOrCreate("General", "bDisableFirstPersonTurningAnims", 1, "; disable first person turning anims (they mess with shit and serve barely any purpose)");
+#endif
 	//WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelCall(0x494989, HandleAnimationChange);
 	WriteRelCall(0x495E2A, HandleAnimationChange);
@@ -402,6 +450,8 @@ void ApplyHooks()
 
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
+
+	WriteRelJump(0x492BF2, LoopingReloadPauseFix::NoAimInReloadLoop);
 
 	// WriteRelJump(0x4951D7, FixSpineBlendBug);
 
@@ -424,7 +474,7 @@ void ApplyHooks()
 	ApplyNiHooks();
 	
 
-
+#if 0
 	if (g_fixLoopingReloadStart)
 	{
 		// fix reloadloopstart blending into aim before reloadloop
@@ -441,6 +491,7 @@ void ApplyHooks()
 			ThisStdCall(0x4994F0, animData, sequenceId, bChar);
 		}));
 	}
+#endif
 
 #if 1
 	// attempt to fix anims that don't get loaded since they aren't in the game to begin with

@@ -499,7 +499,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	}
 	if (hasKey({"blendToReloadLoop"}, ctx.hasBlendToReloadLoop))
 	{
-		// do nothing
+		LoopingReloadPauseFix::g_reloadStartBlendFixes.insert(anim->sequenceName);
 	}
 	if (hasKey({"scriptLine:", "allowAttack" }, ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
 	{
