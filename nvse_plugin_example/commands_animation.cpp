@@ -236,9 +236,10 @@ void HandleOnAnimDataDelete(AnimData* animData)
 		GameFuncs::NiTPointerMap_Delete(iter->second, true);
 		g_customMaps.erase(iter);
 	}
+	std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second.animData == animData));
 }
 
-std::optional<BSAnimationContext> LoadAnimation(const std::string& path, AnimData* animData)
+std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData)
 {
 	const auto key = std::make_pair(path, animData);
 	if (const auto iter = g_cachedAnimMap.find(key); iter != g_cachedAnimMap.end())
@@ -246,60 +247,64 @@ std::optional<BSAnimationContext> LoadAnimation(const std::string& path, AnimDat
 		const auto ctx = iter->second;
 		return ctx;
 	}
-	auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
-	if (kfModel && kfModel->animGroup && animData)
+
+	const auto tryCreateAnimation = [&]() -> std::optional<BSAnimationContext>
 	{
-		
-		//kfModel->animGroup->groupID = 0xF5; // use a free anim group slot
-		const auto groupId = kfModel->animGroup->groupID;
-		
-		if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
+		auto* kfModel = GameFuncs::LoadKFModel(*g_modelLoader, path.c_str());
+		if (kfModel && kfModel->animGroup && animData)
 		{
-			// fix memory leak, can't previous anim in map since it might be blending
-			auto* anim = base->GetSequenceByIndex(-1);
-			if (anim && _stricmp(anim->sequenceName, path.c_str()) == 0)
- 				return BSAnimationContext(anim, base);
-			GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, groupId);
-		}
-		if (GameFuncs::LoadAnimation(animData, kfModel, false))
-		{
+
+			//kfModel->animGroup->groupID = 0xF5; // use a free anim group slot
+			const auto groupId = kfModel->animGroup->groupID;
+
 			if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 			{
-				BSAnimGroupSequence* anim;
-				if (base && ((anim = base->GetSequenceByIndex(-1))))
+				// fix memory leak, can't previous anim in map since it might be blending
+				auto* anim = base->GetSequenceByIndex(-1);
+				if (anim && _stricmp(anim->sequenceName, path.c_str()) == 0)
+					return BSAnimationContext(anim, base);
+				GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, groupId);
+			}
+			if (GameFuncs::LoadAnimation(animData, kfModel, false))
+			{
+				if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 				{
-					// anim->destFrame = kfModel->controllerSequence->destFrame;
-					const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
-					return entry->second;
+					BSAnimGroupSequence* anim;
+					if (base && ((anim = base->GetSequenceByIndex(-1))))
+					{
+						// anim->destFrame = kfModel->controllerSequence->destFrame;
+						const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
+						return entry->second;
+					}
+					DebugPrint("Map returned null anim");
 				}
-				DebugPrint("Map returned null anim");
+				else
+					DebugPrint("Failed to lookup anim");
 			}
 			else
-				DebugPrint("Failed to lookup anim");
+				DebugPrint(FormatString("Failed to load anim %s for anim data of actor %X", path.c_str(), animData->actor->refID));
 		}
 		else
-			DebugPrint(FormatString("Failed to load anim %s for anim data of actor %X", path.c_str(), animData->actor->refID));
-	}
-	else 
-		DebugPrint("Failed to load KF Model " + path);
-	return std::nullopt;
+			DebugPrint("Failed to load KF Model " + path);
+		return std::nullopt;
+	};
+
+	auto*& customMap = g_customMaps[animData];
+	if (!customMap)
+		customMap = CreateGameAnimMap();
+
+	auto* defaultMap = animData->mapAnimSequenceBase;
+
+	animData->mapAnimSequenceBase = customMap;
+	auto result = tryCreateAnimation();
+	animData->mapAnimSequenceBase = defaultMap;
+	
+	return result;
 }
 
 AnimTime::~AnimTime()
 {
 	Revert3rdPersonAnimTimes(*this, this->anim);
-}
-
-std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData)
-{
-	auto*& customMap = g_customMaps[animData];
-	if (!customMap)
-		customMap = CreateGameAnimMap();
-	auto* defaultMap = animData->mapAnimSequenceBase;
-	animData->mapAnimSequenceBase = customMap;
-	auto result = LoadAnimation(path, animData);
-	animData->mapAnimSequenceBase = defaultMap;
-	return result;
 }
 
 extern NVSEScriptInterface* g_script;
