@@ -326,7 +326,7 @@ std::list<BurstFireData> g_burstFireQueue;
 std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
 
 
-std::map<ActorSequenceKey, SavedAnimsTime> g_timeTrackedGroups;
+std::map<std::pair<SavedAnims*, AnimData*>, SavedAnimsTime> g_timeTrackedGroups;
 
 enum class KeyCheckType
 {
@@ -600,7 +600,6 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 	{
 		auto& animStacks = stacksIter->second;
 		auto* actor = animData->actor;
-		auto* groupInfo = GetGroupInfo(groupId);
 
 		StackVector<AnimCustom, static_cast<size_t>(AnimCustom::Max) + 1> animCustomStack;
 		animCustomStack->push_back(AnimCustom::None);
@@ -647,15 +646,12 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 			{
 				const auto initAnimTime = [&](SavedAnims* savedAnims)
 				{
-					const bool firstPerson = animData == g_thePlayer->firstPersonAnimData;
-					const auto key = ActorSequenceKey(actor->refID, groupInfo->sequenceType, firstPerson);
-					auto& animTime = g_timeTrackedGroups[key];
+					auto& animTime = g_timeTrackedGroups[std::make_pair(savedAnims, animData)];
 					animTime.conditionScript = **savedAnims->conditionScript;
-					animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
 					animTime.groupId = groupId;
 					animTime.actorId = animData->actor->refID;
-					animTime.lastNiTime = -FLT_MAX;
 					animTime.realGroupId = GetActorRealAnimGroup(animData->actor, groupId);
+					animTime.animData = animData;
 					return &animTime;
 				};
 				SavedAnimsTime* animsTime = nullptr;
@@ -725,19 +721,6 @@ AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimDat
 	return savedAnimPath;
 }
 
-void ClearSameSequenceTypeGroups(const BSAnimGroupSequence* anim, SavedAnimsTime* animsTime)
-{
-	const auto* groupInfo = GetGroupInfo(anim->animGroup->groupID);
-	std::erase_if(g_timeTrackedGroups, [&](auto& p)
-	{
-		SavedAnimsTime& iterAnimsTime = p.second;
-		if (&iterAnimsTime == animsTime)
-			return false;
-		const auto* iterInfo = GetGroupInfo(iterAnimsTime.groupId);
-		return animsTime->actorId == iterAnimsTime.actorId && animsTime->firstPerson == iterAnimsTime.firstPerson && iterInfo->sequenceType == groupInfo->sequenceType;
-	});
-}
-
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId)
 {
 	auto& [ctx, animsTime] = result;
@@ -750,6 +733,8 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 	if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
 	{
 		auto* anim = animCtx->anim;
+		if (!anim)
+			return nullptr;
 		SubscribeOnActorReload(animData->actor, ReloadSubscriber::Partial);
 		HandleExtraOperations(animData, anim, *animPath);
 		if (ctx->conditionScript && animsTime)
@@ -765,7 +750,7 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 
 std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData)
 {
-	if (!animData || !animData->actor)
+	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
 	std::optional<AnimationResult> result;
 	std::optional<AnimationResult> modIndexResult;

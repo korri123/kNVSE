@@ -182,17 +182,6 @@ struct AnimTime
 
 };
 
-struct SavedAnimsTime
-{
-	Script* conditionScript = nullptr;
-	UInt16 groupId = 0;
-	UInt16 realGroupId = 0;
-	BSAnimGroupSequence* anim = nullptr;
-	UInt32 actorId = 0;
-	float lastNiTime = -FLT_MAX;
-	bool firstPerson = false;
-};
-
 enum eAnimSequence
 {
 	kSequence_None = -0x1,
@@ -207,18 +196,21 @@ enum eAnimSequence
 	kSequence_Death = 0x14,
 };
 
-struct ActorSequenceKey
+struct SavedAnimsTime
 {
-	UInt32 actorId;
-	UInt32 sequenceType;
-	bool firstPerson; // allow different anims for both viewmodels
-	friend auto operator<=>(const ActorSequenceKey&, const ActorSequenceKey&) = default;
+	Script* conditionScript = nullptr;
+	UInt16 groupId = 0;
+	UInt16 realGroupId = 0;
+	BSAnimGroupSequence* anim = nullptr;
+	UInt32 actorId = 0;
+	AnimData* animData = nullptr;
 
+	friend auto operator<=>(const SavedAnimsTime& lhs, const SavedAnimsTime& rhs) = default;
 };
 
 
 extern std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
-extern std::map<ActorSequenceKey, SavedAnimsTime> g_timeTrackedGroups;
+extern std::map<std::pair<SavedAnims*, AnimData*>, SavedAnimsTime> g_timeTrackedGroups;
 
 enum class AnimKeySetting
 {

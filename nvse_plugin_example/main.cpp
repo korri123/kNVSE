@@ -139,7 +139,9 @@ void HandleAnimTimes()
 		
 		if (shouldErase(actor) || !animData
 			// respectEndKey has a special case for calling erase()
-			|| !animTime.respectEndKey && (anim->state == NiControllerSequence::kAnimState_Inactive || animData->animSequence[groupInfo->sequenceType] != anim))
+			||
+			// !animTime.respectEndKey && 
+			(anim->state == NiControllerSequence::kAnimState_Inactive || animData->animSequence[groupInfo->sequenceType] != anim))
 		{
 			erase();
 			continue;
@@ -253,14 +255,14 @@ void HandleAnimTimes()
 	}
 
 	const auto timeTrackedGroups = std::map(g_timeTrackedGroups); // copy to avoid iterator invalidation
-	for (const auto& timeTrackedGroup : timeTrackedGroups)
+	for (auto& timeTrackedGroup : timeTrackedGroups)
 	{
 		const auto erase = [&]
 		{
 			g_timeTrackedGroups.erase(timeTrackedGroup.first);
 		};
-		auto& [seqType, animTime] = timeTrackedGroup;
-		auto& [conditionScript, groupId, realGroupId, anim, actorId, lastNiTime, firstPerson] = animTime;
+		const auto& animTime = timeTrackedGroup.second;
+		auto& [conditionScript, groupId, realGroupId, anim, actorId, animData] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 		if (!actor)
 		{
@@ -268,14 +270,12 @@ void HandleAnimTimes()
 			continue;
 		}
 		
-		if (shouldErase(actor) || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript)
+		if (shouldErase(actor) || !animData || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript)
 		{
 			erase();
 			continue;
 		}
 		
-		auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
-
 		if (!animData)
 		{
 			erase();
@@ -289,12 +289,24 @@ void HandleAnimTimes()
 			erase();
 			continue;
 		}
+
+		const auto isCurrentlyFirstPerson = animData == g_thePlayer->firstPersonAnimData;
+
+		// check if current anim is running at sequence type
+		if ((curAnim->animGroup->groupID & 0xFF) != (groupId & 0xFF))
+		{
+			erase();
+			continue;
+		}
+		
 		if (conditionScript)
 		{
 			const auto currentRealAnimGroupId = GetActorRealAnimGroup(actor, curAnim->animGroup->GetBaseGroupID());
 			const auto curHandType = (curAnim->animGroup->groupID & 0xf00) >> 8;
 			const auto handType = (groupId & 0xf00) >> 8;
-			if (handType >= curHandType && (realGroupId == currentRealAnimGroupId || realGroupId == curAnim->animGroup->groupID))
+			if (
+				handType >= curHandType &&
+				(realGroupId == currentRealAnimGroupId || realGroupId == curAnim->animGroup->groupID))
 			{
 				NVSEArrayVarInterface::Element arrResult;
 				if (g_script->CallFunction(conditionScript, actor, nullptr, &arrResult, 0))
