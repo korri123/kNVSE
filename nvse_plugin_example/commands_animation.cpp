@@ -239,6 +239,8 @@ void HandleOnAnimDataDelete(AnimData* animData)
 	std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second.animData == animData));
 }
 
+ICriticalSection g_loadCustomAnimLock;
+
 std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData)
 {
 	const auto key = std::make_pair(path, animData);
@@ -288,6 +290,9 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 			DebugPrint("Failed to load KF Model " + path);
 		return std::nullopt;
 	};
+
+	// not sure if this is necessary but the code that switched mapAnimSequenceBase to customMap was causing issues
+	ScopedLock lock(g_loadCustomAnimLock);
 
 	auto*& customMap = g_customMaps[animData];
 	if (!customMap)
