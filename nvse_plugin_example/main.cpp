@@ -261,7 +261,7 @@ void HandleAnimTimes()
 		{
 			g_timeTrackedGroups.erase(timeTrackedGroup.first);
 		};
-		const auto& animTime = timeTrackedGroup.second;
+		const auto& animTime = *timeTrackedGroup.second;
 		auto& [conditionScript, groupId, realGroupId, anim, actorId, animData] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 		if (!actor)

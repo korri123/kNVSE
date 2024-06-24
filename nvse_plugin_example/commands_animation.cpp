@@ -170,7 +170,7 @@ std::map<std::pair<std::string, AnimData*>, BSAnimationContext> g_cachedAnimMap;
 void HandleOnSequenceDestroy(BSAnimGroupSequence* anim)
 {
 	g_timeTrackedAnims.erase(anim);
-	std::erase_if(g_timeTrackedGroups, _L(auto& iter, iter.second.anim == anim));
+	std::erase_if(g_timeTrackedGroups, _L(auto& iter, iter.second->anim == anim));
 	std::erase_if(g_burstFireQueue, _L(auto& p, p.anim == anim));
 	std::erase_if(g_cachedAnimMap, _L(auto & p, p.second.anim == anim));
 }
@@ -236,10 +236,8 @@ void HandleOnAnimDataDelete(AnimData* animData)
 		GameFuncs::NiTPointerMap_Delete(iter->second, true);
 		g_customMaps.erase(iter);
 	}
-	std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second.animData == animData));
+	std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second->animData == animData));
 }
-
-ICriticalSection g_loadCustomAnimLock;
 
 std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData)
 {
@@ -291,9 +289,6 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 		return std::nullopt;
 	};
 
-	// not sure if this is necessary but the code that switched mapAnimSequenceBase to customMap was causing issues
-	ScopedLock lock(g_loadCustomAnimLock);
-
 	auto*& customMap = g_customMaps[animData];
 	if (!customMap)
 		customMap = CreateGameAnimMap();
@@ -336,7 +331,7 @@ std::list<BurstFireData> g_burstFireQueue;
 std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
 
 
-std::map<std::pair<SavedAnims*, AnimData*>, SavedAnimsTime> g_timeTrackedGroups;
+std::map<std::pair<SavedAnims*, AnimData*>, std::shared_ptr<SavedAnimsTime>> g_timeTrackedGroups;
 
 enum class KeyCheckType
 {
@@ -657,21 +652,23 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				const auto initAnimTime = [&](SavedAnims* savedAnims)
 				{
 					auto& animTime = g_timeTrackedGroups[std::make_pair(savedAnims, animData)];
-					animTime.conditionScript = **savedAnims->conditionScript;
-					animTime.groupId = groupId;
-					animTime.actorId = animData->actor->refID;
-					animTime.realGroupId = GetActorRealAnimGroup(animData->actor, groupId);
-					animTime.animData = animData;
+					if (!animTime)
+						animTime = std::make_shared<SavedAnimsTime>();
+					animTime->conditionScript = **savedAnims->conditionScript;
+					animTime->groupId = groupId;
+					animTime->actorId = animData->actor->refID;
+					animTime->realGroupId = GetActorRealAnimGroup(animData->actor, groupId);
+					animTime->animData = animData;
 					return &animTime;
 				};
 				SavedAnimsTime* animsTime = nullptr;
 				if (ctx.conditionScript)
 				{
-					if (ctx.pollCondition)
-						animsTime = initAnimTime(&ctx); // init'd here so conditions can activate despite not being overridden
 					NVSEArrayVarInterface::Element result;
 					if (!g_script->CallFunction(**ctx.conditionScript, actor, nullptr, &result, 0) || result.GetNumber() == 0.0)
 						continue;
+					if (ctx.pollCondition)
+						animsTime = initAnimTime(&ctx)->get(); // init'd here so conditions can activate despite not being overridden
 				}
 				if (!ctx.anims.empty())
 				{

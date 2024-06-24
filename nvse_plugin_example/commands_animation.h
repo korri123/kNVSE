@@ -210,7 +210,7 @@ struct SavedAnimsTime
 
 
 extern std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
-extern std::map<std::pair<SavedAnims*, AnimData*>, SavedAnimsTime> g_timeTrackedGroups;
+extern std::map<std::pair<SavedAnims*, AnimData*>, std::shared_ptr<SavedAnimsTime>> g_timeTrackedGroups;
 
 enum class AnimKeySetting
 {
