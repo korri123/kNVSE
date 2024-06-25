@@ -546,7 +546,9 @@ void ApplyHooks()
 	// hooking TESForm::GetFlags
 	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
 	{
-		HandleOnReload(g_thePlayer);
+		auto* _ebp = GetParentBasePtr(_AddressOfReturnAddress(), true);
+		auto* actor = *reinterpret_cast<Actor**>(_ebp - 0x1C);
+		HandleOnReload(actor);
 		return form->flags;
 	}));
 
