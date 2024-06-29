@@ -22,6 +22,7 @@
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
 #include "blend_fixes.h"
+#include "knvse_events.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
 #define REG_CMD_TYPED(name, type) 	nvse->RegisterTypedCommand(&kCommandInfo_ ##name, type)
@@ -575,6 +576,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	CreateCommands(commandBuilder);
 
 
+
 #if _DEBUG
 	REG_CMD(kNVSETest);
 	if (false)
@@ -589,6 +591,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	}
 
 	g_eventManagerInterface = (NVSEEventManagerInterface*)nvse->QueryInterface(kInterface_EventManager);
+
 	//g_eventManagerInterface->SetNativeEventHandler("OnActorEquip", OnActorEquipEventHandler);
 
 	NVSEDataInterface* nvseData = (NVSEDataInterface*)nvse->QueryInterface(kInterface_Data);
@@ -596,5 +599,6 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	UncaptureLambdaVars = (_UncaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaUnsaveVariableList);
 
 	ApplyHooks();
+	Events::RegisterEvents();
 	return true;
 }

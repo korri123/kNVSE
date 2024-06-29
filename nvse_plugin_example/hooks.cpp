@@ -8,13 +8,13 @@
 #include "GameObjects.h"
 #include "commands_animation.h"
 #include "SafeWrite.h"
-#include "GameAPI.h"
 #include "nitypes.h"
 #include "SimpleINILibrary.h"
 #include "utility.h"
 #include "main.h"
 #include "nihooks.h"
 #include "blend_fixes.h"
+#include "knvse_events.h"
 
 #define CALL_EAX(addr) __asm mov eax, addr __asm call eax
 #define JMP_EAX(addr)  __asm mov eax, addr __asm jmp eax
@@ -72,6 +72,18 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		if (queuedAnim)
 		{
 			destAnim = queuedAnim;
+		}
+
+		if (const auto interceptedAnimGroup = InterceptPlayAnimGroup::Dispatch(animData->actor, animGroupId))
+		{
+			const auto newGroupId = *interceptedAnimGroup;
+			if (newGroupId == 0xFF)
+				return destAnim;
+			if (auto* anim = GetAnimByGroupID(animData, newGroupId); anim && anim->animGroup)
+			{
+				destAnim = anim;
+				animGroupId = anim->animGroup->groupID;
+			}
 		}
 
 		if (!g_doNotSwapAnims && !queuedAnim && (animResult = GetActorAnimation(animGroupId, animData)))
