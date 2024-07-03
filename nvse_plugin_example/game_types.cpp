@@ -437,9 +437,9 @@ UInt32* g_weaponTypeToAnim = reinterpret_cast<UInt32*>(0x118A838);
 UInt16 GetActorRealAnimGroup(Actor* actor, UInt8 groupID)
 {
 	UInt8 animHandType = 0;
-	if (auto* form = actor->GetWeaponForm())
+	if (auto* form = actor->GetWeaponForm(); form && actor->baseProcess->isWeaponOut)
 		animHandType = g_weaponTypeToAnim[form->eWeaponType];
-	else if (actor->baseProcess->isWeaponOut || actor->baseProcess->wantsWeaponOut)
+	else if (actor->baseProcess->isWeaponOut)
 		animHandType = 1; // arms
 	auto moveFlags = actor->actorMover->GetMovementFlags();
 	UInt8 moveType = 0;

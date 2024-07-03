@@ -302,3 +302,27 @@ T GetOptimizedVariableOfCallerStack(void* addressOfReturnAddress, int offset, bo
 #define GET_CALLER_VAR(type, offset, lambda) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
 #define GET_CALLER_VAR_PTR(type, offset, lambda) GetVariablePtrOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
 #define NI_GET_CALLER_VAR(type, offset, lambda) GetOptimizedVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
+
+// Hash function for std::pair
+struct pair_hash {
+	template <class T1, class T2>
+	std::size_t operator()(const std::pair<T1, T2>& p) const {
+		const auto hash1 = std::hash<T1>()(p.first);
+		const auto hash2 = std::hash<T2>()(p.second);
+		return hash_combine(hash1, hash2);
+	}
+
+private:
+	// A better way to combine hashes
+	static std::size_t hash_combine(std::size_t seed, std::size_t hash) {
+		return seed ^ (hash + 0x9e3779b9 + (seed << 6) + (seed >> 2));
+	}
+};
+
+// Custom equality comparator
+struct pair_equal {
+	template <class T1, class T2>
+	bool operator()(const std::pair<T1, T2>& lhs, const std::pair<T1, T2>& rhs) const {
+		return lhs.first == rhs.first && lhs.second == rhs.second;
+	}
+};

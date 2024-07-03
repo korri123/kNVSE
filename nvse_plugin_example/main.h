@@ -35,3 +35,6 @@ bool IsGodMode();
 
 float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim);
 
+bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
+		NVSEArrayVarInterface::Element* result);
+

@@ -70,6 +70,18 @@ float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 	return time;
 }
 
+bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
+	NVSEArrayVarInterface::Element* result)
+{
+	return g_script->CallFunction(
+		funcScript,
+		callingObj,
+		container,
+		result,
+		0
+	);
+}
+
 bool g_fixHolster = false;
 BSAnimGroupSequence* g_fixHolsterUnequipAnim3rd = nullptr;
 
@@ -263,7 +275,7 @@ void HandleAnimTimes()
 			g_timeTrackedGroups.erase(timeTrackedGroup.first);
 		};
 		const auto& animTime = *timeTrackedGroup.second;
-		auto& [conditionScript, groupId, realGroupId, anim, actorId, animData] = animTime;
+		auto& [conditionScript, groupId, anim, actorId, animData] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 		if (!actor)
 		{
@@ -271,7 +283,7 @@ void HandleAnimTimes()
 			continue;
 		}
 		
-		if (shouldErase(actor) || !animData || anim && anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript)
+		if (shouldErase(actor) || !animData || !anim || anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript)
 		{
 			erase();
 			continue;
@@ -291,8 +303,6 @@ void HandleAnimTimes()
 			continue;
 		}
 
-		const auto isCurrentlyFirstPerson = animData == g_thePlayer->firstPersonAnimData;
-
 		// check if current anim is running at sequence type
 		if ((curAnim->animGroup->groupID & 0xFF) != (groupId & 0xFF))
 		{
@@ -302,6 +312,21 @@ void HandleAnimTimes()
 		
 		if (conditionScript)
 		{
+			NVSEArrayVarInterface::Element arrResult;
+			if (CallFunction(conditionScript, actor, nullptr, &arrResult))
+			{
+				const auto result = static_cast<bool>(arrResult.GetNumber());
+				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
+				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
+				auto* nextAnim = GetAnimByGroupID(animData, animGroupId);
+				const auto shouldPlayAnim = _L(, result && nextAnim == anim && curAnim != anim);
+				const auto shouldStopAnim = _L(, !result && nextAnim != anim && curAnim == anim);
+				if (shouldPlayAnim() || shouldStopAnim())
+				{
+					GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);
+				}
+			}
+#if 0
 			const auto currentRealAnimGroupId = GetActorRealAnimGroup(actor, curAnim->animGroup->GetBaseGroupID());
 			const auto curHandType = (curAnim->animGroup->groupID & 0xf00) >> 8;
 			const auto handType = (groupId & 0xf00) >> 8;
@@ -319,7 +344,8 @@ void HandleAnimTimes()
 					{
 						// group id may have changed now that udf returns false
 						const auto groupIdFit = GameFuncs::GetActorAnimGroupId(actor, groupId & 0xFF, nullptr, false, animData);
-						GameFuncs::PlayAnimGroup(animData, groupIdFit, 1, -1, -1);
+						//if (groupIdFit != curAnim->animGroup->groupID)
+							GameFuncs::PlayAnimGroup(animData, groupIdFit, 1, -1, -1);
 					}
 				}
 			}
@@ -327,7 +353,9 @@ void HandleAnimTimes()
 			{
 				erase();
 			}
+#endif
 		}
+		
 	}
 }
 
@@ -456,6 +484,7 @@ void HandleMisc()
 		else if (anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
 			g_fixHolster = false;
 	}
+	g_animationResultCache.clear();
 }
 
 

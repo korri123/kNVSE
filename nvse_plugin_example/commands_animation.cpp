@@ -657,8 +657,10 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					animTime->conditionScript = **savedAnims->conditionScript;
 					animTime->groupId = groupId;
 					animTime->actorId = animData->actor->refID;
-					animTime->realGroupId = GetActorRealAnimGroup(animData->actor, groupId);
 					animTime->animData = animData;
+					if (const auto* animPath = GetAnimPath(*savedAnims, groupId, animData))
+						if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
+							animTime->anim = animCtx->anim;
 					return &animTime;
 				};
 				SavedAnimsTime* animsTime = nullptr;
@@ -667,7 +669,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					if (ctx.pollCondition)
 						animsTime = initAnimTime(&ctx)->get(); // init'd here so conditions can activate despite not being overridden
 					NVSEArrayVarInterface::Element result;
-					if (!g_script->CallFunction(**ctx.conditionScript, actor, nullptr, &result, 0) || result.GetNumber() == 0.0)
+					if (!CallFunction(**ctx.conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
 						continue;
 				}
 				if (!ctx.anims.empty())
@@ -699,13 +701,12 @@ AnimOverrideMap& GetModIndexMap(bool firstPerson)
 	return firstPerson ? g_animGroupModIdxFirstPersonMap : g_animGroupModIdxThirdPersonMap;
 }
 
-AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimData* animData)
+AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 {
-	auto& ctx = *animResult.parent;
 	AnimPath* savedAnimPath = nullptr;
 	Actor* actor = animData->actor;
 
-	if (IsAnimGroupReload(groupId) && ra::any_of(ctx.anims, _L(AnimPath & p, p.partialReload)))
+	if (IsAnimGroupReload(groupId) && ra::any_of(ctx.anims, _L(const AnimPath & p, p.partialReload)))
 	{
 		if (auto* path = GetPartialReload(ctx, actor, groupId))
 			savedAnimPath = path;
@@ -731,7 +732,7 @@ AnimPath* GetAnimPath(const AnimationResult& animResult, UInt16 groupId, AnimDat
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId)
 {
 	auto& [ctx, animsTime] = result;
-	auto* animPath = GetAnimPath(result, groupId, animData);
+	auto* animPath = GetAnimPath(*result.parent, groupId, animData);
 	if (!animPath)
 	{
 		DebugPrint(FormatString("Failed to find replacement anim for group %X", groupId));
@@ -755,53 +756,66 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 	return nullptr;
 }
 
+// clear this cache every frame
+AnimationResultCache g_animationResultCache;
+
 std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData)
 {
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
-	std::optional<AnimationResult> result;
-	std::optional<AnimationResult> modIndexResult;
+	auto [cache, isNew] = g_animationResultCache.emplace(std::make_pair(animGroupId, animData), std::nullopt);
+	if (!isNew)
+		return cache->second;
 
-	const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
-	auto& map = GetMap(firstPerson);
-	auto* actor = animData->actor;
-	auto& modIndexMap = GetModIndexMap(firstPerson);
-	const auto getFormAnimation = [&](TESForm* form) -> std::optional<AnimationResult>
+	const auto getActorAnimation = [&]() -> std::optional<AnimationResult>
 	{
-		if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData))
-			return lResult;
-		// mod index
-		if (!modIndexResult.has_value())
-			modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData);
+		std::optional<AnimationResult> result;
+		std::optional<AnimationResult> modIndexResult;
+
+		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
+		auto& map = GetMap(firstPerson);
+		auto* actor = animData->actor;
+		auto& modIndexMap = GetModIndexMap(firstPerson);
+		const auto getFormAnimation = [&](TESForm* form) -> std::optional<AnimationResult>
+		{
+			if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData))
+				return lResult;
+			// mod index
+			if (!modIndexResult.has_value())
+				modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData);
+			return std::nullopt;
+		};
+		// actor ref ID
+		if ((result = getFormAnimation(actor)))
+			return result;
+		// weapon form ID
+		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon && (result = getFormAnimation(weaponInfo->weapon)))
+			return result;
+		// base form ID
+		if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData))))
+			return result;
+		// race form ID
+		TESNPC* npc; TESRace* race;
+		if (((npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC))) && ((race = npc->race.race)) && (result = getFormAnimation(race)))
+			return result;
+		// creature
+		TESCreature* creature;
+		if ((creature = static_cast<TESCreature*>(actor->GetActorBase())) && IS_ID(creature, Creature) && (result = getFormAnimation(creature)))
+			return result;
+
+		// equipped TODO
+
+		// mod index (set in getFormAnimation if exists)
+		if (modIndexResult)
+			return modIndexResult;
+		// non-form ID dependent animations (global replacers)
+		if ((result = PickAnimation(modIndexMap[0xFF], animGroupId, animData)))
+			return result;
 		return std::nullopt;
 	};
-	// actor ref ID
-	if ((result = getFormAnimation(actor)))
-		return result;
-	// weapon form ID
-	if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon && (result = getFormAnimation(weaponInfo->weapon)))
-		return result;
-	// base form ID
-	if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData))))
-		return result;
-	// race form ID
-	TESNPC* npc; TESRace* race;
-	if (((npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC))) && ((race = npc->race.race)) && (result = getFormAnimation(race)))
-		return result;
-	// creature
-	TESCreature* creature;
-	if ((creature = static_cast<TESCreature*>(actor->GetActorBase())) && IS_ID(creature, Creature) && (result = getFormAnimation(creature)))
-		return result;
-
-	// equipped TODO
-
-	// mod index (set in getFormAnimation if exists)
-	if (modIndexResult)
-		return modIndexResult;
-	// non-form ID dependent animations (global replacers)
-	if ((result = PickAnimation(modIndexMap[0xFF], animGroupId, animData)))
-		return result;
-	return std::nullopt;
+	const auto result = getActorAnimation();
+	cache->second = result;
+	return result;
 }
 
 MemoizedMap<const char*, int> s_animGroupNameToIDMap;

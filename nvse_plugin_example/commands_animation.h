@@ -200,7 +200,6 @@ struct SavedAnimsTime
 {
 	Script* conditionScript = nullptr;
 	UInt16 groupId = 0;
-	UInt16 realGroupId = 0;
 	BSAnimGroupSequence* anim = nullptr;
 	UInt32 actorId = 0;
 	AnimData* animData = nullptr;
@@ -566,7 +565,7 @@ void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);
 
 bool DidActorReload(Actor* actor, ReloadSubscriber subscriber);
 
-AnimPath* GetAnimPath(const AnimationResult& animResult, AnimGroupID groupId, AnimData* animData);
+AnimPath* GetAnimPath(SavedAnims& animResult, UInt16 groupId, AnimData* animData);
 int GroupNameToId(const std::string& name);
 
 extern std::unordered_map<UInt32, ReloadHandler> g_reloadTracker;
@@ -595,3 +594,6 @@ float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimG
 UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);
 float GetIniFloat(UInt32 addr);
 NiControllerSequence::ControlledBlock* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);
+
+using AnimationResultCache = std::unordered_map<std::pair<UInt32, AnimData*>, std::optional<AnimationResult>, pair_hash, pair_equal>;
+extern AnimationResultCache g_animationResultCache;

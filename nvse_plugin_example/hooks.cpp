@@ -527,7 +527,7 @@ void ApplyHooks()
 	WriteRelCall(0x4956CE, NonExistingAnimHook<-0x14>);
 	WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
 	WriteRelCall(0x49431B, NonExistingAnimHook<-0xC>);
-	WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>);
+	// WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>); no go - causes stack overflow
 	WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
 
 	//WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
