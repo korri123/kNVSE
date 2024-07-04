@@ -327,18 +327,18 @@ extern JSONAnimContext g_jsonContext;
 
 enum AnimHandTypes
 {
-	kAnim_H2H = 0,
-	kAnim_1HM,
-	kAnim_2HM,
-	kAnim_1HP,
-	kAnim_2HR,
-	kAnim_2HA,
-	kAnim_2HH,
-	kAnim_2HL,
-	kAnim_1GT,
-	kAnim_1MD,
-	kAnim_1LM,
-	kAnim_Max,
+	kAnim_H2H = 0x0,
+	kAnim_1HM = 0x1,
+	kAnim_2HM = 0x2,
+	kAnim_1HP = 0x3,
+	kAnim_2HR = 0x4,
+	kAnim_2HA = 0x5,
+	kAnim_2HH = 0x6,
+	kAnim_2HL = 0x7,
+	kAnim_1GT = 0x8,
+	kAnim_1MD = 0x9,
+	kAnim_1LM = 0xA,
+	kAnim_Max = 0xB,
 };
 
 
@@ -597,3 +597,6 @@ NiControllerSequence::ControlledBlock* FindAnimInterp(BSAnimGroupSequence* anim,
 
 using AnimationResultCache = std::unordered_map<std::pair<UInt32, AnimData*>, std::optional<AnimationResult>, pair_hash, pair_equal>;
 extern AnimationResultCache g_animationResultCache;
+
+using AnimPathCache = std::unordered_map<std::pair<SavedAnims*, AnimData*>, AnimPath*, pair_hash, pair_equal>;
+extern AnimPathCache g_animPathFrameCache;

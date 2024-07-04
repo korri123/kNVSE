@@ -321,6 +321,7 @@ void HandleAnimTimes()
 				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
 				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
 				auto* nextAnim = GetAnimByGroupID(animData, animGroupId);
+				
 				const auto shouldPlayAnim = _L(, result && nextAnim == anim && curAnim != anim);
 				const auto shouldStopAnim = _L(, !result && nextAnim != anim && curAnim == anim);
 				if (shouldPlayAnim() || shouldStopAnim())
@@ -487,6 +488,7 @@ void HandleMisc()
 			g_fixHolster = false;
 	}
 	g_animationResultCache.clear();
+	g_animPathFrameCache.clear();
 	for (const auto& line : g_eachFrameScriptLines)
 	{
 		g_consoleInterface->RunScriptLine(line.c_str(), nullptr);

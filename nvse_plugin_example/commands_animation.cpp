@@ -701,8 +701,15 @@ AnimOverrideMap& GetModIndexMap(bool firstPerson)
 	return firstPerson ? g_animGroupModIdxFirstPersonMap : g_animGroupModIdxThirdPersonMap;
 }
 
+// preserve randomization of variants
+AnimPathCache g_animPathFrameCache;
+
 AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 {
+	auto [iter, success] = g_animPathFrameCache.emplace(std::make_pair(&ctx, animData), nullptr);
+	if (!success)
+		return iter->second;
+	
 	AnimPath* savedAnimPath = nullptr;
 	Actor* actor = animData->actor;
 
@@ -726,6 +733,7 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 		// ordered
 		savedAnimPath = &ctx.anims.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % ctx.anims.size());
 	}
+	iter->second = savedAnimPath;
 	return savedAnimPath;
 }
 
@@ -1574,13 +1582,18 @@ BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path)
 	return FindActiveAnimationForActor(actor, baseAnim);
 }
 
-BSAnimGroupSequence* FindActivateAnimationForRef(TESObjectREFR* thisObj, const char* path)
+BSAnimGroupSequence* FindActiveAnimationForRef(TESObjectREFR* thisObj, const char* path)
 {
 	if (!thisObj)
 		return GetAnimationByPath(path);
 	if (thisObj->IsActor())
 		return FindActiveAnimationForActor(static_cast<Actor*>(thisObj), path);
-	auto* controller = thisObj->GetNiNode()->m_controller;
+	auto* ninode = thisObj->GetNiNode();
+	if (!ninode)
+		return nullptr;
+	auto* controller = ninode->m_controller;
+	if (!controller)
+		return nullptr;
 	if (IS_TYPE(controller, NiControllerManager))
 	{
 		auto* controllerManager = static_cast<NiControllerManager*>(controller);
@@ -1694,7 +1707,7 @@ NiControllerSequence::ControlledBlock* FindAnimInterp(BSAnimGroupSequence* anim,
 
 NiControllerSequence::ControlledBlock* FindAnimInterp(TESObjectREFR* thisObj, const char* animPath, const char* interpName)
 {
-	auto* anim = FindActivateAnimationForRef(thisObj, animPath);
+	auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 	if (!anim)
 		return nullptr;
 	return FindAnimInterp(anim, interpName);
@@ -2487,7 +2500,7 @@ inline bool NiControllerManager::BlendFromSequence(
 		char textKey[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &time, &textKey))
 			return true;
-		const auto* anim = FindActivateAnimationForRef(thisObj, animPath);
+		const auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 		if (!anim)
 			return true;
 		auto* textKeyData = anim->textKeyData;
@@ -2520,7 +2533,7 @@ inline bool NiControllerManager::BlendFromSequence(
 		UInt32 index;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &index))
 			return true;
-		const auto* anim = FindActivateAnimationForRef(thisObj, animPath);
+		const auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 		if (!anim)
 			return true;
 		auto* textKeyData = anim->textKeyData;
@@ -2572,6 +2585,33 @@ inline bool NiControllerManager::BlendFromSequence(
 		}
 		g_eachFrameScriptLines.clear();
 		*result = 1;
+		return true;
+	});
+
+	builder.Create("CopyAnimPriorities", kRetnType_Default, { ParamInfo{"sSourceAnimPath", kParamType_String, false}, ParamInfo{"sDestAnimPath", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char sourceAnimPath[0x400];
+		char destAnimPath[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &sourceAnimPath, &destAnimPath) || !thisObj)
+			return true;
+		auto* sourceAnim = FindActiveAnimationForRef(thisObj, sourceAnimPath);
+		auto* destAnim = FindActiveAnimationForRef(thisObj, destAnimPath);
+		if (!sourceAnim || !destAnim)
+			return true;
+		const std::span srcControlledBlocks(sourceAnim->controlledBlocks, sourceAnim->numControlledBlocks);
+		int idx = 0;
+		for (const auto& srcControlledBlock : srcControlledBlocks)
+		{
+			auto& tag = sourceAnim->IDTagArray[idx];
+			auto* dstControlledBlock = destAnim->GetControlledBlock(tag.m_kAVObjectName.CStr());
+			if (dstControlledBlock)
+			{
+				dstControlledBlock->priority = srcControlledBlock.priority;
+				*result = *result + 1;
+			}
+			++idx;
+		}
 		return true;
 	});
 
