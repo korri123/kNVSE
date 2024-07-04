@@ -46,10 +46,12 @@ std::unordered_map<std::string, std::vector<CustomAnimGroupScript>> g_customAnim
 NVSEScriptInterface* g_script;
 NVSEArrayVarInterface* g_arrayVarInterface = nullptr;
 NVSEStringVarInterface* g_stringVarInterface = nullptr;
+NVSEConsoleInterface* g_consoleInterface = nullptr;
 #endif
 
 _CaptureLambdaVars CaptureLambdaVars;
 _UncaptureLambdaVars UncaptureLambdaVars;
+std::vector<std::string> g_eachFrameScriptLines;
 
 bool isEditor = false;
 
@@ -485,6 +487,10 @@ void HandleMisc()
 			g_fixHolster = false;
 	}
 	g_animationResultCache.clear();
+	for (const auto& line : g_eachFrameScriptLines)
+	{
+		g_consoleInterface->RunScriptLine(line.c_str(), nullptr);
+	}
 }
 
 
@@ -586,6 +592,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_script = (NVSEScriptInterface*)nvse->QueryInterface(kInterface_Script);
 	g_arrayVarInterface = (NVSEArrayVarInterface*)nvse->QueryInterface(kInterface_ArrayVar);
 	g_stringVarInterface = (NVSEStringVarInterface*)nvse->QueryInterface(kInterface_StringVar);
+	g_consoleInterface = (NVSEConsoleInterface*)nvse->QueryInterface(kInterface_Console);
 
 	nvse->InitExpressionEvaluatorUtils(&s_expEvalUtils);
 

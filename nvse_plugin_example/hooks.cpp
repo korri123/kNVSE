@@ -139,19 +139,20 @@ __declspec(naked) void AnimationHook()
 
 void DecreaseAttackTimer()
 {
-	auto* p = static_cast<Decoding::HighProcess*>(g_thePlayer->baseProcess);
+	auto* baseProcess = g_thePlayer->baseProcess;
 	if (!g_lastLoopSequence)
-		return p->ResetAttackLoopTimer(false);
+		return baseProcess->ResetAttackLoopTimer(false);
 	if (g_startedAnimation)
 	{
-		p->time1D4 = g_lastLoopSequence->endKeyTime - g_lastLoopSequence->startTime; // start time is actually curTime
+		//p->time1D4 = g_lastLoopSequence->endKeyTime - g_lastLoopSequence->startTime; // start time is actually curTime
+		baseProcess->time1D4 = g_lastLoopSequence->endKeyTime;
 		g_startedAnimation = false;
 	}
-	const auto oldTime = p->time1D4;
-	p->DecreaseAttackLoopShootTime(g_thePlayer);
-	if (p->time1D4 >= oldTime)
+	const auto oldTime = baseProcess->time1D4;
+	baseProcess->DecreaseAttackLoopShootTime(g_thePlayer);
+	if (baseProcess->time1D4 >= oldTime)
 	{
-		p->time1D4 = 0;
+		baseProcess->time1D4 = 0;
 		g_lastLoopSequence = nullptr;
 	}
 }

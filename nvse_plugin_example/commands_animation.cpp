@@ -2545,6 +2545,35 @@ inline bool NiControllerManager::BlendFromSequence(
 		*result = 1;
 		return true;
 	});
+	
+	builder.Create("EachFrame", kRetnType_Default, {ParamInfo{"sScript", kParamType_String, false}}, false, [](COMMAND_ARGS)
+	{
+		if (!IsConsoleMode())
+		{
+			Console_Print("Do not call EachFrame from a script");
+			return true;
+		}
+		*result = 0;
+		char text[0x400]{};
+		if (!ExtractArgs(EXTRACT_ARGS, &text) )
+			return true;
+		g_eachFrameScriptLines.push_back(text);
+		*result = 1;
+		return true;
+	});
+
+	builder.Create("ClearEachFrame", kRetnType_Default, {}, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		if (!IsConsoleMode())
+		{
+			Console_Print("Do not call ClearEachFrame from a script");
+			return true;
+		}
+		g_eachFrameScriptLines.clear();
+		*result = 1;
+		return true;
+	});
 
 #if _DEBUG
 	builder.Create("ForceAttack", kRetnType_Default, { ParamInfo{"animGroup", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)

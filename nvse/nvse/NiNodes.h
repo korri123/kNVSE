@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 #include "GameForms.h"
 #include "NiTypes.h"
 #include "GameTypes.h"
@@ -1709,6 +1711,15 @@ class NiTextKeyExtraData : public NiExtraData
 public:
 	unsigned int m_uiNumKeys;
 	NiTextKey* m_pKeys;
+
+	NiTextKey* FindFirstByName(const char* name)
+	{
+		std::span keys(m_pKeys, m_uiNumKeys);
+		auto it = std::ranges::find_if(keys, [name](const NiTextKey& key) {
+			return _stricmp(key.m_kText.CStr(), name) == 0;
+		});
+		return it != keys.end() ? &*it : nullptr;
+	}
 };
 static_assert(sizeof(NiTextKeyExtraData) == 0x14);
 
