@@ -331,8 +331,7 @@ void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGrou
 #endif
 	//GameFuncs::CrossFade(attackISSequence->owner, attackISSequence, attackSequence, blend, 0, false, attackSequence->seqWeight, nullptr);
 
-	AnimPath ctx{};
-	HandleExtraOperations(animData, targetSequence, ctx);
+	HandleExtraOperations(animData, targetSequence);
 	SetCurrentSequence(animData, targetSequence, false);
 
 	const auto sequenceType = targetSequence->animGroup->GetGroupInfo()->sequenceType;

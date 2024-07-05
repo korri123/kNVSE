@@ -90,13 +90,14 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		{
 			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
 			if (newAnim)
+			{
 				destAnim = newAnim;
+			}
 		}
 		else if (destAnim)
 		{
 			// allow non AnimGroupOverride anims to use custom text keys
-			AnimPath ctx{};
-			HandleExtraOperations(animData, destAnim, ctx);
+			HandleExtraOperations(animData, destAnim);
 		}
 	}
 
@@ -275,11 +276,7 @@ bool LookupAnimFromMap(UInt16 groupId, AnimSequenceBase** base, AnimData* animDa
 	{
 		if (const auto animResult = GetActorAnimation(groupId, animData))
 		{
-			const auto& animPaths = animResult->parent->anims;
-			auto* animPath = !animPaths.empty() ? &animPaths.at(0) : nullptr;
-			if (!animPath)
-				return false;
-			if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
+			if (const auto animCtx = LoadCustomAnimation(*animResult->parent, groupId, animData))
 			{
 				*base = animCtx->base;
 				return true;
@@ -310,8 +307,10 @@ BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID groupId)
 	const auto nearestGroupId = GetNearestGroupID(animData, groupId);
 	if (nearestGroupId == 0xFFFF)
 		return nullptr;
-	AnimSequenceBase* base = nullptr;
-	if (animData->actor && LookupAnimFromMap(nearestGroupId, &base, animData) || (base = animData->mapAnimSequenceBase->Lookup(nearestGroupId)))
+	if (const auto result = GetActorAnimation(nearestGroupId, animData))
+		if (const auto ctx = LoadCustomAnimation(*result->parent, nearestGroupId, animData))
+			return ctx->anim;
+	if (auto* base = animData->mapAnimSequenceBase->Lookup(nearestGroupId))
 		return base->GetSequenceByIndex(-1);
 	return nullptr;
 }

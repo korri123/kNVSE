@@ -302,6 +302,17 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 	return result;
 }
 
+std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
+{
+	if (const auto* animPath = GetAnimPath(ctx, groupId, animData))
+	{
+		const auto animCtx = LoadCustomAnimation(animPath->path, animData);
+		ctx.linkedSequences.insert(animCtx->anim);
+		return animCtx;
+	}
+	return std::nullopt;
+}
+
 AnimTime::~AnimTime()
 {
 	Revert3rdPersonAnimTimes(*this, this->anim);
@@ -356,7 +367,7 @@ std::unordered_map<std::string, TimedExecution<Script*>> g_scriptLineExecutions;
 std::unordered_map<std::string, TimedExecution<Script*>> g_scriptCallExecutions;
 std::unordered_map<std::string, TimedExecution<Sound>> g_scriptSoundExecutions;
 
-bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPath& ctx)
+bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 {
 	if (!anim || !anim->animGroup)
 		return false;
@@ -380,7 +391,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		const bool uninitialized = iter.second;
 		return std::make_pair(timedExecution, uninitialized);
 	};
-	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, AnimKeySetting& setting, KeyCheckType type = KeyCheckType::KeyEquals)
+	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, KeyCheckType type = KeyCheckType::KeyEquals)
 	{
 		auto result = false;
 		for (const char* keyText : keyTexts)
@@ -397,14 +408,13 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			if (result)
 				break;
 		}
-		setting = result ? AnimKeySetting::Set : AnimKeySetting::NotSet;
 		if (result)
 			applied = true;
 		
 		return result;
 	};
 
-	if (anim->animGroup->IsAttack() && hasKey({"burstFire"}, ctx.hasBurstFire))
+	if (anim->animGroup->IsAttack() && hasKey({"burstFire"}))
 	{
 		std::vector<NiTextKey*> hitKeys;
 		std::vector<NiTextKey*> ejectKeys;
@@ -433,7 +443,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, anim, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false);
 		}
 	}
-	if (animData == g_thePlayer->firstPersonAnimData && hasKey({"respectEndKey", "respectTextKeys"}, ctx.hasRespectEndKey))
+	if (animData == g_thePlayer->firstPersonAnimData && hasKey({"respectEndKey", "respectTextKeys"}))
 	{
 		auto& animTime = getAnimTimeStruct();
 		animTime.povState = POVSwitchState::NotSet;
@@ -443,7 +453,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 	}
 	const auto baseGroupID = anim->animGroup->GetBaseGroupID();
 
-	if (hasKey({"interruptLoop"}, ctx.hasInterruptLoop) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS))
+	if (hasKey({"interruptLoop"}) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS))
 	{
 		// IS allowed so that anims can finish after releasing LMB (handled in hook)
 		// *reinterpret_cast<UInt8*>(g_animationHookContext.groupID) = kAnimGroup_AttackLoopIS;
@@ -454,11 +464,11 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		g_lastLoopSequence = anim;
 		g_startedAnimation = true;
 	}
-	if (hasKey({"noBlend"}, ctx.hasNoBlend))
+	if (hasKey({"noBlend"}))
 	{
 		animData->noBlend120 = true;
 	}
-	if (hasKey({"Script:"}, ctx.hasCallScript, KeyCheckType::KeyStartsWith))
+	if (hasKey({"Script:"}, KeyCheckType::KeyStartsWith))
 	{
 		auto [scriptCallKeys, uninitialized] = createTimedExecution(g_scriptCallExecutions);
 		if (uninitialized)
@@ -483,7 +493,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		auto& animTime = getAnimTimeStruct();
 		animTime.scriptCalls = scriptCallKeys->CreateContext();
 	}
-	if (hasKey({"SoundPath:"}, ctx.hasSoundPath, KeyCheckType::KeyStartsWith))
+	if (hasKey({"SoundPath:"}, KeyCheckType::KeyStartsWith))
 	{
 		auto& animTime = getAnimTimeStruct();
 
@@ -502,11 +512,11 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPa
 		});
 		animTime.soundPaths = animTime.soundPathsBase->CreateContext();
 	}
-	if (hasKey({"blendToReloadLoop"}, ctx.hasBlendToReloadLoop))
+	if (hasKey({"blendToReloadLoop"}))
 	{
 		LoopingReloadPauseFix::g_reloadStartBlendFixes.insert(anim->sequenceName);
 	}
-	if (hasKey({"scriptLine:", "allowAttack" }, ctx.hasScriptLine, KeyCheckType::KeyStartsWith))
+	if (hasKey({"scriptLine:", "allowAttack" }, KeyCheckType::KeyStartsWith))
 	{
 		auto& animTime = getAnimTimeStruct();
 		auto [scriptLineKeys, uninitialized] = createTimedExecution(g_scriptLineExecutions);
@@ -658,9 +668,8 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					animTime->groupId = groupId;
 					animTime->actorId = animData->actor->refID;
 					animTime->animData = animData;
-					if (const auto* animPath = GetAnimPath(*savedAnims, groupId, animData))
-						if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
-							animTime->anim = animCtx->anim;
+					if (const auto animCtx = LoadCustomAnimation(*savedAnims, groupId, animData))
+						animTime->anim = animCtx->anim;
 					return &animTime;
 				};
 				SavedAnimsTime* animsTime = nullptr;
@@ -739,20 +748,14 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId)
 {
-	auto& [ctx, animsTime] = result;
-	auto* animPath = GetAnimPath(*result.parent, groupId, animData);
-	if (!animPath)
-	{
-		DebugPrint(FormatString("Failed to find replacement anim for group %X", groupId));
-		return nullptr;
-	}
-	if (const auto animCtx = LoadCustomAnimation(animPath->path, animData))
+	if (const auto animCtx = LoadCustomAnimation(*result.parent, groupId, animData))
 	{
 		auto* anim = animCtx->anim;
 		if (!anim)
 			return nullptr;
+		auto& [ctx, animsTime] = result;
 		SubscribeOnActorReload(animData->actor, ReloadSubscriber::Partial);
-		HandleExtraOperations(animData, anim, *animPath);
+		HandleExtraOperations(animData, anim);
 		if (ctx->conditionScript && animsTime)
 		{
 			animsTime->anim = anim;
@@ -760,7 +763,7 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 		}
 		return anim;
 	}
-	DebugPrint(FormatString("Game failed to load animation for group %X", groupId));
+	DebugPrint(FormatString("Failed to load animation for group %X", groupId));
 	return nullptr;
 }
 
@@ -1547,7 +1550,9 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const std::st
 			const auto animCtx = LoadCustomAnimation(iter->path, animData);
 			if (animCtx)
 			{
-				return animCtx->anim;
+				auto* anim = animCtx->anim;
+				customAnim->parent->linkedSequences.insert(anim);
+				return anim;
 			}
 			return nullptr;
 		}

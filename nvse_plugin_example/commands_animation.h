@@ -211,24 +211,10 @@ struct SavedAnimsTime
 extern std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
 extern std::map<std::pair<SavedAnims*, AnimData*>, std::shared_ptr<SavedAnimsTime>> g_timeTrackedGroups;
 
-enum class AnimKeySetting
-{
-	NotChecked, NotSet, Set 
-};
 
 struct AnimPath
 {
 	std::string path;
-	AnimKeySetting hasBurstFire{};
-	AnimKeySetting hasRespectEndKey{};
-	AnimKeySetting hasInterruptLoop{};
-	AnimKeySetting hasNoBlend{};
-	AnimKeySetting hasCallScript{};
-	AnimKeySetting hasSoundPath{};
-	AnimKeySetting hasBlendToReloadLoop{};
-	AnimKeySetting hasScriptLine{};
-	AnimKeySetting hasReplaceWithGroup{};
-	AnimKeySetting hasAllowAttack{};
 	bool partialReload = false;
 };
 
@@ -300,6 +286,7 @@ struct SavedAnims
 	std::vector<AnimPath> anims;
 	std::optional<LambdaVariableContext> conditionScript;
 	bool pollCondition = false;
+	std::unordered_set<BSAnimGroupSequence*> linkedSequences;
 
 	SavedAnims() = default;
 };
@@ -467,6 +454,7 @@ struct BSAnimationContext
 };
 
 std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData);
+std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& ctx, UInt16 groupId, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 
 std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData);
@@ -541,7 +529,7 @@ float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 bool IsCustomAnim(BSAnimGroupSequence* sequence);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
-bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimPath& ctx);
+bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim);
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID);
 bool IsAnimGroupReload(UInt8 animGroupId);
 bool IsAnimGroupMovement(UInt8 animGroupId);

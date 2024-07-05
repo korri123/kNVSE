@@ -111,6 +111,19 @@ void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim)
 	animTime.povState = POVSwitchState::POV3rd;
 }
 
+bool IsAnimNextInSelection(AnimData* animData, UInt16 nearestGroupId, BSAnimGroupSequence* anim)
+{
+	const auto ctx = GetActorAnimation(nearestGroupId, animData);
+	if (!ctx)
+	{
+		auto* animBase = animData->mapAnimSequenceBase->Lookup(nearestGroupId);
+		if (!animBase)
+			return false;
+		return animBase->Contains(anim);
+	}
+	return ctx->parent->linkedSequences.contains(anim);
+}
+
 void HandleAnimTimes()
 {
 	constexpr auto shouldErase = [](Actor* actor)
@@ -298,7 +311,7 @@ void HandleAnimTimes()
 		}
 
 		const auto* animInfo = GetGroupInfo(groupId);
-		const auto* curAnim = animData->animSequence[animInfo->sequenceType];
+		auto* curAnim = animData->animSequence[animInfo->sequenceType];
 		if (!curAnim || !curAnim->animGroup)
 		{
 			erase();
@@ -320,10 +333,11 @@ void HandleAnimTimes()
 				const auto result = static_cast<bool>(arrResult.GetNumber());
 				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
 				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
-				auto* nextAnim = GetAnimByGroupID(animData, animGroupId);
+				const auto isAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, anim);
+				const auto isCurAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, curAnim);
 				
-				const auto shouldPlayAnim = _L(, result && nextAnim == anim && curAnim != anim);
-				const auto shouldStopAnim = _L(, !result && nextAnim != anim && curAnim == anim);
+				const auto shouldPlayAnim = _L(, result && isAnimNextAnim && !isCurAnimNextAnim);
+				const auto shouldStopAnim = _L(, !result && !isAnimNextAnim && curAnim == anim);
 				if (shouldPlayAnim() || shouldStopAnim())
 				{
 					GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);

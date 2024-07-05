@@ -7,6 +7,17 @@
 #include "NiObjects.h"
 #include <span>
 
+bool AnimSequenceBase::Contains(BSAnimGroupSequence* anim)
+{
+	if (this->IsSingle())
+	{
+		auto* single = static_cast<AnimSequenceSingle*>(this);
+		return single->anim == anim;
+	}
+	const auto* multi = static_cast<AnimSequenceMultiple*>(this);
+	return std::any_of(multi->anims->begin(), multi->anims->end(), [&](auto* mAnim) { return mAnim == anim; });		
+}
+
 AnimGroupID AnimData::GetNextAttackGroupID() const
 {
 	const auto type = ThisStdCall<char>(0x495E40, this, 0);
