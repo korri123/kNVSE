@@ -300,6 +300,16 @@ bool LookupAnimFromMap(UInt16 groupId, AnimSequenceBase** base, AnimData* animDa
 	return false;
 }
 
+BSAnimGroupSequence* GetAnimByFullGroupID(AnimData* animData, UInt16 groupId)
+{
+	if (const auto result = GetActorAnimation(groupId, animData))
+		if (const auto ctx = LoadCustomAnimation(*result->parent, groupId, animData))
+			return ctx->anim;
+	if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
+		return base->GetSequenceByIndex(-1);
+	return nullptr;
+}
+
 BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID groupId)
 {
 	if (groupId == 0xFF)
@@ -307,12 +317,7 @@ BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID groupId)
 	const auto nearestGroupId = GetNearestGroupID(animData, groupId);
 	if (nearestGroupId == 0xFFFF)
 		return nullptr;
-	if (const auto result = GetActorAnimation(nearestGroupId, animData))
-		if (const auto ctx = LoadCustomAnimation(*result->parent, nearestGroupId, animData))
-			return ctx->anim;
-	if (auto* base = animData->mapAnimSequenceBase->Lookup(nearestGroupId))
-		return base->GetSequenceByIndex(-1);
-	return nullptr;
+	return GetAnimByFullGroupID(animData, nearestGroupId);
 }
 
 // attempt to fix anims that don't get loaded since they aren't in the game to begin with
@@ -630,14 +635,11 @@ void ApplyHooks()
 			return defaultData;
 		if (const auto iter = g_timeTrackedAnims.find(firstPersonAnim); iter != g_timeTrackedAnims.end())
 		{
-			if (iter->second->respectEndKey)
+			if (iter->second->respectEndKey && iter->second->povState == POVSwitchState::POV1st)
 				return firstPersonAnim->textKeyData;
 		}
 		return defaultData;
 	}));
-
-
-
 
 	ini.SaveFile(iniPath.c_str(), false);
 }

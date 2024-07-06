@@ -164,12 +164,12 @@ void HandleAnimTimes()
 			continue;
 		}
 		auto* animData = animTime.GetAnimData(actor);
+
+		const auto isAnimPlaying = _L(, anim->state != NiControllerSequence::kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim);
 		
 		if (shouldErase(actor) || !animData
-			// respectEndKey has a special case for calling erase()
-			||
-			// !animTime.respectEndKey && 
-			(anim->state == NiControllerSequence::kAnimState_Inactive || animData->animSequence[groupInfo->sequenceType] != anim))
+			// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
+			|| (!animTime.respectEndKey && !isAnimPlaying()))
 		{
 			erase();
 			continue;
@@ -224,6 +224,8 @@ void HandleAnimTimes()
 				animTime.povState = POVSwitchState::POV1st;
 			}
 		}
+		if (!isAnimPlaying())
+			continue; // we don't want text keys to apply on the pollCondition anim here but we need to track it until 3rd person has changed anim
 		if (animTime.callbacks.Exists())
 		{
 			animTime.callbacks.Update(time, animData, [](const std::function<void()>& callback)

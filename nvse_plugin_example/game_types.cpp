@@ -7,6 +7,8 @@
 #include "NiObjects.h"
 #include <span>
 
+#include "hooks.h"
+
 bool AnimSequenceBase::Contains(BSAnimGroupSequence* anim)
 {
 	if (this->IsSingle())
@@ -95,9 +97,7 @@ NiControllerSequence::ControlledBlock* NiControllerSequence::GetControlledBlock(
 BSAnimGroupSequence* BSAnimGroupSequence::Get3rdPersonCounterpart() const
 {
 	auto* animData = g_thePlayer->baseProcess->GetAnimData();
-	if (auto* base = animData->mapAnimSequenceBase->Lookup(this->animGroup->groupID))
-		return base->GetSequenceByIndex(0);
-	return nullptr;
+	return GetAnimByFullGroupID(animData, this->animGroup->groupID);
 }
 
 
