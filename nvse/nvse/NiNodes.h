@@ -434,6 +434,7 @@
  *
  ****/
 
+struct NiFloatKey;
 class NiControllerSequence;
 class NiTransformInterpolator;
 class NiAVObject;
@@ -1045,6 +1046,9 @@ public:
 		CLAMP = 0x2,
 		MAX_CYCLE_TYPES = 0x3,
 	};
+
+	std::span<ControlledBlock> GetControlledBlocks() const;
+	std::span<IDTag> GetIDTags() const;
 
 	const char* sequenceName; // 8
 	UInt32 numControlledBlocks; // C
@@ -1753,14 +1757,71 @@ struct NiRotKey : NiAnimationKey
 	NiQuaternion m_quat;
 };
 
+struct NiTCBRotKey : NiRotKey
+{
+	float m_fTension;
+	float m_fContinuity;
+	float m_fBias;
+	NiQuaternion m_A;
+	NiQuaternion m_B;
+};
+
+struct NiEulerRotKey : NiRotKey
+{
+	unsigned int m_uiNumKeys[3];
+	KeyType m_eType[3];
+	char m_ucSizes[3];
+	NiFloatKey *m_apkKeys[3];
+	unsigned int m_uiLastIdx[3];
+};
+
+struct NiBezRotKey : NiRotKey
+{
+	NiQuaternion m_IntQuat;
+};
+
 struct NiPosKey : NiAnimationKey
 {
 	NiPoint3 m_Pos;
 };
 
+struct NiBezPosKey : NiPosKey
+{
+	NiPoint3 m_InTan;
+	NiPoint3 m_OutTan;
+	NiPoint3 m_A;
+	NiPoint3 m_B;
+};
+
+struct NiTCBPosKey : NiPosKey
+{
+	float m_fTension;
+	float m_fContinuity;
+	float m_fBias;
+	NiPoint3 m_DS;
+	NiPoint3 m_DD;
+	NiPoint3 m_A;
+	NiPoint3 m_B;
+};
+
 struct NiFloatKey : NiAnimationKey
 {
 	float m_fValue;
+};
+
+struct NiBezFloatKey : NiFloatKey
+{
+	float m_fInTan;
+	float m_fOutTan;
+};
+
+struct NiTCBFloatKey : NiFloatKey
+{
+	float m_fTension;
+	float m_fContinuity;
+	float m_fBias;
+	float m_fDS;
+	float m_fDD;
 };
 
 class NiTransformData : public NiObject
@@ -1772,12 +1833,31 @@ public:
 	KeyType m_eRotType;
 	KeyType m_ePosType;
 	KeyType m_eScaleType;
+
 	unsigned __int8 m_ucRotSize;
 	unsigned __int8 m_ucPosSize;
 	unsigned __int8 m_ucScaleSize;
 	NiRotKey* m_pkRotKeys;
 	NiPosKey* m_pkPosKeys;
 	NiFloatKey* m_pkScaleKeys;
+
+	template <typename T>
+	std::span<T> GetRotKeys() const
+	{
+		return { reinterpret_cast<T*>(m_pkRotKeys), m_usNumRotKeys };
+	}
+
+	template <typename T>
+	std::span<T> GetPosKeys() const
+	{
+		return { reinterpret_cast<T*>(m_pkPosKeys), m_usNumPosKeys };
+	}
+
+	template <typename T>
+	std::span<T> GetScaleKeys() const
+	{
+		return {reinterpret_cast<T*>(m_pkScaleKeys), m_usNumScaleKeys };
+	}
 };
 
 struct NiKeyBasedInterpolator : NiInterpolator

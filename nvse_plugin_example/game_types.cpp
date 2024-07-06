@@ -83,6 +83,16 @@ bool TESObjectWEAP::IsMeleeWeapon() const
 	return this->eWeaponType >= 0 && this->eWeaponType <= 2;
 }
 
+std::span<NiControllerSequence::ControlledBlock> NiControllerSequence::GetControlledBlocks() const
+{
+	return { controlledBlocks, numControlledBlocks };
+}
+
+std::span<NiControllerSequence::IDTag> NiControllerSequence::GetIDTags() const
+{
+	return { IDTagArray, numControlledBlocks };
+}
+
 NiControllerSequence::ControlledBlock* NiControllerSequence::GetControlledBlock(const char* name) const
 {
 	std::span idTags(IDTagArray, numControlledBlocks);

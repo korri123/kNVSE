@@ -19,6 +19,8 @@
 #include "PluginAPI.h"
 #include "stack_allocator.h"
 #include <array>
+
+#include "anim_fixes.h"
 #include "NiNodes.h"
 #include "NiObjects.h"
 #include "NiTypes.h"
@@ -272,6 +274,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 					BSAnimGroupSequence* anim;
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
+						FixAnimIfBroken(anim);
 						// anim->destFrame = kfModel->controllerSequence->destFrame;
 						const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return entry->second;

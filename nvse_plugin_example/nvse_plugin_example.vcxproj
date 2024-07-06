@@ -387,6 +387,7 @@
     <ClCompile Include="..\nvse\nvse\SafeWrite.cpp" />
     <ClCompile Include="..\nvse\nvse\Utilities.cpp" />
     <ClCompile Include="..\nvse\nvse\utility.cpp" />
+    <ClCompile Include="anim_fixes.cpp" />
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="dllmain.c">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug ng|Win32'">
@@ -438,6 +439,7 @@
     <ClInclude Include="..\nvse\nvse\SafeWrite.h" />
     <ClInclude Include="..\nvse\nvse\Utilities.h" />
     <ClInclude Include="..\nvse\nvse\utility.h" />
+    <ClInclude Include="anim_fixes.h" />
     <ClInclude Include="class_vtbls.h" />
     <ClInclude Include="commands_animation.h" />
     <ClInclude Include="file_animations.h" />

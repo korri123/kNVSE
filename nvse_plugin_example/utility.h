@@ -7,6 +7,8 @@
 #include "SafeWrite.h"
 #include "GameProcess.h"
 #include "GameObjects.h"
+#include <memory>
+#include <iterator>
 extern int g_logLevel;
 
 std::string GetCurPath();

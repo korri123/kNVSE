@@ -584,6 +584,9 @@ public:
 
 	operator const T*() const { return data; }
 	operator T*() { return data; }
+
+	const T* operator->() { return data; }
+	const T* operator->() const { return data; }
 };
 
 // 14
