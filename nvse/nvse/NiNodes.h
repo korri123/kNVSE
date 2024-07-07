@@ -958,6 +958,11 @@ public:
 		: data(data)
 	{
 	}
+
+	void Set(const char* newString)
+	{
+		ThisStdCall(0xA2E750, this, newString);
+	}
 };
 
 
@@ -1351,7 +1356,9 @@ enum AnimGroupID : UInt8
 	kAnimGroup_JumpLandLeft,
 	kAnimGroup_JumpLandRight,
 
-	kAnimGroup_Max						// = 0x0FFF,	// Temporary until known
+	kAnimGroup_Max,						// = 0x0FFF,	// Temporary until known
+
+	kAnimGroup_Invalid = 0xFF
 };
 
 class NiAVObjectPalette : public NiObject
@@ -1723,6 +1730,11 @@ public:
 			return _stricmp(key.m_kText.CStr(), name) == 0;
 		});
 		return it != keys.end() ? &*it : nullptr;
+	}
+
+	std::span<NiTextKey> GetKeys() const
+	{
+		return { m_pKeys, m_uiNumKeys };
 	}
 };
 static_assert(sizeof(NiTextKeyExtraData) == 0x14);

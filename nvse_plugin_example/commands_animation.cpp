@@ -274,7 +274,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 					BSAnimGroupSequence* anim;
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
-						FixAnimIfBroken(anim);
+						FixAnimIfBroken(animData, anim);
 						// anim->destFrame = kfModel->controllerSequence->destFrame;
 						const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return entry->second;
