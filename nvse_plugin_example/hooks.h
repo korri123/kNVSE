@@ -21,6 +21,8 @@ extern bool g_fixAttackISTransition;
 extern bool g_fixBlendSamePriority;
 extern bool g_fixLoopingReloadStart;
 extern bool g_disableFirstPersonTurningAnims;
+extern bool g_fixEndKeyTimeShorterThanStopTime;
+extern bool g_fixWrongAKeyInRespectEndKeyAnim;
 
 namespace LoopingReloadPauseFix
 {

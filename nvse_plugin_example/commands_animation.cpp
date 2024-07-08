@@ -21,6 +21,7 @@
 #include <array>
 
 #include "anim_fixes.h"
+#include "nihooks.h"
 #include "NiNodes.h"
 #include "NiObjects.h"
 #include "NiTypes.h"

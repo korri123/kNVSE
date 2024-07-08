@@ -419,3 +419,20 @@ void BlendFixes::ApplyAimBlendHooks()
 	// disable the game resetting sequence state for aimup and aimdown as we will do it ourselves
 	SafeWriteBuf(0x4996E7, "\xEB\x20\x90\x90", 4);
 }
+
+void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimGroupSequence* pkDest)
+{
+	if (!pkDest || !pkSource || !pkDest->animGroup)
+		return;
+	auto* groupInfo = pkDest->animGroup->GetGroupInfo();
+	if (!groupInfo)
+		return;
+	if (groupInfo->sequenceType != kSequence_Weapon)
+		return;
+	if (!pkDest->textKeyData || pkDest->textKeyData->FindFirstByName("noFix"))
+		return;
+	if (pkSource->state == kAnimState_EaseOut && pkDest->state == kAnimState_EaseIn)
+		::FixConflictingPriorities(pkSource, pkDest);
+}
+
+

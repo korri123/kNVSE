@@ -62,6 +62,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	const auto baseAnimGroup = static_cast<AnimGroupID>(animGroupId);
 	if (g_disableFirstPersonTurningAnims && animData == g_thePlayer->firstPersonAnimData && (baseAnimGroup == kAnimGroup_TurnLeft || baseAnimGroup == kAnimGroup_TurnRight))
 		return destAnim;
+	bool replaced = false;
 	if (animData && animData->actor)
 	{
 		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
@@ -71,6 +72,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		auto* queuedAnim = GetQueuedAnim(animData, animGroupId);
 		if (queuedAnim)
 		{
+			replaced = true;
 			destAnim = queuedAnim;
 		}
 
@@ -81,6 +83,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 				return destAnim;
 			if (auto* anim = GetAnimByGroupID(animData, newGroupId); anim && anim->animGroup)
 			{
+				replaced = true;
 				destAnim = anim;
 				animGroupId = anim->animGroup->groupID;
 			}
@@ -91,6 +94,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
 			if (newAnim)
 			{
+				replaced = true;
 				destAnim = newAnim;
 			}
 		}
@@ -100,12 +104,20 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 			HandleExtraOperations(animData, destAnim);
 		}
 	}
-
+	
 	if (g_fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		return destAnim;
 
+	BSAnimGroupSequence* currentAnim = nullptr;
+	if (destAnim && destAnim->animGroup)
+		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
+			currentAnim = animData->animSequence[groupInfo->sequenceType];
+
 	// hooked call
-	return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
+	const auto result = ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
+	if (g_fixBlendSamePriority)
+		BlendFixes::FixConflictingPriorities(currentAnim, result);
+	return result;
 }
 
 #if 0
@@ -199,7 +211,8 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 gr
 bool __fastcall IsCustomAnimKey(const char* key)
 {
 	const static auto customKeys = {
-		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:", "blendToReloadLoop", "scriptLine:", "replaceWithGroup:", "allowAttack"
+		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:",
+		"blendToReloadLoop", "scriptLine:", "replaceWithGroup:", "allowAttack", "noFix"
 	};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }
@@ -396,6 +409,9 @@ bool g_fixBlendSamePriority = false;
 bool g_fixLoopingReloadStart = false;
 bool g_disableFirstPersonTurningAnims = false;
 
+bool g_fixEndKeyTimeShorterThanStopTime = false;
+bool g_fixWrongAKeyInRespectEndKeyAnim = false;
+
 namespace LoopingReloadPauseFix
 {
 	std::unordered_set<std::string> g_reloadStartBlendFixes;
@@ -458,6 +474,9 @@ void ApplyHooks()
 
 	g_disableFirstPersonTurningAnims = ini.GetOrCreate("General", "bDisableFirstPersonTurningAnims", 1, "; disable first person turning anims (they mess with shit and serve barely any purpose)");
 #endif
+	g_fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
+	g_fixEndKeyTimeShorterThanStopTime = ini.GetOrCreate("Anim Fixes", "bFixEndKeyTimeShorterThanStopTime", 1, "; try to fix animations with broken export stop time where it's greater than the end key time and time of last transform data");
+	g_fixWrongAKeyInRespectEndKeyAnim = ini.GetOrCreate("Anim Fixes", "bFixWrongAKeyInRespectEndKeyAnim", 1, "; try to fix animations where animator messed up the a: text key value in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
 	//WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelCall(0x494989, HandleAnimationChange);
 	WriteRelCall(0x495E2A, HandleAnimationChange);

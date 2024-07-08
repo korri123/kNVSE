@@ -21,7 +21,7 @@ void FixInconsistentEndTime(BSAnimGroupSequence* anim)
 		for (const auto& block : anim->GetControlledBlocks())
 		{
 			auto* interpolator = block.interpolator;
-			if (interpolator && IS_TYPE(interpolator, NiTransformInterpolator))
+			if (interpolator && interpolator->m_spData && IS_TYPE(interpolator, NiTransformInterpolator))
 			{
 				const auto& data = *interpolator->m_spData;
 
@@ -147,7 +147,10 @@ void FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
 {
 	if (animData != g_thePlayer->firstPersonAnimData || !anim->animGroup)
 		return;
-	const auto groupId = static_cast<AnimGroupID>(anim->animGroup->groupID);
+	auto fullGroupId = anim->animGroup->groupID;
+	if (anim->animGroup->IsAttackIS())
+		fullGroupId -= 3;
+	const auto groupId = static_cast<AnimGroupID>(fullGroupId);
 	if (groupId < kAnimGroup_AttackLeft || groupId > kAnimGroup_Attack8)
 		return;
 	if (!anim->textKeyData->FindFirstByName("respectEndKey") && !anim->textKeyData->FindFirstByName("respectTextKeys"))
@@ -174,6 +177,10 @@ void FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
 
 void FixAnimIfBroken(AnimData* animData, BSAnimGroupSequence* anim)
 {
-	FixInconsistentEndTime(anim);
-	FixWrongAKeyInRespectEndKey(animData, anim);
+	if (anim->textKeyData && anim->textKeyData->FindFirstByName("noFix"))
+		return;
+	if (g_fixEndKeyTimeShorterThanStopTime)
+		FixInconsistentEndTime(anim);
+	if (g_fixWrongAKeyInRespectEndKeyAnim)
+		FixWrongAKeyInRespectEndKey(animData, anim);
 }

@@ -516,6 +516,8 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
 	{
+		//auto* list = CdeclCall<tList<const char>*>(0xAFE420, "\\Data\\Meshes\\Characters\\_Male\\*.KF", "Characters\\_Male\\IdleAnims", 1, 0);
+		
 		g_thePlayer = *(PlayerCharacter **)0x011DEA3C;
 		LoadFileAnimPaths();
 		Console_Print("kNVSE version %d", VERSION_MAJOR);
