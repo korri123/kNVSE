@@ -9,7 +9,6 @@
 #include <fstream>
 #include <utility>
 #include <type_traits>
-#include <ranges>
 
 template <typename T>
 requires std::is_same_v<T, nullptr_t> || std::is_same_v<T, UInt8> || std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*>

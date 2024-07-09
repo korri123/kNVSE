@@ -388,12 +388,12 @@ public:
 	virtual void	DecreaseAttackLoopShootTime(Actor*);
 	virtual void	Unk_10F();
 	virtual void	Unk_110();
-	virtual void	Unk_111();
+	virtual void	GetAttackLoopTimeRemaining();
 	virtual void	Unk_112();
-	virtual void	Unk_113();
-	virtual void	Unk_114();
-	virtual void	Unk_115();
-	virtual void	Unk_116();
+	virtual void	WantsWeaponOut();
+	virtual void	SetWantsWeaponOut();
+	virtual void	IsWeaponOut();
+	virtual void	SetWeaponOut(Actor* actor, bool weaponOut);
 	virtual void	Unk_117();
 	virtual void	Unk_118();
 	virtual void	Unk_119();

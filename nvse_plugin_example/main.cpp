@@ -516,7 +516,10 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
 	{
-		//auto* list = CdeclCall<tList<const char>*>(0xAFE420, "\\Data\\Meshes\\Characters\\_Male\\*.KF", "Characters\\_Male\\IdleAnims", 1, 0);
+		//WIN32_FIND_DATA data;
+		//std::string path = "Data\\Meshes\\AnimGroupOverride\\*.kf";
+		//auto result = FindFirstFileA(path.c_str(), &data);
+		//auto* list = CdeclCall<tList<const char>*>(0xAFE420, path.c_str(), "Data\\Meshes\\AnimGroupOverride\\IdleAnim", 1, 0);
 		
 		g_thePlayer = *(PlayerCharacter **)0x011DEA3C;
 		LoadFileAnimPaths();

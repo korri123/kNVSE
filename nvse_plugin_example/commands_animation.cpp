@@ -306,12 +306,16 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 	return result;
 }
 
+ICriticalSection g_loadCustomAnimationCS;
+
 std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 {
+	ScopedLock lock(g_loadCustomAnimationCS);
 	if (const auto* animPath = GetAnimPath(ctx, groupId, animData))
 	{
 		const auto animCtx = LoadCustomAnimation(animPath->path, animData);
-		ctx.linkedSequences.insert(animCtx->anim);
+		if (animCtx)
+			ctx.linkedSequences.insert(animCtx->anim);
 		return animCtx;
 	}
 	return std::nullopt;
@@ -773,9 +777,11 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 
 // clear this cache every frame
 AnimationResultCache g_animationResultCache;
+ICriticalSection g_getActorAnimationCS;
 
 std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData)
 {
+	ScopedLock lock(g_getActorAnimationCS);
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
 	auto [cache, isNew] = g_animationResultCache.emplace(std::make_pair(animGroupId, animData), std::nullopt);
