@@ -243,17 +243,17 @@ using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
 
 struct AnimStacks
 {
-	std::vector<SavedAnims> anims;
-	std::vector<SavedAnims> maleAnims;
-	std::vector<SavedAnims> femaleAnims;
-	std::vector<SavedAnims> mod1Anims;
-	std::vector<SavedAnims> mod2Anims;
-	std::vector<SavedAnims> mod3Anims;
+	std::list<SavedAnims> anims;
+	std::list<SavedAnims> maleAnims;
+	std::list<SavedAnims> femaleAnims;
+	std::list<SavedAnims> mod1Anims;
+	std::list<SavedAnims> mod2Anims;
+	std::list<SavedAnims> mod3Anims;
 
-	std::vector<SavedAnims> hurtAnims;
-	std::vector<SavedAnims> humanAnims;
+	std::list<SavedAnims> hurtAnims;
+	std::list<SavedAnims> humanAnims;
 
-	std::vector<SavedAnims>& GetCustom(const AnimCustom custom)
+	std::list<SavedAnims>& GetCustom(const AnimCustom custom)
 	{
 		switch (custom) { case AnimCustom::None: return anims;
 		case AnimCustom::Male: return maleAnims;

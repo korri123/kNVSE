@@ -1033,7 +1033,7 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 	if (const auto iter = std::ranges::find_if(stack, findFn); iter != stack.end())
 	{
 		// move iter to the top of stack
-		std::rotate(iter, iter + 1, stack.end());
+		std::rotate(iter, std::next(iter), stack.end());
 		if (conditionScript) // in case of hot reload
 		{
 			iter->conditionScript = conditionScript;

@@ -510,7 +510,7 @@ void ApplyHooks()
 	ApplyNiHooks();
 	
 
-#if 0
+#if 0 // obsidian fucked up looping reload priorities so the flicker bug appears with this enabled
 	if (g_fixLoopingReloadStart)
 	{
 		// fix reloadloopstart blending into aim before reloadloop
@@ -529,7 +529,7 @@ void ApplyHooks()
 	}
 #endif
 
-#if 1
+
 	// attempt to fix anims that don't get loaded since they aren't in the game to begin with
 	WriteRelCall(0x49575B, NonExistingAnimHook<-0x10>);
 	WriteRelCall(0x495965, NonExistingAnimHook<-0x10>);
@@ -551,7 +551,7 @@ void ApplyHooks()
 	WriteRelCall(0x4956CE, NonExistingAnimHook<-0x14>);
 	WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
 	WriteRelCall(0x49431B, NonExistingAnimHook<-0xC>);
-	// WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>); no go - causes stack overflow
+	// WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>); no go - causes stack overflow in PickAnimations since it calls LoadCustomAnimation that calls this
 	WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
 
 	//WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
@@ -559,7 +559,6 @@ void ApplyHooks()
 	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
 	/* experimental end */
 
-#endif
 
 	// BSAnimGroupSequence* destructor
 	WriteRelCall(0x4EEB4B, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim)
@@ -590,58 +589,6 @@ void ApplyHooks()
 
 	WriteRelJump(0x490A45, PreventDuplicateAnimationsHook);
 
-
-#if _DEBUG && 0
-	WriteRelJump(0x48F3A0, INLINE_HOOK(void, __fastcall, AnimSequenceMultiple * mult, void* _edx, BSAnimGroupSequence * sequence)
-	{
-		for (auto* anim : *mult->anims)
-		{
-			if (!_stricmp(anim->sequenceName, sequence->sequenceName))
-			{
-				//tList<const char> test;
-				// auto* anims = ThisStdCall<tList<const char>*>(0x566970, g_thePlayer, 0xC);
-				return;
-			}
-		}
-		++sequence->m_uiRefCount;
-		ThisStdCall(0x5597D0, mult->anims, &sequence);
-	}));
-#endif
-
-
-	// No longer needed since AllowAttack
-
-	// PlayerCharacter::Update -> IsReadyForAttack
-	//WriteVirtualCall(0x9420E4, AllowAttacksEarlierInAnimHook);
-	// FiresWeapon -> IsReadyForAttack
-	//WriteVirtualCall(0x893E86, AllowAttacksEarlierInAnimHook);
-	// Actor::Attack - Allow next anim
-	//WriteVirtualCall(0x89371B, AllowAttacksEarlierInAnimHook);
-
-
-#if 0
-	// DEBUG npcs sprint
-	WriteRelJump(0x9DE060, INLINE_HOOK(void, __fastcall, ActorMover * mover, void* _edx, UInt32 flags)
-	{
-		if (mover->actor != g_thePlayer)
-		{
-			static auto beforeFlag = 0;
-			auto* before = MoveFlagToString(beforeFlag);
-			auto* after = MoveFlagToString(flags);
-			beforeFlag = flags;
-			//Console_Print("%s %s -> %s", mover->actor->GetFullName()->name.CStr(), before, after);
-		}
-		auto* playerMover = static_cast<PlayerMover*>(g_thePlayer->actorMover);
-		if (playerMover->pcMovementFlags & 0xF)
-		{
-			mover->moveFlagStrafe38 = 0;
-			mover->bStrafeMoveFlags71 = false;
-			return;
-		}
-		mover->bStrafeMoveFlags71 = true;
-		mover->moveFlagStrafe38 = flags;
-	}));
-#endif
 	// AnimData::GetNextWeaponSequenceKey
 	// fixes respectEndKey not working for a: keys
 	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
