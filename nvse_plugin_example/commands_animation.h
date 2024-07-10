@@ -243,17 +243,17 @@ using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
 
 struct AnimStacks
 {
-	std::list<SavedAnims> anims;
-	std::list<SavedAnims> maleAnims;
-	std::list<SavedAnims> femaleAnims;
-	std::list<SavedAnims> mod1Anims;
-	std::list<SavedAnims> mod2Anims;
-	std::list<SavedAnims> mod3Anims;
+	std::vector<std::shared_ptr<SavedAnims>> anims;
+	std::vector<std::shared_ptr<SavedAnims>> maleAnims;
+	std::vector<std::shared_ptr<SavedAnims>> femaleAnims;
+	std::vector<std::shared_ptr<SavedAnims>> mod1Anims;
+	std::vector<std::shared_ptr<SavedAnims>> mod2Anims;
+	std::vector<std::shared_ptr<SavedAnims>> mod3Anims;
 
-	std::list<SavedAnims> hurtAnims;
-	std::list<SavedAnims> humanAnims;
+	std::vector<std::shared_ptr<SavedAnims>> hurtAnims;
+	std::vector<std::shared_ptr<SavedAnims>> humanAnims;
 
-	std::list<SavedAnims>& GetCustom(const AnimCustom custom)
+	std::vector<std::shared_ptr<SavedAnims>>& GetCustom(const AnimCustom custom)
 	{
 		switch (custom) { case AnimCustom::None: return anims;
 		case AnimCustom::Male: return maleAnims;
@@ -283,12 +283,16 @@ using AnimOverrideMap = std::unordered_map<FormID, AnimOverrideStruct>;
 struct SavedAnims
 {
 	bool hasOrder = false;
-	std::vector<AnimPath> anims;
+	std::vector<std::unique_ptr<AnimPath>> anims;
 	std::optional<LambdaVariableContext> conditionScript;
 	bool pollCondition = false;
 	std::unordered_set<BSAnimGroupSequence*> linkedSequences;
 
 	SavedAnims() = default;
+	~SavedAnims()
+	{
+		int i = 0;
+	}
 };
 
 struct BurstState
@@ -435,9 +439,9 @@ enum PlayerAnimDataType
 class AnimationResult
 {
 public:
-	SavedAnims* parent;
+	std::shared_ptr<SavedAnims> parent;
 	SavedAnimsTime* animsTime;
-	AnimationResult(SavedAnims* parent, SavedAnimsTime* animsTime)
+	AnimationResult(std::shared_ptr<SavedAnims> parent, SavedAnimsTime* animsTime)
 		: parent(parent), animsTime(animsTime)
 	{
 	}

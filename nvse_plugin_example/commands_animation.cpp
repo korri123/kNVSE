@@ -340,7 +340,7 @@ AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
 		if ((animGroupMinor - baseId) % 3 == 0 || s_lastRandomId >= anims.anims.size())
 			s_lastRandomId = GetRandomUInt(anims.anims.size());
 
-		return &anims.anims.at(s_lastRandomId);
+		return anims.anims.at(s_lastRandomId).get();
 	}
 	return nullptr;
 }
@@ -596,25 +596,29 @@ AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor, UInt16 groupId)
 	auto* weapon = actor->GetWeaponForm();
 	if (!weapon || !ammoInfo)
 		return nullptr;
-	StackVector<AnimPath*, 0x100> reloads;
+	std::vector<AnimPath*> reloads;
 	if ((ammoInfo->count == 0 || DidActorReload(actor, ReloadSubscriber::Partial) || g_partialLoopReloadState == PartialLoopingReloadState::NotPartial) 
 		&& g_partialLoopReloadState != PartialLoopingReloadState::Partial)
 	{
-		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, !p.partialReload));
+		reloads = ctx.anims | std::views::filter([](const auto& animTimePtr) { return !animTimePtr->partialReload; })
+			| std::views::transform([](const auto& animTimePtr) { return animTimePtr.get(); })
+			| std::ranges::to<std::vector>();
 		if (IsLoopingReload(groupId) && g_partialLoopReloadState == PartialLoopingReloadState::NotSet)
 			g_partialLoopReloadState = PartialLoopingReloadState::NotPartial;
 	}
 	else
 	{
-		reloads = Filter<0x100, AnimPath>(ctx.anims, _L(AnimPath & p, p.partialReload));
+		reloads = ctx.anims | std::views::filter([](const auto& animTimePtr) { return animTimePtr->partialReload; })
+			| std::views::transform([](const auto& animTimePtr) { return animTimePtr.get(); })
+			| std::ranges::to<std::vector>();
 		if (IsLoopingReload(groupId) && g_partialLoopReloadState == PartialLoopingReloadState::NotSet)
 			g_partialLoopReloadState = PartialLoopingReloadState::Partial;
 	}
-	if (reloads->empty())
+	if (reloads.empty())
 		return nullptr;
 	if (!ctx.hasOrder)
-		return reloads->at(GetRandomUInt(reloads->size()));
-	return reloads->at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % reloads->size());
+		return reloads.at(GetRandomUInt(reloads.size()));
+	return reloads.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % reloads.size());
 }
 
 std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData)
@@ -681,17 +685,17 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					return &animTime;
 				};
 				SavedAnimsTime* animsTime = nullptr;
-				if (ctx.conditionScript)
+				if (ctx->conditionScript)
 				{
-					if (ctx.pollCondition)
-						animsTime = initAnimTime(&ctx)->get(); // init'd here so conditions can activate despite not being overridden
+					if (ctx->pollCondition)
+						animsTime = initAnimTime(&*ctx)->get(); // init'd here so conditions can activate despite not being overridden
 					NVSEArrayVarInterface::Element result;
-					if (!CallFunction(**ctx.conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
+					if (!CallFunction(**ctx->conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
 						continue;
 				}
-				if (!ctx.anims.empty())
+				if (!ctx->anims.empty())
 				{
-					return AnimationResult(&ctx, animsTime);
+					return AnimationResult(ctx, animsTime);
 				}
 			}
 		}
@@ -730,7 +734,7 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 	AnimPath* savedAnimPath = nullptr;
 	Actor* actor = animData->actor;
 
-	if (IsAnimGroupReload(groupId) && ra::any_of(ctx.anims, _L(const AnimPath & p, p.partialReload)))
+	if (IsAnimGroupReload(groupId) && ra::any_of(ctx.anims, _L(const auto & p, p->partialReload)))
 	{
 		if (auto* path = GetPartialReload(ctx, actor, groupId))
 			savedAnimPath = path;
@@ -743,12 +747,12 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 			savedAnimPath = path;
 		else
 			// pick random variant
-			savedAnimPath = &ctx.anims.at(GetRandomUInt(ctx.anims.size()));
+			savedAnimPath = ctx.anims.at(GetRandomUInt(ctx.anims.size())).get();
 	}
 	else
 	{
 		// ordered
-		savedAnimPath = &ctx.anims.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % ctx.anims.size());
+		savedAnimPath = ctx.anims.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % ctx.anims.size()).get();
 	}
 	iter->second = savedAnimPath;
 	return savedAnimPath;
@@ -1017,16 +1021,19 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 		animCustom = AnimCustom::Mod3;
 
 	auto& stack = stacks.GetCustom(animCustom);
-	const auto findFn = [&](const SavedAnims& a)
+	const auto findFn = [&](const std::shared_ptr<SavedAnims>& a)
 	{
-		return ra::any_of(a.anims, _L(const auto& s, _stricmp(path.c_str(), s.path.c_str()) == 0));
+		return ra::any_of(a->anims, _L(const auto& s, _stricmp(path.c_str(), s->path.c_str()) == 0));
 	};
 	
 	if (!enable)
 	{
 		// remove from stack
-		const auto iter = std::ranges::remove_if(stack, findFn).begin();
-		stack.erase(iter, stack.end());
+		if (const auto it = ra::find_if(stack, findFn); it != stack.end())
+		{
+			std::erase_if(g_timeTrackedGroups, _L(auto& it2, it2.first.first == &**it));
+			stack.erase(it);
+		}
 		return;
 	}
 	// check if stack already contains path
@@ -1036,8 +1043,8 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 		std::rotate(iter, std::next(iter), stack.end());
 		if (conditionScript) // in case of hot reload
 		{
-			iter->conditionScript = conditionScript;
-			iter->pollCondition = pollCondition;
+			(*iter)->conditionScript = conditionScript;
+			(*iter)->pollCondition = pollCondition;
 		}
 		return;
 	}
@@ -1053,14 +1060,14 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 	// if not inserted before, treat as variant; else add to stack as separate set
 	auto [_, newItem] = groupIdFillSet.emplace(groupId);
 	if (newItem || stack.empty())
-		stack.emplace_back();
+		stack.emplace_back(std::make_shared<SavedAnims>());
 
 	const auto& fileName = fPath.filename().string();
 
-	auto& anims = stack.back();
+	auto& anims = *stack.back();
 
 	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.c_str()));
-	auto& lastAnim = anims.anims.emplace_back(path);
+	auto& lastAnim = *anims.anims.emplace_back(std::make_unique<AnimPath>(path));
 	if (conditionScript)
 	{
 		Log("Got a condition script, this animation will now only fire under this condition!");
@@ -1071,7 +1078,7 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 	{
 		anims.hasOrder = true;
 		// sort alphabetically
-		std::ranges::sort(anims.anims, [&](const auto& a, const auto& b) {return a.path < b.path; });
+		std::ranges::sort(anims.anims, [&](const auto& a, const auto& b) {return a->path < b->path; });
 		Log("Detected _order_ in filename; animation variants for this anim group will be played sequentially");
 	}
 	if (FindStringCI(fileName, "_partial"))
@@ -1515,7 +1522,7 @@ std::vector<std::string_view> FindCustomAnimations(AnimData* animData, const UIn
 		const auto& animPaths = animationResult->parent->anims;
 		for (const auto& animPath : animPaths)
 		{
-			result.push_back(animPath.path);
+			result.push_back(animPath->path);
 		}
 
 	}
@@ -1554,10 +1561,10 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const std::st
 	if (const auto customAnim = GetActorAnimation(groupId, animData))
 	{
 		const auto& animPaths = customAnim->parent->anims;
-		auto iter = ra::find_if(animPaths, _L(const auto& p, p.path == path));
+		auto iter = ra::find_if(animPaths, _L(const auto& p, p->path == path));
 		if (iter != animPaths.end())
 		{
-			const auto animCtx = LoadCustomAnimation(iter->path, animData);
+			const auto animCtx = LoadCustomAnimation((*iter)->path, animData);
 			if (animCtx)
 			{
 				auto* anim = animCtx->anim;
@@ -2027,12 +2034,12 @@ void CreateCommands(NVSECommandBuilder& builder)
 						for (auto& anims : stack)
 						{
 							std::unordered_set<UInt16> variants;
-							for (auto& anim : anims.anims)
+							for (auto& anim : anims->anims)
 							{
 								Script* condition = nullptr;
-								if (anims.conditionScript)
-									condition = **anims.conditionScript;
-								SetOverrideAnimation(toForm->refID, anim.path, *map, true, variants, condition, anims.pollCondition);
+								if (anims->conditionScript)
+									condition = **anims->conditionScript;
+								SetOverrideAnimation(toForm->refID, anim->path, *map, true, variants, condition, anims->pollCondition);
 								*result = 1;
 							}
 						}
