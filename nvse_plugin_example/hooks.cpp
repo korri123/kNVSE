@@ -660,20 +660,24 @@ void ApplyHooks()
 		return defaultData;
 	}));
 
-	// AnimData::EndsSequenceIfNotAim
-	// This hooks the part where the game plays xxAim.kf in unequip if Agility is 10 and Rapid Reload is active and it flashes for a frame because isWeaponOut is still true
-	WriteRelCall(0x491F1D, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, eAnimSequence sequence, bool pFalse)
+	// AnimData::GetAnimSequenceElement
+	// return 1st person anim in function where most or all AnimData::sequenceState1 are updated
+	// This case would normally be handled by respectEndKey but if 3rd person anim has blend and 1st noBlend the anim times can get desynced
+	WriteRelCall(0x4919AE, INLINE_HOOK(BSAnimGroupSequence*, __fastcall, AnimData* animData, void*, eAnimSequence sequence)
 	{
-		const auto defaultCall = [&]
+		auto* anim = animData->animSequence[sequence];
+		if (animData != g_thePlayer->baseProcess->animData || !anim || g_thePlayer->IsThirdPerson())
+			return anim;
+		const auto anim1st = g_thePlayer->firstPersonAnimData->animSequence[sequence];
+		if (!anim1st)
+			return anim;
+		if (const auto iter = g_timeTrackedAnims.find(anim1st); iter != g_timeTrackedAnims.end())
 		{
-			ThisStdCall(0x4994F0, animData, sequence, pFalse);
-		};
-		auto* anim = GET_CALLER_VAR(BSAnimGroupSequence*, -0xA0, true);
-		if (animData->actor != g_thePlayer || !anim || !anim->animGroup || anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
-			return defaultCall();
-		// that we got this far in the game code means weapon must be unequipped by now
-		animData->actor->baseProcess->SetWeaponOut(animData->actor, false);
-		return defaultCall();
+			const auto& animTime = *iter->second;
+			if (animTime.respectEndKey && animTime.povState == POVSwitchState::POV1st)
+				return anim1st;
+		}
+		return anim;
 	}));
 
 	ini.SaveFile(iniPath.c_str(), false);

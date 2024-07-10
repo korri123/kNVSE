@@ -65,6 +65,11 @@ AnimData* PlayerCharacter::Get3rdPersonAnimData()
 	return GetHighProcess()->animData;
 }
 
+void PlayerCharacter::SetWeaponOut(bool bOut)
+{
+	this->baseProcess->SetWeaponOut(this, bOut);
+}
+
 TESContainer* TESObjectREFR::GetContainer()
 {
 	if (IsActor())

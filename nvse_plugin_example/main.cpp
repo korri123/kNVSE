@@ -57,19 +57,15 @@ bool isEditor = false;
 
 float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 {
-	auto time = anim->offset + animData->timePassed;
-	if (anim->startTime != -FLT_MAX)
+	if (anim->endTime != -FLT_MAX && (anim->state == NiControllerSequence::kAnimState_TransSource || anim->state == NiControllerSequence::kAnimState_EaseOut))
 	{
-		if (anim->state == NiControllerSequence::kAnimState_TransSource || anim->state == NiControllerSequence::kAnimState_EaseOut)
-		{
-			time = anim->endTime - animData->timePassed;
-		}
-		else if (anim->state == NiControllerSequence::kAnimState_TransDest || anim->state == NiControllerSequence::kAnimState_EaseIn)
-		{
-			time = animData->timePassed - anim->startTime;
-		}
+		return anim->endTime - animData->timePassed;
 	}
-	return time;
+	if (anim->startTime != -FLT_MAX && (anim->state == NiControllerSequence::kAnimState_TransDest || anim->state == NiControllerSequence::kAnimState_EaseIn))
+	{
+		return animData->timePassed - anim->startTime;
+	}
+	return anim->offset + animData->timePassed;
 }
 
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,

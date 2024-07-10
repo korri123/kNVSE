@@ -281,6 +281,17 @@ inline UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false
 	return *reinterpret_cast<UInt8**>(basePtr);
 }
 
+inline UInt32* GetLambdaAddrOfRetnAddr(void* addressOfReturnAddress)
+{
+#if _DEBUG
+	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;
+	basePtr = *reinterpret_cast<UInt8**>(basePtr);
+	return reinterpret_cast<UInt32*>(basePtr + 4);
+#else
+	return static_cast<UInt32*>(addressOfReturnAddress);
+#endif
+}
+
 template <typename T>
 T GetVariableOfCallerStack(void* addressOfReturnAddress, int offset, bool lambda = false)
 {

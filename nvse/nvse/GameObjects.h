@@ -886,6 +886,7 @@ public:
 	QuestObjectiveTargets* GetCurrentQuestObjectiveTargets();
 	Decoding::HighProcess* GetHighProcess();
 	AnimData* Get3rdPersonAnimData();
+	void SetWeaponOut(bool bOut);
 };
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);
 
