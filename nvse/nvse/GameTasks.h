@@ -360,8 +360,9 @@ class InterfacedClass {
 
 // 40
 template<typename _K, class _C>
-class LockFreeMap: InterfacedClass
+class LockFreeMap: public InterfacedClass
 {
+protected:
 	// 0C
 	struct Data004
 	{
@@ -426,13 +427,105 @@ class LockFreeMap: InterfacedClass
 	UInt32	unk01C;			// 1C
 	UInt32	unk020[2];		// 20 Pair of DWord (tList ?)
 	// ?
+
+	
 };
 
-template<class _C>
-class LockFreeStringMap: LockFreeMap<char const *, _C> {};
 
 template<class _C>
-class LockFreeCaseInsensitiveStringMap: LockFreeStringMap<_C> {};
+class LockFreeStringMap: public LockFreeMap<char const *, _C> {};
+
+template<class _C>
+class LockFreeCaseInsensitiveStringMap: public LockFreeStringMap<_C>
+{
+protected:
+	struct InternalIterator
+	{
+		InternalIterator()
+		{
+			ThisStdCall(0x449960, this);
+		}
+		virtual ~InternalIterator(){}
+		UInt32 uiCount;
+		const char* key;
+		UInt8 ucFlags;
+		char cBuffer[256];
+
+		enum StateFlags
+		{
+			STATE_UNK_1 = 1,
+			STATE_FINISHED = 2,
+		};
+
+		bool IsFinished()
+		{
+			return (ucFlags & STATE_FINISHED) != 0;
+		}
+	};
+	static_assert(sizeof(InternalIterator) == 0x110);
+public:
+	class Iterator
+	{
+		LockFreeCaseInsensitiveStringMap* mapPtr{};
+		InternalIterator iter;
+		UInt32 index = 0;
+		
+		bool GetNextInternalIter()
+		{
+			return ThisStdCall<bool>(0x44C640, mapPtr, &iter, &pair.first, &pair.second, true);
+		}
+		
+	public:
+		std::pair<const char*, _C> pair;
+		
+		Iterator(LockFreeCaseInsensitiveStringMap* mapPtr) : mapPtr(mapPtr)
+		{
+			++*this;
+		}
+
+		Iterator(LockFreeCaseInsensitiveStringMap* mapPtr, UInt32 index) : mapPtr(mapPtr), index(index){}
+
+		Iterator& operator++()
+		{
+			GetNextInternalIter();
+			if (!iter.IsFinished())
+				++index;
+			else
+			{
+				index = -1;
+				pair.first = nullptr;
+				pair.second = nullptr;
+			}
+			return *this;
+		}
+
+		operator bool() const
+		{
+			return !iter.IsFinished();
+		}
+
+		bool operator==(const Iterator& other) const
+		{
+			return index == other.index;
+		}
+
+		std::pair<const char*, _C>& operator*()
+		{
+			return pair;
+		}
+	};
+
+	Iterator begin()
+	{
+		return Iterator(this);
+	}
+	
+	Iterator end()
+	{
+		return Iterator(this, -1);
+	}
+
+};
 
 // 1C
 class ModelLoader
