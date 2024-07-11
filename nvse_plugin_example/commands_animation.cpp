@@ -2075,7 +2075,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		ParamInfo{"bStartOver", kParamType_Integer, true},
 		ParamInfo{"fWeight", kParamType_Float, true},
 		ParamInfo{"fEaseInTime", kParamType_Float, true},
-		ParamInfo{"time sync sequence path", kParamType_Integer, true}
+		ParamInfo{"time sync sequence path", kParamType_String, true}
 	};
 	builder.Create("ActivateAnim", kRetnType_Default, activateAnimParams, true, [](COMMAND_ARGS)
 	{
@@ -2154,7 +2154,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		ParamInfo{"iPriority", kParamType_Integer, true},
 		ParamInfo{"bStartOver", kParamType_Integer, true},
 		ParamInfo{"fWeight", kParamType_Float, true},
-		ParamInfo{"time sync sequence path", kParamType_Integer, true}
+		ParamInfo{"time sync sequence path", kParamType_String, true}
 	};
 
 	builder.Create("CrossFadeAnims", kRetnType_Default, crossFadeParams, true, [](COMMAND_ARGS)
