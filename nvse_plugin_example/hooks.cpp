@@ -607,24 +607,40 @@ void ApplyHooks()
 		return defaultData;
 	}));
 
-	// AnimData::GetAnimSequenceElement
-	// return 1st person anim in function where most or all AnimData::sequenceState1 are updated
+
+	// AnimData::GetSequenceOffsetPlusTimePassed
+	// return 1st person anim time-passed in function where most or all AnimData::sequenceState1 are updated
 	// This case would normally be handled by respectEndKey but if 3rd person anim has blend and 1st noBlend the anim times can get desynced
-	WriteRelCall(0x4919AE, INLINE_HOOK(BSAnimGroupSequence*, __fastcall, AnimData* animData, void*, eAnimSequence sequence)
+	WriteRelJump(0x493800, INLINE_HOOK(double, __fastcall, AnimData* animData, void*, BSAnimGroupSequence* anim)
 	{
-		auto* anim = animData->animSequence[sequence];
-		if (animData != g_thePlayer->baseProcess->animData || !anim || g_thePlayer->IsThirdPerson())
-			return anim;
+		const auto result = GetAnimTime(animData, anim);
+		if (animData != g_thePlayer->baseProcess->animData || !anim->animGroup)
+			return result;
+		const auto sequence = anim->animGroup->GetGroupInfo()->sequenceType;
 		const auto anim1st = g_thePlayer->firstPersonAnimData->animSequence[sequence];
-		if (!anim1st)
-			return anim;
+		if (!anim1st )
+		{
+			
+			// 1st person anim may have ended before 3rd person anim (can happen with 1p anim noBlend and high speed mult)
+			const auto iter = ra::find_if(g_timeTrackedAnims, _L(auto& p, p.second->anim3rdCounterpart == anim));
+			if (iter == g_timeTrackedAnims.end())
+				return result;
+			const auto* timeTracked1stPersonAnim = iter->first;
+			if (!timeTracked1stPersonAnim)
+				return result;
+			return GetAnimTime(g_thePlayer->firstPersonAnimData, timeTracked1stPersonAnim);
+		}
+		if (!anim1st->animGroup)
+			return result;
+		if (anim1st->animGroup->GetBaseGroupID() != anim->animGroup->GetBaseGroupID())
+			return result;
 		if (const auto iter = g_timeTrackedAnims.find(anim1st); iter != g_timeTrackedAnims.end())
 		{
 			const auto& animTime = *iter->second;
 			if (animTime.respectEndKey && animTime.povState == POVSwitchState::POV1st)
-				return anim1st;
+				return GetAnimTime(g_thePlayer->firstPersonAnimData, anim1st);
 		}
-		return anim;
+		return result;
 	}));
 
 	ini.SaveFile(iniPath.c_str(), false);
