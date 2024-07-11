@@ -518,7 +518,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		//auto* list = CdeclCall<tList<const char>*>(0xAFE420, path.c_str(), "Data\\Meshes\\AnimGroupOverride\\IdleAnim", 1, 0);
 		
 		g_thePlayer = *(PlayerCharacter **)0x011DEA3C;
-		LoadFileAnimPaths();
 		Console_Print("kNVSE version %d", VERSION_MAJOR);
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
@@ -547,6 +546,17 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		g_reloadTracker.clear();
 		g_timeTrackedAnims.clear();
 		g_timeTrackedGroups.clear();
+
+		static bool s_loadedAnims = false;
+		if (!s_loadedAnims)
+		{
+			auto& kfMap = *ModelLoader::GetSingleton()->kfMap;
+			if (kfMap.size) // required since kMessage_PostLoadGame is called before the game has loaded the models
+			{
+				s_loadedAnims = true;
+				LoadFileAnimPaths();
+			}
+		}
 	}
 }
 

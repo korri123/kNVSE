@@ -362,7 +362,7 @@ class InterfacedClass {
 template<typename _K, class _C>
 class LockFreeMap: public InterfacedClass
 {
-protected:
+public:
 	// 0C
 	struct Data004
 	{
@@ -423,7 +423,7 @@ protected:
 	UInt32	**buckets;		// 0C array of arg1 DWord elements
 	UInt32	unk010;			// 10 Init'd to arg2
 	Data014	*dat014;		// 14 Init'd to a 16 bytes structure
-	UInt32	unk018;			// 18
+	UInt32	size;			// 18
 	UInt32	unk01C;			// 1C
 	UInt32	unk020[2];		// 20 Pair of DWord (tList ?)
 	// ?
@@ -515,12 +515,12 @@ public:
 		}
 	};
 
-	Iterator begin()
+	Iterator begin() const
 	{
 		return Iterator(this);
 	}
 	
-	Iterator end()
+	Iterator end() const
 	{
 		return Iterator(this, -1);
 	}
