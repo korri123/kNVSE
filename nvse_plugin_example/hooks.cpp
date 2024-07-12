@@ -643,6 +643,13 @@ void ApplyHooks()
 		return result;
 	}));
 
+	// LockFreeStringMap::CopyKeyTo
+	WriteRelJump(0x449500, INLINE_HOOK(UInt32, __fastcall, void* strMap, void*, const char* key, const char** outKey)
+	{
+		*outKey = key;
+		return 0;
+	}));
+
 	ini.SaveFile(iniPath.c_str(), false);
 }
 

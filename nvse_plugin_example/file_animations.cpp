@@ -299,6 +299,37 @@ void LoadJsonEntries()
 	g_jsonEntries = std::vector<JSONEntry>();
 }
 
+struct PathNode
+{
+	std::map<std::string_view, PathNode> children;
+	std::string_view path;
+};
+
+PathNode CreatePathTree(const std::vector<std::string_view>& paths)
+{
+	PathNode root;
+
+	for (const auto& path : paths) {
+		PathNode* current = &root;
+		size_t start = 0;
+		size_t end = path.find('\\');
+
+		while (end != std::string_view::npos) {
+			std::string_view component = path.substr(start, end - start);
+			current = &current->children[component];
+			start = end + 1;
+			end = path.find('\\', start);
+		}
+
+		// Handle the last component
+		std::string_view component = path.substr(start);
+		current = &current->children[component];
+		current->path = path;
+	}
+
+	return root;
+}
+
 void LoadFileAnimPaths()
 {
 	Log("Loading file anims");

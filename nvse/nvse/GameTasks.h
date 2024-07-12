@@ -466,7 +466,7 @@ protected:
 public:
 	class Iterator
 	{
-		LockFreeCaseInsensitiveStringMap* mapPtr{};
+		const LockFreeCaseInsensitiveStringMap* mapPtr{};
 		InternalIterator iter;
 		UInt32 index = 0;
 		
@@ -478,12 +478,12 @@ public:
 	public:
 		std::pair<const char*, _C> pair;
 		
-		Iterator(LockFreeCaseInsensitiveStringMap* mapPtr) : mapPtr(mapPtr)
+		Iterator(const LockFreeCaseInsensitiveStringMap* mapPtr) : mapPtr(mapPtr)
 		{
 			++*this;
 		}
 
-		Iterator(LockFreeCaseInsensitiveStringMap* mapPtr, UInt32 index) : mapPtr(mapPtr), index(index){}
+		Iterator(const LockFreeCaseInsensitiveStringMap* mapPtr, UInt32 index) : mapPtr(mapPtr), index(index){}
 
 		Iterator& operator++()
 		{
