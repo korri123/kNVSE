@@ -613,14 +613,18 @@ void ApplyHooks()
 	// This case would normally be handled by respectEndKey but if 3rd person anim has blend and 1st noBlend the anim times can get desynced
 	WriteRelJump(0x493800, INLINE_HOOK(double, __fastcall, AnimData* animData, void*, BSAnimGroupSequence* anim)
 	{
-		const auto result = GetAnimTime(animData, anim);
+		// GetAnimTime doesn't work as it bugs out looping reloads in 3rd person
+		const auto toAnimTime = [](const AnimData* animData, const BSAnimGroupSequence* seq)
+		{
+			return seq->offset + animData->timePassed;
+		};
+		const auto result = toAnimTime(animData, anim);
 		if (animData != g_thePlayer->baseProcess->animData || !anim->animGroup)
 			return result;
 		const auto sequence = anim->animGroup->GetGroupInfo()->sequenceType;
 		const auto anim1st = g_thePlayer->firstPersonAnimData->animSequence[sequence];
-		if (!anim1st )
+		if (!anim1st)
 		{
-			
 			// 1st person anim may have ended before 3rd person anim (can happen with 1p anim noBlend and high speed mult)
 			const auto iter = ra::find_if(g_timeTrackedAnims, _L(auto& p, p.second->anim3rdCounterpart == anim));
 			if (iter == g_timeTrackedAnims.end())
@@ -628,7 +632,7 @@ void ApplyHooks()
 			const auto* timeTracked1stPersonAnim = iter->first;
 			if (!timeTracked1stPersonAnim)
 				return result;
-			return GetAnimTime(g_thePlayer->firstPersonAnimData, timeTracked1stPersonAnim);
+			return toAnimTime(g_thePlayer->firstPersonAnimData, timeTracked1stPersonAnim);
 		}
 		if (!anim1st->animGroup)
 			return result;
@@ -638,7 +642,7 @@ void ApplyHooks()
 		{
 			const auto& animTime = *iter->second;
 			if (animTime.respectEndKey && animTime.povState == POVSwitchState::POV1st)
-				return GetAnimTime(g_thePlayer->firstPersonAnimData, anim1st);
+				return toAnimTime(g_thePlayer->firstPersonAnimData, anim1st);
 		}
 		return result;
 	}));
