@@ -63,6 +63,8 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (g_disableFirstPersonTurningAnims && animData == g_thePlayer->firstPersonAnimData && (baseAnimGroup == kAnimGroup_TurnLeft || baseAnimGroup == kAnimGroup_TurnRight))
 		return destAnim;
 	bool replaced = false;
+	if ((animGroupId & 0xff) == 0xf || (animGroupId & 0xff) == 0x10)
+		return destAnim;
 	if (animData && animData->actor)
 	{
 		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))

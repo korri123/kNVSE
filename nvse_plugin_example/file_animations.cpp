@@ -7,31 +7,80 @@
 #include "file_animations.h"
 #include "json.h"
 #include <fstream>
+#include <ranges>
 #include <utility>
 #include <type_traits>
+
+#include "string_view_util.h"
+
+#define ITERATE_FOLDERS 0
+
+struct PathNode
+{
+	using Children = std::map<std::string_view, PathNode>;
+	Children children;
+	std::string_view path;
+
+	const PathNode* Traverse(const std::string_view path) const
+	{
+		const PathNode* current = this;
+		size_t start = 0;
+		size_t end = path.find('\\');
+
+		while (end != std::string_view::npos) {
+			std::string_view component = path.substr(start, end - start);
+			auto it = current->children.find(component);
+			if (it == current->children.end())
+				return nullptr;
+			current = &it->second;
+			start = end + 1;
+			end = path.find('\\', start);
+		}
+
+		// Handle the last component
+		std::string_view component = path.substr(start);
+		auto it = current->children.find(component);
+		if (it == current->children.end())
+			return nullptr;
+		return &it->second;
+	}
+};
+
+std::vector<std::string_view> GetAllPathsRecursive(const PathNode::Children& children) {
+	std::vector<std::string_view> paths;
+	// Helper function to recursively traverse the nodes
+	const auto traverse = [&](const PathNode::Children& xChildren, auto& traverseRef) {
+		if (xChildren.empty())
+			return;
+		for (const auto& [yChildren, path] : xChildren | std::views::values) {
+			if (*path.data())
+				paths.push_back(path);
+			traverseRef(yChildren, traverseRef);
+		}
+	};
+
+	traverse(children, traverse);
+	return paths;
+}
 
 template <typename T>
 requires std::is_same_v<T, nullptr_t> || std::is_same_v<T, UInt8> || std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*>
 || std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>
-void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, bool firstPerson)
+void LoadPathsForType(const PathNode::Children path, const T identifier, bool firstPerson)
 {
 	std::unordered_set<UInt16> variantIds;
+	const auto allPaths = GetAllPathsRecursive(path);
 
-	for (const auto& iter : std::filesystem::recursive_directory_iterator(dirPath))
+	for (const auto& path : allPaths)
 	{
-		if (_stricmp(iter.path().extension().string().c_str(), ".kf") != 0)
-			continue;
-		const auto& path = iter.path().string();
-		const auto& relPath = std::filesystem::path(path.substr(path.find("AnimGroupOverride\\")));
-		Log("Loading animation path " + dirPath.string() + "...");
 		try
 		{
 			if constexpr (std::is_same_v<T, nullptr_t>)
-				OverrideFormAnimation(nullptr, relPath, firstPerson, true, variantIds);
+				OverrideFormAnimation(nullptr, path, firstPerson, true, variantIds);
 			else if constexpr (std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*> || std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>)
-				OverrideFormAnimation(identifier, relPath, firstPerson, true, variantIds);
+				OverrideFormAnimation(identifier, path, firstPerson, true, variantIds);
 			else if constexpr (std::is_same_v<T, UInt8>)
-				OverrideModIndexAnimation(identifier, relPath, firstPerson, true, variantIds, nullptr, false);
+				OverrideModIndexAnimation(identifier, path, firstPerson, true, variantIds, nullptr, false);
 		}
 		catch (std::exception& e)
 		{
@@ -40,33 +89,23 @@ void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, 
 	}
 }
 
-void LogForm(const TESForm* form)
-{
-	Log(FormatString("Detected in-game form %X %s %s", form->refID, form->GetName(), form->GetFullName() ? form->GetFullName()->name.CStr() : "<no name>"));
-}
-
 
 template <typename T>
-void LoadPathsForPOV(const std::filesystem::path& path, const T identifier)
+void LoadPathsForPOV(const PathNode::Children& children, const T identifier)
 {
-
-	for (const auto& iter : std::filesystem::directory_iterator(path))
+	for (const auto& [filename, path] : children)
 	{
-		if (!iter.is_directory()) continue;
-
-		const auto& str = iter.path().filename().string();
-		if (_stricmp(str.c_str(), "_male") == 0)
-			LoadPathsForType(iter.path(), identifier, false);
-		else if (_stricmp(str.c_str(), "_1stperson") == 0)
-			LoadPathsForType(iter.path(), identifier, true);
+		if (sv::equals_ci(filename, "_male"))
+			LoadPathsForType(path.children, identifier, false);
+		else if (sv::equals_ci(filename, "_1stperson"))
+			LoadPathsForType(path.children, identifier, true);
 	}
 }
 
-void LoadPathsForList(const std::filesystem::path& path, const BGSListForm* listForm);
+void LoadPathsForList(const PathNode::Children& path, const BGSListForm* listForm);
 
-bool LoadForForm(const std::filesystem::path& iterPath, const TESForm* form)
+bool LoadForForm(const PathNode::Children& iterPath, const TESForm* form)
 {
-	LogForm(form);
 	if (const auto* weapon = DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
 		LoadPathsForPOV(iterPath, weapon);
 	else if (const auto* actor = DYNAMIC_CAST(form, TESForm, Actor))
@@ -80,54 +119,44 @@ bool LoadForForm(const std::filesystem::path& iterPath, const TESForm* form)
 	return true;
 }
 
-void LoadPathsForList(const std::filesystem::path& path, const BGSListForm* listForm)
+void LoadPathsForList(const PathNode::Children& path, const BGSListForm* listForm)
 {
 	for (auto iter = listForm->list.Begin(); !iter.End(); ++iter)
 	{
-		LogForm(*iter);
 		LoadForForm(path, *iter);
 	}
 }
 
-void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
+void LoadModAnimPaths(const PathNode::Children& path, const ModInfo* mod)
 {
 	LoadPathsForPOV<const UInt8>(path, mod->modIndex);
-	for (std::filesystem::directory_iterator iter(path), end; iter != end; ++iter)
+	for (const auto& [folderName, node] : path)
 	{
-		const auto& iterPath = iter->path();
-		Log("Loading form ID " + iterPath.string());
-		if (iter->is_directory())
+		try
 		{
-			try
+			if (folderName[0] == '_') // _1stperson, _male
+				continue;
+			const auto id = HexStringToInt(folderName);
+			if (id != -1) 
 			{
-				const auto& folderName = iterPath.filename().string();
-				if (folderName[0] == '_') // _1stperson, _male
-					continue;
-				const auto id = HexStringToInt(folderName);
-				if (id != -1) 
+				const auto formId = (id & 0x00FFFFFF) + (mod->modIndex << 24);
+				auto* form = LookupFormByID(formId);
+				if (form)
 				{
-					const auto formId = (id & 0x00FFFFFF) + (mod->modIndex << 24);
-					auto* form = LookupFormByID(formId);
-					if (form)
-					{
-						LoadForForm(iterPath, form);
-					}
-					else
-					{
-						DebugPrint(FormatString("Form %X not found!", formId));
-					}
+					LoadForForm(node.children, form);
 				}
 				else
 				{
-					DebugPrint("Failed to convert " + folderName + " to a form ID");
+					DebugPrint(FormatString("Form %X not found!", formId));
 				}
 			}
-			catch (std::exception&) {}
+			else
+			{
+				DebugPrint("Failed to convert " + std::string(folderName) + " to a form ID");
+			}
 		}
-		else
-		{
-			DebugPrint("Skipping as path is not a directory...");
-		}
+		catch (std::exception&) {}
+		
 	}
 }
 
@@ -251,8 +280,6 @@ void HandleJson(const std::filesystem::path& path)
 							DebugPrint(FormatString("Form %X was not found", formId));
 							continue;
 						}
-						LogForm(form);
-						Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
 						g_jsonEntries.emplace_back(folder, form, condition, pollCondition, priority);
 					}
 				}
@@ -273,7 +300,7 @@ void HandleJson(const std::filesystem::path& path)
 	
 }
 
-void LoadJsonEntries()
+void LoadJsonEntries(const PathNode& root)
 {
 	ra::sort(g_jsonEntries, [&](const JSONEntry& entry1, const JSONEntry& entry2)
 	{
@@ -287,23 +314,18 @@ void LoadJsonEntries()
 			Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		else
 			Log("JSON: Loading animations for global override in path " + entry.folderName);
-		const auto path = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride\)" + entry.folderName;
-		if (!std::filesystem::exists(path))
+		auto path = ToLower(R"(animgroupoverride\)" + entry.folderName);
+		const auto* node = root.Traverse(path);
+		if (!node)
 			Log(FormatString("Path %s does not exist yet it is present in JSON", path.c_str()));
 		else if (!entry.form) // global
-			LoadPathsForPOV(path, nullptr);
-		else if (!LoadForForm(path, entry.form))
+			LoadPathsForPOV(node->children, nullptr);
+		else if (!LoadForForm(node->children, entry.form))
 			Log(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
 		g_jsonContext.Reset();
 	}
 	g_jsonEntries = std::vector<JSONEntry>();
 }
-
-struct PathNode
-{
-	std::map<std::string_view, PathNode> children;
-	std::string_view path;
-};
 
 PathNode CreatePathTree(const std::vector<std::string_view>& paths)
 {
@@ -329,17 +351,18 @@ PathNode CreatePathTree(const std::vector<std::string_view>& paths)
 
 	return root;
 }
-
 void LoadFileAnimPaths()
 {
+	const auto& kfModels = *ModelLoader::GetSingleton()->kfMap;
 	Log("Loading file anims");
-	const auto dir = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride)";
+	std::string dir = R"(Data\Meshes\AnimGroupOverride)";
 	const auto then = std::chrono::system_clock::now();
 	if (std::filesystem::exists(dir))
 	{
 		for (const auto& iter: std::filesystem::directory_iterator(dir.c_str()))
 		{
 			const auto& path = iter.path();
+#if ITERATE_FOLDERS
 			if (iter.is_directory())
 			{
 				const auto& fileName = path.filename();
@@ -353,19 +376,46 @@ void LoadFileAnimPaths()
 					else
 						DebugPrint(FormatString("Mod with name %s is not loaded!", fileName.string().c_str()));
 				}
-				
+				continue;
 			}
-			else if (_stricmp(path.extension().string().c_str(), ".json") == 0)
+#endif
+			if (_stricmp(path.extension().string().c_str(), ".json") == 0)
 			{
 				HandleJson(iter.path());
 			}
 		}
+#if !ITERATE_FOLDERS
+		auto* kfModel = GameFuncs::LoadKFModel(ModelLoader::GetSingleton(), "AnimGroupOverride\\HIGH_WALL\\_1stPerson\\2hrequip.kf");
+		std::vector<std::string_view> paths;
+		constexpr std::string_view animGroupOverride = "animgroupoverride";
+		for (const auto& [cPath, kfModel] : kfModels)
+		{
+			std::string_view path(cPath);
+			//if (path.starts_with(animGroupOverride))
+				paths.emplace_back(path);
+		}
+		const auto pathTree = CreatePathTree(paths).children[animGroupOverride];
+		for (const auto& [dir, node] : pathTree.children)
+		{
+			const auto fileName = sv::get_file_name(dir);
+			const auto extension = sv::get_file_extension(dir);
+			if (sv::equals_ci(extension, ".esp") || sv::equals_ci(extension, ".esm"))
+			{
+				auto* modInfo = DataHandler::Get()->LookupModByName(fileName.data());
+				if (modInfo)
+				{
+					LoadModAnimPaths(node.children, modInfo);
+				}
+			}
+		}
+		LoadJsonEntries(pathTree);
+#endif
 	}
 	else
 	{
 		Log(dir + " does not exist.");
 	}
-	LoadJsonEntries();
+	
 	const auto now = std::chrono::system_clock::now();
 	const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(now - then);
 	DebugPrint(FormatString("Loaded AnimGroupOverride in %d ms", diff.count()));

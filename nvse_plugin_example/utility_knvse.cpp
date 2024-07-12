@@ -25,23 +25,23 @@ std::string ReplaceAll(std::string str, const std::string& from, const std::stri
 	return str;
 }
 
-size_t FindStringPosCI(const std::string& strHaystack, const std::string& strNeedle)
+size_t FindStringPosCI(const std::string_view strHaystack, const std::string_view strNeedle)
 {
 	const auto lowerHaystack = ToLower(std::string(strHaystack));
 	const auto lowerNeedle = ToLower(std::string(strNeedle));
 	return lowerHaystack.find(lowerNeedle);
 }
 
-std::string ExtractUntilStringMatches(const std::string& str, const std::string& match, bool includeMatch)
+std::string ExtractUntilStringMatches(const std::string_view str, const std::string_view match, bool includeMatch)
 {
 	const auto pos = FindStringPosCI(str, match);
 	if (pos == std::string::npos)
 		return "";
-	return str.substr(0, pos + (includeMatch ? match.length() : 0));
+	return std::string(str.substr(0, pos + (includeMatch ? match.length() : 0)));
 }
 
 /// Try to find in the Haystack the Needle - ignore case
-bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle)
+bool FindStringCI(const std::string_view strHaystack, const std::string_view strNeedle)
 {
 	const auto it = ra::search(strHaystack, strNeedle,[](char ch1, char ch2) { return std::toupper(ch1) == std::toupper(ch2); }).begin();
 	return it != strHaystack.end();
@@ -54,10 +54,10 @@ void Log(const std::string& msg)
 		Console_Print("kNVSE: %s", msg.c_str());
 }
 
-int HexStringToInt(const std::string& str)
+int HexStringToInt(const std::string_view str)
 {
 	char* p;
-	const auto id = strtoul(str.c_str(), &p, 16);
+	const auto id = strtoul(str.data(), &p, 16);
 	if (*p == 0)
 		return id;
 	return -1;
@@ -116,4 +116,9 @@ bool StartsWith(const char* string, const char* prefix)
 	if (!count)
 		return false;
 	return true;
+}
+
+bool StartsWith(std::string_view left, std::string_view right)
+{
+	return StartsWith(left.data(), right.data());
 }

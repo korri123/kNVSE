@@ -26,6 +26,7 @@
 #include "NiObjects.h"
 #include "NiTypes.h"
 #include "ScriptUtils.h"
+#include "string_view_util.h"
 
 std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<TESAnimGroup::AnimGroupInfo*>(0x11977D8), 245 };
 JSONAnimContext g_jsonContext;
@@ -712,7 +713,7 @@ std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 
 	return std::nullopt;
 }
 
-AnimOverrideMap& GetMap(bool firstPerson)
+AnimOverrideMap& GetAnimOverrideMap(bool firstPerson)
 {
 	return firstPerson ? g_animGroupFirstPersonMap : g_animGroupThirdPersonMap;
 }
@@ -798,7 +799,7 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* a
 		std::optional<AnimationResult> modIndexResult;
 
 		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
-		auto& map = GetMap(firstPerson);
+		auto& map = GetAnimOverrideMap(firstPerson);
 		auto* actor = animData->actor;
 		auto& modIndexMap = GetModIndexMap(firstPerson);
 		const auto getFormAnimation = [&](TESForm* form) -> std::optional<AnimationResult>
@@ -848,26 +849,26 @@ MemoizedMap<const char*, int> s_animGroupNameToIDMap;
 std::span<const char*> s_moveTypeNames{ reinterpret_cast<const char**>(0x1197798), 3 };
 std::span<const char*> s_handTypeNames{ reinterpret_cast<const char**>(0x11977A8), 11 };
 
-std::string GetBaseAnimGroupName(const std::string& name)
+std::string_view GetBaseAnimGroupName(const std::string_view name)
 {
-	std::string oName = name;
-	if (StartsWith(oName.c_str(), "pa"))
+	std::string_view oName = name;
+	if (StartsWith(oName, "pa"))
 		oName = oName.substr(2);
 	for (auto* moveTypeName : s_moveTypeNames)
 	{
-		if (StartsWith(oName.c_str(), moveTypeName))
+		if (StartsWith(oName, moveTypeName))
 		{
 			oName = oName.substr(strlen(moveTypeName));
 			break;
 		}
 	}
-	if (StartsWith(oName.c_str(), "mt"))
+	if (StartsWith(oName, "mt"))
 		oName = oName.substr(2);
 	else
 	{
 		for (auto* handTypeName : s_handTypeNames)
 		{
-			if (StartsWith(oName.c_str(), handTypeName))
+			if (StartsWith(oName, handTypeName))
 			{
 				oName = oName.substr(strlen(handTypeName));
 				break;
@@ -900,36 +901,37 @@ int SimpleGroupNameToId(const char* name)
 	});
 }
 
-int GroupNameToId(const std::string& name)
+int GroupNameToId(const std::string_view path)
 {
 	int moveType = 0;
 	int animHandType = 0;
 	int isPowerArmor = 0;
-	CdeclCall(0x5F38D0, ('\\' + name).c_str(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
+	CdeclCall(0x5F38D0, path.data(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
+	const auto name = sv::get_file_stem(path);
 	const auto& baseName = GetBaseAnimGroupName(name);
-	const auto groupId = SimpleGroupNameToId(baseName.c_str());
+	const auto groupId = SimpleGroupNameToId(baseName.data());
 	if (groupId == -1)
 		return -1;
 	return groupId + (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8);
 }
 
-int GetAnimGroupId(const std::filesystem::path& path)
+int GetAnimGroupId(const std::string_view path)
 {
 	const auto toFullId = [&](UInt8 groupId)
 	{
 		int moveType = 0;
 		int animHandType = 0;
 		int isPowerArmor = 0;
-		CdeclCall(0x5F38D0, path.string().c_str(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
+		CdeclCall(0x5F38D0, path.data(), &moveType, &animHandType, &isPowerArmor); // GetMoveHandAndPowerArmorTypeFromAnimName
 		return groupId + (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8);
 	};
 
-	const auto& name = path.stem().string();
-	const auto& baseName = GetBaseAnimGroupName(name);
+	const auto name = sv::get_file_stem(path);
+	const auto baseName = std::string(GetBaseAnimGroupName(name));
 	if (const auto id = SimpleGroupNameToId(baseName.c_str()); id != -1)
 		return toFullId(id);
 	char bsStream[1492];
-	auto pathStr = FormatString("Meshes\\%s", path.string().c_str());
+	auto pathStr = FormatString("Meshes\\%s", path.data());
 	std::ranges::replace(pathStr, '/', '\\');
 
 	auto* file = GameFuncs::GetFilePtr(pathStr.c_str(), 0, -1, 1);
@@ -954,7 +956,7 @@ int GetAnimGroupId(const std::filesystem::path& path)
 
 std::unordered_map<std::string, std::unordered_set<std::string>> g_customAnimGroupPaths;
 
-std::string GetAnimBasePath(const std::string& path)
+std::string GetAnimBasePath(std::string_view path)
 {
 	for (auto& it : {"_1stperson", "_male"})
 	{
@@ -975,31 +977,30 @@ std::string ExtractCustomAnimGroupName(const std::filesystem::path& path)
 	return "";
 }
 
-bool RegisterCustomAnimGroupAnim(const std::filesystem::path& path)
+bool RegisterCustomAnimGroupAnim(const std::string_view path)
 {
 	if (!ExtractCustomAnimGroupName(path).empty())
 	{
-		const auto basePath = GetAnimBasePath(path.string());
+		const auto basePath = GetAnimBasePath(path);
 		if (!basePath.empty())
 		{
-			g_customAnimGroupPaths[basePath].insert(path.string());
+			g_customAnimGroupPaths[basePath].insert(std::string(path));
 			return true;
 		}
 	}
 	return false;
 }
 
-void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath, AnimOverrideMap& map, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false)
+void SetOverrideAnimation(const UInt32 refId, const std::string_view path, AnimOverrideMap& map, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false)
 {
 	if (!conditionScript && g_jsonContext.script)
 	{
 		conditionScript = g_jsonContext.script;
 		pollCondition = g_jsonContext.pollCondition;
 	}
-	const auto& path = fPath.string();
-	const auto groupId = GetAnimGroupId(fPath);
+	const auto groupId = GetAnimGroupId(path);
 	if (groupId == -1)
-		throw std::exception(FormatString("Failed to resolve file '%s'", path.c_str()).c_str());
+		throw std::exception(FormatString("Failed to resolve file '%s'", path.data()).c_str());
 	auto& animGroupMap = map[refId];
 	auto& stacks = animGroupMap.stacks[groupId];
 
@@ -1023,7 +1024,7 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 	auto& stack = stacks.GetCustom(animCustom);
 	const auto findFn = [&](const std::shared_ptr<SavedAnims>& a)
 	{
-		return ra::any_of(a->anims, _L(const auto& s, _stricmp(path.c_str(), s->path.c_str()) == 0));
+		return ra::any_of(a->anims, _L(const auto& s, _stricmp(path.data(), s->path.c_str()) == 0));
 	};
 	
 	if (!enable)
@@ -1049,7 +1050,7 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 		return;
 	}
 
-	const auto isCustomAnimGroupAnim = RegisterCustomAnimGroupAnim(fPath);
+	const auto isCustomAnimGroupAnim = RegisterCustomAnimGroupAnim(path);
 	if (isCustomAnimGroupAnim)
 	{
 		Log("Found custom anim group animation");
@@ -1062,12 +1063,13 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 	if (newItem || stack.empty())
 		stack.emplace_back(std::make_shared<SavedAnims>());
 
+	const auto fPath = std::filesystem::path(path);
 	const auto& fileName = fPath.filename().string();
 
 	auto& anims = *stack.back();
 
-	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.c_str()));
-	auto& lastAnim = *anims.anims.emplace_back(std::make_unique<AnimPath>(path));
+	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.data()));
+	auto& lastAnim = *anims.anims.emplace_back(std::make_unique<AnimPath>(std::string(path)));
 	if (conditionScript)
 	{
 		Log("Got a condition script, this animation will now only fire under this condition!");
@@ -1088,15 +1090,15 @@ void SetOverrideAnimation(const UInt32 refId, const std::filesystem::path& fPath
 	}
 }
 
-void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
+void OverrideFormAnimation(const TESForm* form, const std::string_view path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
 {
 	if (!form)
 		return OverrideModIndexAnimation(0xFF, path, firstPerson, enable, groupIdFillSet, conditionScript, pollCondition);
-	auto& map = GetMap(firstPerson);
+	auto& map = GetAnimOverrideMap(firstPerson);
 	SetOverrideAnimation(form ? form->refID : -1, path, map, enable, groupIdFillSet, conditionScript, pollCondition);
 }
 
-void OverrideModIndexAnimation(const UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
+void OverrideModIndexAnimation(const UInt8 modIdx, const std::string_view path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition)
 {
 	auto& map = GetModIndexMap(firstPerson);
 	SetOverrideAnimation(modIdx, path, map, enable, groupIdFillSet, conditionScript, pollCondition);

@@ -18,15 +18,15 @@ bool ends_with(std::string const& value, std::string const& ending);
 std::string ReplaceAll(std::string str, const std::string& from, const std::string& to);
 
 /// Try to find in the Haystack the Needle - ignore case
-bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle);
+bool FindStringCI(std::string_view strHaystack, std::string_view strNeedle);
 
-size_t FindStringPosCI(const std::string& strHaystack, const std::string& strNeedle);
+size_t FindStringPosCI(std::string_view strHaystack, std::string_view strNeedle);
 
-std::string ExtractUntilStringMatches(const std::string& str, const std::string& match, bool includeMatch = false);
+std::string ExtractUntilStringMatches(std::string_view strHaystack, std::string_view match, bool includeMatch = false);
 
 void Log(const std::string& msg);
 
-int HexStringToInt(const std::string& str);
+int HexStringToInt(std::string_view str);
 
 void DebugPrint(const std::string& str);
 
@@ -55,6 +55,8 @@ std::string ToLower(const std::string& data);
 std::string& StripSpace(std::string&& data);
 
 bool StartsWith(const char* left, const char* right);
+bool StartsWith(std::string_view left, std::string_view right);
+
 
 template <typename T, typename S, typename F>
 std::vector<T*> Filter(const S& s, const F& f)

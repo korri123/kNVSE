@@ -279,6 +279,7 @@ public:
 };
 
 using AnimOverrideMap = std::unordered_map<FormID, AnimOverrideStruct>;
+AnimOverrideMap& GetAnimOverrideMap(bool firstPerson);
 
 struct SavedAnims
 {
@@ -522,9 +523,8 @@ DEFINE_COMMAND_PLUGIN(EjectWeapon, "", true, 0, nullptr);
 DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 
 #endif
-
-void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition);
-void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false);
+void OverrideModIndexAnimation(UInt8 modIdx, std::string_view path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition);
+void OverrideFormAnimation(const TESForm* form, std::string_view path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false);
 
 void HandleOnActorReload();
 
@@ -579,7 +579,7 @@ void CreateCommands(NVSECommandBuilder& builder);
 
 extern std::unordered_set<BaseProcess*> g_allowedNextAnims;
 
-std::string GetAnimBasePath(const std::string& path);
+std::string GetAnimBasePath(std::string_view path);
 std::string ExtractCustomAnimGroupName(const std::filesystem::path& path);
 
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence = nullptr);
