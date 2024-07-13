@@ -115,7 +115,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	// hooked call
 	const auto result = ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
-	if (g_fixBlendSamePriority)
+	if (g_fixBlendSamePriority && replaced)
 		BlendFixes::FixConflictingPriorities(currentAnim, result);
 	return result;
 }
