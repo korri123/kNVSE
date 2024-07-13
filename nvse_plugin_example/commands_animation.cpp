@@ -2580,7 +2580,60 @@ inline bool NiControllerManager::BlendFromSequence(
 		*result = 1;
 		return true;
 	});
-	
+
+	builder.Create("CopyAnimPriorities", kRetnType_Default, { ParamInfo{"sSourceAnimPath", kParamType_String, false}, ParamInfo{"sDestAnimPath", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char sourceAnimPath[0x400];
+		char destAnimPath[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &sourceAnimPath, &destAnimPath) || !thisObj)
+			return true;
+		auto* sourceAnim = FindActiveAnimationForRef(thisObj, sourceAnimPath);
+		auto* destAnim = FindActiveAnimationForRef(thisObj, destAnimPath);
+		if (!sourceAnim || !destAnim)
+			return true;
+		const std::span srcControlledBlocks(sourceAnim->controlledBlocks, sourceAnim->numControlledBlocks);
+		int idx = 0;
+		for (const auto& srcControlledBlock : srcControlledBlocks)
+		{
+			auto& tag = sourceAnim->IDTagArray[idx];
+			auto* dstControlledBlock = destAnim->GetControlledBlock(tag.m_kAVObjectName.CStr());
+			if (dstControlledBlock)
+			{
+				dstControlledBlock->priority = srcControlledBlock.priority;
+				*result = *result + 1;
+			}
+			++idx;
+		}
+		return true;
+	});
+
+	builder.Create("IsAnimPlayingAlt", kRetnType_Default, { ParamInfo{"anim group", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		UInt32 groupId = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &groupId) || !thisObj)
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		const auto* animData = actor->GetAnimData();
+		if (!animData)
+			return true;
+		if (groupId >= g_animGroupInfos.size())
+			return true;
+		const auto& groupInfo = g_animGroupInfos[groupId];
+		auto* anim = animData->animSequence[groupInfo.sequenceType];
+		if (!anim || !anim->animGroup)
+			return true;
+		if (anim->animGroup->GetBaseGroupID() == groupId && anim->state == kAnimState_Animating)
+			*result = 1;
+		return true;
+	});
+
+#if _DEBUG
+
+		
 	builder.Create("EachFrame", kRetnType_Default, {ParamInfo{"sScript", kParamType_String, false}}, false, [](COMMAND_ARGS)
 	{
 		if (!IsConsoleMode())
@@ -2610,34 +2663,6 @@ inline bool NiControllerManager::BlendFromSequence(
 		return true;
 	});
 
-	builder.Create("CopyAnimPriorities", kRetnType_Default, { ParamInfo{"sSourceAnimPath", kParamType_String, false}, ParamInfo{"sDestAnimPath", kParamType_String, false} }, true, [](COMMAND_ARGS)
-	{
-		*result = 0;
-		char sourceAnimPath[0x400];
-		char destAnimPath[0x400];
-		if (!ExtractArgs(EXTRACT_ARGS, &sourceAnimPath, &destAnimPath) || !thisObj)
-			return true;
-		auto* sourceAnim = FindActiveAnimationForRef(thisObj, sourceAnimPath);
-		auto* destAnim = FindActiveAnimationForRef(thisObj, destAnimPath);
-		if (!sourceAnim || !destAnim)
-			return true;
-		const std::span srcControlledBlocks(sourceAnim->controlledBlocks, sourceAnim->numControlledBlocks);
-		int idx = 0;
-		for (const auto& srcControlledBlock : srcControlledBlocks)
-		{
-			auto& tag = sourceAnim->IDTagArray[idx];
-			auto* dstControlledBlock = destAnim->GetControlledBlock(tag.m_kAVObjectName.CStr());
-			if (dstControlledBlock)
-			{
-				dstControlledBlock->priority = srcControlledBlock.priority;
-				*result = *result + 1;
-			}
-			++idx;
-		}
-		return true;
-	});
-
-#if _DEBUG
 	builder.Create("ForceAttack", kRetnType_Default, { ParamInfo{"animGroup", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
