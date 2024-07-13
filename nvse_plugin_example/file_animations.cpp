@@ -5,7 +5,7 @@
 #include "utility.h"
 #include "commands_animation.h"
 #include "file_animations.h"
-#include "json.h"
+#include "lib/json/json.h"
 #include <fstream>
 #include <utility>
 #include <type_traits>

@@ -1994,22 +1994,23 @@ void CreateCommands(NVSECommandBuilder& builder)
 			animData = g_thePlayer->firstPersonAnimData;
 		else
 			animData = actor->baseProcess->GetAnimData();
-		if (anim->state == NiControllerSequence::kAnimState_TransDest)
+		if (anim->state != NiControllerSequence::kAnimState_Animating)
 		{
-			anim->endTime = time + animData->timePassed;
+			*result = 0;
+			return true;
 		}
-		else
+
+		anim->offset = time - animData->timePassed;
+		const auto animTime = GetAnimTime(animData, anim);
+		if (animTime < anim->beginKeyTime)
 		{
-			anim->offset = time - animData->timePassed;
-			if (GetAnimTime(animData, anim) < anim->beginKeyTime)
-			{
-				anim->offset = anim->endKeyTime - (anim->beginKeyTime - anim->offset);
-			}
-			else if (GetAnimTime(animData, anim) > anim->endKeyTime)
-			{
-				anim->offset = anim->beginKeyTime + (anim->offset - anim->endKeyTime);
-			}
+			anim->offset = anim->endKeyTime - (anim->beginKeyTime - anim->offset);
 		}
+		else if (animTime > anim->endKeyTime)
+		{
+			anim->offset = anim->beginKeyTime + (anim->offset - anim->endKeyTime);
+		}
+		*result = 1;
 		return true;
 	});
 
@@ -2263,14 +2264,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		);
 		return true;
 	});
-
-	/**
-inline bool NiControllerManager::BlendFromSequence(
-	NiControllerSequence* pkSourceSequence,
-	NiControllerSequence* pkDestSequence, float fDuration, float fDestFrame,
-	int iPriority, float fSourceWeight, float fDestWeight,
-	NiControllerSequence* pkTimeSyncSeq)
-	 */
 
 	constexpr auto blendFromAnimSequenceParams = {
 		ParamInfo{"source sequence path", kParamType_String, false},
@@ -2626,7 +2619,7 @@ inline bool NiControllerManager::BlendFromSequence(
 		auto* anim = animData->animSequence[groupInfo.sequenceType];
 		if (!anim || !anim->animGroup)
 			return true;
-		if (anim->animGroup->GetBaseGroupID() == groupId && anim->state == kAnimState_Animating)
+		if (anim->animGroup->GetBaseGroupID() == groupId && anim->state != kAnimState_Inactive)
 			*result = 1;
 		return true;
 	});

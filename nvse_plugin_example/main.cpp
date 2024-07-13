@@ -22,6 +22,7 @@
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
 #include "blend_fixes.h"
+#include "commands_misc.h"
 #include "knvse_events.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
@@ -629,7 +630,9 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 
 	NVSECommandBuilder commandBuilder(nvse);
 	CreateCommands(commandBuilder);
-
+#if _DEBUG
+	Commands::BuildMiscCommands(commandBuilder);
+#endif
 
 
 #if _DEBUG

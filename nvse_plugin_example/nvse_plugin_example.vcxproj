@@ -389,6 +389,7 @@
     <ClCompile Include="..\nvse\nvse\utility.cpp" />
     <ClCompile Include="anim_fixes.cpp" />
     <ClCompile Include="commands_animation.cpp" />
+    <ClCompile Include="commands_misc.cpp" />
     <ClCompile Include="dllmain.c">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug ng|Win32'">
       </ForcedIncludeFiles>
@@ -442,13 +443,18 @@
     <ClInclude Include="anim_fixes.h" />
     <ClInclude Include="class_vtbls.h" />
     <ClInclude Include="commands_animation.h" />
+    <ClInclude Include="commands_misc.h" />
     <ClInclude Include="file_animations.h" />
     <ClInclude Include="hooks.h" />
-    <ClInclude Include="json.h" />
     <ClInclude Include="game_types.h" />
     <ClInclude Include="knvse_events.h" />
     <ClInclude Include="knvse_version.h" />
     <ClInclude Include="LambdaVariableContext.h" />
+    <ClInclude Include="lib\clipboard\clipboardxx.hpp" />
+    <ClInclude Include="lib\clipboard\detail\exception.hpp" />
+    <ClInclude Include="lib\clipboard\detail\interface.hpp" />
+    <ClInclude Include="lib\clipboard\detail\windows.hpp" />
+    <ClInclude Include="lib\json\json.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="nihooks.h" />
