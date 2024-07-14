@@ -420,6 +420,54 @@ void BlendFixes::ApplyAimBlendHooks()
 	SafeWriteBuf(0x4996E7, "\xEB\x20\x90\x90", 4);
 }
 
+
+void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequence* pkDest)
+{
+    const auto sourceControlledBlocks = pkSource->GetControlledBlocks();
+    std::unordered_map<NiBlendInterpolator*, NiControllerSequence::ControlledBlock*> sourceInterpMap;
+    for (auto& interp : sourceControlledBlocks)
+    {
+        if (!interp.interpolator || !interp.blendInterpolator || interp.priority == 0xFF)
+            continue;
+        sourceInterpMap.emplace(interp.blendInterpolator, &interp);
+    }
+    const auto destControlledBlocks = pkDest->GetControlledBlocks();
+    const auto tags = pkDest->GetIDTags();
+    auto index = 0;
+
+    const static std::unordered_set<std::string_view> s_ignoredInterps = {
+        "Bip01 NonAccum", "Bip01 Translate", "Bip01 Rotate", "Bip01"
+    };
+    for (auto& destBlock : destControlledBlocks)
+    {
+        const auto& tag = tags[index++];
+        auto blendInterpolator = destBlock.blendInterpolator;
+        if (!destBlock.interpolator || !blendInterpolator || destBlock.priority == 0xFF)
+            continue;
+        if (s_ignoredInterps.contains(tag.m_kAVObjectName.CStr()))
+            continue;
+        if (auto it = sourceInterpMap.find(blendInterpolator); it != sourceInterpMap.end())
+        {
+            const auto& sourceInterp = *it->second;
+            if (destBlock.priority != sourceInterp.priority)
+                continue;
+            std::span blendInterpItems(blendInterpolator->m_pkInterpArray, blendInterpolator->m_ucArraySize);
+            auto destInterpItem = std::ranges::find_if(blendInterpItems, [&](const NiBlendInterpolator::InterpArrayItem& item)
+            {
+                return item.m_spInterpolator == destBlock.interpolator;
+            });
+            if (destInterpItem == blendInterpItems.end())
+                continue;
+            const auto newPriority = ++destInterpItem->m_cPriority;
+            if (newPriority > blendInterpolator->m_cHighPriority)
+            {
+                blendInterpolator->m_cHighPriority = newPriority;
+                blendInterpolator->m_cNextHighPriority = destBlock.priority;
+            }
+        }
+    }
+}
+
 void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimGroupSequence* pkDest)
 {
 	if (!pkDest || !pkSource || !pkDest->animGroup)
@@ -427,12 +475,9 @@ void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimG
 	auto* groupInfo = pkDest->animGroup->GetGroupInfo();
 	if (!groupInfo)
 		return;
-	if (groupInfo->sequenceType != kSequence_Weapon)
-		return;
 	if (!pkDest->textKeyData || pkDest->textKeyData->FindFirstByName("noFix"))
 		return;
 	if (pkSource->state == kAnimState_EaseOut && pkDest->state == kAnimState_EaseIn)
 		::FixConflictingPriorities(pkSource, pkDest);
 }
-
 

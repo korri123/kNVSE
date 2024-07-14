@@ -441,8 +441,9 @@ class AnimationResult
 public:
 	std::shared_ptr<SavedAnims> parent;
 	SavedAnimsTime* animsTime;
-	AnimationResult(std::shared_ptr<SavedAnims> parent, SavedAnimsTime* animsTime)
-		: parent(parent), animsTime(animsTime)
+	AnimStacks* stacks;
+	AnimationResult(const std::shared_ptr<SavedAnims>& parent, SavedAnimsTime* animsTime, AnimStacks* stacks)
+		: parent(parent), animsTime(animsTime), stacks(stacks)
 	{
 	}
 };

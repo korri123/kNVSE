@@ -10,8 +10,21 @@ void LogAnimError(const BSAnimGroupSequence* anim, const std::string& msg)
 	DebugPrint("Animation Error Detected: " + std::string(anim->sequenceName) + "\n\t" + msg);
 }
 
-void FixInconsistentEndTime(BSAnimGroupSequence* anim)
+bool HasNoFixTextKey(BSAnimGroupSequence* anim)
 {
+	if (!anim->textKeyData || anim->textKeyData->FindFirstByName("noFix"))
+		return true;
+	return false;
+}
+
+void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
+{
+	if (!g_fixEndKeyTimeShorterThanStopTime || HasNoFixTextKey(anim))
+		return;
+	static std::unordered_set<BSAnimGroupSequence*> s_fixedAnims;
+	if (s_fixedAnims.contains(anim))
+		return;
+	s_fixedAnims.insert(anim);
 	const auto* endKey = anim->textKeyData->FindFirstByName("end");
 	if (!endKey)
 	{
@@ -151,9 +164,9 @@ NiTextKey* GetNextAttackAnimGroupTextKey(BSAnimGroupSequence* sequence)
 	return nullptr;
 }
 
-void FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
+void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
 {
-	if (animData != g_thePlayer->firstPersonAnimData || !anim->animGroup)
+	if (!g_fixWrongAKeyInRespectEndKeyAnim || animData != g_thePlayer->firstPersonAnimData || !anim->animGroup || HasNoFixTextKey(anim))
 		return;
 	auto fullGroupId = anim->animGroup->groupID;
 	if (anim->animGroup->IsAttackIS())
@@ -183,12 +196,8 @@ void FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
 	nextAttackKey->m_kText.Set(newText.c_str());
 }
 
-void FixAnimIfBroken(AnimData* animData, BSAnimGroupSequence* anim)
+void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)
 {
-	if (anim->textKeyData && anim->textKeyData->FindFirstByName("noFix"))
-		return;
-	if (g_fixEndKeyTimeShorterThanStopTime)
-		FixInconsistentEndTime(anim);
-	if (g_fixWrongAKeyInRespectEndKeyAnim)
-		FixWrongAKeyInRespectEndKey(animData, anim);
+	FixInconsistentEndTime(anim);
+	FixWrongAKeyInRespectEndKey(animData, anim);
 }

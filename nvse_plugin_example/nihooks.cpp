@@ -563,7 +563,6 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
-
 namespace NiHooks
 {
     void WriteHooks()
@@ -661,68 +660,6 @@ void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* se
     }
 }
 
-void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequence* pkDest)
-{
-    const auto sourceControlledBlocks = pkSource->GetControlledBlocks();
-    std::unordered_map<NiBlendInterpolator*, NiControllerSequence::ControlledBlock*> sourceInterpMap;
-    for (auto& interp : sourceControlledBlocks)
-    {
-        if (!interp.interpolator || !interp.blendInterpolator || interp.priority == 0xFF)
-            continue;
-        sourceInterpMap.emplace(interp.blendInterpolator, &interp);
-    }
-    const auto destControlledBlocks = pkDest->GetControlledBlocks();
-    const auto tags = pkDest->GetIDTags();
-    auto index = 0;
-
-    const static std::unordered_set<std::string_view> s_ignoredInterps = {
-        "Bip01 NonAccum", "Bip01 Translate", "Bip01 Rotate", "Bip01"
-    };
-    for (auto& destBlock : destControlledBlocks)
-    {
-        const auto& tag = tags[index++];
-        auto blendInterpolator = destBlock.blendInterpolator;
-        if (!destBlock.interpolator || !blendInterpolator || destBlock.priority == 0xFF)
-            continue;
-        if (s_ignoredInterps.contains(tag.m_kAVObjectName.CStr()))
-            continue;
-        if (auto it = sourceInterpMap.find(blendInterpolator); it != sourceInterpMap.end())
-        {
-            const auto sourceInterp = *it->second;
-            if (destBlock.priority != sourceInterp.priority)
-                continue;
-            std::span blendInterpItems(blendInterpolator->m_pkInterpArray, blendInterpolator->m_ucArraySize);
-            auto destInterpItem = std::ranges::find_if(blendInterpItems, [&](const NiBlendInterpolator::InterpArrayItem& item)
-            {
-                return item.m_spInterpolator == destBlock.interpolator;
-            });
-            if (destInterpItem == blendInterpItems.end())
-                continue;
-            const auto newPriority = ++destInterpItem->m_cPriority;
-            if (newPriority > blendInterpolator->m_cHighPriority)
-            {
-                blendInterpolator->m_cHighPriority = newPriority;
-                blendInterpolator->m_cNextHighPriority = destBlock.priority;
-            }
-        }
-    }
-}
-
-bool __fastcall CrossFadeHook(NiControllerManager*, void*, NiControllerSequence* pkSourceSequence, NiControllerSequence* pkDestSequence,
-    float fEaseInTime, char iPriority, bool bStartOver, float fWeight, NiControllerSequence* pkTimeSyncSeq)
-{
-    if (pkSourceSequence->state == NiControllerSequence::kAnimState_Inactive
-        || pkDestSequence->state != NiControllerSequence::kAnimState_Inactive)
-        return false;
-    pkSourceSequence->Deactivate(fEaseInTime, false);
-    const auto result = ThisStdCall<bool>(0xA34F20, pkDestSequence, iPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, false);
-    if (result && fEaseInTime > 0.01f)
-        FixConflictingPriorities(pkSourceSequence, pkDestSequence);
-    return result;
-}
-
-
-
 std::string GetLastSubstringAfterSlash(const std::string& str)
 {
     const auto pos = str.find_last_of('\\');
@@ -744,12 +681,10 @@ NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager
     return tempBlendSeq;
 }
 
-
-
 void ApplyNiHooks()
 {
-    NiHooks::WriteHooks();
 #if EXPERIMENTAL_HOOKS
+    NiHooks::WriteHooks();
     if (g_fixBlendSamePriority)
     {
         //WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);

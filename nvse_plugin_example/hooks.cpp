@@ -4,6 +4,7 @@
 #include <span>
 #include <unordered_set>
 
+#include "anim_fixes.h"
 #include "GameProcess.h"
 #include "GameObjects.h"
 #include "commands_animation.h"
@@ -100,9 +101,12 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 			HandleExtraOperations(animData, destAnim);
 		}
 	}
-	
+
 	if (g_fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		return destAnim;
+
+	if (destAnim)
+		AnimFixes::FixInconsistentEndTime(destAnim);
 
 #if _DEBUG
 	BSAnimGroupSequence* currentAnim = nullptr;
@@ -358,6 +362,7 @@ void __fastcall HandleOnReload(Actor* actor)
 bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
 {
 	auto* anim = kfModel->controllerSequence;
+	
 	if (base->IsSingle()) // single anims are always valid
 		return false;
 	auto* multiple = static_cast<AnimSequenceMultiple*>(base);
@@ -639,6 +644,19 @@ void ApplyHooks()
 				return toAnimTime(g_thePlayer->firstPersonAnimData, anim1st);
 		}
 		return result;
+	}));
+
+	// Apply dest frame hook
+	// NiControllerSequence::StartBlend
+	WriteRelCall(0xA2F844, INLINE_HOOK(bool, __fastcall, NiControllerSequence* tempSeq,
+		void*, NiControllerSequence* seq, float fDuration, float fDestFrame, int iPriority,
+		float fSourceWeight, float fDestWeight, NiControllerSequence *pkTimeSyncSeq)
+	{
+		if (fDestFrame == 0.0f && seq->destFrame != -NI_INFINITY)
+		{
+			fDestFrame = seq->destFrame;
+		}
+		return ThisStdCall<bool>(0xA350D0, tempSeq, seq, fDuration, fDestFrame, iPriority, fSourceWeight, fDestWeight, pkTimeSyncSeq);
 	}));
 
 	ini.SaveFile(iniPath.c_str(), false);

@@ -275,7 +275,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 					BSAnimGroupSequence* anim;
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
-						FixAnimIfBroken(animData, anim);
+						AnimFixes::ApplyFixes(animData, anim);
 						// anim->destFrame = kfModel->controllerSequence->destFrame;
 						const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return entry->second;
@@ -695,7 +695,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				}
 				if (!ctx->anims.empty())
 				{
-					return AnimationResult(ctx, animsTime);
+					return AnimationResult(ctx, animsTime, &animStacks);
 				}
 			}
 		}
@@ -765,7 +765,7 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 		auto* anim = animCtx->anim;
 		if (!anim)
 			return nullptr;
-		auto& [ctx, animsTime] = result;
+		auto& [ctx, animsTime, stacks] = result;
 		SubscribeOnActorReload(animData->actor, ReloadSubscriber::Partial);
 		HandleExtraOperations(animData, anim);
 		if (ctx->conditionScript && animsTime)
@@ -2624,9 +2624,32 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-#if _DEBUG
+	auto setDestFrameParams = {ParamInfo{"anim path", kParamType_String, false},
+		ParamInfo{"dest frame", kParamType_Float, false},
+		ParamInfo{"first person", kParamType_Integer, true},
+	};
+	
+	builder.Create("SetAnimDestFrame", kRetnType_Default, setDestFrameParams, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		char animPath[0x400];
+		float destFrame;
+		int firstPerson = false;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &destFrame, &firstPerson) || !thisObj)
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* anim = FindOrLoadAnim(actor, animPath, firstPerson);
+		if (!anim)
+			return true;
+		anim->destFrame = destFrame;
+		*result = 1;
+		return true;
+	});
 
-		
+#if _DEBUG
+	
 	builder.Create("EachFrame", kRetnType_Default, {ParamInfo{"sScript", kParamType_String, false}}, false, [](COMMAND_ARGS)
 	{
 		if (!IsConsoleMode())

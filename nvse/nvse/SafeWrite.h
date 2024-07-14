@@ -16,10 +16,9 @@ void WriteRelJump(UInt32 jumpSrc, T jumpTgt)
 	SafeWrite32(jumpSrc + 1, UInt32(jumpTgt) - jumpSrc - 1 - 4);
 }
 
-
 // Specialization for member function pointers
 template <typename C, typename Ret, typename... Args>
-void WriteRelJump(unsigned long jumpSrc, Ret (C::*jumpTgt)(Args...)) {
+void WriteRelJump(UInt32 jumpSrc, Ret (C::*jumpTgt)(Args...)) {
 	union
 	{
 		Ret (C::*tgt)(Args...);
@@ -29,6 +28,18 @@ void WriteRelJump(unsigned long jumpSrc, Ret (C::*jumpTgt)(Args...)) {
 
 	// Call the primary template with the converted function pointer
 	WriteRelJump(jumpSrc, conversion.funcPtr);
+}
+
+template <typename C, typename Ret, typename... Args>
+void WriteRelCall(UInt32 jumpSrc, Ret (C::*jumpTgt)(Args...)) {
+	union
+	{
+		Ret (C::*tgt)(Args...);
+		UInt32 funcPtr;
+	} conversion;
+	conversion.tgt = jumpTgt;
+
+	WriteRelCall(jumpSrc, conversion.funcPtr);
 }
 
 void WriteRelCall(UInt32 jumpSrc, UInt32 jumpTgt);
