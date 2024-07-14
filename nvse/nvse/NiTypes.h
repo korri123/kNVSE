@@ -7,6 +7,14 @@ const UInt32 _NiTMap_Lookup = 0x00853130;
 
 #endif
 
+inline void NIASSERT(bool condition)
+{
+	if (!condition)
+	{
+		DebugBreak();
+	}
+}
+
 // 8
 struct NiRTTI
 {
@@ -42,6 +50,68 @@ struct NiPoint3
 	{
 		return NiPoint3{ x + pt.x, y + pt.y, z + pt.z };
 	}
+
+	const static NiPoint3 ZERO;
+
+	bool operator== (const NiPoint3& pt) const
+	{
+	    return (x == pt.x && y == pt.y && z == pt.z);
+	}
+
+
+	float operator* (const NiPoint3& pt) const
+	{
+	    return x*pt.x+y*pt.y+z*pt.z;
+	}
+
+	NiPoint3 operator* (float fScalar) const
+	{
+	    return NiPoint3(fScalar*x,fScalar*y,fScalar*z);
+	}
+
+	NiPoint3 operator/ (float fScalar) const
+	{
+	    float fInvScalar = 1.0f/fScalar;
+	    return NiPoint3(fInvScalar*x,fInvScalar*y,fInvScalar*z);
+	}
+
+	NiPoint3 operator- () const
+	{
+	    return NiPoint3(-x,-y,-z);
+	}
+
+	NiPoint3& operator+= (const NiPoint3& pt)
+	{
+	    x += pt.x;
+	    y += pt.y;
+	    z += pt.z;
+	    return *this;
+	}
+
+	NiPoint3& operator-= (const NiPoint3& pt)
+	{
+	    x -= pt.x;
+	    y -= pt.y;
+	    z -= pt.z;
+	    return *this;
+	}
+
+	NiPoint3& operator*= (float fScalar)
+	{
+	    x *= fScalar;
+	    y *= fScalar;
+	    z *= fScalar;
+	    return *this;
+	}
+
+	NiPoint3& operator/= (float fScalar)
+	{
+	    float fInvScalar = 1.0f/fScalar;
+	    x *= fInvScalar;
+	    y *= fInvScalar;
+	    z *= fInvScalar;
+	    return *this;
+	}
 };
 
 // 10 - always aligned?
@@ -50,17 +120,183 @@ struct NiVector4
 	float	x, y, z, w;
 };
 
-// 10 - always aligned?
-struct NiQuaternion
-{
-	float	x, y, z, w;
-};
-
 // 24
 struct NiMatrix33
 {
-	float	data[9];
+	float	m_pEntry[3][3];
+
+	float GetEntry( unsigned int uiRow, unsigned int uiCol ) const
+	{
+		return m_pEntry[uiRow][uiCol];
+	}
 };
+
+using NiMatrix3 = NiMatrix33;
+
+inline float NiSqrt (float fValue)
+{
+	return float(sqrt(fValue));
+}
+
+// 10 - always aligned?
+struct NiQuaternion
+{
+	float m_fW;
+	float m_fX;
+	float m_fY;
+	float m_fZ;
+
+	NiQuaternion()  { }
+	NiQuaternion(float w, float x, float y, float z) : m_fW(w), m_fX(x), m_fY(y), m_fZ(z) { }
+
+	const static NiQuaternion IDENTITY;
+
+	static float Dot(const NiQuaternion& p, const NiQuaternion& q)
+	{
+		return p.m_fW * q.m_fW + p.m_fX * q.m_fX + 
+			   p.m_fY * q.m_fY + p.m_fZ * q.m_fZ;
+	}
+
+	void Normalize()
+	{
+		float fLength = m_fW * m_fW + m_fX * m_fX + m_fY * m_fY + m_fZ * m_fZ;
+		float fInvLength = 1.0f / NiSqrt(fLength);
+		*this = *this * fInvLength;
+	}
+
+	void SetValues(float w, float x, float y, float z)
+	{
+		m_fW = w;
+		m_fX = x;
+		m_fY = y;
+		m_fZ = z;
+	}
+
+	void GetValues(float& w, float& x, float& y, float& z) const
+	{
+		w = m_fW;
+		x = m_fX;
+		y = m_fY;
+		z = m_fZ;
+	}
+	
+	void SetW(float w)
+	{
+		m_fW = w;
+	}
+	
+	void SetX(float x)
+	{
+		m_fX = x;
+	}
+	
+	void SetY(float y)
+	{
+		m_fY = y;
+	}
+	
+	void SetZ(float z)
+	{
+		m_fZ = z;
+	}
+	
+	float GetW() const
+	{
+		return m_fW;
+	}
+	
+	float GetX() const
+	{
+		return m_fX;
+	}
+	
+	float GetY() const
+	{
+		return m_fY;
+	}
+	
+	float GetZ() const
+	{
+		return m_fZ;
+	}
+	
+	NiQuaternion operator+ (const NiQuaternion& q) const
+	{
+	    return NiQuaternion(m_fW + q.m_fW, m_fX + q.m_fX,
+	        m_fY + q.m_fY, m_fZ + q.m_fZ);
+	}
+	
+	NiQuaternion operator- (const NiQuaternion& q) const
+	{
+	    return NiQuaternion(m_fW - q.m_fW, m_fX - q.m_fX,
+	        m_fY - q.m_fY, m_fZ - q.m_fZ);
+	}
+	
+	NiQuaternion operator- () const
+	{
+	    return NiQuaternion(-m_fW, -m_fX, -m_fY, -m_fZ);
+	}
+	
+	NiQuaternion operator* (const NiQuaternion& q) const
+	{
+	    return NiQuaternion
+	    (
+	        m_fW * q.m_fW - m_fX * q.m_fX - m_fY * q.m_fY - m_fZ * q.m_fZ,
+	        m_fW * q.m_fX + m_fX * q.m_fW + m_fY * q.m_fZ - m_fZ * q.m_fY,
+	        m_fW * q.m_fY + m_fY * q.m_fW + m_fZ * q.m_fX - m_fX * q.m_fZ,
+	        m_fW * q.m_fZ + m_fZ * q.m_fW + m_fX * q.m_fY - m_fY * q.m_fX
+	    );
+	}
+	
+	NiQuaternion operator* (float c) const
+	{
+		return NiQuaternion(c * m_fW, c * m_fX, c * m_fY, c * m_fZ);
+	}
+	
+	void FromRotation(const NiMatrix33& rot)
+	{
+		// Algorithm in Ken Shoemake's article in 1987 SIGGraPH course notes
+		// article "Quaternion Calculus and Fast Animation".
+
+		float fTrace = rot.GetEntry(0,0) + rot.GetEntry(1,1) + rot.GetEntry(2,2);
+		float fRoot;
+
+		if ( fTrace > 0.0f )
+		{
+			// |w| > 1/2, may as well choose w > 1/2
+			fRoot = NiSqrt(fTrace+1.0f);  // 2w
+			m_fW = 0.5f*fRoot;
+			fRoot = 0.5f/fRoot;  // 1/(4w)
+
+			m_fX = (rot.GetEntry( 2,1 ) - rot.GetEntry( 1,2 )) * fRoot;
+			m_fY = (rot.GetEntry( 0,2 ) - rot.GetEntry( 2,0 )) * fRoot;
+			m_fZ = (rot.GetEntry( 1,0 ) - rot.GetEntry( 0,1 )) * fRoot;
+		}
+		else
+		{
+			// |w| <= 1/2
+			static int next[3] = { 1, 2, 0 };
+			int i = 0;
+			if ( rot.GetEntry( 1,1 ) > rot.GetEntry( 0,0 ) )
+				i = 1;
+			if ( rot.GetEntry( 2,2 ) > rot.GetEntry( i,i ) ) 
+				i = 2;
+			int j = next[i];
+			int k = next[j];
+
+			fRoot = NiSqrt(rot.GetEntry( i,i ) - 
+				rot.GetEntry( j,j ) - rot.GetEntry( k,k ) + 1.0f);
+			float* quat[3] = { &m_fX, &m_fY, &m_fZ };
+			*quat[i] = 0.5f*fRoot;
+			fRoot = 0.5f/fRoot;
+			m_fW = (rot.GetEntry( k,j ) - rot.GetEntry( j,k )) * fRoot;
+			*quat[j] = (rot.GetEntry( j,i ) + rot.GetEntry( i,j )) * fRoot;
+			*quat[k] = (rot.GetEntry( k,i ) + rot.GetEntry( i,k )) * fRoot;
+		}
+	}
+};
+
+
 
 // 34
 struct NiTransform
@@ -577,15 +813,13 @@ class NiPointer
 public:
 	NiPointer(T *init) : data(init)		{	}
 
-	T	* data;
-
-	const T&	operator *() const { return *data; }
-	T&			operator *() { return *data; }
-
-	operator const T*() const { return data; }
+	T* data;
+	T& operator *() { return *data; }
 	operator T*() { return data; }
-
 	const T* operator->() { return data; }
+	
+	T& operator *() const { return *data; }
+	operator T*() const { return data; }
 	const T* operator->() const { return data; }
 };
 

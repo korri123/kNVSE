@@ -62,7 +62,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	const auto baseAnimGroup = static_cast<AnimGroupID>(animGroupId);
 	if (g_disableFirstPersonTurningAnims && animData == g_thePlayer->firstPersonAnimData && (baseAnimGroup == kAnimGroup_TurnLeft || baseAnimGroup == kAnimGroup_TurnRight))
 		return destAnim;
-	bool replaced = false;
 	if (animData && animData->actor)
 	{
 		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
@@ -72,7 +71,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		auto* queuedAnim = GetQueuedAnim(animData, animGroupId);
 		if (queuedAnim)
 		{
-			replaced = true;
 			destAnim = queuedAnim;
 		}
 
@@ -83,7 +81,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 				return destAnim;
 			if (auto* anim = GetAnimByGroupID(animData, newGroupId); anim && anim->animGroup)
 			{
-				replaced = true;
 				destAnim = anim;
 				animGroupId = anim->animGroup->groupID;
 			}
@@ -94,7 +91,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
 			if (newAnim)
 			{
-				replaced = true;
 				destAnim = newAnim;
 			}
 		}
@@ -108,16 +104,14 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (g_fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		return destAnim;
 
+#if _DEBUG
 	BSAnimGroupSequence* currentAnim = nullptr;
 	if (destAnim && destAnim->animGroup)
 		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
 			currentAnim = animData->animSequence[groupInfo->sequenceType];
-
+#endif
 	// hooked call
-	const auto result = ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
-	if (g_fixBlendSamePriority && replaced)
-		BlendFixes::FixConflictingPriorities(currentAnim, result);
-	return result;
+	return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
 }
 
 #if 0

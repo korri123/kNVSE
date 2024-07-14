@@ -186,7 +186,7 @@ float CalculateTransitionBlendTime(AnimData* animData, BSAnimGroupSequence* src,
 		return blend;
 	NiQuatTransform destTransform;
 	NiQuatTransform srcTransform;
-	if (!srcInterp->Update(0.0f, sceneRoot, &srcTransform) || !destInterp->Update(0.0f, sceneRoot, &destTransform))
+	if (!srcInterp->Update(0.0f, sceneRoot, srcTransform) || !destInterp->Update(0.0f, sceneRoot, destTransform))
 		return blend;
 	const auto& srcPoint = srcTransform.m_kTranslate;
 	const auto& dstPoint = destTransform.m_kTranslate;

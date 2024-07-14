@@ -1,4 +1,6 @@
 #pragma once
+#include <functional>
+
 
 void SafeWrite8(UInt32 addr, UInt32 data);
 void SafeWrite16(UInt32 addr, UInt32 data);
@@ -11,7 +13,22 @@ void WriteRelJump(UInt32 jumpSrc, T jumpTgt)
 {
 	// jmp rel32
 	SafeWrite8(jumpSrc, 0xE9);
-	SafeWrite32(jumpSrc + 1, reinterpret_cast<UInt32>(jumpTgt) - jumpSrc - 1 - 4);
+	SafeWrite32(jumpSrc + 1, UInt32(jumpTgt) - jumpSrc - 1 - 4);
+}
+
+
+// Specialization for member function pointers
+template <typename C, typename Ret, typename... Args>
+void WriteRelJump(unsigned long jumpSrc, Ret (C::*jumpTgt)(Args...)) {
+	union
+	{
+		Ret (C::*tgt)(Args...);
+		UInt32 funcPtr;
+	} conversion;
+	conversion.tgt = jumpTgt;
+
+	// Call the primary template with the converted function pointer
+	WriteRelJump(jumpSrc, conversion.funcPtr);
 }
 
 void WriteRelCall(UInt32 jumpSrc, UInt32 jumpTgt);

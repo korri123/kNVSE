@@ -13,66 +13,74 @@ void LogAnimError(const BSAnimGroupSequence* anim, const std::string& msg)
 void FixInconsistentEndTime(BSAnimGroupSequence* anim)
 {
 	const auto* endKey = anim->textKeyData->FindFirstByName("end");
-	if (endKey && anim->endKeyTime > endKey->m_fTime)
+	if (!endKey)
 	{
-		const auto endKeyTime = endKey->m_fTime;
-		LogAnimError(anim, FormatString("Fixed stop time is greater than end key time %f > %f", anim->endKeyTime, endKeyTime));
-		anim->endKeyTime = endKeyTime;
-		for (const auto& block : anim->GetControlledBlocks())
+		LogAnimError(anim, "No end key found in anim");
+		return;
+	}
+	const auto endKeyTime = endKey->m_fTime;
+	anim->endKeyTime = endKeyTime;
+#if _DEBUG
+	const auto tags = anim->GetIDTags();
+	auto idx = 0;
+#endif
+	for (const auto& block : anim->GetControlledBlocks())
+	{
+#if _DEBUG
+		auto& tag = tags[idx++];
+#endif
+		auto* interpolator = block.interpolator;
+		if (interpolator && interpolator->m_spData && IS_TYPE(interpolator, NiTransformInterpolator))
 		{
-			auto* interpolator = block.interpolator;
-			if (interpolator && interpolator->m_spData && IS_TYPE(interpolator, NiTransformInterpolator))
+			const auto& data = *interpolator->m_spData;
+
+			// this heap of mess is required since they keys are different sizes depending on the type
+			const auto updateEndKeyTime = [&](auto getKeyFunction)
 			{
-				const auto& data = *interpolator->m_spData;
+				auto keys = (data.*getKeyFunction)();
+				if (!keys.empty())
+					keys.back().m_fTime = endKeyTime;
+			};
 
-				// this heap of mess is required since they keys are different sizes depending on the type
-				const auto updateEndKeyTime = [&](auto getKeyFunction)
-				{
-					auto keys = (data.*getKeyFunction)();
-					if (!keys.empty())
-						keys.back().m_fTime = endKeyTime;
-				};
-
-				switch (data.m_ePosType)
-				{
-				case BEZKEY:
-					updateEndKeyTime(&NiTransformData::GetPosKeys<NiBezPosKey>);
-					break;
-				case TCBKEY:
-					updateEndKeyTime(&NiTransformData::GetPosKeys<NiTCBPosKey>);
-					break;
-				default:
-					updateEndKeyTime(&NiTransformData::GetPosKeys<NiPosKey>);
-					break;
-				}
+			switch (data.m_ePosType)
+			{
+			case NiAnimationKey::BEZKEY:
+				updateEndKeyTime(&NiTransformData::GetPosKeys<NiBezPosKey>);
+				break;
+			case NiAnimationKey::TCBKEY:
+				updateEndKeyTime(&NiTransformData::GetPosKeys<NiTCBPosKey>);
+				break;
+			default:
+				updateEndKeyTime(&NiTransformData::GetPosKeys<NiPosKey>);
+				break;
+			}
 				
-				switch (data.m_eRotType)
-				{
-				case BEZKEY:
-					updateEndKeyTime(&NiTransformData::GetRotKeys<NiBezRotKey>);
-					break;
-				case TCBKEY:
-					updateEndKeyTime(&NiTransformData::GetRotKeys<NiTCBRotKey>);
-					break;
-				case EULERKEY:
-					updateEndKeyTime(&NiTransformData::GetRotKeys<NiEulerRotKey>);
-					break;
-				default:
-					updateEndKeyTime(&NiTransformData::GetRotKeys<NiRotKey>);
-					break;
-				}
-				switch (data.m_eScaleType)
-				{
-				case BEZKEY:
-					updateEndKeyTime(&NiTransformData::GetScaleKeys<NiBezPosKey>);
-					break;
-				case TCBKEY:
-					updateEndKeyTime(&NiTransformData::GetScaleKeys<NiTCBPosKey>);
-					break;
-				default:
-					updateEndKeyTime(&NiTransformData::GetScaleKeys<NiFloatKey>);
-					break;
-				}
+			switch (data.m_eRotType)
+			{
+			case NiAnimationKey::BEZKEY:
+				updateEndKeyTime(&NiTransformData::GetRotKeys<NiBezRotKey>);
+				break;
+			case NiAnimationKey::TCBKEY:
+				updateEndKeyTime(&NiTransformData::GetRotKeys<NiTCBRotKey>);
+				break;
+			case NiAnimationKey::EULERKEY:
+				updateEndKeyTime(&NiTransformData::GetRotKeys<NiEulerRotKey>);
+				break;
+			default:
+				updateEndKeyTime(&NiTransformData::GetRotKeys<NiRotKey>);
+				break;
+			}
+			switch (data.m_eScaleType)
+			{
+			case NiAnimationKey::BEZKEY:
+				updateEndKeyTime(&NiTransformData::GetScaleKeys<NiBezPosKey>);
+				break;
+			case NiAnimationKey::TCBKEY:
+				updateEndKeyTime(&NiTransformData::GetScaleKeys<NiTCBPosKey>);
+				break;
+			default:
+				updateEndKeyTime(&NiTransformData::GetScaleKeys<NiFloatKey>);
+				break;
 			}
 		}
 	}

@@ -7,6 +7,10 @@
 #include "GameTypes.h"
 #include "Utilities.h"
 
+constexpr float NI_INFINITY = FLT_MAX;
+constexpr float INVALID_TIME = -NI_INFINITY;
+constexpr unsigned char INVALID_INDEX = UCHAR_MAX;
+
 /*** class hierarchy
  *
  *	yet again taken from rtti information
@@ -856,7 +860,7 @@ public:
 	NiInterpolator();
 	~NiInterpolator();
 
-	virtual bool	Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform* kValue);
+	virtual bool	Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
 	virtual void	Unk_24(void);
 	virtual void	Unk_25(void);
 	virtual void	Unk_26(void);
@@ -877,9 +881,662 @@ public:
 	virtual void	Unk_35(void);
 	virtual void	Unk_36(void);
 
-	float m_lastTime;
+	float m_fLastTime;
+
+	bool TimeHasChanged(float fTime)
+	{
+		return (m_fLastTime != fTime);
+	}
+};
+
+struct NiKeyBasedInterpolator : NiInterpolator
+{
+};
+
+struct NiAnimationKey
+{
+	
+	/* 1224 */
+	enum KeyType
+	{
+		NOINTERP = 0x0,
+		LINKEY = 0x1,
+		BEZKEY = 0x2,
+		TCBKEY = 0x3,
+		EULERKEY = 0x4,
+		STEPKEY = 0x5,
+		NUMKEYTYPES = 0x6,
+	};
+
+	float m_fTime;
+
+	typedef void (*InterpFunction)(float fTime, const NiAnimationKey* pKey0,
+		const NiAnimationKey* pKey1, void* pResult);
+
+
+	float GetTime() const
+	{
+		return m_fTime;
+	}
+
+	enum KeyContent
+	{
+		FLOATKEY,
+		POSKEY,
+		ROTKEY,
+		COLORKEY,
+		TEXTKEY,
+		BOOLKEY,
+		NUMKEYCONTENTS
+	};
+
+	NiAnimationKey* GetKeyAt(unsigned int uiIndex, unsigned char ucKeySize) const
+	{
+		return (NiAnimationKey*) ((char*) this + uiIndex * ucKeySize);
+	}
+};
+
+struct NiRotKey : NiAnimationKey
+{
+	NiQuaternion m_quat;
+
+	const NiQuaternion& GetQuaternion() const
+	{
+		return m_quat;
+	}
+
+	NiRotKey* GetKeyAt(unsigned int uiIndex, unsigned char ucKeySize)
+	{
+		return (NiRotKey*) NiAnimationKey::GetKeyAt(uiIndex, ucKeySize);
+	}
+
+	static InterpFunction GetInterpFunction(KeyType eType)
+	{
+		const auto* interps = reinterpret_cast<InterpFunction*>(0x11F3CC0);
+		return interps[eType];
+	}
+
+	static NiQuaternion GenInterp(float fTime, NiRotKey* pkKeys, KeyType eType, unsigned int uiNumKeys, unsigned short& uiLastIdx,unsigned char ucSize)
+	{
+	    NIASSERT(uiNumKeys != 0);
+	    if (uiNumKeys == 1)
+	    {
+	        if (eType != EULERKEY)
+	            return pkKeys->GetKeyAt(0, ucSize)->GetQuaternion();
+	    }
+
+	    // If rotation keys are specified as Euler angles then execution is
+	    // directed to another routine due to the special requirements in
+	    // handling Euler angles.
+	    if ( eType == EULERKEY )
+	    {
+	        InterpFunction interp = GetInterpFunction(eType);
+	        NIASSERT( interp );
+	        NiQuaternion kQuat;
+	        interp(fTime, pkKeys->GetKeyAt(0, ucSize), 0, &kQuat);
+	        return kQuat;
+	    }
+
+	    unsigned int uiNumKeysM1 = uiNumKeys - 1;
+
+	    // This code assumes that the time values in the keys are ordered by
+	    // increasing value.  The search can therefore begin at uiLastIdx rather
+	    // than zero each time.  The idea is to provide an O(1) lookup based on
+	    // time coherency of the keys.
+
+	    float fLastTime = pkKeys->GetKeyAt(uiLastIdx, ucSize)->GetTime();
+	    if ( fTime < fLastTime )
+	    {
+	        uiLastIdx = 0;
+	        fLastTime = pkKeys->GetKeyAt(0, ucSize)->GetTime();
+	    }
+	    
+	    unsigned int uiNextIdx;
+	    float fNextTime = 0.0f;
+	    for (uiNextIdx = uiLastIdx + 1; uiNextIdx <= uiNumKeysM1; uiNextIdx++)
+	    {
+	        fNextTime = pkKeys->GetKeyAt(uiNextIdx, ucSize)->GetTime();
+	        if ( fTime <= fNextTime )
+	            break;
+
+	        uiLastIdx++;
+	        fLastTime = fNextTime;
+	    }
+
+	    NIASSERT(uiNextIdx < uiNumKeys);
+
+	    // interpolate the keys, requires that the time is normalized to [0,1]
+	    float fNormTime = (fTime - fLastTime)/(fNextTime - fLastTime);
+	    NiRotKey::InterpFunction interp = NiRotKey::GetInterpFunction(eType);
+	    NIASSERT( interp );
+	    NiQuaternion kQuat;
+	    interp(fNormTime, pkKeys->GetKeyAt(uiLastIdx, ucSize),
+	        pkKeys->GetKeyAt(uiNextIdx, ucSize), &kQuat);
+	    return kQuat;
+	}
+};
+
+struct NiTCBRotKey : NiRotKey
+{
+	float m_fTension;
+	float m_fContinuity;
+	float m_fBias;
+	NiQuaternion m_A;
+	NiQuaternion m_B;
+};
+
+struct NiEulerRotKey : NiRotKey
+{
+	unsigned int m_uiNumKeys[3];
+	KeyType m_eType[3];
+	char m_ucSizes[3];
+	NiFloatKey *m_apkKeys[3];
+	unsigned int m_uiLastIdx[3];
+};
+
+struct NiBezRotKey : NiRotKey
+{
+	NiQuaternion m_IntQuat;
+};
+
+struct NiPosKey : NiAnimationKey
+{
+	NiPoint3 m_Pos;
+
+	NiPosKey* GetKeyAt(unsigned int uiIndex, unsigned char ucKeySize)
+	{
+		return (NiPosKey*) NiAnimationKey::GetKeyAt(uiIndex, ucKeySize);
+	}
+
+	const NiPoint3& GetPos() const
+	{
+		return m_Pos;
+	}
+	
+	static InterpFunction GetInterpFunction(KeyType eType)
+	{
+		const auto* interps = reinterpret_cast<InterpFunction*>(0x11F3CA8);
+		return interps[eType];
+	}
+
+	static NiPoint3 GenInterp(float fTime, NiPosKey* pkKeys, KeyType eType, unsigned int uiNumKeys, unsigned short& uiLastIdx, unsigned char ucSize)
+	{
+		ASSERT(uiNumKeys != 0);
+		if (uiNumKeys == 1)
+			return pkKeys->GetKeyAt(0, ucSize)->GetPos();
+		
+		unsigned int uiNumKeysM1 = uiNumKeys - 1;
+
+		// This code assumes that the time values in the keys are ordered by
+		// increasing value.  The search can therefore begin at uiLastIdx rather
+		// than zero each time.  The idea is to provide an O(1) lookup based on
+		// time coherency of the keys.
+
+		float fLastTime = pkKeys->GetKeyAt(uiLastIdx, ucSize)->GetTime();
+		if ( fTime < fLastTime )
+		{
+			uiLastIdx = 0;
+			fLastTime = pkKeys->GetKeyAt(0, ucSize)->GetTime();
+		}
+    
+		unsigned int uiNextIdx;
+		float fNextTime = 0.0f;
+		for (uiNextIdx = uiLastIdx + 1; uiNextIdx <= uiNumKeysM1; uiNextIdx++)
+		{
+			fNextTime = pkKeys->GetKeyAt(uiNextIdx, ucSize)->GetTime();
+			if ( fTime <= fNextTime )
+				break;
+
+			uiLastIdx++;
+			fLastTime = fNextTime;
+		}
+
+		ASSERT(uiNextIdx < uiNumKeys);
+
+		// interpolate the keys, requires that the time is normalized to [0,1]
+		float fNormTime = (fTime - fLastTime)/(fNextTime - fLastTime);
+		InterpFunction interp = GetInterpFunction(eType);
+		ASSERT( interp );
+		NiPoint3 kResult;
+		interp(fNormTime, pkKeys->GetKeyAt(uiLastIdx, ucSize),
+			pkKeys->GetKeyAt(uiNextIdx, ucSize), &kResult);
+		return kResult;
+	}
 
 };
+
+struct NiBezPosKey : NiPosKey
+{
+	NiPoint3 m_InTan;
+	NiPoint3 m_OutTan;
+	NiPoint3 m_A;
+	NiPoint3 m_B;
+};
+
+struct NiTCBPosKey : NiPosKey
+{
+	float m_fTension;
+	float m_fContinuity;
+	float m_fBias;
+	NiPoint3 m_DS;
+	NiPoint3 m_DD;
+	NiPoint3 m_A;
+	NiPoint3 m_B;
+};
+
+struct NiFloatKey : NiAnimationKey
+{
+	float m_fValue;
+
+	float GetValue() const
+	{
+		return m_fValue;
+	}
+
+	NiFloatKey* GetKeyAt(unsigned int uiIndex, unsigned char ucKeySize)
+	{
+		return (NiFloatKey*) NiAnimationKey::GetKeyAt(uiIndex, ucKeySize);
+	}
+
+	static InterpFunction GetInterpFunction(KeyType eType)
+	{
+		const auto* interps = (InterpFunction*)0x11F3C90;
+		return interps[eType];
+	}
+
+
+	static float GenInterp(float fTime, NiFloatKey* pkKeys, KeyType eType, unsigned int uiNumKeys, unsigned short& uiLastIdx, unsigned char ucSize)
+	{
+		NIASSERT(uiNumKeys != 0);
+		if (uiNumKeys == 1)
+			return pkKeys->GetKeyAt(0, ucSize)->GetValue();
+
+		unsigned int uiNumKeysM1 = uiNumKeys - 1;
+
+		// This code assumes that the time values in the keys are ordered by
+		// increasing value.  The search can therefore begin at uiLastIdx rather
+		// than zero each time.  The idea is to provide an O(1) lookup based on
+		// time coherency of the keys.
+
+		// Copy the last index to a stack variable here to ensure that each thread
+		// has its own consistent copy of the value. The stack variable is copied
+		// back to the reference variable at the end of this function.
+		unsigned int uiStackLastIdx = uiLastIdx;
+
+		float fLastTime = pkKeys->GetKeyAt(uiStackLastIdx, ucSize)->GetTime();
+		if(fTime < fLastTime)
+		{
+			uiStackLastIdx = 0;
+			fLastTime = pkKeys->GetKeyAt(0, ucSize)->GetTime();
+		}
+
+		unsigned int uiNextIdx;
+		float fNextTime = 0.0f;
+		for(uiNextIdx = uiStackLastIdx + 1; uiNextIdx <= uiNumKeysM1; uiNextIdx++)
+		{
+			fNextTime = pkKeys->GetKeyAt(uiNextIdx, ucSize)->GetTime();
+			if(fTime <= fNextTime)
+				break;
+
+			uiStackLastIdx++;
+			fLastTime = fNextTime;
+		}
+    
+		NIASSERT(uiNextIdx < uiNumKeys);
+
+		// interpolate the keys, requires that the time is normalized to [0,1]
+		float fNormTime = (fTime - fLastTime)/(fNextTime - fLastTime);
+		NiAnimationKey::InterpFunction interp = 
+			NiFloatKey::GetInterpFunction(eType);
+		NIASSERT(interp);
+		float fReturn;
+		//interp(fNormTime, pkKeys->GetKeyAt(uiStackLastIdx, ucSize),
+		//	pkKeys->GetKeyAt(uiNextIdx, ucSize), &fReturn);
+		interp(uiNumKeys, pkKeys->GetKeyAt(uiStackLastIdx, ucSize), pkKeys->GetKeyAt(uiNextIdx, ucSize), &fReturn);
+		uiLastIdx = uiStackLastIdx;
+		return fReturn;
+	}
+
+	static float GenInterpAlt(
+		float fTime,
+		NiFloatKey *pkKeys,
+		KeyType eType,
+		unsigned int uiNumKeys,
+		unsigned __int16& uiLastIdx,
+		unsigned int ucSize)
+	{
+		NIASSERT(uiNumKeys != 0);
+		if (uiNumKeys == 1) {
+			return pkKeys->GetKeyAt(0, ucSize)->GetValue();
+		}
+
+		unsigned int uiNumKeysM1 = uiNumKeys - 1;
+		unsigned int lastIdx = uiLastIdx;
+		float lastTime = pkKeys->GetKeyAt(lastIdx, ucSize)->GetTime();
+
+		if (fTime < lastTime) {
+			lastIdx = 0;
+			lastTime = pkKeys->GetKeyAt(0, ucSize)->GetTime();
+		}
+
+		unsigned int nextIdx;
+		float nextTime = 0.0f;
+
+		if ((uiNumKeys - 1 - lastIdx) < 4) {
+			for (nextIdx = lastIdx + 1; nextIdx <= uiNumKeysM1; ++nextIdx) {
+				nextTime = pkKeys->GetKeyAt(nextIdx, ucSize)->GetTime();
+				if (fTime <= nextTime) {
+					break;
+				}
+				lastIdx++;
+				lastTime = nextTime;
+			}
+		} else {
+			unsigned int steps[] = {1, 2, 3, 4};
+			for (int i = 0; i < 4; ++i) {
+				nextIdx = lastIdx + steps[i];
+				nextTime = pkKeys->GetKeyAt(nextIdx, ucSize)->GetTime();
+				if (fTime <= nextTime) {
+					lastIdx += steps[i - 1];
+					break;
+				}
+				lastTime = nextTime;
+			}
+		}
+
+		if (nextIdx >= uiNumKeys) {
+			nextIdx = uiNumKeysM1;
+			nextTime = pkKeys->GetKeyAt(nextIdx, ucSize)->GetTime();
+		}
+
+		NIASSERT(nextIdx < uiNumKeys);
+
+		float normTime = (fTime - lastTime) / (nextTime - lastTime);
+		InterpFunction interp = GetInterpFunction(eType);
+		NIASSERT(interp);
+
+		float result;
+		interp(normTime, pkKeys->GetKeyAt(lastIdx, ucSize), pkKeys->GetKeyAt(nextIdx, ucSize), &result);
+
+		uiLastIdx = lastIdx;
+		return result;
+	}
+
+	static float GenInterpVanilla(
+		float fTime,
+		NiFloatKey *pkKeys,
+		KeyType eType,
+		unsigned int uiNumKeys,
+		unsigned short& usLastIdx,
+		unsigned int ucSize)
+	{
+		UInt32 uiLastIdx = usLastIdx;
+		float result = CdeclCall<float>(0xA26B40, fTime, pkKeys, eType, uiNumKeys, &uiLastIdx, ucSize);
+		usLastIdx = uiLastIdx;
+		return result;
+	}
+
+};
+
+struct NiBezFloatKey : NiFloatKey
+{
+	float m_fInTan;
+	float m_fOutTan;
+};
+
+struct NiTCBFloatKey : NiFloatKey
+{
+	float m_fTension;
+	float m_fContinuity;
+	float m_fBias;
+	float m_fDS;
+	float m_fDD;
+};
+
+class NiTransformData : public NiObject
+{
+public:
+	unsigned __int16 m_uiNumRotKeys;
+	unsigned __int16 m_uiNumPosKeys;
+	unsigned __int16 m_uiNumScaleKeys;
+	NiAnimationKey::KeyType m_eRotType;
+	NiAnimationKey::KeyType m_ePosType;
+	NiAnimationKey::KeyType m_eScaleType;
+
+	unsigned __int8 m_ucRotSize;
+	unsigned __int8 m_ucPosSize;
+	unsigned __int8 m_ucScaleSize;
+	NiRotKey* m_pkRotKeys;
+	NiPosKey* m_pkPosKeys;
+	NiFloatKey* m_pkScaleKeys;
+
+	template <typename T>
+	std::span<T> GetRotKeys() const
+	{
+		return { reinterpret_cast<T*>(m_pkRotKeys), m_uiNumRotKeys };
+	}
+
+	template <typename T>
+	std::span<T> GetPosKeys() const
+	{
+		return { reinterpret_cast<T*>(m_pkPosKeys), m_uiNumPosKeys };
+	}
+
+	template <typename T>
+	std::span<T> GetScaleKeys() const
+	{
+		return {reinterpret_cast<T*>(m_pkScaleKeys), m_uiNumScaleKeys };
+	}
+
+	NiPosKey* GetPosAnim(unsigned int& iNumKeys, NiAnimationKey::KeyType& eType, unsigned char& ucSize) const
+	{
+		iNumKeys = m_uiNumPosKeys;
+		eType = m_ePosType;
+		ucSize = m_ucPosSize;
+		return m_pkPosKeys;
+	}
+
+	NiRotKey* GetRotAnim(unsigned int& uiNumKeys, NiAnimationKey::KeyType& eType, unsigned char& ucSize) const
+	{
+		uiNumKeys = m_uiNumRotKeys;
+		eType = m_eRotType;
+		ucSize = m_ucRotSize;
+		return m_pkRotKeys;
+	}
+
+	NiFloatKey* GetScaleAnim(unsigned int& uiNumKeys, NiFloatKey::KeyType& eType, unsigned char& ucSize) const
+	{
+		uiNumKeys = m_uiNumScaleKeys;
+		eType = m_eScaleType;
+		ucSize = m_ucScaleSize;
+		return m_pkScaleKeys;
+	}
+};
+
+struct NiQuatTransform
+{
+	NiPoint3 m_kTranslate;
+	NiQuaternion m_kRotate;
+	float m_fScale;
+
+	void MakeInvalid()
+	{
+		SetTranslateValid(false);
+		SetRotateValid(false);
+		SetScaleValid(false);
+	}
+
+	bool IsScaleValid() const
+	{
+		return m_fScale != -NI_INFINITY;
+	}
+
+	bool IsRotateValid() const
+	{
+		return m_kRotate.m_fX != -NI_INFINITY;
+	}
+
+	bool IsTranslateValid() const
+	{
+		return m_kTranslate.x != -NI_INFINITY;
+	}
+
+	bool IsTransformInvalid() const
+	{
+		return !(IsScaleValid() || IsRotateValid() || IsTranslateValid());
+	}
+
+	void SetScaleValid(bool bValid)
+	{
+		if (!bValid)
+			m_fScale = -NI_INFINITY;
+	}
+
+	void SetRotateValid(bool bValid)
+	{
+		if (!bValid)
+			m_kRotate.m_fX = -NI_INFINITY;
+	}
+
+	void SetTranslateValid(bool bValid)
+	{
+		if (!bValid)
+			m_kTranslate.x = -NI_INFINITY;
+	}
+
+	void SetScale(float fScale)
+	{
+		m_fScale = fScale;
+		SetScaleValid(true);
+	}
+
+	float GetScale() const
+	{
+		return m_fScale;
+	}
+
+	const NiQuaternion& GetRotate() const
+	{
+		return m_kRotate;
+	}
+
+	void SetRotate(const NiQuaternion& kRotate)
+	{
+		m_kRotate = kRotate;
+		SetRotateValid(true);
+	}
+
+	void SetRotate(const NiMatrix3& kRotate)
+	{
+		NiQuaternion kRotateQuat;
+		kRotateQuat.FromRotation(kRotate);
+		SetRotate(kRotateQuat);
+	}
+
+	void SetTranslate(const NiPoint3& kTranslate)
+	{
+		m_kTranslate = kTranslate;
+		SetTranslateValid(true);
+	}
+
+	const NiPoint3& GetTranslate() const
+	{
+		return m_kTranslate;
+	}
+
+	NiQuatTransform operator*(const NiQuatTransform& kTransform) const
+	{
+		NiQuatTransform kDest;
+
+		if (!IsScaleValid() || !kTransform.IsScaleValid())
+		{
+			kDest.SetScaleValid(false);
+		}
+		else
+		{
+			kDest.SetScale(m_fScale * kTransform.GetScale());
+		}
+
+		if (!IsRotateValid() || !kTransform.IsRotateValid())
+		{
+			kDest.SetRotateValid(false);
+		}
+		else
+		{
+			NiQuaternion kTempRot = m_kRotate * kTransform.GetRotate();
+			kTempRot.Normalize();
+			kDest.SetRotate(kTempRot);
+		}
+
+		if (!IsTranslateValid() || !kTransform.IsTranslateValid())
+		{
+			kDest.SetTranslateValid(false);
+		}
+		else
+		{
+			kDest.SetTranslate(m_kTranslate + kTransform.GetTranslate());
+		}
+
+		return kDest;
+	}
+};
+
+class NiTransformInterpolator : public NiKeyBasedInterpolator {
+public:
+	NiQuatTransform		m_kTransformValue;
+	NiPointer<NiTransformData> m_spData;
+	UInt16				m_usLastTransIdx;
+	UInt16				m_usLastRotIdx;
+	UInt16				m_usLastScaleIdx;
+	UInt32				unk38;
+	UInt32				unk3C;
+	UInt32				unk40;
+	bool				bPose;
+	
+	NiFloatKey* GetScaleData(unsigned int& uiNumKeys, NiFloatKey::KeyType& eType, unsigned char& ucSize) const
+	{
+		if (m_spData)
+		{
+			return m_spData->GetScaleAnim(uiNumKeys, eType, ucSize);
+		}
+
+		uiNumKeys = 0;
+		eType = NiFloatKey::NOINTERP;
+		ucSize = 0;
+		return NULL;
+	}
+
+	//---------------------------------------------------------------------------
+	NiPosKey* GetPosData(
+		unsigned int& uiNumKeys, NiAnimationKey::KeyType& eType, unsigned char& ucSize) const
+	{
+		if (m_spData)
+		{
+			return m_spData->GetPosAnim(uiNumKeys, eType, ucSize);
+		}
+
+		uiNumKeys = 0;
+		eType = NiAnimationKey::NOINTERP;
+		ucSize = 0;
+		return nullptr;
+	}
+
+	NiRotKey* GetRotData(unsigned int& uiNumKeys, NiAnimationKey::KeyType& eType, unsigned char& ucSize) const
+	{
+		if (m_spData)
+		{
+			return m_spData->GetRotAnim(uiNumKeys, eType, ucSize);
+		}
+
+		uiNumKeys = 0;
+		eType = NiAnimationKey::NOINTERP;
+		ucSize = 0;
+		return nullptr;
+	}
+
+	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+};
+static_assert(sizeof(NiTransformInterpolator) == 0x48);
 
 /* 12659 */
 class NiTimeController : public NiObject
@@ -906,6 +1563,13 @@ class NiInterpController : public NiTimeController
 class NiBlendInterpolator : public NiInterpolator
 {
 public:
+	enum
+	{
+		MANAGER_CONTROLLED_MASK = 0X0001,
+		ONLY_USE_HIGHEST_WEIGHT_MASK = 0X0002,
+		COMPUTE_NORMALIZED_WEIGHTS_MASK = 0x0004
+	};
+	
 	struct InterpArrayItem
 	{
 		NiPointer<NiTransformInterpolator> m_spInterpolator;
@@ -928,11 +1592,86 @@ public:
 	float m_fHighSumOfWeights;
 	float m_fNextHighSumOfWeights;
 	float m_fHighEaseSpinner;
+
+	bool GetBit(UInt32 mask) const
+	{
+		return (m_uFlags & mask) != 0;
+	}
+
+	void SetBit(bool bSet, unsigned int uMask)
+	{
+		if (bSet)
+			m_uFlags |= uMask;
+		else
+			m_uFlags &= ~uMask;
+	}
+
+	bool GetComputeNormalizedWeights() const
+	{
+		return GetBit(COMPUTE_NORMALIZED_WEIGHTS_MASK);
+	}
+
+	void SetComputeNormalizedWeights(bool bComputeNormalizedWeights)
+	{
+		SetBit(bComputeNormalizedWeights, COMPUTE_NORMALIZED_WEIGHTS_MASK);
+	}
+
+	bool GetOnlyUseHighestWeight() const
+	{
+		return GetBit(ONLY_USE_HIGHEST_WEIGHT_MASK);
+	}
+
+	bool GetManagerControlled() const
+	{
+		return GetBit(MANAGER_CONTROLLED_MASK);
+	}
+
+	bool GetUpdateTimeForItem(float& fTime, InterpArrayItem& kItem)
+	{
+		NiInterpolator* pkInterpolator = kItem.m_spInterpolator.data;
+		if (pkInterpolator && kItem.m_fNormalizedWeight != 0.0f)
+		{
+			if (GetManagerControlled())
+			{
+				fTime = kItem.m_fUpdateTime;
+			}
+
+			if (fTime == INVALID_TIME)
+			{
+				return false;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	void ComputeNormalizedWeights();
 };
 static_assert(sizeof(NiBlendInterpolator) == 0x30);
 
+class NiBlendAccumTransformInterpolator : public NiBlendInterpolator
+{
+public:
+	struct AccumArrayItem
+	{
+		float m_fLastTime;
+		NiQuatTransform m_kLastValue;
+		NiQuatTransform m_kDeltaValue;
+		NiMatrix33 m_kRefFrame;
+	};
+	
+	NiQuatTransform m_kAccumulatedTransformValue;
+	AccumArrayItem *m_pkAccumArray;
+	bool m_bReset;
+
+	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+};
+
 class NiBlendTransformInterpolator : public NiBlendInterpolator
 {
+public:
+	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
+					 NiQuatTransform& kValue);
 };
 
 /* 44137 */
@@ -1738,153 +2477,3 @@ public:
 	}
 };
 static_assert(sizeof(NiTextKeyExtraData) == 0x14);
-
-
-struct NiQuatTransform
-{
-	NiPoint3 m_kTranslate;
-	NiQuaternion m_kRotate;
-	float m_fScale;
-};
-
-/* 1224 */
-enum KeyType
-{
-	NOINTERP = 0x0,
-	LINKEY = 0x1,
-	BEZKEY = 0x2,
-	TCBKEY = 0x3,
-	EULERKEY = 0x4,
-	STEPKEY = 0x5,
-	NUMKEYTYPES = 0x6,
-};
-
-struct NiAnimationKey
-{
-	float m_fTime;
-};
-
-struct NiRotKey : NiAnimationKey
-{
-	NiQuaternion m_quat;
-};
-
-struct NiTCBRotKey : NiRotKey
-{
-	float m_fTension;
-	float m_fContinuity;
-	float m_fBias;
-	NiQuaternion m_A;
-	NiQuaternion m_B;
-};
-
-struct NiEulerRotKey : NiRotKey
-{
-	unsigned int m_uiNumKeys[3];
-	KeyType m_eType[3];
-	char m_ucSizes[3];
-	NiFloatKey *m_apkKeys[3];
-	unsigned int m_uiLastIdx[3];
-};
-
-struct NiBezRotKey : NiRotKey
-{
-	NiQuaternion m_IntQuat;
-};
-
-struct NiPosKey : NiAnimationKey
-{
-	NiPoint3 m_Pos;
-};
-
-struct NiBezPosKey : NiPosKey
-{
-	NiPoint3 m_InTan;
-	NiPoint3 m_OutTan;
-	NiPoint3 m_A;
-	NiPoint3 m_B;
-};
-
-struct NiTCBPosKey : NiPosKey
-{
-	float m_fTension;
-	float m_fContinuity;
-	float m_fBias;
-	NiPoint3 m_DS;
-	NiPoint3 m_DD;
-	NiPoint3 m_A;
-	NiPoint3 m_B;
-};
-
-struct NiFloatKey : NiAnimationKey
-{
-	float m_fValue;
-};
-
-struct NiBezFloatKey : NiFloatKey
-{
-	float m_fInTan;
-	float m_fOutTan;
-};
-
-struct NiTCBFloatKey : NiFloatKey
-{
-	float m_fTension;
-	float m_fContinuity;
-	float m_fBias;
-	float m_fDS;
-	float m_fDD;
-};
-
-class NiTransformData : public NiObject
-{
-public:
-	unsigned __int16 m_usNumRotKeys;
-	unsigned __int16 m_usNumPosKeys;
-	unsigned __int16 m_usNumScaleKeys;
-	KeyType m_eRotType;
-	KeyType m_ePosType;
-	KeyType m_eScaleType;
-
-	unsigned __int8 m_ucRotSize;
-	unsigned __int8 m_ucPosSize;
-	unsigned __int8 m_ucScaleSize;
-	NiRotKey* m_pkRotKeys;
-	NiPosKey* m_pkPosKeys;
-	NiFloatKey* m_pkScaleKeys;
-
-	template <typename T>
-	std::span<T> GetRotKeys() const
-	{
-		return { reinterpret_cast<T*>(m_pkRotKeys), m_usNumRotKeys };
-	}
-
-	template <typename T>
-	std::span<T> GetPosKeys() const
-	{
-		return { reinterpret_cast<T*>(m_pkPosKeys), m_usNumPosKeys };
-	}
-
-	template <typename T>
-	std::span<T> GetScaleKeys() const
-	{
-		return {reinterpret_cast<T*>(m_pkScaleKeys), m_usNumScaleKeys };
-	}
-};
-
-struct NiKeyBasedInterpolator : NiInterpolator
-{
-};
-
-class NiTransformInterpolator : public NiKeyBasedInterpolator {
-public:
-	NiQuatTransform		m_kTransformValue;
-	NiPointer<NiTransformData> m_spData;
-	UInt32				m_uiLastTransIdx;
-	UInt16				unk34;
-	UInt32				m_uiLastRotIdx;
-	UInt32				m_uiLastScaleIdx;
-	UInt32				unk40;
-	bool				bPose;
-};
-static_assert(sizeof(NiTransformInterpolator) == 0x48);
