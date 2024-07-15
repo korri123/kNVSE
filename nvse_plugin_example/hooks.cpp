@@ -105,15 +105,17 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (g_fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		return destAnim;
 
-	if (destAnim)
-		AnimFixes::FixInconsistentEndTime(destAnim);
+	
 
-#if _DEBUG
 	BSAnimGroupSequence* currentAnim = nullptr;
 	if (destAnim && destAnim->animGroup)
 		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
 			currentAnim = animData->animSequence[groupInfo->sequenceType];
-#endif
+
+	if (destAnim && currentAnim)
+	{
+		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
+	}
 	// hooked call
 	return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
 }
@@ -362,6 +364,10 @@ void __fastcall HandleOnReload(Actor* actor)
 bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
 {
 	auto* anim = kfModel->controllerSequence;
+
+	// done here as it's done once
+	AnimFixes::EraseNullTextKeys(anim);
+	AnimFixes::FixInconsistentEndTime(anim);
 	
 	if (base->IsSingle()) // single anims are always valid
 		return false;

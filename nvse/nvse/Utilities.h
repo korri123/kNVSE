@@ -211,6 +211,11 @@ inline void GameHeapFree(void* ptr)
 	ThisStdCall(0xAA4060, (void*)0x11F6238, ptr);
 }
 
+inline void GameHeapFreeArray(void* ptr)
+{
+	GameHeapFree((void**)ptr - 1);
+}
+
 #endif
 
 std::string FormatString(const char* fmt, ...);

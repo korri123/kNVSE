@@ -275,7 +275,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 					BSAnimGroupSequence* anim;
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
-						AnimFixes::ApplyFixes(animData, anim);
+						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
 						// anim->destFrame = kfModel->controllerSequence->destFrame;
 						const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return entry->second;
@@ -1643,18 +1643,6 @@ BSAnimGroupSequence* FindOrLoadAnim(Actor* actor, const char* path, bool firstPe
 	if (!animData)
 		return nullptr;
 	return FindOrLoadAnim(animData, path);
-}
-
-template <typename T>
-T* AllocateNiArray(UInt32 numElems)
-{
-	const auto msize = sizeof(T) * numElems + sizeof(UInt32);
-	auto* arr = static_cast<UInt32*>(GameHeapAlloc(msize));
-#if _DEBUG
-	memset(arr, 0xCD, msize);
-#endif
-	*arr = numElems;
-	return reinterpret_cast<T*>(arr + 1);
 }
 
 struct SettingT

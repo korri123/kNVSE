@@ -1690,7 +1690,7 @@ private:
 public:
 	const char* CStr() const
 	{
-		return data ? data : "";
+		return data;
 	}
 
 	explicit NiFixedString(const char* data)
@@ -2149,16 +2149,18 @@ public:
 	bool IsAttackIS();
 	bool IsAttackNonIS();
 
+	bool IsLoopingReloadStart() const;
+	bool IsLoopingReload() const;
 
 	bool IsAim()
 	{
-		auto idMinor = groupID & 0xFF;
+		const auto idMinor = groupID & 0xFF;
 		return idMinor >= kAnimGroup_Aim && idMinor <= kAnimGroup_AimISDown;
 	}
 
 	bool IsReload()
 	{
-		auto idMinor = groupID & 0xFF;
+		const auto idMinor = groupID & 0xFF;
 		return idMinor >= kAnimGroup_ReloadWStart && idMinor <= kAnimGroup_ReloadZ;
 	}
 	
@@ -2175,7 +2177,7 @@ public:
 	};
 
 	TESAnimGroup::AnimGroupInfo* GetGroupInfo() const;
-	UInt8 GetBaseGroupID() const;
+	AnimGroupID GetBaseGroupID() const;
 
 	struct __declspec(align(4)) AnimGroupSound
 	{
@@ -2474,6 +2476,20 @@ public:
 	std::span<NiTextKey> GetKeys() const
 	{
 		return { m_pKeys, m_uiNumKeys };
+	}
+
+	std::vector<NiTextKey> ToVector() const
+	{
+		return std::vector(m_pKeys, m_pKeys + m_uiNumKeys);
+	}
+	
+	void SetKeys(const std::vector<NiTextKey>& keys)
+	{
+		auto* newKeys = AllocateNiArray<NiTextKey>(keys.size());
+		std::ranges::copy(keys, newKeys);
+		GameHeapFreeArray(m_pKeys);
+		m_pKeys = newKeys;
+		m_uiNumKeys = keys.size();
 	}
 };
 static_assert(sizeof(NiTextKeyExtraData) == 0x14);

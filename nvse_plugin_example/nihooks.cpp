@@ -355,6 +355,27 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
     return true;
 }
 
+bool TESAnimGroup::IsLoopingReloadStart() const
+{
+    switch (this->GetBaseGroupID())
+    {
+    case kAnimGroup_ReloadWStart:
+    case kAnimGroup_ReloadXStart:
+    case kAnimGroup_ReloadYStart:
+    case kAnimGroup_ReloadZStart:
+        return true;
+    default:
+        break;
+    }
+    return false;
+}
+
+bool TESAnimGroup::IsLoopingReload() const
+{
+    const auto animGroupId = GetBaseGroupID();
+    return animGroupId >= kAnimGroup_ReloadW && animGroupId <= kAnimGroup_ReloadZ;
+}
+
 // underscore needed since vtable
 bool NiTransformInterpolator::_Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 {

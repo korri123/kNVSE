@@ -1,5 +1,7 @@
 ﻿#include "anim_fixes.h"
 
+#include <ranges>
+
 #include "class_vtbls.h"
 #include "game_types.h"
 #include "hooks.h"
@@ -21,10 +23,6 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 {
 	if (!g_fixEndKeyTimeShorterThanStopTime || HasNoFixTextKey(anim))
 		return;
-	static std::unordered_set<BSAnimGroupSequence*> s_fixedAnims;
-	if (s_fixedAnims.contains(anim))
-		return;
-	s_fixedAnims.insert(anim);
 	const auto* endKey = anim->textKeyData->FindFirstByName("end");
 	if (!endKey)
 	{
@@ -43,57 +41,34 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 		auto& tag = tags[idx++];
 #endif
 		auto* interpolator = block.interpolator;
-		if (interpolator && interpolator->m_spData && IS_TYPE(interpolator, NiTransformInterpolator))
+		if (interpolator && IS_TYPE(interpolator, NiTransformInterpolator))
 		{
-			const auto& data = *interpolator->m_spData;
+			unsigned int numKeys;
+			NiAnimationKey::KeyType keyType;
+			unsigned char keySize;
 
-			// this heap of mess is required since they keys are different sizes depending on the type
-			const auto updateEndKeyTime = [&](auto getKeyFunction)
+			// PosData
+			auto* posData = interpolator->GetPosData(numKeys, keyType, keySize);
+			if (numKeys)
 			{
-				auto keys = (data.*getKeyFunction)();
-				if (!keys.empty())
-					keys.back().m_fTime = endKeyTime;
-			};
+				auto* key = posData->GetKeyAt(numKeys - 1, keySize);
+				key->m_fTime = endKeyTime;
+			}
 
-			switch (data.m_ePosType)
+			// RotData
+			auto* rotData = interpolator->GetRotData(numKeys, keyType, keySize);
+			if (numKeys)
 			{
-			case NiAnimationKey::BEZKEY:
-				updateEndKeyTime(&NiTransformData::GetPosKeys<NiBezPosKey>);
-				break;
-			case NiAnimationKey::TCBKEY:
-				updateEndKeyTime(&NiTransformData::GetPosKeys<NiTCBPosKey>);
-				break;
-			default:
-				updateEndKeyTime(&NiTransformData::GetPosKeys<NiPosKey>);
-				break;
+				auto* key = rotData->GetKeyAt(numKeys - 1, keySize);
+				key->m_fTime = endKeyTime;
 			}
-				
-			switch (data.m_eRotType)
+
+			// ScaleData
+			auto* scaleData = interpolator->GetScaleData(numKeys, keyType, keySize);
+			if (numKeys)
 			{
-			case NiAnimationKey::BEZKEY:
-				updateEndKeyTime(&NiTransformData::GetRotKeys<NiBezRotKey>);
-				break;
-			case NiAnimationKey::TCBKEY:
-				updateEndKeyTime(&NiTransformData::GetRotKeys<NiTCBRotKey>);
-				break;
-			case NiAnimationKey::EULERKEY:
-				updateEndKeyTime(&NiTransformData::GetRotKeys<NiEulerRotKey>);
-				break;
-			default:
-				updateEndKeyTime(&NiTransformData::GetRotKeys<NiRotKey>);
-				break;
-			}
-			switch (data.m_eScaleType)
-			{
-			case NiAnimationKey::BEZKEY:
-				updateEndKeyTime(&NiTransformData::GetScaleKeys<NiBezPosKey>);
-				break;
-			case NiAnimationKey::TCBKEY:
-				updateEndKeyTime(&NiTransformData::GetScaleKeys<NiTCBPosKey>);
-				break;
-			default:
-				updateEndKeyTime(&NiTransformData::GetScaleKeys<NiFloatKey>);
-				break;
+				auto* key = scaleData->GetKeyAt(numKeys - 1, keySize);
+				key->m_fTime = endKeyTime;
 			}
 		}
 	}
@@ -196,8 +171,24 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 	nextAttackKey->m_kText.Set(newText.c_str());
 }
 
+void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
+{
+	auto* textKeys = anim->textKeyData;
+	if (!textKeys)
+		return;
+	if (ra::any_of(textKeys->GetKeys(), [](const NiTextKey& key) { return key.m_kText.CStr() == nullptr; }))
+	{
+		LogAnimError(anim, "Erased null text keys");
+		const auto newKeys = textKeys->ToVector()
+			| ra::views::filter([](const NiTextKey& key) { return key.m_kText.CStr() != nullptr; })
+			| ra::to<std::vector<NiTextKey>>();
+		textKeys->SetKeys(newKeys);
+	}
+}
+
 void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)
 {
+	EraseNullTextKeys(anim);
 	FixInconsistentEndTime(anim);
 	FixWrongAKeyInRespectEndKey(animData, anim);
 }

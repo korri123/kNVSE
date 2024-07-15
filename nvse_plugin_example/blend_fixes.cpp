@@ -8,6 +8,7 @@
 #include "nihooks.h"
 #include <array>
 
+#include "anim_fixes.h"
 #include "NiObjects.h"
 
 
@@ -470,14 +471,27 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
 
 void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimGroupSequence* pkDest)
 {
-	if (!pkDest || !pkSource || !pkDest->animGroup)
+	if (!g_fixBlendSamePriority || !pkDest || !pkSource || !pkDest->animGroup || !pkSource->animGroup)
 		return;
 	auto* groupInfo = pkDest->animGroup->GetGroupInfo();
 	if (!groupInfo)
 		return;
-	if (!pkDest->textKeyData || pkDest->textKeyData->FindFirstByName("noFix"))
+	if (groupInfo->sequenceType != kSequence_Weapon)
+		return;
+	const auto srcGroupId = pkSource->animGroup->GetBaseGroupID();
+	const auto destGroupId = pkDest->animGroup->GetBaseGroupID();
+	
+	if (!(srcGroupId == destGroupId ||
+	  (srcGroupId == kAnimGroup_Aim && destGroupId == kAnimGroup_AimIS) ||
+	  (srcGroupId == kAnimGroup_AimIS && destGroupId == kAnimGroup_Aim) ||
+	  (pkSource->animGroup->IsAttackNonIS() && pkSource->animGroup->IsAttackIS()) ||
+	  (pkSource->animGroup->IsAttackIS() && pkSource->animGroup->IsAttackNonIS()) ||
+	  (pkSource->animGroup->IsLoopingReloadStart() && pkSource->animGroup->IsLoopingReload())))
+	{
+		return;
+	}
+	if (HasNoFixTextKey(pkDest))
 		return;
 	if (pkSource->state == kAnimState_EaseOut && pkDest->state == kAnimState_EaseIn)
 		::FixConflictingPriorities(pkSource, pkDest);
 }
-

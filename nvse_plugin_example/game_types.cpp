@@ -201,9 +201,9 @@ TESAnimGroup::AnimGroupInfo* TESAnimGroup::GetGroupInfo() const
 	return ::GetGroupInfo(groupID);
 }
 
-UInt8 TESAnimGroup::GetBaseGroupID() const
+AnimGroupID TESAnimGroup::GetBaseGroupID() const
 {
-	return groupID;
+	return static_cast<AnimGroupID>(groupID);
 }
 
 enum
