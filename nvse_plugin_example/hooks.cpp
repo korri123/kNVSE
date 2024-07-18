@@ -665,6 +665,29 @@ void ApplyHooks()
 		return ThisStdCall<bool>(0xA350D0, tempSeq, seq, fDuration, fDestFrame, iPriority, fSourceWeight, fDestWeight, pkTimeSyncSeq);
 	}));
 
+	// AnimData::RemovesAnimSequence
+	WriteRelCall(0x496086, INLINE_HOOK(eAnimSequence, __fastcall, AnimData* animData)
+	{
+		// we are hooking in a mov instruction so this hook will be a bit unusual
+		auto* addressOfReturn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		auto* parentEbp = GetParentBasePtr(addressOfReturn);
+
+		// restore lost instructions
+		*reinterpret_cast<AnimData**>(parentEbp - 0x8) = animData;
+		
+		const auto sequenceId = *reinterpret_cast<eAnimSequence*>(parentEbp + 0x8);
+		const auto result = InterceptStopSequence::Dispatch(animData->actor, sequenceId);
+		if (result && *result)
+		{
+			// jump to end of function
+			*addressOfReturn = 0x49626B;
+			return static_cast<eAnimSequence>(0);
+		}
+		*addressOfReturn = 0x49608C;
+		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
+	}));
+	PatchMemoryNop(0x496089 + 2, 1);
+
 	ini.SaveFile(iniPath.c_str(), false);
 }
 

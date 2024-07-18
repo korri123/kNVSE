@@ -2028,6 +2028,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 								Script* condition = nullptr;
 								if (anims->conditionScript)
 									condition = **anims->conditionScript;
+								SetOverrideAnimation(toForm->refID, anim->path, *map, false, variants, condition, anims->pollCondition);
 								SetOverrideAnimation(toForm->refID, anim->path, *map, true, variants, condition, anims->pollCondition);
 								*result = 1;
 							}
@@ -2635,6 +2636,28 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = 1;
 		return true;
 	});
+
+	builder.Create("GetAnimPathBySequenceType", kRetnType_String, getAnimBySequenceTypeParams, true, [](COMMAND_ARGS)
+	{
+		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, "");
+		UInt32 sequenceId = -1;
+		int firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequenceId, &firstPerson))
+			return true;
+		if (sequenceId < 0 || sequenceId > kSequence_SpecialIdle)
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* animData = GetAnimData(actor, firstPerson);
+		if (!animData)
+			return true;
+		auto* anim = animData->animSequence[sequenceId];
+		if (!anim)
+			return true;
+		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, anim->sequenceName);
+		return true;
+	}, nullptr, "GetAnimPathByType");
 
 #if _DEBUG
 	
