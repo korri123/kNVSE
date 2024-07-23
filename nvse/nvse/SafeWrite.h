@@ -30,6 +30,14 @@ void WriteRelJump(UInt32 jumpSrc, Ret (C::*jumpTgt)(Args...)) {
 	WriteRelJump(jumpSrc, conversion.funcPtr);
 }
 
+void WriteRelCall(UInt32 jumpSrc, UInt32 jumpTgt);
+
+template <typename T>
+void WriteRelCall(UInt32 jumpSrc, T jumpTgt)
+{
+	WriteRelCall(jumpSrc, UInt32(jumpTgt));
+}
+
 template <typename C, typename Ret, typename... Args>
 void WriteRelCall(UInt32 jumpSrc, Ret (C::*jumpTgt)(Args...)) {
 	union
@@ -40,14 +48,6 @@ void WriteRelCall(UInt32 jumpSrc, Ret (C::*jumpTgt)(Args...)) {
 	conversion.tgt = jumpTgt;
 
 	WriteRelCall(jumpSrc, conversion.funcPtr);
-}
-
-void WriteRelCall(UInt32 jumpSrc, UInt32 jumpTgt);
-
-template <typename T>
-void WriteRelCall(UInt32 jumpSrc, T jumpTgt)
-{
-	WriteRelCall(jumpSrc, UInt32(jumpTgt));
 }
 
 template <typename T>

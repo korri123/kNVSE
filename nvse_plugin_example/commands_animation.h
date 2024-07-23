@@ -142,12 +142,8 @@ struct AnimTime
 	UInt32 actorId = 0;
 	BSAnimGroupSequence* anim = nullptr;
 	float lastNiTime = -FLT_MAX;
-	bool finishedEndKey = false;
 	bool respectEndKey = false;
 	bool firstPerson = false;
-	BSAnimGroupSequence* anim3rdCounterpart = nullptr;
-	POVSwitchState povState = POVSwitchState::NotSet;
-	TESObjectWEAP* actorWeapon = nullptr;
 	TimedExecution<Script*>::Context scriptLines;
 	TimedExecution<Script*>::Context scriptCalls;
 	std::optional<TimedExecution<Sound>> soundPathsBase;
@@ -160,6 +156,13 @@ struct AnimTime
 
 	bool hasCustomAnimGroups = false;
 	std::set<std::pair<Script*, std::string>> cleanUpScripts;
+
+	struct RespectEndKeyData
+	{
+		POVSwitchState povState = POVSwitchState::NotSet;
+		BSAnimGroupSequence* anim3rdCounterpart = nullptr;
+	};
+	RespectEndKeyData respectEndKeyData;
 
 	AnimData* GetAnimData(Actor* actor) const
 	{
@@ -318,18 +321,19 @@ extern JSONAnimContext g_jsonContext;
 
 enum AnimHandTypes
 {
-	kAnim_H2H = 0x0,
-	kAnim_1HM = 0x1,
-	kAnim_2HM = 0x2,
-	kAnim_1HP = 0x3,
-	kAnim_2HR = 0x4,
-	kAnim_2HA = 0x5,
-	kAnim_2HH = 0x6,
-	kAnim_2HL = 0x7,
-	kAnim_1GT = 0x8,
-	kAnim_1MD = 0x9,
-	kAnim_1LM = 0xA,
-	kAnim_Max = 0xB,
+	kAnim_None = 0x0,
+	kAnim_H2H  = 0x1,
+	kAnim_1HM  = 0x2,
+	kAnim_2HM  = 0x3,
+	kAnim_1HP  = 0x4,
+	kAnim_2HR  = 0x5,
+	kAnim_2HA  = 0x6,
+	kAnim_2HH  = 0x7,
+	kAnim_2HL  = 0x8,
+	kAnim_1GT  = 0x9,
+	kAnim_1MD  = 0xA,
+	kAnim_1LM  = 0xB,
+	kAnim_Max  = 0xC
 };
 
 

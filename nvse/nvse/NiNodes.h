@@ -11,6 +11,14 @@ constexpr float NI_INFINITY = FLT_MAX;
 constexpr float INVALID_TIME = -NI_INFINITY;
 constexpr unsigned char INVALID_INDEX = UCHAR_MAX;
 
+#define GetBit(x) ((m_uFlags & x) != 0)
+#define SetBit(x, y) (x ? (m_uFlags |= y) : (m_uFlags &= ~y))
+
+inline float NiAbs (float fValue)
+{
+	return float(fabs(fValue));
+}
+
 /*** class hierarchy
  *
  *	yet again taken from rtti information
@@ -1505,8 +1513,7 @@ public:
 		ucSize = 0;
 		return NULL;
 	}
-
-	//---------------------------------------------------------------------------
+	
 	NiPosKey* GetPosData(
 		unsigned int& uiNumKeys, NiAnimationKey::KeyType& eType, unsigned char& ucSize) const
 	{
@@ -1542,6 +1549,19 @@ static_assert(sizeof(NiTransformInterpolator) == 0x48);
 class NiTimeController : public NiObject
 {
 public:
+	enum
+	{
+		ANIMTYPE_MASK           = 0x0001,
+		ANIMTYPE_POS            = 0,
+		CYCLETYPE_MASK          = 0x0006,
+		CYCLETYPE_POS           = 1,
+		ACTIVE_MASK             = 0x0008,
+		DIRECTION_MASK          = 0x0010,
+		MANAGERCONTROLLED_MASK  = 0x0020,
+		COMPUTESCALEDTIME_MASK  = 0x0040,
+		FORCEUDPATE_MASK        = 0x0080
+	};
+	
 	UInt16 m_uFlags;
 	float m_fFrequency;
 	float m_fPhase;
@@ -1553,6 +1573,11 @@ public:
 	float m_fScaledTime;
 	NiObjectNET* m_pkTarget;
 	NiPointer<NiTimeController> m_spNext;
+
+	bool GetActive() const
+	{
+		return GetBit(ACTIVE_MASK);
+	}
 };
 static_assert(sizeof(NiTimeController) == 0x34);
 
@@ -1592,19 +1617,6 @@ public:
 	float m_fHighSumOfWeights;
 	float m_fNextHighSumOfWeights;
 	float m_fHighEaseSpinner;
-
-	bool GetBit(UInt32 mask) const
-	{
-		return (m_uFlags & mask) != 0;
-	}
-
-	void SetBit(bool bSet, unsigned int uMask)
-	{
-		if (bSet)
-			m_uFlags |= uMask;
-		else
-			m_uFlags &= ~uMask;
-	}
 
 	bool GetComputeNormalizedWeights() const
 	{
@@ -1646,6 +1658,7 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
+
 };
 static_assert(sizeof(NiBlendInterpolator) == 0x30);
 
@@ -1669,9 +1682,50 @@ public:
 
 class NiBlendTransformInterpolator : public NiBlendInterpolator
 {
+	bool GetSingleUpdateTime(float& fTime)
+	{
+		NIASSERT(m_ucSingleIdx != INVALID_INDEX && 
+			m_pkSingleInterpolator != NULL);
+    
+		if (GetManagerControlled())
+		{
+			fTime = m_fSingleTime;
+		}
+
+		if (fTime == INVALID_TIME)
+		{
+			// The time for this interpolator has not been set. Do
+			// not update the interpolator.
+			return false;
+		}
+
+		return true;
+	}
 public:
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
 					 NiQuatTransform& kValue);
+
+	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+
+	bool StoreSingleValue(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
+	{
+		if (!GetSingleUpdateTime(fTime))
+		{
+			kValue.MakeInvalid();
+			return false;
+		}
+
+		NIASSERT(m_pkSingleInterpolator != NULL);
+		if (m_pkSingleInterpolator->Update(fTime, pkInterpTarget, kValue))
+		{
+			return true;
+		}
+		else
+		{
+			kValue.MakeInvalid();
+			return false;
+		}
+	}
 };
 
 /* 44137 */
@@ -1681,6 +1735,8 @@ public:
 	NiBlendTransformInterpolator* m_pkBlendInterps;
 	NiAVObject** m_ppkTargets;
 	unsigned __int16 m_usNumInterps;
+
+	void _Update(float fTime, bool bSelective);
 };
 
 struct NiFixedString

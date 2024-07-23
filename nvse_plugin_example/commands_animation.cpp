@@ -454,10 +454,9 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	if (animData == g_thePlayer->firstPersonAnimData && hasKey({"respectEndKey", "respectTextKeys"}))
 	{
 		auto& animTime = getAnimTimeStruct();
-		animTime.povState = POVSwitchState::NotSet;
+		auto& respectEndKeyData = animTime.respectEndKeyData;
+		respectEndKeyData.povState = POVSwitchState::NotSet;
 		animTime.respectEndKey = true;
-		animTime.finishedEndKey = false;
-		animTime.actorWeapon = actor->GetWeaponForm();
 	}
 	const auto baseGroupID = anim->animGroup->GetBaseGroupID();
 
@@ -791,6 +790,9 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* a
 	auto [cache, isNew] = g_animationResultCache.emplace(std::make_pair(animGroupId, animData), std::nullopt);
 	if (!isNew)
 		return cache->second;
+#if _DEBUG
+	int _debug = 0;
+#endif
 
 	const auto getActorAnimation = [&]() -> std::optional<AnimationResult>
 	{
@@ -911,6 +913,27 @@ int GroupNameToId(const std::string& name)
 	if (groupId == -1)
 		return -1;
 	return groupId + (moveType << 12) + (isPowerArmor << 15) + (animHandType << 8);
+}
+
+bool TESAnimGroup::IsLoopingReloadStart() const
+{
+	switch (this->GetBaseGroupID())
+	{
+	case kAnimGroup_ReloadWStart:
+	case kAnimGroup_ReloadXStart:
+	case kAnimGroup_ReloadYStart:
+	case kAnimGroup_ReloadZStart:
+		return true;
+	default:
+		break;
+	}
+	return false;
+}
+
+bool TESAnimGroup::IsLoopingReload() const
+{
+	const auto animGroupId = GetBaseGroupID();
+	return animGroupId >= kAnimGroup_ReloadW && animGroupId <= kAnimGroup_ReloadZ;
 }
 
 int GetAnimGroupId(const std::filesystem::path& path)

@@ -5,6 +5,8 @@
 #include "hooks.h"
 #include "NiNodes.h"
 #include "SafeWrite.h"
+#include "NiObjects.h"
+#include "NiTypes.h"
 
 #include <array>
 #include <functional>
@@ -186,6 +188,52 @@ bool NiBlendAccumTransformInterpolator::BlendValues(float fTime, NiObjectNET* pk
     return false;
 }
 
+void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
+{
+    if (!GetActive() || !m_usNumInterps)
+        return;
+    NiQuatTransform kTransform;
+    for (unsigned short us = 0; us < m_usNumInterps; us++)
+    {
+        auto* pkTarget = m_ppkTargets[us];
+        // We need to check the UpdateSelected flag before updating the
+        // interpolator. For instance, BoneLOD might have turned off that
+        // bone.
+        
+        if (!pkTarget)
+        {
+            continue;
+        }
+        if (bSelective == pkTarget->GetSelectiveUpdate() && us != m_usNumInterps - 1)
+        {
+            continue;
+        }
+        if (us == m_usNumInterps - 1 && (!bSelective && !pkTarget->GetSelectiveUpdate()))
+        {
+            // beth bs
+            break;
+        }
+
+        auto& kBlendInterp = m_pkBlendInterps[us];
+        if (kBlendInterp.Update(fTime, pkTarget, kTransform))
+        {
+            if (kTransform.IsTranslateValid())
+            {
+                pkTarget->SetTranslate(kTransform.GetTranslate());
+            }
+            if (kTransform.IsRotateValid())
+            {
+                pkTarget->SetRotate(kTransform.GetRotate());
+            }
+            if (kTransform.IsScaleValid())
+            {
+                pkTarget->SetScale(kTransform.GetScale());
+            }
+        }
+    }
+}
+
+
 bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInterpTarget,
                                                NiQuatTransform& kValue)
 {
@@ -355,25 +403,24 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
     return true;
 }
 
-bool TESAnimGroup::IsLoopingReloadStart() const
+bool NiBlendTransformInterpolator::_Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 {
-    switch (this->GetBaseGroupID())
-    {
-    case kAnimGroup_ReloadWStart:
-    case kAnimGroup_ReloadXStart:
-    case kAnimGroup_ReloadYStart:
-    case kAnimGroup_ReloadZStart:
-        return true;
-    default:
-        break;
-    }
-    return false;
-}
+    // Do not use the TimeHasChanged check here, because blend interpolators
+    // should always update their interpolators.
 
-bool TESAnimGroup::IsLoopingReload() const
-{
-    const auto animGroupId = GetBaseGroupID();
-    return animGroupId >= kAnimGroup_ReloadW && animGroupId <= kAnimGroup_ReloadZ;
+    bool bReturnValue = false;
+    if (m_ucInterpCount == 1)
+    {
+        bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
+    }
+    else if (m_ucInterpCount > 0)
+    {
+        ComputeNormalizedWeights();
+        bReturnValue = BlendValues(fTime, pkInterpTarget, kValue);
+    }
+    
+    m_fLastTime = fTime;
+    return bReturnValue;
 }
 
 // underscore needed since vtable
@@ -589,9 +636,19 @@ namespace NiHooks
     void WriteHooks()
     {
         WriteRelJump(0xA40C10, &NiBlendTransformInterpolator::BlendValues);
+        WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeights);
         WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues);
+        WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
+    }
+
+    // override stewie's tweaks
+    void WriteDelayedHooks()
+    {
+#if _DEBUG
+        WriteRelCall(0x4F0087, &NiMultiTargetTransformController::_Update);
+#endif
     }
 }
 
@@ -704,8 +761,11 @@ NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager
 
 void ApplyNiHooks()
 {
-#if EXPERIMENTAL_HOOKS
+#if _DEBUG
     NiHooks::WriteHooks();
+#endif
+#if EXPERIMENTAL_HOOKS
+
     if (g_fixBlendSamePriority)
     {
         //WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);

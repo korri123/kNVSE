@@ -105,8 +105,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (g_fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		return destAnim;
 
-	
-
 	BSAnimGroupSequence* currentAnim = nullptr;
 	if (destAnim && destAnim->animGroup)
 		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
@@ -116,7 +114,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	{
 		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
 	}
-	// hooked call
 	return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
 }
 
@@ -463,6 +460,27 @@ namespace LoopingReloadPauseFix
 	}
 }
 
+BSAnimGroupSequence* Find1stPersonRespectEndKeyAnim(AnimData* animData, BSAnimGroupSequence* anim3rd)
+{
+	if (animData != g_thePlayer->baseProcess->animData || !anim3rd || !anim3rd->animGroup)
+		return nullptr;
+	const auto iter = ra::find_if(g_timeTrackedAnims, [&](const auto& pair)
+	{
+		return pair.second->respectEndKeyData.anim3rdCounterpart == anim3rd;
+	});
+	if (iter != g_timeTrackedAnims.end())
+	{
+		const auto& animTime = *iter->second;
+		const auto& respectEndKeyData = animTime.respectEndKeyData;
+		if (!animTime.respectEndKey || respectEndKeyData.povState != POVSwitchState::POV1st || animTime.actorId != g_thePlayer->refID)
+			return nullptr;
+		auto* anim = iter->first;
+		if (anim)
+			return anim;
+	}
+	return nullptr;
+}
+
 void ApplyHooks()
 {
 	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
@@ -599,23 +617,16 @@ void ApplyHooks()
 	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
 	{
 		auto* defaultData = sequence->textKeyData;
-		if (sequence->owner != g_thePlayer->baseProcess->animData->controllerManager || g_thePlayer->IsThirdPerson())
-			return defaultData;
-		auto* firstPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[kSequence_Weapon];
-		if (!firstPersonAnim)
-			return defaultData;
-		if (const auto iter = g_timeTrackedAnims.find(firstPersonAnim); iter != g_timeTrackedAnims.end())
-		{
-			if (iter->second->respectEndKey && iter->second->povState == POVSwitchState::POV1st)
-				return firstPersonAnim->textKeyData;
-		}
+		auto* anim1st = Find1stPersonRespectEndKeyAnim(g_thePlayer->firstPersonAnimData, sequence);
+		if (anim1st)
+			return anim1st->textKeyData;
 		return defaultData;
 	}));
-
 
 	// AnimData::GetSequenceOffsetPlusTimePassed
 	// return 1st person anim time-passed in function where most or all AnimData::sequenceState1 are updated
 	// This case would normally be handled by respectEndKey but if 3rd person anim has blend and 1st noBlend the anim times can get desynced
+	// Also, animData->timePassed and animData1st->timePassed will desync as well
 	WriteRelJump(0x493800, INLINE_HOOK(double, __fastcall, AnimData* animData, void*, BSAnimGroupSequence* anim)
 	{
 		// GetAnimTime doesn't work as it bugs out looping reloads in 3rd person
@@ -623,35 +634,11 @@ void ApplyHooks()
 		{
 			return seq->offset + animData->timePassed;
 		};
-		const auto result = toAnimTime(animData, anim);
-		if (animData != g_thePlayer->baseProcess->animData || !anim->animGroup)
-			return result;
-		const auto sequence = anim->animGroup->GetGroupInfo()->sequenceType;
-		const auto anim1st = g_thePlayer->firstPersonAnimData->animSequence[sequence];
-		if (!anim1st)
-		{
-			// 1st person anim may have ended before 3rd person anim (can happen with 1p anim noBlend and high speed mult)
-			const auto iter = ra::find_if(g_timeTrackedAnims, _L(auto& p, p.second->anim3rdCounterpart == anim));
-			if (iter == g_timeTrackedAnims.end())
-				return result;
-			const auto* timeTracked1stPersonAnim = iter->first;
-			if (!timeTracked1stPersonAnim)
-				return result;
-			return toAnimTime(g_thePlayer->firstPersonAnimData, timeTracked1stPersonAnim);
-		}
-		if (!anim1st->animGroup)
-			return result;
-		if (anim1st->animGroup->GetBaseGroupID() != anim->animGroup->GetBaseGroupID())
-			return result;
-		if (const auto iter = g_timeTrackedAnims.find(anim1st); iter != g_timeTrackedAnims.end())
-		{
-			const auto& animTime = *iter->second;
-			if (animTime.respectEndKey && animTime.povState == POVSwitchState::POV1st)
-				return toAnimTime(g_thePlayer->firstPersonAnimData, anim1st);
-		}
-		return result;
+		if (const auto* anim1st = Find1stPersonRespectEndKeyAnim(animData, anim))
+			return toAnimTime(animData, anim1st);
+		return toAnimTime(animData, anim);
 	}));
-
+	
 	// Apply dest frame hook
 	// NiControllerSequence::StartBlend
 	WriteRelCall(0xA2F844, INLINE_HOOK(bool, __fastcall, NiControllerSequence* tempSeq,

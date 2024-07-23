@@ -84,28 +84,44 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 bool g_fixHolster = false;
 BSAnimGroupSequence* g_fixHolsterUnequipAnim3rd = nullptr;
 
-static std::unordered_map<std::string, std::pair<float*, int>> s_anim3rdKeys;
+struct ThirdPersonSavedData
+{
+	UInt32 numKeys{};
+	float* keyTimes{};
+	UInt8 blendIn{};
+	UInt8 blendOut{};
+	UInt8 blend{};
+};
+std::unordered_map<BSAnimGroupSequence*, ThirdPersonSavedData> g_thirdPersonSavedData;
 
 void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim)
 {
-	if (!animTime.anim3rdCounterpart)
+	auto& respectEndKeyData = animTime.respectEndKeyData;
+	auto* anim3rd = respectEndKeyData.anim3rdCounterpart;
+	if (!anim3rd)
 		return;
-	if (const auto iter3rd = s_anim3rdKeys.find(animTime.anim3rdCounterpart->sequenceName); iter3rd != s_anim3rdKeys.end())
+	if (anim3rd)
 	{
-		auto [keys, numKeys] = iter3rd->second;
-		if (animTime.anim3rdCounterpart)
+		if (const auto iter = g_thirdPersonSavedData.find(anim3rd); iter != g_thirdPersonSavedData.end())
 		{
-			animTime.anim3rdCounterpart->animGroup->numKeys = numKeys;
-			animTime.anim3rdCounterpart->animGroup->keyTimes = keys;
+			const auto& savedData = iter->second;
+			anim3rd->animGroup->numKeys = savedData.numKeys;
+			anim3rd->animGroup->keyTimes = savedData.keyTimes;
+			if (anim3rd->animGroup)
+			{
+				anim3rd->animGroup->blend = savedData.blend;
+				anim3rd->animGroup->blendIn = savedData.blendIn;
+				anim3rd->animGroup->blendOut = savedData.blendOut;
+			}
 		}
 	}
 	const auto* animGroup = anim->animGroup;
 	if (animGroup && (animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
 	{
 		g_fixHolster = true;
-		g_fixHolsterUnequipAnim3rd = animTime.anim3rdCounterpart;
+		g_fixHolsterUnequipAnim3rd = anim3rd;
 	}
-	animTime.povState = POVSwitchState::POV3rd;
+	respectEndKeyData.povState = POVSwitchState::POV3rd;
 }
 
 bool IsAnimNextInSelection(AnimData* animData, UInt16 nearestGroupId, BSAnimGroupSequence* anim)
@@ -182,14 +198,15 @@ void HandleAnimTimes()
 			};
 			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
 
-			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim != animTime.anim3rdCounterpart);
+			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim != animTime.respectEndKeyData.anim3rdCounterpart);
 			const auto animHasEnded = _L(, anim->state == NiControllerSequence::kAnimState_Inactive);
 			if (current3rdPersonAnimHasChanged() && animHasEnded())
 			{
 				erase();
 				continue;
 			}
-			if (animTime.povState == POVSwitchState::NotSet)
+			auto& respectEndKeyData = animTime.respectEndKeyData;
+			if (respectEndKeyData.povState == POVSwitchState::NotSet)
 			{
 				const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
 				auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
@@ -202,23 +219,34 @@ void HandleAnimTimes()
 					erase();
 					continue;
 				}
-				animTime.anim3rdCounterpart = anim3rd;
-				s_anim3rdKeys.emplace(anim3rd->sequenceName, std::make_pair(anim3rd->animGroup->keyTimes, anim3rd->animGroup->numKeys));
+				respectEndKeyData.anim3rdCounterpart = anim3rd;
+				g_thirdPersonSavedData.try_emplace(anim3rd, ThirdPersonSavedData{
+					.numKeys = anim3rd->animGroup->numKeys,
+					.keyTimes = anim3rd->animGroup->keyTimes,
+					.blendIn = anim3rd->animGroup->blendIn,
+					.blendOut = anim3rd->animGroup->blendOut,
+					.blend = anim3rd->animGroup->blend,
+				});
 			}
-			if (!animTime.anim3rdCounterpart)
+			if (!respectEndKeyData.anim3rdCounterpart)
 			{
 				erase();
 				continue;
 			}
-			if (g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV3rd)
+			if (g_thePlayer->IsThirdPerson() && respectEndKeyData.povState != POVSwitchState::POV3rd)
 			{
 				revert3rdPersonAnimTimes();
 			}
-			else if (!g_thePlayer->IsThirdPerson() && animTime.povState != POVSwitchState::POV1st)
+			else if (!g_thePlayer->IsThirdPerson() && respectEndKeyData.povState != POVSwitchState::POV1st)
 			{
-				animTime.anim3rdCounterpart->animGroup->numKeys = anim->animGroup->numKeys;
-				animTime.anim3rdCounterpart->animGroup->keyTimes = anim->animGroup->keyTimes;
-				animTime.povState = POVSwitchState::POV1st;
+				auto* animGroup3rd = respectEndKeyData.anim3rdCounterpart->animGroup;
+				animGroup3rd->numKeys = anim->animGroup->numKeys;
+				animGroup3rd->keyTimes = anim->animGroup->keyTimes;
+				// doing this to avoid inconsistencies
+				animGroup3rd->blend = anim->animGroup->blend;
+				animGroup3rd->blendIn = anim->animGroup->blendIn;
+				animGroup3rd->blendOut = anim->animGroup->blendOut;
+				respectEndKeyData.povState = POVSwitchState::POV1st;
 			}
 		}
 		if (!isAnimPlaying())
@@ -517,7 +545,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		//std::string path = "Data\\Meshes\\AnimGroupOverride\\*.kf";
 		//auto result = FindFirstFileA(path.c_str(), &data);
 		//auto* list = CdeclCall<tList<const char>*>(0xAFE420, path.c_str(), "Data\\Meshes\\AnimGroupOverride\\IdleAnim", 1, 0);
-		
+		NiHooks::WriteDelayedHooks();
 		g_thePlayer = *(PlayerCharacter **)0x011DEA3C;
 		LoadFileAnimPaths();
 		Console_Print("kNVSE version %d", VERSION_MAJOR);

@@ -120,17 +120,36 @@ public:
 		kNiFlag_IsInserted = 0x80000000	//	JIP only
 	};
 
-	NiNode* m_parent;				// 18
-	void* m_collisionObject;		// 1C
+	enum
+	{
+		APP_CULLED_MASK                 = 0x0001,
+
+		// Selective update flags
+		SELECTIVE_UPDATE_MASK           = 0x0002,
+		SELECTIVE_XFORMS_MASK           = 0x0004,
+		SELECTIVE_PROP_CONTROLLER_MASK  = 0x0008,
+		SELECTIVE_RIGID_MASK            = 0x0010,
+
+		// For use with occlusion culling system
+		DISPLAY_OBJECT_MASK             = 0x0020,
+
+		// For use with sorting/accumulation system
+		DISABLE_SORTING                 = 0x0040,
+        
+		// Selective update over-ride flags
+		SELECTIVE_XFORMS_OVERRIDE_MASK  = 0x0080,
+
+		// Is the object a leaf or a node.
+		IS_NODE                         = 0x0100
+	};
+
+	NiNode* m_pkParent;				// 18
+	void* m_spCollisionObject;		// 1C
 	NiSphere* m_kWorldBound;			// 20
-	DList<NiProperty>		m_propertyList;			// 24
-	UInt32					m_flags;				// 30
-	NiMatrix33				m_localRotate;			// 34
-	NiPoint3				m_localTranslate;		// 58
-	float					m_localScale;			// 64
-	NiMatrix33				m_worldRotate;			// 68
-	NiPoint3				m_worldTranslate;		// 8C
-	float					m_worldScale;			// 98
+	DList<NiProperty>		m_kPropertyList;			// 24
+	UInt32					m_uFlags;				// 30
+	NiTransform				m_kLocal;
+	NiTransform				m_kWorld;
 
 	void Update();
 	UInt32 GetIndex();
@@ -139,6 +158,47 @@ public:
 
 	void DumpProperties();
 	void DumpParents();
+
+	bool GetSelectiveUpdate() const
+	{
+		return GetBit(SELECTIVE_UPDATE_MASK);
+	}
+
+	void SetTranslate(const NiPoint3& kTrn)
+	{
+		m_kLocal.m_Translate = kTrn;
+	}
+
+	const NiPoint3& GetTranslate() const
+	{
+		return m_kLocal.m_Translate;
+	}
+
+	void SetRotate(const NiMatrix3& kRot)
+	{
+		m_kLocal.m_Rotate = kRot;
+	}
+
+	const NiMatrix3& GetRotate() const
+	{
+		return m_kLocal.m_Rotate;
+	}
+
+	void SetRotate(const NiQuaternion &kQuat)
+	{
+		kQuat.ToRotation(m_kLocal.m_Rotate);
+	}
+
+	float GetScale() const
+	{
+		return m_kLocal.m_fScale;
+	}
+
+	void SetScale(float fScale)
+	{
+		//NIASSERT( fScale >= 0.0f );
+		m_kLocal.m_fScale = NiAbs(fScale);
+	}
 };
 STATIC_ASSERT(sizeof(NiAVObject) == 0x9C);
 

@@ -141,6 +141,22 @@ struct NiMatrix33
 	{
 		return m_pEntry[uiRow][uiCol];
 	}
+
+	void SetCol( unsigned int uiCol, float f0, float f1, float f2 )
+	{
+		NIASSERT( uiCol <= 2 );
+		m_pEntry[0][uiCol] = f0;
+		m_pEntry[1][uiCol] = f1;
+		m_pEntry[2][uiCol] = f2;
+	}
+
+	void GetCol( unsigned int uiCol, float* pCol ) const
+	{
+		NIASSERT( uiCol <= 2 );
+		pCol[0] = m_pEntry[0][uiCol];
+		pCol[1] = m_pEntry[1][uiCol];
+		pCol[2] = m_pEntry[2][uiCol];
+	}
 };
 
 using NiMatrix3 = NiMatrix33;
@@ -306,6 +322,28 @@ struct NiQuaternion
 			*quat[k] = (rot.GetEntry( k,i ) + rot.GetEntry( i,k )) * fRoot;
 		}
 	}
+
+	void ToRotation(NiMatrix3& rot) const
+	{
+		// operations (*,+,-) = 24
+
+		float tx  = 2.0f*m_fX;
+		float ty  = 2.0f*m_fY;
+		float tz  = 2.0f*m_fZ;
+		float twx = tx*m_fW;
+		float twy = ty*m_fW;
+		float twz = tz*m_fW;
+		float txx = tx*m_fX;
+		float txy = ty*m_fX;
+		float txz = tz*m_fX;
+		float tyy = ty*m_fY;
+		float tyz = tz*m_fY;
+		float tzz = tz*m_fZ;
+
+		rot.SetCol(0, 1.0f-(tyy+tzz), txy+twz, txz-twy);
+		rot.SetCol(1, txy-twz, 1.0f-(txx+tzz), tyz+twx);
+		rot.SetCol(2, txz+twy, tyz-twx, 1.0f-(txx+tyy));
+	}
 };
 
 
@@ -313,9 +351,9 @@ struct NiQuaternion
 // 34
 struct NiTransform
 {
-	NiMatrix33	rotate;		// 00
-	NiPoint3	translate;	// 24
-	float		scale;		// 30
+	NiMatrix33	m_Rotate;		// 00
+	NiPoint3	m_Translate;	// 24
+	float		m_fScale;		// 30
 };
 
 // 10

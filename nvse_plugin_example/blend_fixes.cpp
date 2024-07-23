@@ -176,7 +176,7 @@ float CalculateTransitionBlendTime(AnimData* animData, BSAnimGroupSequence* src,
 	auto* weaponNode = sceneRoot->GetBlock(blockName);
 	if (!weaponNode)
 		return blend;
-	const auto& weaponPoint = weaponNode->m_localTranslate;
+	const auto& weaponPoint = weaponNode->m_kWorld.m_Translate;
 	auto* srcInterpItem = src->GetControlledBlock(blockName);
 	auto* destInterpItem = dst->GetControlledBlock(blockName);
 	if (!srcInterpItem || !destInterpItem)
