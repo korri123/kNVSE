@@ -55,7 +55,7 @@ BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroup
 	return nullptr;
 }
 
-
+void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequence* anim3rd);
 
 // UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
 BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
@@ -109,43 +109,33 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (destAnim && destAnim->animGroup)
 		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
 			currentAnim = animData->animSequence[groupInfo->sequenceType];
-
+	Apply3rdPersonRespectEndKeyEaseInFix(animData, destAnim);
+	auto* result = ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
 	if (destAnim && currentAnim)
 	{
 		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
 	}
-	return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
+	return result;
 }
 
-#if 0
-__declspec(naked) void AnimationHook()
+void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequence* anim3rd)
 {
-	static auto fn_AnimDataContainsAnimSequence = 0x498EA0;
-	static auto returnAddress = 0x4949D5;
-	__asm
+	if (animData != g_thePlayer->baseProcess->animData || g_thePlayer->IsThirdPerson() || !anim3rd || !anim3rd->animGroup)
+		return;
+	auto* anim1st = GetAnimByGroupID(g_thePlayer->firstPersonAnimData, anim3rd->animGroup->GetBaseGroupID());
+	if (!anim1st || !anim1st->animGroup || !anim1st->textKeyData)
+		return;
+	auto* textKeys = anim1st->textKeyData;
+	if (!textKeys->FindFirstByName("respectEndKey") && !textKeys->FindFirstByName("respectTextKeys"))
+		return;
+	if (textKeys->FindFirstByName("noBlend"))
+		animData->noBlend120 = true;
+	else
 	{
-		push ecx
-
-		push ebp
-		lea ecx, [ebp + 0x8] // BSAnimGroupSequence* toMorph
-		push ecx
-		mov edx, [ebp + 0xC] // animGroupId
-		mov ecx, [ebp - 0x5C] // animData
-		call HandleAnimationChange
-		test al, al
-		jz prematureReturn
-		pop ecx
-		call fn_AnimDataContainsAnimSequence
-		jmp returnAddress
-	prematureReturn:
-		add esp, 4
-		mov eax, 0
-		mov esp, ebp
-		pop ebp
-		ret 0xC
+		Save3rdPersonAnimGroupData(anim3rd);
+		Set3rdPersonAnimTimes(anim3rd, anim1st);
 	}
 }
-#endif
 
 void DecreaseAttackTimer()
 {
@@ -360,12 +350,7 @@ void __fastcall HandleOnReload(Actor* actor)
 
 bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
 {
-	auto* anim = kfModel->controllerSequence;
-
-	// done here as it's done once
-	AnimFixes::EraseNullTextKeys(anim);
-	AnimFixes::FixInconsistentEndTime(anim);
-	
+	const auto* anim = kfModel->controllerSequence;
 	if (base->IsSingle()) // single anims are always valid
 		return false;
 	auto* multiple = static_cast<AnimSequenceMultiple*>(base);
@@ -623,6 +608,7 @@ void ApplyHooks()
 		return defaultData;
 	}));
 
+#if 0
 	// AnimData::GetSequenceOffsetPlusTimePassed
 	// return 1st person anim time-passed in function where most or all AnimData::sequenceState1 are updated
 	// This case would normally be handled by respectEndKey but if 3rd person anim has blend and 1st noBlend the anim times can get desynced
@@ -635,9 +621,10 @@ void ApplyHooks()
 			return seq->offset + animData->timePassed;
 		};
 		if (const auto* anim1st = Find1stPersonRespectEndKeyAnim(animData, anim))
-			return toAnimTime(animData, anim1st);
+			return toAnimTime(g_thePlayer->firstPersonAnimData, anim1st);
 		return toAnimTime(animData, anim);
 	}));
+#endif
 	
 	// Apply dest frame hook
 	// NiControllerSequence::StartBlend
@@ -674,6 +661,20 @@ void ApplyHooks()
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
 	}));
 	PatchMemoryNop(0x496089 + 2, 1);
+
+	// KFModel::LoadAnimGroup dereference
+	// apply text key fixes before AnimGroup is init
+	WriteRelCall(0x43B831, INLINE_HOOK(BSAnimGroupSequence*, __fastcall, BSAnimGroupSequence** animPtr)
+	{
+		auto* anim = *animPtr;
+		if (anim->textKeyData)
+		{
+			AnimFixes::EraseNullTextKeys(anim);
+			AnimFixes::FixInconsistentEndTime(anim);
+			AnimFixes::EraseNegativeAnimKeys(anim);
+		}
+		return anim;
+	}));
 
 	ini.SaveFile(iniPath.c_str(), false);
 }

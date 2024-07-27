@@ -29,7 +29,10 @@ extern std::unordered_map<std::string, std::vector<CustomAnimGroupScript>> g_cus
 extern std::unordered_map<std::string, std::unordered_set<std::string>> g_customAnimGroupPaths;
 extern std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
 extern std::vector<std::string> g_eachFrameScriptLines;
-void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim);
+
+void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);
+void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);
+void Save3rdPersonAnimGroupData(BSAnimGroupSequence* anim3rd);
 
 bool IsGodMode();
 
@@ -37,4 +40,6 @@ float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim);
 
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 		NVSEArrayVarInterface::Element* result);
+
+
 

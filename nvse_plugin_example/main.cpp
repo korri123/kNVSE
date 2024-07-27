@@ -94,34 +94,50 @@ struct ThirdPersonSavedData
 };
 std::unordered_map<BSAnimGroupSequence*, ThirdPersonSavedData> g_thirdPersonSavedData;
 
-void Revert3rdPersonAnimTimes(AnimTime& animTime, BSAnimGroupSequence* anim)
+void Save3rdPersonAnimGroupData(BSAnimGroupSequence* anim3rd)
 {
-	auto& respectEndKeyData = animTime.respectEndKeyData;
-	auto* anim3rd = respectEndKeyData.anim3rdCounterpart;
-	if (!anim3rd)
+	ThirdPersonSavedData thirdPersonSavedData{
+		.numKeys = anim3rd->animGroup->numKeys,
+		.keyTimes = anim3rd->animGroup->keyTimes,
+		.blendIn = anim3rd->animGroup->blendIn,
+		.blendOut = anim3rd->animGroup->blendOut,
+		.blend = anim3rd->animGroup->blend,
+	};
+	g_thirdPersonSavedData.try_emplace(anim3rd, thirdPersonSavedData);
+}
+
+void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st)
+{
+	auto* animGroup3rd = anim3rd->animGroup;
+	auto* animGroup1st = anim1st->animGroup;
+	if (!animGroup3rd || !animGroup1st)
 		return;
-	if (anim3rd)
+	animGroup3rd->numKeys = animGroup1st->numKeys;
+	animGroup3rd->keyTimes = animGroup1st->keyTimes;
+	animGroup3rd->blend = animGroup1st->blend;
+	animGroup3rd->blendIn = animGroup1st->blendIn;
+	animGroup3rd->blendOut = animGroup1st->blendOut;
+}
+
+void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st)
+{
+	if (!anim3rd || !anim3rd->animGroup)
+		return;
+	if (const auto iter = g_thirdPersonSavedData.find(anim3rd); iter != g_thirdPersonSavedData.end())
 	{
-		if (const auto iter = g_thirdPersonSavedData.find(anim3rd); iter != g_thirdPersonSavedData.end())
-		{
-			const auto& savedData = iter->second;
-			anim3rd->animGroup->numKeys = savedData.numKeys;
-			anim3rd->animGroup->keyTimes = savedData.keyTimes;
-			if (anim3rd->animGroup)
-			{
-				anim3rd->animGroup->blend = savedData.blend;
-				anim3rd->animGroup->blendIn = savedData.blendIn;
-				anim3rd->animGroup->blendOut = savedData.blendOut;
-			}
-		}
+		const auto& savedData = iter->second;
+		anim3rd->animGroup->numKeys = savedData.numKeys;
+		anim3rd->animGroup->keyTimes = savedData.keyTimes;
+		anim3rd->animGroup->blend = savedData.blend;
+		anim3rd->animGroup->blendIn = savedData.blendIn;
+		anim3rd->animGroup->blendOut = savedData.blendOut;
 	}
-	const auto* animGroup = anim->animGroup;
+	const auto* animGroup = anim1st->animGroup;
 	if (animGroup && (animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
 	{
 		g_fixHolster = true;
 		g_fixHolsterUnequipAnim3rd = anim3rd;
 	}
-	respectEndKeyData.povState = POVSwitchState::POV3rd;
 }
 
 bool IsAnimNextInSelection(AnimData* animData, UInt16 nearestGroupId, BSAnimGroupSequence* anim)
@@ -192,10 +208,6 @@ void HandleAnimTimes()
 	
 		if (animTime.respectEndKey)
 		{
-			const auto revert3rdPersonAnimTimes = [&]()
-			{
-				Revert3rdPersonAnimTimes(animTime, anim);
-			};
 			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
 
 			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim != animTime.respectEndKeyData.anim3rdCounterpart);
@@ -220,13 +232,7 @@ void HandleAnimTimes()
 					continue;
 				}
 				respectEndKeyData.anim3rdCounterpart = anim3rd;
-				g_thirdPersonSavedData.try_emplace(anim3rd, ThirdPersonSavedData{
-					.numKeys = anim3rd->animGroup->numKeys,
-					.keyTimes = anim3rd->animGroup->keyTimes,
-					.blendIn = anim3rd->animGroup->blendIn,
-					.blendOut = anim3rd->animGroup->blendOut,
-					.blend = anim3rd->animGroup->blend,
-				});
+				Save3rdPersonAnimGroupData(anim3rd);
 			}
 			if (!respectEndKeyData.anim3rdCounterpart)
 			{
@@ -235,17 +241,12 @@ void HandleAnimTimes()
 			}
 			if (g_thePlayer->IsThirdPerson() && respectEndKeyData.povState != POVSwitchState::POV3rd)
 			{
-				revert3rdPersonAnimTimes();
+				Revert3rdPersonAnimTimes(respectEndKeyData.anim3rdCounterpart, anim);
+				respectEndKeyData.povState = POVSwitchState::POV3rd;
 			}
 			else if (!g_thePlayer->IsThirdPerson() && respectEndKeyData.povState != POVSwitchState::POV1st)
 			{
-				auto* animGroup3rd = respectEndKeyData.anim3rdCounterpart->animGroup;
-				animGroup3rd->numKeys = anim->animGroup->numKeys;
-				animGroup3rd->keyTimes = anim->animGroup->keyTimes;
-				// doing this to avoid inconsistencies
-				animGroup3rd->blend = anim->animGroup->blend;
-				animGroup3rd->blendIn = anim->animGroup->blendIn;
-				animGroup3rd->blendOut = anim->animGroup->blendOut;
+				Set3rdPersonAnimTimes(respectEndKeyData.anim3rdCounterpart, anim);
 				respectEndKeyData.povState = POVSwitchState::POV1st;
 			}
 		}

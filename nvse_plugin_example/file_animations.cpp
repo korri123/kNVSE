@@ -136,11 +136,13 @@ struct JSONEntry
 	std::string folderName;
 	const TESForm* form;
 	Script* conditionScript;
-	bool pollCondition;
 	int loadPriority;
+	bool pollCondition;
+	bool matchBaseGroupId;
 
-	JSONEntry(std::string folderName, const TESForm* form, Script* script, bool pollCondition, int priority)
-		: folderName(std::move(folderName)), form(form), conditionScript(script), pollCondition(pollCondition), loadPriority(priority)
+	JSONEntry(std::string folderName, const TESForm* form, Script* script, bool pollCondition, int priority, bool matchBaseGroupId)
+		: folderName(std::move(folderName)), form(form), conditionScript(script), pollCondition(pollCondition), loadPriority(priority),
+	matchBaseGroupId(matchBaseGroupId)
 	{
 	}
 };
@@ -240,6 +242,11 @@ void HandleJson(const std::filesystem::path& path)
 					if (elem.contains("pollCondition"))
 						pollCondition = elem["pollCondition"].get<bool>();
 				}
+				auto matchBaseGroupId = false;
+				if (elem.contains("matchBaseAnimGroup"))
+				{
+					matchBaseGroupId = elem["matchBaseAnimGroup"].get<bool>();
+				}
 				if (mod && !formIds.empty())
 				{
 					for (auto formId : formIds)
@@ -253,12 +260,12 @@ void HandleJson(const std::filesystem::path& path)
 						}
 						LogForm(form);
 						Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
-						g_jsonEntries.emplace_back(folder, form, condition, pollCondition, priority);
+						g_jsonEntries.emplace_back(folder, form, condition, pollCondition, priority, matchBaseGroupId);
 					}
 				}
 				else
 				{
-					g_jsonEntries.emplace_back(folder, nullptr, condition, pollCondition, priority);
+					g_jsonEntries.emplace_back(folder, nullptr, condition, pollCondition, priority, matchBaseGroupId);
 				}
 			}
 		}
@@ -283,6 +290,7 @@ void LoadJsonEntries()
 	{
 		g_jsonContext.script = entry.conditionScript;
 		g_jsonContext.pollCondition = entry.pollCondition;
+		g_jsonContext.matchBaseGroupId = entry.matchBaseGroupId;
 		if (entry.form)
 			Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		else

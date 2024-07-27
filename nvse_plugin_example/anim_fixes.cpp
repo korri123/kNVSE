@@ -12,7 +12,7 @@ void LogAnimError(const BSAnimGroupSequence* anim, const std::string& msg)
 	DebugPrint("Animation Error Detected: " + std::string(anim->sequenceName) + "\n\t" + msg);
 }
 
-bool HasNoFixTextKey(BSAnimGroupSequence* anim)
+bool HasNoFixTextKey(const BSAnimGroupSequence* anim)
 {
 	if (!anim->textKeyData || anim->textKeyData->FindFirstByName("noFix"))
 		return true;
@@ -23,14 +23,11 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 {
 	if (!g_fixEndKeyTimeShorterThanStopTime || HasNoFixTextKey(anim))
 		return;
-	const auto* endKey = anim->textKeyData->FindFirstByName("end");
-	if (!endKey)
+	const auto endKeyTime = anim->endKeyTime;
+	if (auto* endKey = anim->textKeyData->FindFirstByName("end"))
 	{
-		LogAnimError(anim, "No end key found in anim");
-		return;
+		endKey->m_fTime = endKeyTime;
 	}
-	const auto endKeyTime = endKey->m_fTime;
-	anim->endKeyTime = endKeyTime;
 #if _DEBUG
 	const auto tags = anim->GetIDTags();
 	auto idx = 0;
@@ -52,7 +49,8 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 			if (numKeys)
 			{
 				auto* key = posData->GetKeyAt(numKeys - 1, keySize);
-				key->m_fTime = endKeyTime;
+				if (key->m_fTime < endKeyTime)
+					key->m_fTime = endKeyTime;
 			}
 
 			// RotData
@@ -60,7 +58,8 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 			if (numKeys)
 			{
 				auto* key = rotData->GetKeyAt(numKeys - 1, keySize);
-				key->m_fTime = endKeyTime;
+				if (key->m_fTime < endKeyTime)
+					key->m_fTime = endKeyTime;
 			}
 
 			// ScaleData
@@ -68,7 +67,8 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 			if (numKeys)
 			{
 				auto* key = scaleData->GetKeyAt(numKeys - 1, keySize);
-				key->m_fTime = endKeyTime;
+				if (key->m_fTime < endKeyTime)
+					key->m_fTime = endKeyTime;
 			}
 		}
 	}
@@ -174,8 +174,6 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
 {
 	auto* textKeys = anim->textKeyData;
-	if (!textKeys)
-		return;
 	if (ra::any_of(textKeys->GetKeys(), [](const NiTextKey& key) { return key.m_kText.CStr() == nullptr; }))
 	{
 		LogAnimError(anim, "Erased null text keys");
@@ -186,9 +184,62 @@ void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
 	}
 }
 
+void AnimFixes::EraseNegativeAnimKeys(const BSAnimGroupSequence* anim)
+{
+	if (HasNoFixTextKey(anim))
+		return;
+	for (const auto& block : anim->GetControlledBlocks())
+	{
+		auto* interp = block.interpolator;
+		if (!interp || NOT_TYPE(interp, NiTransformInterpolator))
+			continue;
+		unsigned int numKeys;
+		NiAnimationKey::KeyType keyType;
+		unsigned char keySize;
+		auto* posData = interp->GetPosData(numKeys, keyType, keySize);
+		auto* transformData = interp->m_spData.data;
+		for (int i = 0; i < numKeys; ++i)
+		{
+			const auto* key = posData->GetKeyAt(i, keySize);
+			if (key->m_fTime < 0)
+			{
+				auto** mpPosKeys = reinterpret_cast<UInt8**>(&transformData->m_pkPosKeys);
+				*mpPosKeys += keySize;
+				transformData->m_uiNumPosKeys--;
+			}
+			else break;
+		}
+		auto* rotData = interp->GetRotData(numKeys, keyType, keySize);
+		for (int i = 0; i < numKeys; ++i)
+		{
+			const auto* key = rotData->GetKeyAt(i, keySize);
+			if (key->m_fTime < 0)
+			{
+				auto** mpRotKeys = reinterpret_cast<UInt8**>(&transformData->m_pkRotKeys);
+				*mpRotKeys += keySize;
+				transformData->m_uiNumRotKeys--;
+			}
+			else break;
+		}
+		auto* scaleData = interp->GetScaleData(numKeys, keyType, keySize);
+		for (int i = 0; i < numKeys; ++i)
+		{
+			const auto* key = scaleData->GetKeyAt(i, keySize);
+			if (key->m_fTime < 0)
+			{
+				auto** mpScaleKeys = reinterpret_cast<UInt8**>(&transformData->m_pkScaleKeys);
+				*mpScaleKeys += keySize;
+				transformData->m_uiNumScaleKeys--;
+			}
+			else break;
+		}
+	}
+}
+
 void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)
 {
 	EraseNullTextKeys(anim);
 	FixInconsistentEndTime(anim);
 	FixWrongAKeyInRespectEndKey(animData, anim);
+	EraseNegativeAnimKeys(anim);
 }

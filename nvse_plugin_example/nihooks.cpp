@@ -368,7 +368,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
         // active during the blend, we can remove the weights for
         // channels that weren't active.
 
-        if (bTransChanged)
+        if (bTransChanged && fTotalTransWeight != 0.0f)
         {
             // Remove the effect of invalid translations from the
             // weighted sum
@@ -385,7 +385,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
             kFinalRotate.Normalize();
             kValue.SetRotate(kFinalRotate);
         }
-        if (bScaleChanged)
+        if (bScaleChanged && fTotalScaleWeight >= 0.0001)
         {
             // Remove the effect of invalid scales from the
             // weighted sum

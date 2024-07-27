@@ -185,20 +185,6 @@ struct AnimTime
 
 };
 
-enum eAnimSequence
-{
-	kSequence_None = -0x1,
-	kSequence_Idle = 0x0,
-	kSequence_Movement = 0x1,
-	kSequence_LeftArm = 0x2,
-	kSequence_LeftHand = 0x3,
-	kSequence_Weapon = 0x4,
-	kSequence_WeaponUp = 0x5,
-	kSequence_WeaponDown = 0x6,
-	kSequence_SpecialIdle = 0x7,
-	kSequence_Death = 0x14,
-};
-
 struct SavedAnimsTime
 {
 	Script* conditionScript = nullptr;
@@ -285,17 +271,15 @@ using AnimOverrideMap = std::unordered_map<FormID, AnimOverrideStruct>;
 
 struct SavedAnims
 {
-	bool hasOrder = false;
 	std::vector<std::unique_ptr<AnimPath>> anims;
 	std::optional<LambdaVariableContext> conditionScript;
-	bool pollCondition = false;
 	std::unordered_set<BSAnimGroupSequence*> linkedSequences;
+	bool hasOrder = false;
+	bool pollCondition = false;
+	bool matchBaseGroupId = false;
+
 
 	SavedAnims() = default;
-	~SavedAnims()
-	{
-		int i = 0;
-	}
 };
 
 struct BurstState
@@ -308,6 +292,7 @@ struct JSONAnimContext
 {
 	Script* script;
 	bool pollCondition;
+	bool matchBaseGroupId;
 
 	void Reset()
 	{
@@ -483,6 +468,7 @@ static ParamInfo kParams_SetActorAnimationPath[] =
 	{	"animation path",	kParamType_String,	0	},  // path
 	{ "poll condition", kParamType_Integer, 1 },
 	{"condition", kParamType_AnyForm, 1},
+	{"match base anim group id", kParamType_Integer, 1},
 };
 
 static ParamInfo kParams_PlayAnimationPath[] =
@@ -528,8 +514,10 @@ DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 
 #endif
 
-void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition);
-void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false);
+void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, bool firstPerson,
+	bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition = false, bool matchBaseGroupId = false);
+void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson,
+	bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false, bool matchBaseGroupId = false);
 
 void HandleOnActorReload();
 

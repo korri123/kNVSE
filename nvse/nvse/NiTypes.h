@@ -866,11 +866,11 @@ public:
 	T* data;
 	T& operator *() { return *data; }
 	operator T*() { return data; }
-	const T* operator->() { return data; }
+	T* operator->() { return data; }
 	
 	T& operator *() const { return *data; }
 	operator T*() const { return data; }
-	const T* operator->() const { return data; }
+	T* operator->() const { return data; }
 };
 
 // 14
