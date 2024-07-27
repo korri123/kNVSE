@@ -139,9 +139,12 @@ struct JSONEntry
 	int loadPriority;
 	bool pollCondition;
 	bool matchBaseGroupId;
+#if _DEBUG
+	std::string conditionScriptText;
+#endif
 
 	JSONEntry(std::string folderName, const TESForm* form, Script* script, bool pollCondition, int priority, bool matchBaseGroupId)
-		: folderName(std::move(folderName)), form(form), conditionScript(script), pollCondition(pollCondition), loadPriority(priority),
+		: folderName(std::move(folderName)), form(form), conditionScript(script), loadPriority(priority), pollCondition(pollCondition),
 	matchBaseGroupId(matchBaseGroupId)
 	{
 	}
@@ -261,11 +264,23 @@ void HandleJson(const std::filesystem::path& path)
 						LogForm(form);
 						Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
 						g_jsonEntries.emplace_back(folder, form, condition, pollCondition, priority, matchBaseGroupId);
+#if _DEBUG
+						if (elem.contains("condition"))
+						{
+							g_jsonEntries.back().conditionScriptText = elem["condition"].get<std::string>();
+						}
+#endif
 					}
 				}
 				else
 				{
 					g_jsonEntries.emplace_back(folder, nullptr, condition, pollCondition, priority, matchBaseGroupId);
+#if _DEBUG
+					if (elem.contains("condition"))
+					{
+						g_jsonEntries.back().conditionScriptText = elem["condition"].get<std::string>();
+					}
+#endif
 				}
 			}
 		}
@@ -291,6 +306,9 @@ void LoadJsonEntries()
 		g_jsonContext.script = entry.conditionScript;
 		g_jsonContext.pollCondition = entry.pollCondition;
 		g_jsonContext.matchBaseGroupId = entry.matchBaseGroupId;
+#if _DEBUG
+		g_jsonContext.conditionScriptText = entry.conditionScriptText;
+#endif
 		if (entry.form)
 			Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		else

@@ -324,8 +324,6 @@ AnimTime::~AnimTime()
 	Revert3rdPersonAnimTimes(this->respectEndKeyData.anim3rdCounterpart, this->anim);
 }
 
-extern NVSEScriptInterface* g_script;
-
 // Make sure that Aim, AimUp and AimDown all use the same index
 AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
 {
@@ -688,6 +686,9 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 					if (ctx->pollCondition)
 						animsTime = initAnimTime(&*ctx)->get(); // init'd here so conditions can activate despite not being overridden
 					NVSEArrayVarInterface::Element result;
+#if _DEBUG
+					ctx->decompiledScriptText = DecompileScript(**ctx->conditionScript);
+#endif
 					if (!CallFunction(**ctx->conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
 						continue;
 				}
@@ -1074,13 +1075,18 @@ void SetOverrideAnimation(const UInt32 refId,
 	// check if stack already contains path
 	if (const auto iter = std::ranges::find_if(stack, findFn); iter != stack.end())
 	{
-		// move iter to the top of stack
-		std::rotate(iter, std::next(iter), stack.end());
+		auto& anims = **iter;
+		anims.matchBaseGroupId = matchBaseGroupId;
 		if (conditionScript) // in case of hot reload
 		{
-			(*iter)->conditionScript = conditionScript;
-			(*iter)->pollCondition = pollCondition;
+			anims.conditionScript = conditionScript;
+			anims.pollCondition = pollCondition;
+#if _DEBUG
+			anims.decompiledScriptText = DecompileScript(conditionScript);
+#endif
 		}
+		// move iter to the top of stack
+		std::rotate(iter, std::next(iter), stack.end());
 		return;
 	}
 
@@ -1109,6 +1115,9 @@ void SetOverrideAnimation(const UInt32 refId,
 		Log("Got a condition script, this animation will now only fire under this condition!");
 		anims.conditionScript = conditionScript;
 		anims.pollCondition = pollCondition;
+#if _DEBUG
+		anims.decompiledScriptText = DecompileScript(conditionScript);
+#endif
 	}
 	if (FindStringCI(fileName, "_order_"))
 	{

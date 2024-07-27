@@ -22,6 +22,8 @@ struct CustomAnimGroupScript
 	}
 };
 
+extern NVSEScriptInterface* g_script;
+
 extern std::deque<std::function<void()>> g_executionQueue;
 extern NVSEArrayVarInterface* g_arrayVarInterface;
 extern NVSEStringVarInterface* g_stringVarInterface;

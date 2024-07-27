@@ -1,4 +1,5 @@
 #include "commands_animation.h"
+#include "main.h"
 #include "utility.h"
 
 
@@ -116,4 +117,11 @@ bool StartsWith(const char* string, const char* prefix)
 	if (!count)
 		return false;
 	return true;
+}
+
+std::string DecompileScript(Script* script)
+{
+	char buffer[0x400];
+	g_script->DecompileToBuffer(script, nullptr, buffer);
+	return buffer;
 }

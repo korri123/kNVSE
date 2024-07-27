@@ -277,8 +277,10 @@ struct SavedAnims
 	bool hasOrder = false;
 	bool pollCondition = false;
 	bool matchBaseGroupId = false;
-
-
+#if _DEBUG
+	std::string conditionScriptText;
+	std::string decompiledScriptText;
+#endif
 	SavedAnims() = default;
 };
 
@@ -290,13 +292,20 @@ struct BurstState
 
 struct JSONAnimContext
 {
-	Script* script;
-	bool pollCondition;
-	bool matchBaseGroupId;
-
+	Script* script = nullptr;
+	bool pollCondition = false;
+	bool matchBaseGroupId = false;
+#if _DEBUG
+	std::string conditionScriptText;
+#endif
 	void Reset()
 	{
-		memset(this, 0, sizeof JSONAnimContext);
+		script = nullptr;
+		pollCondition = false;
+		matchBaseGroupId = false;
+#if _DEBUG
+		conditionScriptText.clear();
+#endif
 	}
 
 	JSONAnimContext() { Reset(); }

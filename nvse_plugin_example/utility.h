@@ -339,3 +339,5 @@ struct pair_equal {
 		return lhs.first == rhs.first && lhs.second == rhs.second;
 	}
 };
+
+std::string DecompileScript(Script* script);
