@@ -25,7 +25,6 @@
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
-bool g_doNotSwapAnims = false;
 
 std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
 
@@ -69,25 +68,12 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 			g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 		std::optional<AnimationResult> animResult;
 
-		auto* queuedAnim = GetQueuedAnim(animData, animGroupId);
-		if (queuedAnim)
+		if (auto* queuedAnim = GetQueuedAnim(animData, animGroupId))
 		{
 			destAnim = queuedAnim;
+			HandleExtraOperations(animData, queuedAnim);
 		}
-
-		if (const auto interceptedAnimGroup = InterceptPlayAnimGroup::Dispatch(animData->actor, animGroupId))
-		{
-			const auto newGroupId = *interceptedAnimGroup;
-			if (newGroupId == 0xFF)
-				return destAnim;
-			if (auto* anim = GetAnimByGroupID(animData, newGroupId); anim && anim->animGroup)
-			{
-				destAnim = anim;
-				animGroupId = anim->animGroup->groupID;
-			}
-		}
-
-		if (!g_doNotSwapAnims && !queuedAnim && (animResult = GetActorAnimation(animGroupId, animData)))
+		else if ((animResult = GetActorAnimation(animGroupId, animData)))
 		{
 			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
 			if (newAnim)
@@ -102,6 +88,16 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		}
 	}
 
+	bool bSkip = false;
+	if (auto* interceptedAnim = InterceptPlayAnimGroup::Dispatch(animData, destAnim, bSkip);
+		interceptedAnim && interceptedAnim->animGroup)
+	{
+		destAnim = interceptedAnim;
+		animGroupId = destAnim->animGroup->groupID;
+	}
+	else if (bSkip)
+		return destAnim;
+
 	if (g_fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		return destAnim;
 
@@ -110,7 +106,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
 			currentAnim = animData->animSequence[groupInfo->sequenceType];
 	Apply3rdPersonRespectEndKeyEaseInFix(animData, destAnim);
-	auto* result = ThisStdCall<BSAnimGroupSequence*>(0x4949A0, animData, destAnim, animGroupId, animSequence);
+	auto* result = GameFuncs::TransitionToSequence(animData, destAnim, animGroupId, animSequence);
 	if (destAnim && currentAnim)
 	{
 		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
@@ -640,27 +636,27 @@ void ApplyHooks()
 	}));
 
 	// AnimData::RemovesAnimSequence
-	WriteRelCall(0x496086, INLINE_HOOK(eAnimSequence, __fastcall, AnimData* animData)
+	WriteRelCall(0x4994F6, INLINE_HOOK(eAnimSequence, __fastcall, AnimData* animData)
 	{
 		// we are hooking in a mov instruction so this hook will be a bit unusual
 		auto* addressOfReturn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
 		auto* parentEbp = GetParentBasePtr(addressOfReturn);
 
 		// restore lost instructions
-		*reinterpret_cast<AnimData**>(parentEbp - 0x8) = animData;
+		*reinterpret_cast<AnimData**>(parentEbp - 0x24) = animData;
 		
 		const auto sequenceId = *reinterpret_cast<eAnimSequence*>(parentEbp + 0x8);
 		const auto result = InterceptStopSequence::Dispatch(animData->actor, sequenceId);
 		if (result && *result)
 		{
 			// jump to end of function
-			*addressOfReturn = 0x49626B;
+			*addressOfReturn = 0x49979C;
 			return static_cast<eAnimSequence>(0);
 		}
-		*addressOfReturn = 0x49608C;
+		*addressOfReturn = 0x4994FC;
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
 	}));
-	PatchMemoryNop(0x496089 + 2, 1);
+	PatchMemoryNop(0x4994F9 + 2, 1);
 
 	// KFModel::LoadAnimGroup dereference
 	// apply text key fixes before AnimGroup is init

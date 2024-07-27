@@ -1,5 +1,6 @@
 ﻿#include "knvse_events.h"
 
+#include "hooks.h"
 #include "main.h"
 
 extern NVSEEventManagerInterface* g_eventManagerInterface;
@@ -12,23 +13,47 @@ namespace InterceptPlayAnimGroup
 {
     const char* eventName = "kNVSE:InterceptPlayAnimGroup";
     EventParamType params[] = {
-        EventParamType::eParamType_Int
+        EventParamType::eParamType_Int,
+        EventParamType::eParamType_String
     };
-    constexpr auto numParams = std::size(params);
 
-    std::optional<AnimGroupID> Dispatch(Actor* actor, UInt32 groupId)
+    BSAnimGroupSequence* Dispatch(AnimData* animData, BSAnimGroupSequence* anim, bool& bSkip)
     {
-        static std::optional<AnimGroupID> result;
-        // need to initialize static variable to nullopt, otherwise it will be the old value when this function was last called
-        result = std::nullopt;
+        if (!anim || !anim->animGroup)
+            return nullptr;
+        static BSAnimGroupSequence* s_result;
+        static bool s_bSkip;
+        static AnimData* s_animData;
+        // need to initialize static variable to null, otherwise it will be the old value when this function was last called
+        s_result = nullptr;
+        s_animData = animData;
+        s_bSkip = false;
         g_eventManagerInterface->DispatchEventAlt(eventName, [](NVSEArrayVarInterface::Element& callbackResult, void*)
         {
-            if (callbackResult.GetType() != NVSEArrayVarInterface::Element::kType_Numeric)
-                return true;
-            result = static_cast<AnimGroupID>(callbackResult.GetNumber());
-            return false;
-        }, nullptr, actor, groupId & 0xFF);
-        return result;
+            if (callbackResult.GetType() == NVSEArrayVarInterface::Element::kType_Numeric)
+            {
+                const auto groupId = static_cast<AnimGroupID>(callbackResult.GetNumber());
+                if (groupId == static_cast<AnimGroupID>(0xFF))
+                {
+                    s_bSkip = true;
+                    return false;
+                }
+                s_result = GetAnimByGroupID(s_animData, groupId);
+                return false;
+            }
+            if (callbackResult.GetType() == NVSEArrayVarInterface::Element::kType_String)
+            {
+                if (auto* str = callbackResult.GetString())
+                {
+                    s_result = FindOrLoadAnim(s_animData, str);
+                    if (s_result)
+                        return false;
+                }
+            }
+            return true;
+        }, nullptr, animData->actor, anim->animGroup->groupID & 0xFF, anim->sequenceName);
+        bSkip = s_bSkip;
+        return s_result;
     }
 }
 
@@ -38,7 +63,6 @@ namespace InterceptStopSequence
     EventParamType params[] = {
         EventParamType::eParamType_Int
     };
-    constexpr auto numParams = std::size(params);
 
     std::optional<bool> Dispatch(Actor* actor, eAnimSequence sequenceType)
     {
@@ -55,8 +79,10 @@ namespace InterceptStopSequence
     }
 }
 
+#define REGISTER_EVENT(event) g_eventManagerInterface->RegisterEvent(event::eventName, std::size(event::params), event::params, EventFlags::kFlag_FlushOnLoad)
+
 void Events::RegisterEvents()
 {
-    g_eventManagerInterface->RegisterEvent(InterceptPlayAnimGroup::eventName, InterceptPlayAnimGroup::numParams, InterceptPlayAnimGroup::params, EventFlags::kFlag_FlushOnLoad);
-    g_eventManagerInterface->RegisterEvent(InterceptStopSequence::eventName, InterceptStopSequence::numParams, InterceptStopSequence::params, EventFlags::kFlag_FlushOnLoad);
+    REGISTER_EVENT(InterceptPlayAnimGroup);
+    REGISTER_EVENT(InterceptStopSequence);
 }

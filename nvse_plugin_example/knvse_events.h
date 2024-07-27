@@ -11,7 +11,7 @@ namespace Events
 
 namespace InterceptPlayAnimGroup
 {
-    std::optional<AnimGroupID> Dispatch(Actor* actor, UInt32 groupId);
+    BSAnimGroupSequence* Dispatch(AnimData* animData, BSAnimGroupSequence* anim, bool& bSkip);
 }
 
 namespace InterceptStopSequence

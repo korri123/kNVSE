@@ -1407,12 +1407,10 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 
 	auto* animData = GetAnimDataForPov(playerPov, actor);
 
-	if (const auto anim = LoadCustomAnimation(path, animData))
+	if (const auto anim = FindOrLoadAnim(animData, path))
 	//if (const auto anim = GetAnimationByPath(path))
 	{
-		g_doNotSwapAnims = true;
-		GameFuncs::MorphToSequence(animData, anim->anim, anim->anim->animGroup->groupID, -1);
-		g_doNotSwapAnims = false;
+		GameFuncs::TransitionToSequence(animData, anim, anim->animGroup->groupID, -1);
 		*result = 1;
 	}
 	return true;
@@ -1909,7 +1907,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	builder.Create("SetAnimationTextKeys", kRetnType_Default, { ParamInfo{"anim path", kNVSEParamType_String, false}, ParamInfo{"text key times", kNVSEParamType_Array, false}, ParamInfo{"text key values", kNVSEParamType_Array, false} }, false, [](COMMAND_ARGS)
+	builder.Create("SetAnimTextKeys", kRetnType_Default, { ParamInfo{"anim path", kNVSEParamType_String, false}, ParamInfo{"text key times", kNVSEParamType_Array, false}, ParamInfo{"text key values", kNVSEParamType_Array, false} }, false, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		PluginExpressionEvaluator eval(PASS_COMMAND_ARGS);
@@ -1998,7 +1996,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		GameFuncs::NiRefObject_DecRefCount_FreeIfZero(oldTextKeyData);
 		*result = 1;
 		return true;
-	}, Cmd_Expression_Plugin_Parse, "SetAnimTextKeys");
+	}, Cmd_Expression_Plugin_Parse);
 
 	builder.Create("AllowAttack", kRetnType_Default, {}, true, [](COMMAND_ARGS)
 	{
@@ -2706,6 +2704,22 @@ void CreateCommands(NVSECommandBuilder& builder)
 		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, anim->sequenceName);
 		return true;
 	}, nullptr, "GetAnimPathByType");
+
+	builder.Create("GetAnimHandType", kRetnType_Default, { ParamInfo{"sAnimPath", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = -1;
+		char animPath[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* anim = FindActiveAnimationForActor(actor, animPath);
+		if (!anim || !anim->animGroup)
+			return true;
+		*result = anim->animGroup->groupID >> 8 & 0xF;
+		return true;
+	});
 
 #if _DEBUG
 	

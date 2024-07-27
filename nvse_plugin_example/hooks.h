@@ -10,7 +10,6 @@ enum AnimGroupID : UInt8;
 extern bool g_startedAnimation;
 extern BSAnimGroupSequence* g_lastLoopSequence;
 void ApplyHooks();
-extern bool g_doNotSwapAnims;
 
 BSAnimGroupSequence* GetAnimByFullGroupID(AnimData* animData, UInt16 groupId);
 BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID ani);
