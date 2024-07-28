@@ -18,3 +18,13 @@ namespace InterceptStopSequence
 {
     std::optional<bool> Dispatch(Actor* actor, eAnimSequence sequenceType);
 }
+
+namespace InterceptSetPlayerMoveFlags
+{
+    std::optional<UInt32> Dispatch(UInt32 flags);
+}
+
+namespace InterceptTurnAnims
+{
+    std::optional<bool> Dispatch();
+}

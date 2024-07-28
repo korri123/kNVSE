@@ -12,6 +12,8 @@
 #include <functional>
 #include <ranges>
 
+#define BETHESDA_GAMEBRYO_MODIFICATIONS 1
+
 #if _DEBUG
 extern std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
 extern std::unordered_map<NiInterpolator*, const char*> g_debugInterpNames;
@@ -631,6 +633,105 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
+bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
+    NiControllerSequence* pkTimeSyncSeq, bool bTransition)
+{
+    return ThisStdCall<bool>(0xA34F20, this, cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
+}
+
+bool NiControllerSequence::StartBlend(NiControllerSequence* pkDestSequence, float fDuration, float fDestFrame,
+    int iPriority, float fSourceWeight, float fDestWeight, NiControllerSequence* pkTimeSyncSeq)
+{
+    return ThisStdCall<bool>(0xA350D0, this, pkDestSequence, fDuration, fDestFrame, iPriority, fSourceWeight, fDestWeight, pkTimeSyncSeq);
+}
+
+bool NiControllerSequence::StartMorph(NiControllerSequence* pkDestSequence, float fDuration, int iPriority,
+    float fSourceWeight, float fDestWeight)
+{
+    return ThisStdCall<bool>(0xA351D0, this, pkDestSequence, fDuration, iPriority, fSourceWeight, fDestWeight);
+}
+
+bool NiControllerSequence::VerifyDependencies(NiControllerSequence* pkSequence) const
+{
+    return ThisStdCall<bool>(0xA30580, this, pkSequence);
+}
+
+bool NiControllerSequence::VerifyMatchingMorphKeys(NiControllerSequence* pkTimeSyncSeq) const
+{
+    return ThisStdCall<bool>(0xA30AB0, this, pkTimeSyncSeq);
+}
+
+bool NiControllerSequence::CanSyncTo(NiControllerSequence* pkTargetSequence) const
+{
+    if (!pkTargetSequence)
+        return false;
+
+#if BETHESDA_GAMEBRYO_MODIFICATIONS
+    // Bethesda
+    auto* pkPartnerSequence = pkTargetSequence->m_pkPartnerSequence;
+    if ((!pkPartnerSequence || pkPartnerSequence != this && VerifyDependencies(pkTargetSequence))
+        && VerifyMatchingMorphKeys(pkTargetSequence))
+    {
+        return true;
+    }
+    return false;
+#else
+    // Gamebryo
+    if (!VerifyDependencies(pkTargetSequence) ||
+        !VerifyMatchingMorphKeys(pkTargetSequence))
+    {
+        return false;
+    }
+    return true;
+#endif
+}
+
+bool NiControllerManager::BlendFromPose(NiControllerSequence* pkSequence, float fDestFrame, float fDuration,
+                                        int iPriority, NiControllerSequence* pkSequenceToSynchronize)
+{
+    NIASSERT(pkSequence && pkSequence->GetOwner() == this &&
+        (!pkSequenceToSynchronize || pkSequenceToSynchronize->GetOwner() ==
+            this));
+
+    NiControllerSequence* pkTempSequence = CreateTempBlendSequence(pkSequence,
+        pkSequenceToSynchronize);
+    return pkTempSequence->StartBlend(pkSequence, fDuration, fDestFrame,
+        iPriority, 1.0f, 1.0f, nullptr);
+}
+
+bool NiControllerManager::CrossFade(NiControllerSequence* pkSourceSequence, NiControllerSequence* pkDestSequence,
+    float fDuration, int iPriority, bool bStartOver, float fWeight, NiControllerSequence* pkTimeSyncSeq)
+{
+    NIASSERT(pkSourceSequence && pkSourceSequence->GetOwner() == this);
+    NIASSERT(pkDestSequence && pkDestSequence->GetOwner() == this);
+
+    if (pkSourceSequence->GetState() == NiControllerSequence::INACTIVE ||
+        pkDestSequence->GetState() != NiControllerSequence::INACTIVE)
+    {
+        return false;
+    }
+
+    pkSourceSequence->Deactivate(fDuration, false);
+    return pkDestSequence->Activate(iPriority, bStartOver, fWeight, fDuration,
+        pkTimeSyncSeq, false);
+}
+
+NiControllerSequence* NiControllerManager::CreateTempBlendSequence(NiControllerSequence* pkSequence,
+    NiControllerSequence* pkSequenceToSynchronize)
+{
+    return ThisStdCall<NiControllerSequence*>(0xA2F170, this, pkSequence, pkSequenceToSynchronize);
+}
+
+bool NiControllerManager::Morph(NiControllerSequence* pkSourceSequence, NiControllerSequence* pkDestSequence,
+    float fDuration, int iPriority, float fSourceWeight, float fDestWeight)
+{
+    NIASSERT(pkSourceSequence && pkSourceSequence->GetOwner() == this &&
+        pkDestSequence && pkDestSequence->GetOwner() == this);
+
+    return pkSourceSequence->StartMorph(pkDestSequence, fDuration, iPriority,
+        fSourceWeight, fDestWeight);
+}
+
 namespace NiHooks
 {
     void WriteHooks()
@@ -641,6 +742,10 @@ namespace NiHooks
         WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeights);
         WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues);
         WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
+        WriteRelJump(0xA2F800, &NiControllerManager::BlendFromPose);
+        WriteRelJump(0xA2E280, &NiControllerManager::CrossFade);
+        WriteRelJump(0xA2E1B0, &NiControllerManager::Morph);
+        WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
     }
 
     // override stewie's tweaks

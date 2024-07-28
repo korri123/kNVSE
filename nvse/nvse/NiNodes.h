@@ -1830,13 +1830,13 @@ public:
 
 	enum AnimState
 	{
-		kAnimState_Inactive = 0x0,
-		kAnimState_Animating = 0x1,
-		kAnimState_EaseIn = 0x2,
-		kAnimState_EaseOut = 0x3,
-		kAnimState_TransSource = 0x4,
-		kAnimState_TransDest = 0x5,
-		kAnimState_MorphSource = 0x6,
+		INACTIVE,
+		ANIMATING,
+		EASEIN,
+		EASEOUT,
+		TRANSSOURCE,
+		TRANSDEST,
+		MORPHSOURCE
 	};
 
 	enum CycleType
@@ -1870,7 +1870,7 @@ public:
 	float startTime;
 	float endTime;
 	float destFrame;
-	NiControllerSequence* partnerSequence;
+	NiControllerSequence* m_pkPartnerSequence;
 	const char* accumRootName;
 	UInt32 node60_maybeAccumRoot;
 	UInt32 deprecatedStringPalette; // deprecated string palette
@@ -1884,6 +1884,31 @@ public:
 	ControlledBlock* GetControlledBlock(const char* name) const;
 
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
+
+	bool Activate(char cPriority, bool bStartOver, float fWeight,
+		float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
+		bool bTransition);
+
+	NiControllerManager* GetOwner() const
+	{
+		return owner;
+	}
+
+	AnimState GetState() const
+	{
+		return state;
+	}
+
+	bool StartBlend(NiControllerSequence* pkDestSequence, float fDuration,
+		float fDestFrame, int iPriority, float fSourceWeight,
+		float fDestWeight, NiControllerSequence* pkTimeSyncSeq);
+	bool StartMorph(NiControllerSequence* pkDestSequence,
+	                float fDuration, int iPriority, float fSourceWeight, float fDestWeight);
+
+	bool VerifyDependencies(NiControllerSequence *pkSequence) const;
+	bool VerifyMatchingMorphKeys(NiControllerSequence *pkTimeSyncSeq) const;
+	bool CanSyncTo(NiControllerSequence *pkTargetSequence) const;
+	
 };
 
 // 06C
@@ -2183,6 +2208,20 @@ public:
 	bool m_bCumulitive;
 	NiTSet<NiControllerSequence*> m_kTempBlendSeqs;
 	NiDefaultAVObjectPalette* m_spObjectPalette;
+
+	bool BlendFromPose(NiControllerSequence* pkSequence, float fDestFrame,
+		float fDuration, int iPriority = 0,
+		NiControllerSequence* pkSequenceToSynchronize = NULL);
+	bool CrossFade(NiControllerSequence* pkSourceSequence,
+		NiControllerSequence* pkDestSequence, float fDuration,
+		int iPriority = 0, bool bStartOver = false, float fWeight = 1.0f,
+		NiControllerSequence* pkTimeSyncSeq = NULL);
+	NiControllerSequence* CreateTempBlendSequence(
+		NiControllerSequence* pkSequence,
+		NiControllerSequence* pkSequenceToSynchronize);
+	bool Morph(NiControllerSequence* pkSourceSequence,
+	           NiControllerSequence* pkDestSequence, float fDuration, int iPriority,
+	           float fSourceWeight, float fDestWeight);
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
 

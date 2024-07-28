@@ -58,11 +58,11 @@ bool isEditor = false;
 
 float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 {
-	if (anim->endTime != -FLT_MAX && (anim->state == NiControllerSequence::kAnimState_TransSource || anim->state == NiControllerSequence::kAnimState_EaseOut))
+	if (anim->endTime != -FLT_MAX && (anim->state == kAnimState_TransSource || anim->state == kAnimState_EaseOut))
 	{
 		return anim->endTime - animData->timePassed;
 	}
-	if (anim->startTime != -FLT_MAX && (anim->state == NiControllerSequence::kAnimState_TransDest || anim->state == NiControllerSequence::kAnimState_EaseIn))
+	if (anim->startTime != -FLT_MAX && (anim->state == kAnimState_TransDest || anim->state == kAnimState_EaseIn))
 	{
 		return animData->timePassed - anim->startTime;
 	}
@@ -194,7 +194,7 @@ void HandleAnimTimes()
 		}
 		auto* animData = animTime.GetAnimData(actor);
 
-		const auto isAnimPlaying = _L(, anim->state != NiControllerSequence::kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim);
+		const auto isAnimPlaying = _L(, anim->state != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim);
 		
 		if (shouldErase(actor) || !animData
 			// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
@@ -211,7 +211,7 @@ void HandleAnimTimes()
 			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
 
 			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim != animTime.respectEndKeyData.anim3rdCounterpart);
-			const auto animHasEnded = _L(, anim->state == NiControllerSequence::kAnimState_Inactive);
+			const auto animHasEnded = _L(, anim->state == kAnimState_Inactive);
 			if (current3rdPersonAnimHasChanged() && animHasEnded())
 			{
 				erase();
@@ -326,7 +326,7 @@ void HandleAnimTimes()
 			continue;
 		}
 		
-		if (shouldErase(actor) || !animData || !anim || anim->state == NiControllerSequence::kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript)
+		if (shouldErase(actor) || !animData || !anim || anim->state == kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript)
 		{
 			erase();
 			continue;
@@ -520,7 +520,7 @@ void HandleMisc()
 		auto* anim = g_thePlayer->GetHighProcess()->animData->animSequence[kSequence_Weapon];
 		if (!anim)
 		{
-			if (g_fixHolsterUnequipAnim3rd->state == NiControllerSequence::kAnimState_Inactive)
+			if (g_fixHolsterUnequipAnim3rd->state == kAnimState_Inactive)
 			{
 				g_fixHolster = false;
 				ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);

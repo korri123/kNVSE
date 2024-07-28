@@ -18,16 +18,28 @@ void WriteRelJump(UInt32 jumpSrc, T jumpTgt)
 
 // Specialization for member function pointers
 template <typename C, typename Ret, typename... Args>
-void WriteRelJump(UInt32 jumpSrc, Ret (C::*jumpTgt)(Args...)) {
+void WriteRelJump(UInt32 source, Ret(C::* const target)(Args...) const) {
 	union
 	{
-		Ret (C::*tgt)(Args...);
+		Ret(C::* tgt)(Args...) const;
 		UInt32 funcPtr;
 	} conversion;
-	conversion.tgt = jumpTgt;
+	conversion.tgt = target;
 
-	// Call the primary template with the converted function pointer
-	WriteRelJump(jumpSrc, conversion.funcPtr);
+	WriteRelJump(source, conversion.funcPtr);
+}
+
+// Specialization for member function pointers
+template <typename C, typename Ret, typename... Args>
+void WriteRelJump(UInt32 source, Ret(C::* const target)(Args...)) {
+	union
+	{
+		Ret(C::* tgt)(Args...);
+		UInt32 funcPtr;
+	} conversion;
+	conversion.tgt = target;
+
+	WriteRelJump(source, conversion.funcPtr);
 }
 
 void WriteRelCall(UInt32 jumpSrc, UInt32 jumpTgt);

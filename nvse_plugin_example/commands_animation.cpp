@@ -195,7 +195,7 @@ void HandleGarbageCollection()
 			if (!anim) 
 				continue;
 
-			if (anim->state == NiControllerSequence::kAnimState_Inactive)
+			if (anim->state == kAnimState_Inactive)
 			{
 				GameFuncs::NiControllerManager_RemoveSequence(animData->controllerManager, anim);
 				HandleOnSequenceDestroy(anim); // This should be called automatically in destructor
@@ -1933,7 +1933,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			DebugPrint("SetAnimationTextKeys: animation not found");
 			return true;
 		}
-		if (anim->state != NiControllerSequence::kAnimState_Inactive)
+		if (anim->state != kAnimState_Inactive)
 		{
 			DebugPrint("SetAnimationKeys: you can not call this function while the animation is playing.");
 			return true;
@@ -2028,7 +2028,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			animData = g_thePlayer->firstPersonAnimData;
 		else
 			animData = actor->baseProcess->GetAnimData();
-		if (anim->state != NiControllerSequence::kAnimState_Animating)
+		if (anim->state != kAnimState_Animating)
 		{
 			*result = 0;
 			return true;
@@ -2146,7 +2146,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 		auto* manager = anim->owner;
 
-		if (anim->state != NiControllerSequence::kAnimState_Inactive)
+		if (anim->state != kAnimState_Inactive)
 			// Deactivate sequence
 			GameFuncs::DeactivateSequence(manager, anim, 0.0);
 
@@ -2233,7 +2233,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 
 		auto* manager = sourceAnim->owner;
 
-		if (destAnim->state != NiControllerSequence::kAnimState_Inactive)
+		if (destAnim->state != kAnimState_Inactive)
 			GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
 
 		*result = GameFuncs::CrossFade(
@@ -2287,7 +2287,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (duration == FLT_MIN)
 			duration = GetDefaultBlendTime(anim);
 		auto* manager = anim->owner;
-		if (anim->state != NiControllerSequence::kAnimState_Inactive)
+		if (anim->state != kAnimState_Inactive)
 			GameFuncs::DeactivateSequence(manager, anim, 0.0f);
 		*result = GameFuncs::BlendFromPose(
 			manager,
@@ -2349,7 +2349,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			sourceWeight = sourceAnim->seqWeight;
 		if (destWeight == FLT_MIN)
 			destWeight = destAnim->seqWeight;
-		if (destAnim->state != NiControllerSequence::kAnimState_Inactive)
+		if (destAnim->state != kAnimState_Inactive)
 			GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
 		*result = GameFuncs::StartBlend(sourceAnim, destAnim, duration, destFrame, priority, sourceWeight, destWeight, timeSyncAnim);
 		return true;
