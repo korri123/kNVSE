@@ -14,6 +14,10 @@
 
 #define BETHESDA_GAMEBRYO_MODIFICATIONS 1
 
+void assert(bool bCondition)
+{
+    NIASSERT(bCondition);
+}
 #if _DEBUG
 extern std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
 extern std::unordered_map<NiInterpolator*, const char*> g_debugInterpNames;
@@ -883,8 +887,10 @@ void ApplyNiHooks()
 
 
 #if _DEBUG
-    WriteRelCall(0xA2F817, TempBlendDebugHook);
     SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
+
+    WriteRelCall(0xA2F817, TempBlendDebugHook);
+   
 #endif
 #endif
 }

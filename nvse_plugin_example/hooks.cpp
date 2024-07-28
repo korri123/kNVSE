@@ -511,6 +511,8 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelCall(0x4951D2, FixBlendMult);
 
+	ini.SaveFile(iniPath.c_str(), false);
+
 	ApplyNiHooks();
 	
 
@@ -708,6 +710,45 @@ void ApplyHooks()
 	}));
 	PatchMemoryNop(0x9EA353 + 5, 1);
 
-	ini.SaveFile(iniPath.c_str(), false);
+#if 0
+	// AnimData::GetNthSequenceGroupID(animData, sequenceType_1);
+	// Fix issue where new movement anim is played during equip or unequip
+	WriteRelCall(0x897237, INLINE_HOOK(UInt16, __fastcall, AnimData* animData, void*, eAnimSequence sequenceType)
+	{
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		auto* _ebp = GetParentBasePtr(addrOfRetn);
+		const auto groupId = animData->groupIDs[sequenceType];
+		const auto nextGroupId = *reinterpret_cast<UInt16*>(_ebp - 0x24);
+		if (sequenceType == kSequence_Movement && groupId != nextGroupId && (groupId & 0xFF) == (nextGroupId & 0xFF))
+		{
+			if (auto* weaponAnim = animData->animSequence[kSequence_Weapon]; weaponAnim && weaponAnim->animGroup)
+			{
+				const auto baseWeaponGroupId = weaponAnim->animGroup->GetBaseGroupID();
+				if (baseWeaponGroupId == kAnimGroup_Equip || baseWeaponGroupId == kAnimGroup_Unequip)
+				{
+					*addrOfRetn = 0x897682;
+					return 0;
+				}
+			}
+		}
+		return groupId;
+	}));
+
+	// BSAnimGroupSequence::GetState
+	// Also need to hook here to prevent game from trying to end movement sequence during equip/unequip
+	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
+	{
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		auto* _ebp = GetParentBasePtr(addrOfRetn);
+		const auto nextGroupId = *reinterpret_cast<AnimGroupID*>(_ebp - 0x40);
+		if (nextGroupId == kAnimGroup_Equip || nextGroupId == kAnimGroup_Unequip)
+		{
+			*addrOfRetn = 0x897760;
+			return static_cast<NiControllerSequence::AnimState>(-1);
+		}
+		return anim->state;
+	}));
+#endif
+
 }
 
