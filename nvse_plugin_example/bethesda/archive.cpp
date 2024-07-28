@@ -9,13 +9,6 @@ ArchiveTypeExtension* const ArchiveManager::pArchiveTypeExtensionsMap = reinterp
 UInt32* const ArchiveManager::uiArchiveFileBufferSizeS = reinterpret_cast<UInt32*>(0x11F8164);
 bool* const ArchiveManager::bInvalidateOlderFiles = reinterpret_cast<bool*>(0x11ACDF9);
 
-// 0xAF7EB0
-Archive::Archive(const char* apArchiveName, UInt32 auiBufferSize, bool abSecondaryArchive, bool abInvalidateOtherArchives)
-        : BSFile(apArchiveName, OpenMode::READ_ONLY, auiBufferSize, false)
-{
-    ThisStdCall(0xAF7EB0, this, apArchiveName, auiBufferSize, abSecondaryArchive, abInvalidateOtherArchives);
-}
-
 // 0xAF9230
 void Archive::DeleteDirectoryStringArray() {
     ThisStdCall(0xAF9230, this);

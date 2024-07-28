@@ -411,7 +411,6 @@
       </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="file_animations.cpp" />
-    <ClCompile Include="gamebryo\nitypes.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="knvse_events.cpp" />

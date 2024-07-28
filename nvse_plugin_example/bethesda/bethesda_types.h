@@ -76,8 +76,6 @@ ASSERT_SIZE(BSDirectoryEntry, 0x10);
 
 class BSFile : public NiFile {
 public:
-	BSFile();
-	BSFile(const char* apName, OpenMode aeMode, UInt32 auiBufferSize, bool abTextMode);
 
 	virtual bool	Open(int = 0, bool abTextMode = false);
 	virtual bool	OpenByFilePointer(FILE* apFile);
