@@ -79,7 +79,6 @@ std::vector<T> MapTo(const V& v, const F& f)
 	return vec;
 }
 
-
 template <typename T, const UInt32 ConstructorPtr = 0, typename... Args>
 T* New(Args &&... args)
 {

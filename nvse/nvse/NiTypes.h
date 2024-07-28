@@ -1,6 +1,8 @@
 #pragma once
 #include "Utilities.h"
 
+#define ASSERT_SIZE(name, size) static_assert(sizeof(name) == size, "Size mismatch for " #name)
+
 #if RUNTIME
 
 const UInt32 _NiTMap_Lookup = 0x00853130;
@@ -872,6 +874,26 @@ public:
 	operator T*() const { return data; }
 	T* operator->() const { return data; }
 };
+#define NiSmartPointer(className) \
+	class className; \
+	typedef NiPointer<className> className##Ptr;
+
+class NiCriticalSection {
+public:
+	CRITICAL_SECTION	m_kCriticalSection;
+	UInt32				m_ulThreadOwner;
+	UInt32				m_uiLockCount;
+
+	void Lock() {
+		EnterCriticalSection(&m_kCriticalSection); 
+	}
+
+	void Unlock() {
+		LeaveCriticalSection(&m_kCriticalSection);
+	}
+};
+
+ASSERT_SIZE(NiCriticalSection, 0x20);
 
 // 14
 template <typename T>

@@ -2291,68 +2291,45 @@ class NiBinaryStream
 {
 public:
 	NiBinaryStream();
-	~NiBinaryStream();
 
-	virtual void	Destructor(bool freeMemory);		// 00
+	virtual ~NiBinaryStream();		// 00
 	virtual void	Unk_01(void);						// 04
 	virtual void	SeekCur(SInt32 delta);				// 08
 	virtual void	GetBufferSize(void);				// 0C
 	virtual void	InitReadWriteProcs(bool useAlt);	// 10
 
 //	void	** m_vtbl;		// 000
-	UInt32	m_offset;		// 004
-	void	* m_readProc;	// 008 - function pointer
-	void	* m_writeProc;	// 00C - function pointer
+	UInt32	m_uiAbsoluteCurrentPos;		// 004
+	void	* m_pfnRead;	// 008 - function pointer
+	void	* m_pfnWrite;	// 00C - function pointer
 };
 
 class NiFile: public NiBinaryStream
 {
 public:
+	enum OpenMode {
+		READ_ONLY	= 0,
+		WRITE_ONLY	= 1,
+		APPEND_ONLY = 2,
+	};
+	
 	NiFile();
 	~NiFile();
 
-	virtual void	Seek(void);			// 14
-	virtual UInt32	GetFilename(void);	// 18
-	virtual void	Unk_07(void);		// 1C
+	virtual void		Seek(SInt32 aiOffset, SInt32 aiWhence);
+	virtual const char*	GetFilename() const;
+	virtual UInt32		GetFileSize();
 
-	UInt32	m_bufSize;	// 010
-	UInt32	m_unk014;	// 014 - Total read in buffer
-	UInt32	m_unk018;	// 018 - Consumed from buffer
-	UInt32	m_unk01C;	// 01C
-	void*	m_buffer;	// 020
-	FILE*	m_File;		// 024
+	UInt32		m_uiBufferAllocSize;
+	UInt32		m_uiBufferReadSize;
+	UInt32		m_uiPos;
+	UInt32		m_uiAbsolutePos;
+	char*		m_pBuffer;
+	FILE*		m_pFile;
+	OpenMode	m_eMode;
+	bool		m_bGood;
 };
-
-// 158
-class BSFile: public NiFile
-{
-public:
-	BSFile();
-	~BSFile();
-
-	virtual void	Reset(void);	// 20
-	virtual void	Unk_09(void);	// 24
-	virtual void	Unk_0A(void);	// 28
-	virtual void	Unk_0B(void);	// 2C
-	virtual void	Unk_0C(void);	// 30
-	virtual void	Read(void);		// 34
-	virtual void	Write(void);	// 38
-
-	UInt32		m_modeReadWriteAppend;	// 028
-	UInt8		m_good;					// 02C
-	UInt8		pad02D[3];				// 02D
-	UInt8		m_unk030;				// 030
-	UInt8		pad031[3];				// 031
-	UInt32		m_unk034;				// 034
-	UInt32		m_unk038;				// 038 - init'd to FFFFFFFF
-	UInt32		m_unk03C;				// 038
-	UInt32		m_unk040;				// 038
-	char		m_path[0x104];			// 044
-	UInt32		m_unk148;				// 148
-	UInt32		m_unk14C;				// 14C
-	UInt32		m_fileSize;				// 150
-	UInt32		m_unk154;				// 154
-};
+ASSERT_SIZE(NiFile, 0x30);
 
 //// derived from NiFile, which derives from NiBinaryStream
 //// 154

@@ -49,11 +49,9 @@ void LogForm(const TESForm* form)
 template <typename T>
 void LoadPathsForPOV(const std::filesystem::path& path, const T identifier)
 {
-
 	for (const auto& iter : std::filesystem::directory_iterator(path))
 	{
 		if (!iter.is_directory()) continue;
-
 		const auto& str = iter.path().filename().string();
 		if (_stricmp(str.c_str(), "_male") == 0)
 			LoadPathsForType(iter.path(), identifier, false);
@@ -292,7 +290,6 @@ void HandleJson(const std::filesystem::path& path)
 		DebugPrint("The JSON is incorrectly formatted! It will not be applied. Path: " + path.string());
 		DebugPrint(FormatString("JSON error: %s\n", e.what()));
 	}
-	
 }
 
 void LoadJsonEntries()
@@ -313,7 +310,7 @@ void LoadJsonEntries()
 			Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		else
 			Log("JSON: Loading animations for global override in path " + entry.folderName);
-		const auto path = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride\)" + entry.folderName;
+		const auto path = R"(Data\Meshes\AnimGroupOverride\)" + entry.folderName;
 		if (!std::filesystem::exists(path))
 			Log(FormatString("Path %s does not exist yet it is present in JSON", path.c_str()));
 		else if (!entry.form) // global
@@ -328,11 +325,11 @@ void LoadJsonEntries()
 void LoadFileAnimPaths()
 {
 	Log("Loading file anims");
-	const auto dir = GetCurPath() + R"(\Data\Meshes\AnimGroupOverride)";
+	const std::filesystem::path dir = R"(Data\Meshes\AnimGroupOverride)";
 	const auto then = std::chrono::system_clock::now();
-	if (std::filesystem::exists(dir))
+	if (exists(dir))
 	{
-		for (const auto& iter: std::filesystem::directory_iterator(dir.c_str()))
+		for (const auto& iter: std::filesystem::directory_iterator(dir))
 		{
 			const auto& path = iter.path();
 			if (iter.is_directory())
@@ -358,7 +355,7 @@ void LoadFileAnimPaths()
 	}
 	else
 	{
-		Log(dir + " does not exist.");
+		Log(dir.string() + " does not exist.");
 	}
 	LoadJsonEntries();
 	const auto now = std::chrono::system_clock::now();

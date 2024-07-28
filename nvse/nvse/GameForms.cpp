@@ -771,17 +771,17 @@ void TESFaction::SetNthRankName(const char* newName, UInt32 whichRank, bool bFem
 
 UInt32 EffectItemList::CountItems() const
 {
-	return list.Count();
+	return Count();
 }
 
 EffectItem* EffectItemList::ItemAt(UInt32 whichItem)
 {
-	return list.GetNthItem(whichItem);
+	return GetNthItem(whichItem);
 }
 
 const char* EffectItemList::GetNthEIName(UInt32 whichEffect) const
 {
-	EffectItem* effItem = list.GetNthItem(whichEffect);
+	EffectItem* effItem = GetNthItem(whichEffect);
 	if (effItem->setting)
 		return GetFullName(effItem->setting);
 	else

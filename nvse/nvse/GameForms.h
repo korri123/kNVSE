@@ -614,8 +614,7 @@ public:
 class EffectItemList : public BSSimpleList<EffectItem>
 {
 public:
-	EffectItemList();
-	~EffectItemList();
+	virtual ~EffectItemList();
 
 	UInt32	unk00C;	// 00C
 
@@ -3454,8 +3453,7 @@ STATIC_ASSERT(sizeof(TESRegion) == 0x38);
 class TESRegionList : public BSSimpleList<TESRegion>
 {
 public:
-	TESRegionList();
-	~TESRegionList();
+	virtual ~TESRegionList();
 };
 
 // NavMeshInfoMap (40)

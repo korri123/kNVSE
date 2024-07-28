@@ -581,16 +581,7 @@ public:
 
 // 010
 template <class T>
-class BSSimpleList
-{
-public:
-	BSSimpleList<T>();
-	~BSSimpleList<T>();
-
-	void**		_vtbl;	// 000
-	tList<T>	list;	// 004
-};	// 00C
-STATIC_ASSERT(sizeof(BSSimpleList<void *>) == 0xC);
+using BSSimpleList = tList<T>;
 
 template <typename T>
 struct BSSimpleArray

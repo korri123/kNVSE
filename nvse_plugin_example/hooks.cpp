@@ -672,6 +672,13 @@ void ApplyHooks()
 		return anim;
 	}));
 
+	// BSAnimGroupSequence::GetCycleType
+	// stop dumb limitation on CLAMP sequences not being allowed to locomotion
+	WriteRelCall(0x4909BC, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* anim)
+	{
+		return NiControllerSequence::kCycle_Loop;
+	}));
+
 	ini.SaveFile(iniPath.c_str(), false);
 }
 

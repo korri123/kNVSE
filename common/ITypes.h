@@ -149,9 +149,8 @@ class Bitfield
 		bool	IsSet(UInt32 data) const	{ return ((field & data) == data) ? true : false; }	//!< Are all these bits set?
 		bool	IsUnSet(UInt32 data) const	{ return (field & data) ? false : true; }			//!< Are all these bits clear?
 		bool	IsClear(UInt32 data) const	{ return IsUnSet(data); }							//!< Are all these bits clear?
-	
+	T		field;	//!< bitfield data
 	private:
-		T		field;	//!< bitfield data
 };
 
 typedef Bitfield <UInt8>	Bitfield8;		//!< An 8-bit bitfield

@@ -389,6 +389,9 @@
     <ClCompile Include="..\nvse\nvse\Utilities.cpp" />
     <ClCompile Include="..\nvse\nvse\utility.cpp" />
     <ClCompile Include="anim_fixes.cpp" />
+    <ClCompile Include="bethesda\archive.cpp" />
+    <ClCompile Include="bethesda\bethesda_types.inl" />
+    <ClCompile Include="bethesda\bsfile.cpp" />
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="commands_misc.cpp" />
     <ClCompile Include="dllmain.c">
@@ -408,6 +411,7 @@
       </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="file_animations.cpp" />
+    <ClCompile Include="gamebryo\nitypes.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="knvse_events.cpp" />
@@ -442,6 +446,7 @@
     <ClInclude Include="..\nvse\nvse\Utilities.h" />
     <ClInclude Include="..\nvse\nvse\utility.h" />
     <ClInclude Include="anim_fixes.h" />
+    <ClInclude Include="bethesda\bethesda_types.h" />
     <ClInclude Include="class_vtbls.h" />
     <ClInclude Include="commands_animation.h" />
     <ClInclude Include="commands_misc.h" />

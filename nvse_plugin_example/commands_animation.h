@@ -16,6 +16,7 @@
 #include "LambdaVariableContext.h"
 #include "ParamInfos.h"
 #include "utility.h"
+#include "bethesda/bethesda_types.h"
 
 
 struct SavedAnims;

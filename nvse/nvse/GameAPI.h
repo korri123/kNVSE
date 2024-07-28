@@ -409,15 +409,6 @@ class InteriorCellNewReferencesMap;
 class ExteriorCellNewReferencesMap;
 class NumericIDBufferMap;
 
-//
-struct ToBeNamed
-{
-	char		m_path[0x104];	// 0000
-	BSFile*		m_file;			// 0104
-	UInt32		m_unk0108;		// 0108
-	UInt32		m_offset;		// 010C
-};
-
 // Form type class: use to preload some information for created objects (?) refr and Cells
 struct formTypeClassData
 {

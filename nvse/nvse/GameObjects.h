@@ -707,6 +707,7 @@ public:
 	UInt16			unk1C2;				// 1C2
 	float			flt1C4;				// 1C4
 };
+ASSERT_SIZE(Character, 0x1C8);
 
 struct CombatActors;
 
