@@ -1900,7 +1900,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	}, nullptr, "GetAnimAttrs");
 
 	constexpr auto getAnimsByAnimGroupParams = {
-		ParamInfo{"anim group id", kParamType_Integer, false},
+		ParamInfo{"anim group id", kParamType_AnimationGroup, false},
 		ParamInfo{"bIsFirstPerson", kParamType_Integer, true}
 	};
 	builder.Create("GetAnimationsByAnimGroup", kRetnType_Array, getAnimsByAnimGroupParams, true, [](COMMAND_ARGS)
