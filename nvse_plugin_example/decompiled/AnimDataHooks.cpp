@@ -1,4 +1,7 @@
 ﻿#include "AnimDataHooks.h"
+
+#include <GameUI.h>
+
 #include "game_types.h"
 #include "NiObjects.h"
 #include "SafeWrite.h"
@@ -101,18 +104,18 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
     apDestSequence->Deactivate(0.0, 0);
   if ( (apDestSequence->m_eState && apDestSequence->m_eCycleType != NiControllerSequence::LOOP
      || apDestSequence->m_eState == NiControllerSequence::ANIMATING && apDestSequence == pCurrentSequence)
-    && (!NInterfaceManager::IsMenuMode() || apDestSequence->m_eState == NiControllerSequence::ANIMATING) )
+    && (!InterfaceManager::IsMenuMode() || apDestSequence->m_eState == NiControllerSequence::ANIMATING) )
   {
     this->sequenceState1[eSequenceType] = 0;
     apDestSequence->m_fOffset = -NI_INFINITY;
     return apDestSequence;
   }
   const auto* pCurrentAnimGroup = pCurrentSequence ? pCurrentSequence->animGroup : nullptr;
-  if ( !NInterfaceManager::IsMenuMode()
+  if ( !InterfaceManager::IsMenuMode()
     || this->nSceneRoot != pPlayer->GetNode(false)
     || VATSCameraData::GetSingleton()->eMode != VATSCameraData::VATS_MODE_NONE )
   {
-    if ( !NInterfaceManager::IsPipboyMode()
+    if ( !InterfaceManager::IsPipboyMode()
       || this->nSceneRoot != pPlayer->GetNode(true)
       || groupId != kAnimGroup_DynamicIdle
       || aSequenceType != kSequence_Idle
@@ -168,7 +171,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
   this->groupIDs[eSequenceType] = usAnimGroup;
   this->animSequence[eSequenceType] = apDestSequence;
   const auto* pDestAnimGroup = apDestSequence->animGroup;
-  if ( (!NInterfaceManager::IsMenuMode()
+  if ( (!InterfaceManager::IsMenuMode()
     || this->nSceneRoot != pPlayer->GetNode(false)) && pCurrentSequence )
   {
     if ( pCurrentAnimGroup->leftOrRight_whichFootToSwitch &&
@@ -225,8 +228,8 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
   if ( blend )
     animationBlend = static_cast<float>(blend) / 30.0f;
 
-  if ( NInterfaceManager::IsMenuMode() && this->nSceneRoot == pPlayer->spInventoryMenu
-    || NInterfaceManager::IsMenuActive(SurgeryMenu, 0) )
+  if ( InterfaceManager::IsMenuMode() && this->nSceneRoot == pPlayer->spInventoryMenu
+    || InterfaceManager::IsMenuActive(SurgeryMenu, 0) )
   {
     animationBlend = GameSettings::Interface::fMenuModeAnimBlend->GetFloatValue()->f;
   }
