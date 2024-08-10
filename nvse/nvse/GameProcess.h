@@ -969,5 +969,10 @@ struct AnimData
 		eAnimSequence sequenceID);
 
 	bool IsAnimSequenceQueued(const BSAnimGroupSequence* apSequence) const;
+
+	void ResetSequenceState(eAnimSequence seqID, float blendAmount)
+	{
+		ThisStdCall(0x496080, this, seqID, blendAmount);
+	}
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);

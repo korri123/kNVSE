@@ -2381,6 +2381,16 @@ public:
 	static const char* StringForAnimGroupCode(UInt32 groupCode);
 	static UInt32 AnimGroupForString(const char* groupName);
 
+	UInt8 GetBlendIn() const
+	{
+		return ThisStdCall(0x4954E0, this);
+	}
+
+	UInt8 GetBlendOut() const
+	{
+		return ThisStdCall(0x495520, this);
+	}
+
 	UInt16 GetMoveType() const
 	{
 		return AnimGroup::GetMoveType(groupID);

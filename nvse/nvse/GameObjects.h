@@ -322,7 +322,14 @@ public:
 	UInt8	fill021C[3];					// 021C
 	bool	bool021F;						// 021F	when null assume FIK status is false
 	bool	fikStatus;						// 0220
-	UInt8	fill0221[3];					// 0221
+	UInt8	byte0221;					// 0221
+	UInt8	bHasFootIK;					// 0222
+	UInt8	byte0223;					// 0223
+
+	void ApplyBoneTransforms()
+	{
+		ThisStdCall(0xC75B40, this);
+	}
 };
 STATIC_ASSERT(sizeof(bhkRagdollController) == 0x0224);
 
@@ -889,6 +896,8 @@ public:
 	AnimData* Get3rdPersonAnimData();
 	void SetWeaponOut(bool bOut);
 	AnimData* GetAnimData(bool bFirstPerson) const;
+
+	NiNode* GetNode(bool bFirstPerson) const;
 };
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);
 

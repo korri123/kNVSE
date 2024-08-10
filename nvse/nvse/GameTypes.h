@@ -99,7 +99,6 @@ template <class Item> class tList
 {
 public:
 	typedef ListNode<Item> _Node;
-
 	_Node	m_listHead;
 
 	template <class Op>

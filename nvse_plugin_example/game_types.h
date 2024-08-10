@@ -839,3 +839,133 @@ struct SettingT
 };
 
 const char* MoveFlagToString(UInt32 flag);
+
+enum MenuCode
+{
+	Console = 0x3,
+	Message = 0x3E9,
+	Inventory = 0x3EA,
+	Stats = 0x3EB,
+	HUDMainMenu = 0x3EC,
+	Loading = 0x3EF,
+	Container = 0x3F0,
+	Dialog = 0x3F1,
+	SleepWait = 0x3F4,
+	Pause = 0x3F5,
+	LockPick = 0x3F6,
+	Quantity = 0x3F8,
+	PipboyData = 0x3FF,
+	LevelUp = 0x403,
+	PipboyRepair = 0x40B,
+	SurgeryMenu = 0x40C,
+	Credits = 0x417,
+	CharGen = 0x418,
+	TextEdit = 0x41B,
+	Barter = 0x41D,
+	Surgery = 0x41E,
+	Hacking = 0x41F,
+	VATS = 0x420,
+	Computers = 0x421,
+	VendorRepair = 0x422,
+	Tutorial = 0x423,
+	SPECIALBook = 0x424,
+	ItemModMenu = 0x425,
+	LoveTester = 0x432,
+	CompanionWheel = 0x433,
+	MedicalQuestionnaire = 0x434,
+	Recipe = 0x435,
+	SlotMachine = 0x438,
+	BlackJack = 0x439,
+	Roulette = 0x43A,
+	Caravan = 0x43B,
+	Traits = 0x43C,
+	VideoMenu = 0x3FA,
+	GamePlayMenu = 0x3FC,
+	BookMenu = 0x402,
+	AudioMenu = 0x3F9,
+};
+
+namespace NInterfaceManager
+{
+	inline const auto IsMenuMode = reinterpret_cast<bool(__cdecl *)()>(0x702360);
+	inline const auto IsPipboyMode = reinterpret_cast<bool(__cdecl *)()>(0x705a00);
+	inline const auto IsMenuActive = reinterpret_cast<char(__cdecl *)(MenuCode, int)>(0x702680);
+}
+
+namespace BSCoreMessage
+{
+	inline const auto Warning = reinterpret_cast<int(__cdecl *)(const char *, ...)>(0x5b5e40);
+}
+
+namespace INISettings
+{
+	inline const auto UseRagdollAnimFootIK = reinterpret_cast<bool(__cdecl *)()>(0x495580);
+}
+
+struct TES
+{
+	bool IsRunningCellTests() const
+	{
+		return ThisStdCall<bool>(0x451530, this);
+	}
+
+	static TES* GetSingleton()
+	{
+		return reinterpret_cast<TES*>(0x11dea10);
+	}
+};
+
+class ShadowSceneLight;
+class Projectile;
+class ImageSpaceModifierInstanceForm;
+class ImageSpaceModifierInstanceRB;
+
+class VATSCameraData
+{
+public:
+	enum VATSMode
+	{
+		VATS_MODE_NONE = 0x0,
+		VATS_PLAYBACK = 0x4,
+		VATS_MODE_COUNT = 0x5,
+	};
+	
+	BSSimpleList<void> targetsList; // 00
+	VATSMode eMode; // 08
+	UInt32 unk0C; // 0C
+	BGSCameraShot *camShot; // 10
+	float flt14; // 14
+	float flt18; // 18
+	Projectile *projectile; // 1C
+	Projectile *unk20; // 20
+	TESIdleForm *pMeleeAttack; // 24
+	ImageSpaceModifierInstanceForm *isModInstForm; // 28
+	ImageSpaceModifierInstanceRB *isModInstRB; // 2C
+	UInt32 unk30; // 30
+	ShadowSceneLight *spShadowSceneLight; // 34
+	UInt8 byte38; // 38
+	UInt8 pad39[3]; // 39
+	UInt32 numKills; // 3C
+	UInt32 unk40; // 40
+	UInt32 unk44; // 44
+
+	static VATSCameraData* GetSingleton()
+	{
+		return reinterpret_cast<VATSCameraData*>(0x11f2250);
+	}
+};
+ASSERT_SIZE(VATSCameraData, 0x48);
+
+namespace GameSettings
+{
+	namespace General
+	{
+		inline auto* fAnimationDefaultBlend = reinterpret_cast<SettingT*>(0x11c56fc);
+		inline auto* fAnimationMult = reinterpret_cast<SettingT*>(0x11c5724);
+	}
+
+	namespace Interface
+	{
+		inline auto* fMenuModeAnimBlend = reinterpret_cast<SettingT*>(0x11c5740);
+	}
+}

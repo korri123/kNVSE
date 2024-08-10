@@ -75,6 +75,11 @@ AnimData* PlayerCharacter::GetAnimData(bool bFirstPerson) const
 	return bFirstPerson ? this->firstPersonAnimData : this->baseProcess->animData;
 }
 
+NiNode* PlayerCharacter::GetNode(bool bFirstPerson) const
+{
+	return ThisStdCall<NiNode*>(0x950BB0, this, bFirstPerson);
+}
+
 TESContainer* TESObjectREFR::GetContainer()
 {
 	if (IsActor())
