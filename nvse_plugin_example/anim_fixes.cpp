@@ -9,12 +9,12 @@
 
 void LogAnimError(const BSAnimGroupSequence* anim, const std::string& msg)
 {
-	DebugPrint("Animation Error Detected: " + std::string(anim->sequenceName) + "\n\t" + msg);
+	DebugPrint("Animation Error Detected: " + std::string(anim->m_kName) + "\n\t" + msg);
 }
 
 bool HasNoFixTextKey(const BSAnimGroupSequence* anim)
 {
-	if (!anim->textKeyData || anim->textKeyData->FindFirstByName("noFix"))
+	if (!anim->m_spTextKeys || anim->m_spTextKeys->FindFirstByName("noFix"))
 		return true;
 	return false;
 }
@@ -23,8 +23,8 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 {
 	if (!g_fixEndKeyTimeShorterThanStopTime || HasNoFixTextKey(anim))
 		return;
-	const auto endKeyTime = anim->endKeyTime;
-	if (auto* endKey = anim->textKeyData->FindFirstByName("end"))
+	const auto endKeyTime = anim->m_fEndKeyTime;
+	if (auto* endKey = anim->m_spTextKeys->FindFirstByName("end"))
 	{
 		endKey->m_fTime = endKeyTime;
 	}
@@ -129,7 +129,7 @@ AnimGroupID GetAnimGroupForAChar(char c)
 
 NiTextKey* GetNextAttackAnimGroupTextKey(BSAnimGroupSequence* sequence)
 {
-	for (auto& key : sequence->textKeyData->GetKeys())
+	for (auto& key : sequence->m_spTextKeys->GetKeys())
 	{
 		if (auto c = GetCharAfterAKey(key.m_kText.CStr()); c != '\0')
 		{
@@ -149,7 +149,7 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 	const auto groupId = static_cast<AnimGroupID>(fullGroupId);
 	if (groupId < kAnimGroup_AttackLeft || groupId > kAnimGroup_Attack8)
 		return;
-	if (!anim->textKeyData->FindFirstByName("respectEndKey") && !anim->textKeyData->FindFirstByName("respectTextKeys"))
+	if (!anim->m_spTextKeys->FindFirstByName("respectEndKey") && !anim->m_spTextKeys->FindFirstByName("respectTextKeys"))
 		return;
 	const auto nextAttackKey = GetNextAttackAnimGroupTextKey(anim);
 	if (!nextAttackKey)
@@ -163,7 +163,7 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 		return;
 	// check if this is intentional by looking up the 3rd person version of this anim and checking if it also has it
 	const auto* anim3rd = GetAnimByGroupID(g_thePlayer->baseProcess->animData, groupId);
-	if (anim3rd && anim3rd->textKeyData->FindFirstByName(nextAttackKey->m_kText.CStr()))
+	if (anim3rd && anim3rd->m_spTextKeys->FindFirstByName(nextAttackKey->m_kText.CStr()))
 		return;
 	const auto aChar = GetACharForAnimGroup(groupId);
 	const auto newText = std::string("a:") + std::string(1, aChar);
@@ -173,7 +173,7 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 
 void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
 {
-	auto* textKeys = anim->textKeyData;
+	auto* textKeys = anim->m_spTextKeys;
 	if (ra::any_of(textKeys->GetKeys(), [](const NiTextKey& key) { return key.m_kText.CStr() == nullptr; }))
 	{
 		LogAnimError(anim, "Erased null text keys");

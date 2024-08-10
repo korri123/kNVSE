@@ -50,6 +50,7 @@ AnimGroupID AnimData::GetNextAttackGroupID() const
 	}
 }
 
+
 void Actor::FireWeapon()
 {
 	nextAttackAnimGroupId110 = static_cast<UInt32>(GetAnimData()->GetNextAttackGroupID());
@@ -83,23 +84,23 @@ bool TESObjectWEAP::IsMeleeWeapon() const
 	return this->eWeaponType >= 0 && this->eWeaponType <= 2;
 }
 
-std::span<NiControllerSequence::ControlledBlock> NiControllerSequence::GetControlledBlocks() const
+std::span<NiControllerSequence::InterpArrayItem> NiControllerSequence::GetControlledBlocks() const
 {
-	return { controlledBlocks, numControlledBlocks };
+	return { m_pkInterpArray, m_uiArraySize };
 }
 
 std::span<NiControllerSequence::IDTag> NiControllerSequence::GetIDTags() const
 {
-	return { IDTagArray, numControlledBlocks };
+	return { m_pkIDTagArray, m_uiArraySize };
 }
 
-NiControllerSequence::ControlledBlock* NiControllerSequence::GetControlledBlock(const char* name) const
+NiControllerSequence::InterpArrayItem* NiControllerSequence::GetControlledBlock(const char* name) const
 {
-	std::span idTags(IDTagArray, numControlledBlocks);
+	std::span idTags(m_pkIDTagArray, m_uiArraySize);
 	const auto it = std::ranges::find_if(idTags, [&](const IDTag& tag) { return strcmp(tag.m_kAVObjectName.CStr(), name) == 0; });
 	if (it != idTags.end())
 	{
-		return controlledBlocks + std::distance(idTags.begin(), it);
+		return m_pkInterpArray + std::distance(idTags.begin(), it);
 	}
 	return nullptr;
 }
@@ -186,19 +187,29 @@ bool TESAnimGroup::IsAttackNonIS()
 	return true;
 }
 
-TESAnimGroup::AnimGroupInfo* GetGroupInfo(UInt8 groupId)
+AnimGroupInfo* GetGroupInfo(AnimGroupID groupId)
 {
 	return &g_animGroupInfos[groupId];
 }
 
-UInt32 GetSequenceType(UInt8 groupId)
+AnimGroupInfo* GetGroupInfo(UInt8 groupId)
 {
-	return GetGroupInfo(groupId)->sequenceType;
+	return GetGroupInfo(static_cast<AnimGroupID>(groupId));
 }
 
-TESAnimGroup::AnimGroupInfo* TESAnimGroup::GetGroupInfo() const
+eAnimSequence GetSequenceType(AnimGroupID groupId)
 {
-	return ::GetGroupInfo(groupID);
+	return static_cast<eAnimSequence>(GetGroupInfo(groupId)->sequenceType);
+}
+
+eAnimSequence GetSequenceType(UInt8 groupId)
+{
+	return GetSequenceType(static_cast<AnimGroupID>(groupId));
+}
+
+AnimGroupInfo* TESAnimGroup::GetGroupInfo() const
+{
+	return ::GetGroupInfo(GetBaseGroupID());
 }
 
 AnimGroupID TESAnimGroup::GetBaseGroupID() const

@@ -16,6 +16,7 @@
 #include "nihooks.h"
 #include "blend_fixes.h"
 #include "knvse_events.h"
+#include "decompiled/AnimDataHooks.h"
 
 #define CALL_EAX(addr) __asm mov eax, addr __asm call eax
 #define JMP_EAX(addr)  __asm mov eax, addr __asm jmp eax
@@ -119,9 +120,9 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 	if (animData != g_thePlayer->baseProcess->animData || g_thePlayer->IsThirdPerson() || !anim3rd || !anim3rd->animGroup)
 		return;
 	auto* anim1st = GetAnimByGroupID(g_thePlayer->firstPersonAnimData, anim3rd->animGroup->GetBaseGroupID());
-	if (!anim1st || !anim1st->animGroup || !anim1st->textKeyData)
+	if (!anim1st || !anim1st->animGroup || !anim1st->m_spTextKeys)
 		return;
-	auto* textKeys = anim1st->textKeyData;
+	auto* textKeys = anim1st->m_spTextKeys;
 	if (!textKeys->FindFirstByName("respectEndKey") && !textKeys->FindFirstByName("respectTextKeys"))
 		return;
 	if (textKeys->FindFirstByName("noBlend"))
@@ -141,7 +142,7 @@ void DecreaseAttackTimer()
 	if (g_startedAnimation)
 	{
 		//p->time1D4 = g_lastLoopSequence->endKeyTime - g_lastLoopSequence->startTime; // start time is actually curTime
-		baseProcess->time1D4 = g_lastLoopSequence->endKeyTime;
+		baseProcess->time1D4 = g_lastLoopSequence->m_fEndKeyTime;
 		g_startedAnimation = false;
 	}
 	const auto oldTime = baseProcess->time1D4;
@@ -352,7 +353,7 @@ bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
 	auto* multiple = static_cast<AnimSequenceMultiple*>(base);
 	for (auto* entry : *multiple->anims)
 	{
-		if (_stricmp(entry->sequenceName, anim->sequenceName) == 0)
+		if (_stricmp(entry->m_kName, anim->m_kName) == 0)
 			return true;
 	}
 	return false;
@@ -410,13 +411,13 @@ namespace LoopingReloadPauseFix
 		const auto defaultCondition = _L(, queuedId == 0xFF);
 		if (!anim || !anim->animGroup)
 			return defaultCondition();
-		if (!g_reloadStartBlendFixes.contains(anim->sequenceName))
+		if (!g_reloadStartBlendFixes.contains(anim->m_kName))
 		{
 			if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
 			{
-				const auto seqType = GetSequenceType(anim->animGroup->groupID);
+				const auto seqType = GetSequenceType(anim->animGroup->GetBaseGroupID());
 				auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
-				if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->sequenceName))
+				if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->m_kName))
 					return newCondition();
 			}
 			return defaultCondition();
@@ -599,10 +600,10 @@ void ApplyHooks()
 	// fixes respectEndKey not working for a: keys
 	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
 	{
-		auto* defaultData = sequence->textKeyData;
+		auto* defaultData = sequence->m_spTextKeys;
 		auto* anim1st = Find1stPersonRespectEndKeyAnim(g_thePlayer->firstPersonAnimData, sequence);
 		if (anim1st)
-			return anim1st->textKeyData;
+			return anim1st->m_spTextKeys;
 		return defaultData;
 	}));
 
@@ -630,9 +631,9 @@ void ApplyHooks()
 		void*, NiControllerSequence* seq, float fDuration, float fDestFrame, int iPriority,
 		float fSourceWeight, float fDestWeight, NiControllerSequence *pkTimeSyncSeq)
 	{
-		if (fDestFrame == 0.0f && seq->destFrame != -NI_INFINITY)
+		if (fDestFrame == 0.0f && seq->m_fDestFrame != -NI_INFINITY)
 		{
-			fDestFrame = seq->destFrame;
+			fDestFrame = seq->m_fDestFrame;
 		}
 		return ThisStdCall<bool>(0xA350D0, tempSeq, seq, fDuration, fDestFrame, iPriority, fSourceWeight, fDestWeight, pkTimeSyncSeq);
 	}));
@@ -665,7 +666,7 @@ void ApplyHooks()
 	WriteRelCall(0x43B831, INLINE_HOOK(BSAnimGroupSequence*, __fastcall, BSAnimGroupSequence** animPtr)
 	{
 		auto* anim = *animPtr;
-		if (anim->textKeyData)
+		if (anim->m_spTextKeys)
 		{
 			AnimFixes::EraseNullTextKeys(anim);
 			AnimFixes::FixInconsistentEndTime(anim);
@@ -746,9 +747,16 @@ void ApplyHooks()
 			*addrOfRetn = 0x897760;
 			return static_cast<NiControllerSequence::AnimState>(-1);
 		}
-		return anim->state;
+		return anim->m_eState;
 	}));
-#endif
 
+#if 0
+	
+#endif
+#endif
+	BlendFixes::ApplyHooks();
+#if _DEBUG
+	AnimDataHooks::WriteHooks();
+#endif
 }
 

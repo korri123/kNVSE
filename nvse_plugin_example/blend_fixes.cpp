@@ -143,9 +143,9 @@ void DeactivateUpDownVariants(AnimData* animData, const AnimGroupID baseGroupID)
 		auto* upAnim = GetActiveSequenceByGroupID(animData, static_cast<AnimGroupID>(baseGroupID + 1));
 		auto* downAnim = GetActiveSequenceByGroupID(animData, static_cast<AnimGroupID>(baseGroupID + 2));
 		if (upAnim)
-			GameFuncs::DeactivateSequence(upAnim->owner, upAnim, 0.0f);
+			GameFuncs::DeactivateSequence(upAnim->m_pkOwner, upAnim, 0.0f);
 		if (downAnim)
-			GameFuncs::DeactivateSequence(downAnim->owner, downAnim, 0.0f);
+			GameFuncs::DeactivateSequence(downAnim->m_pkOwner, downAnim, 0.0f);
 	}
 }
 
@@ -159,11 +159,11 @@ std::unordered_map<NiControllerManager*, std::array<NiControllerSequence*, 8>> g
 void ManageTempBlendSequence(BSAnimGroupSequence* destAnim)
 {
 	const auto sequenceType = destAnim->animGroup->GetGroupInfo()->sequenceType;
-	auto* manager = destAnim->owner;
+	auto* manager = destAnim->m_pkOwner;
 	auto* lastTempBlendSequence = g_lastTempBlendSequence[manager];
 	auto& tempBlendSequenceArray = g_tempBlendSequences[manager];
 	auto* currentSequence = tempBlendSequenceArray[sequenceType];
-	if (currentSequence && currentSequence != lastTempBlendSequence && currentSequence->state != kAnimState_Inactive)
+	if (currentSequence && currentSequence != lastTempBlendSequence && currentSequence->m_eState != kAnimState_Inactive)
 		GameFuncs::DeactivateSequence(manager, currentSequence, 0.0f);
 	tempBlendSequenceArray[sequenceType] = lastTempBlendSequence;
 }
@@ -229,7 +229,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	if (!isDestAim && !isDestUpOrDown)
 		return RESUME;
 
-	const auto isSrcEasing = srcAnim->state == kAnimState_EaseIn || srcAnim->state == kAnimState_TransDest;
+	const auto isSrcEasing = srcAnim->m_eState == kAnimState_EaseIn || srcAnim->m_eState == kAnimState_TransDest;
 	
 	//if (!isSrcEasing && ((isDestIS && isSrcIS) || (!isDestIS && !isSrcIS)))
 	//	return RESUME;
@@ -240,9 +240,9 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	{
 		// fix variant bs
 		const auto* baseProcess = animData->actor->baseProcess;
-		const auto* currentAnim = baseProcess->animSequence[sequenceId - 4];
+		const auto* currentAnim = baseProcess->weaponSequence[sequenceId - 4];
 		if (currentAnim)
-			destAnim->seqWeight = currentAnim->seqWeight;
+			destAnim->m_fSeqWeight = currentAnim->m_fSeqWeight;
 	}
 #if USE_BLEND_FROM_POSE
 	auto* aimAnim = GetAnimByGroupID(animData, kAnimGroup_Aim);
@@ -262,13 +262,13 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	else
 		blend = GetIniBlend();
 	
-	if (destAnim->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
+	if (destAnim->m_eState != kAnimState_Inactive)
+		GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
 	
-	if (srcAnim->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(srcAnim->owner, srcAnim, 0.0f);
+	if (srcAnim->m_eState != kAnimState_Inactive)
+		GameFuncs::DeactivateSequence(srcAnim->m_pkOwner, srcAnim, 0.0f);
 
-	GameFuncs::BlendFromPose(destAnim->owner, destAnim, 0.0f, blend, 0, nullptr);
+	GameFuncs::BlendFromPose(destAnim->m_pkOwner, destAnim, 0.0f, blend, 0, nullptr);
 
 	ManageTempBlendSequence(destAnim);
 	
@@ -316,11 +316,11 @@ void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGrou
 	const auto blend = GetIniBlend();
 	const auto currentTime = GetAnimTime(animData, currentSequence);
 #if USE_BLEND_FROM_POSE
-	if (targetSequence->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(targetSequence->owner, targetSequence, 0.0f);
-	GameFuncs::BlendFromPose(targetSequence->owner, targetSequence, currentTime, blend, 0, nullptr);
-	if (currentSequence->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(currentSequence->owner, currentSequence, 0.0f);
+	if (targetSequence->m_eState != kAnimState_Inactive)
+		GameFuncs::DeactivateSequence(targetSequence->m_pkOwner, targetSequence, 0.0f);
+	GameFuncs::BlendFromPose(targetSequence->m_pkOwner, targetSequence, currentTime, blend, 0, nullptr);
+	if (currentSequence->m_eState != kAnimState_Inactive)
+		GameFuncs::DeactivateSequence(currentSequence->m_pkOwner, currentSequence, 0.0f);
 #else
 	if (attackISSequence->state != kAnimState_Inactive)
 		GameFuncs::DeactivateSequence(attackISSequence->owner, attackISSequence, blend);
@@ -339,11 +339,11 @@ void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGrou
 	if (animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon && sequenceType <= kSequence_WeaponDown)
 	{
 		// handle up down variant weights
-		targetSequence->seqWeight = currentSequence->seqWeight;
+		targetSequence->m_fSeqWeight = currentSequence->m_fSeqWeight;
 		auto* highProcess = animData->actor->baseProcess;
 		if (IS_TYPE(highProcess, HighProcess))
 		{
-			highProcess->animSequence[sequenceType - kSequence_Weapon] = targetSequence;
+			highProcess->weaponSequence[sequenceType - kSequence_Weapon] = targetSequence;
 		}
 	}
 }
@@ -425,7 +425,7 @@ void BlendFixes::ApplyAimBlendHooks()
 void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequence* pkDest)
 {
     const auto sourceControlledBlocks = pkSource->GetControlledBlocks();
-    std::unordered_map<NiBlendInterpolator*, NiControllerSequence::ControlledBlock*> sourceInterpMap;
+    std::unordered_map<NiBlendInterpolator*, NiControllerSequence::InterpArrayItem*> sourceInterpMap;
     for (auto& interp : sourceControlledBlocks)
     {
         if (!interp.interpolator || !interp.blendInterpolator || interp.priority == 0xFF)
@@ -492,6 +492,26 @@ void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimG
 	}
 	if (HasNoFixTextKey(pkDest))
 		return;
-	if (pkSource->state == kAnimState_EaseOut && pkDest->state == kAnimState_EaseIn)
+	if (pkSource->m_eState == kAnimState_EaseOut && pkDest->m_eState == kAnimState_EaseIn)
 		::FixConflictingPriorities(pkSource, pkDest);
+}
+
+void BlendFixes::ApplyHooks()
+{
+	// AnimData::GetSceneRoot
+	WriteRelCall(0x896162, INLINE_HOOK(NiNode*, __fastcall, AnimData* animData)
+	{
+		auto* anim = animData->animSequence[kSequence_Movement];
+		auto* result = animData->nSceneRoot;
+		if (!anim || !anim->animGroup)
+			return result;
+		auto* block = anim->GetControlledBlock("Weapon");
+		if (!block)
+			return result;
+		auto* interp = block->interpolator;
+		if (NOT_TYPE(interp, NiTransformInterpolator))
+			return result;
+		interp->Pause();
+		return result;
+	}));
 }

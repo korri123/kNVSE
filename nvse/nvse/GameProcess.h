@@ -858,8 +858,8 @@ public:
 	UInt32 unk008;
 	UInt32 unk00C;
 	UInt32 unk010;
-	UInt32 sequenceID;
-	BSAnimGroupSequence* unk018;
+	eAnimSequence sequenceID0;
+	BSAnimGroupSequence* animSequence018;
 	NiRefObject* unk01C[2];
 	NiRefObject* unk024[2];
 	TESIdleForm* idleForm;
@@ -947,22 +947,27 @@ struct AnimData
 	NiTPointerMap<AnimSequenceBase>* mapAnimSequenceBase;// 0DC
 	BSAnimGroupSequence* animSequence[8];	// 0E0
 	BSAnimGroupSequence* animSeq100;		// 100
-	tList<KFModel>	loadingAnims;
-	float movementSpeedMult;
-	float rateOfFire;
-	float turboSpeedMult;
-	float weaponReloadSpeed;
-	float equipSpeed;
-	bool noBlend120;
-	UInt8 byte121;
-	UInt16 unk122;
-	AnimIdle* idleAnim;
-	AnimIdle* idleAnimQueued;
-	NiNode* node12C;
-	NiNode* node130;
-	tList<void> list134;
+	tList<KFModel>	loadingAnims;		// 104
+	float movementSpeedMult;			// 10C
+	float rateOfFire;					// 110
+	float turboSpeedMult; 			    // 114
+	float weaponReloadSpeed; 		    // 118
+	float equipSpeed; 				    // 11C
+	bool noBlend120; 				    // 120
+	UInt8 byte121; 				    // 121
+	UInt16 unk122; 				    // 122
+	AnimIdle* idleAnim; 		    	// 124
+	AnimIdle* idleAnimQueued; 		    // 128
+	AnimIdle* spIdle12C; 			    	// 12C
+	AnimIdle* spIdle130; 		    		// 130
+	tList<void> list134; 		    	// 134
 
 	AnimGroupID GetNextAttackGroupID() const;
 
+	BSAnimGroupSequence* MorphOrBlendToSequence(BSAnimGroupSequence *apDestSequence,
+		UInt16 groupID,
+		eAnimSequence sequenceID);
+
+	bool IsAnimSequenceQueued(const BSAnimGroupSequence* apSequence) const;
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);

@@ -51,7 +51,7 @@ namespace InterceptPlayAnimGroup
                 }
             }
             return true;
-        }, nullptr, animData->actor, anim->animGroup->groupID & 0xFF, anim->sequenceName);
+        }, nullptr, animData->actor, anim->animGroup->groupID & 0xFF, anim->m_kName);
         bSkip = s_bSkip;
         return s_result;
     }

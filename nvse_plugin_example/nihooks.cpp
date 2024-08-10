@@ -12,12 +12,18 @@
 #include <functional>
 #include <ranges>
 
-#define BETHESDA_GAMEBRYO_MODIFICATIONS 1
+#define BETHESDA_MODIFICATIONS 1
 
 void assert(bool bCondition)
 {
     NIASSERT(bCondition);
 }
+
+void NiOutputDebugString(const char* text)
+{
+    DebugPrint(text);
+}
+
 #if _DEBUG
 extern std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
 extern std::unordered_map<NiInterpolator*, const char*> g_debugInterpNames;
@@ -637,10 +643,86 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
-bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
-    NiControllerSequence* pkTimeSyncSeq, bool bTransition)
+void NiControllerSequence::AttachInterpolators(char cPriority)
 {
-    return ThisStdCall<bool>(0xA34F20, this, cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
+    ThisStdCall(0xA30900, this, cPriority);
+}
+
+bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
+                                    NiControllerSequence* pkTimeSyncSeq, bool bTransition)
+{
+    // return ThisStdCall(0xA34F20, this, cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
+    assert(m_pkOwner);
+
+    if (m_eState != INACTIVE)
+    {
+        NiOutputDebugString("Attempting to activate a sequence that is "
+                            "already animating!\n");
+        return false;
+    }
+
+#if BETHESDA_MODIFICATIONS
+    auto* pkActiveSequences = &m_pkOwner->m_kActiveSequences;
+    auto* thisPtr = this;
+    ThisStdCall(0xE7EC00, pkActiveSequences, &thisPtr); // NiTPool::ReleaseObject
+#endif
+
+    m_pkPartnerSequence = NULL;
+    if (pkTimeSyncSeq)
+    {
+#if BETHESDA_MODIFICATIONS
+        auto* pkMutualPartner = pkTimeSyncSeq->m_pkPartnerSequence;
+        if (pkMutualPartner && (pkMutualPartner == this || !VerifyDependencies(pkMutualPartner)))
+        {
+            return false;
+        }
+        m_pkPartnerSequence = pkTimeSyncSeq;
+#else
+        if (!VerifyDependencies(pkTimeSyncSeq) ||
+            !VerifyMatchingMorphKeys(pkTimeSyncSeq))
+        {
+            return false;
+        }
+        m_pkPartnerSequence = pkTimeSyncSeq;
+#endif
+    }
+
+    // Set parameters.
+    m_fSeqWeight = fWeight;
+    
+    // Attach the interpolators to their blend interpolators.
+    AttachInterpolators(cPriority);
+
+    if (fEaseInTime > 0.0f)
+    {
+        if (bTransition)
+        {
+            m_eState = TRANSDEST;
+        }
+        else
+        {
+            m_eState = EASEIN;
+        }
+        m_fStartTime = -NI_INFINITY;
+        m_fEndTime = fEaseInTime;
+    }
+    else
+    {
+#if BETHESDA_MODIFICATIONS
+        m_eState = ANIMATING;
+        m_fStartTime = 0.0f;
+#else
+        m_eState = ANIMATING;
+#endif
+    }
+
+    if (bStartOver)
+    {
+        ResetSequence();
+    }
+
+    m_fLastTime = -NI_INFINITY;
+    return true;
 }
 
 bool NiControllerSequence::StartBlend(NiControllerSequence* pkDestSequence, float fDuration, float fDestFrame,
@@ -670,7 +752,7 @@ bool NiControllerSequence::CanSyncTo(NiControllerSequence* pkTargetSequence) con
     if (!pkTargetSequence)
         return false;
 
-#if BETHESDA_GAMEBRYO_MODIFICATIONS
+#if BETHESDA_MODIFICATIONS
     // Bethesda
     auto* pkPartnerSequence = pkTargetSequence->m_pkPartnerSequence;
     if ((!pkPartnerSequence || pkPartnerSequence != this && VerifyDependencies(pkTargetSequence))
@@ -688,6 +770,11 @@ bool NiControllerSequence::CanSyncTo(NiControllerSequence* pkTargetSequence) con
     }
     return true;
 #endif
+}
+
+void NiControllerSequence::SetTimePassed(float fTime, bool bUpdateInterpolators)
+{
+    ThisStdCall(0xA328B0, this, fTime, bUpdateInterpolators);
 }
 
 bool NiControllerManager::BlendFromPose(NiControllerSequence* pkSequence, float fDestFrame, float fDuration,
@@ -736,6 +823,17 @@ bool NiControllerManager::Morph(NiControllerSequence* pkSourceSequence, NiContro
         fSourceWeight, fDestWeight);
 }
 
+bool NiControllerManager::ActivateSequence(NiControllerSequence* pkSequence, int iPriority, bool bStartOver,
+    float fWeight, float fEaseInTime, NiControllerSequence* pkTimeSyncSeq)
+{
+    return pkSequence->Activate(iPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, false);
+}
+
+bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, float fEaseOutTime)
+{
+    return pkSequence->Deactivate(fEaseOutTime, false);
+}
+
 namespace NiHooks
 {
     void WriteHooks()
@@ -750,6 +848,7 @@ namespace NiHooks
         WriteRelJump(0xA2E280, &NiControllerManager::CrossFade);
         WriteRelJump(0xA2E1B0, &NiControllerManager::Morph);
         WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
+        WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
     }
 
     // override stewie's tweaks
@@ -765,7 +864,7 @@ std::unordered_map<NiInterpolator*, NiControllerSequence*> g_interpsToSequenceMa
 
 void __fastcall NiControllerSequence_AttachInterpolatorsHook(NiControllerSequence* _this, void*,  char cPriority)
 {
-    std::span interpItems(_this->controlledBlocks, _this->numControlledBlocks);
+    std::span interpItems(_this->m_pkInterpArray, _this->m_uiArraySize);
     for (auto& interp : interpItems)
     {
         g_interpsToSequenceMap[interp.interpolator] = _this;
@@ -776,7 +875,7 @@ void __fastcall NiControllerSequence_AttachInterpolatorsHook(NiControllerSequenc
 void __fastcall NiControllerSequence_DetachInterpolatorsHook(NiControllerSequence* _this, void*)
 {
     ThisStdCall(0xA30540, _this);
-    std::span interpItems(_this->controlledBlocks, _this->numControlledBlocks);
+    std::span interpItems(_this->m_pkInterpArray, _this->m_uiArraySize);
     for (auto& interp : interpItems)
     {
         g_interpsToSequenceMap.erase(interp.interpolator);
@@ -787,18 +886,18 @@ std::unordered_set<NiControllerSequence*> g_appliedDestFrameAnims;
 
 void ApplyDestFrame(NiControllerSequence* sequence, float destFrame)
 {
-    sequence->destFrame = destFrame;
+    sequence->m_fDestFrame = destFrame;
     g_appliedDestFrameAnims.insert(sequence);
 }
 
 bool IsTempBlendSequence(const NiControllerSequence* sequence)
 {
-    return strncmp("__", sequence->sequenceName, 2) == 0;
+    return strncmp("__", sequence->m_kName, 2) == 0;
 }
 
 void ClearTempBlendSequence(NiControllerSequence* sequence)
 {
-    if (auto it = g_tempBlendSequences.find(sequence->owner); it != g_tempBlendSequences.end())
+    if (auto it = g_tempBlendSequences.find(sequence->m_pkOwner); it != g_tempBlendSequences.end())
     {
         int index = 0;
         auto& tempBlendSeqs = it->second;
@@ -815,33 +914,33 @@ void ClearTempBlendSequence(NiControllerSequence* sequence)
 
 void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
 {
-    if (sequence->state != kAnimState_Inactive && sequence->destFrame != -FLT_MAX)
+    if (sequence->m_eState != kAnimState_Inactive && sequence->m_fDestFrame != -FLT_MAX)
     {
         if (auto iter = g_appliedDestFrameAnims.find(sequence); iter != g_appliedDestFrameAnims.end())
         {
             g_appliedDestFrameAnims.erase(iter);
-            if (sequence->offset == -FLT_MAX || sequence->state == kAnimState_TransDest)
+            if (sequence->m_fOffset == -FLT_MAX || sequence->m_eState == kAnimState_TransDest)
             {
-                sequence->offset = -fTime + sequence->destFrame;
+                sequence->m_fOffset = -fTime + sequence->m_fDestFrame;
             }
 
-            if (sequence->startTime == -FLT_MAX)
+            if (sequence->m_fStartTime == -FLT_MAX)
             {
-                const float easeTime = sequence->endTime;
-                sequence->endTime = fTime + easeTime - sequence->destFrame;
-                sequence->startTime = fTime - sequence->destFrame;
+                const float easeTime = sequence->m_fEndTime;
+                sequence->m_fEndTime = fTime + easeTime - sequence->m_fDestFrame;
+                sequence->m_fStartTime = fTime - sequence->m_fDestFrame;
             }
-            sequence->destFrame = -FLT_MAX; // end my suffering
+            sequence->m_fDestFrame = -FLT_MAX; // end my suffering
 #if _DEBUG
-            float fEaseSpinnerIn = (fTime - sequence->startTime) / (sequence->endTime - sequence->startTime);
-            float fEaseSpinnerOut = (sequence->endTime - fTime) / (sequence->endTime - sequence->startTime);
+            float fEaseSpinnerIn = (fTime - sequence->m_fStartTime) / (sequence->m_fEndTime - sequence->m_fStartTime);
+            float fEaseSpinnerOut = (sequence->m_fEndTime - fTime) / (sequence->m_fEndTime - sequence->m_fStartTime);
             int i = 0;
 #endif
         }
 		
     }
     ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
-    if (IsTempBlendSequence(sequence) && sequence->state == kAnimState_Inactive)
+    if (IsTempBlendSequence(sequence) && sequence->m_eState == kAnimState_Inactive)
     {
         ClearTempBlendSequence(sequence);
     }
@@ -862,8 +961,8 @@ std::unordered_map<NiControllerManager*, NiControllerSequence*> g_lastTempBlendS
 NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager, void*, NiControllerSequence* source, NiControllerSequence* timeSync)
 {
     auto* tempBlendSeq = ThisStdCall<NiControllerSequence*>(0xA2F170, manager, source, timeSync);
-    const auto& str = "__TMP_BLEND_" + GetLastSubstringAfterSlash(source->sequenceName);
-    tempBlendSeq->sequenceName = GameFuncs::BSFixedString_CreateFromPool(str.c_str());
+    const auto& str = "__TMP_BLEND_" + GetLastSubstringAfterSlash(source->m_kName);
+    tempBlendSeq->m_kName = GameFuncs::BSFixedString_CreateFromPool(str.c_str());
     g_lastTempBlendSequence[manager] = tempBlendSeq;
     return tempBlendSeq;
 }

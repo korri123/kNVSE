@@ -20,7 +20,7 @@
 
 
 struct SavedAnims;
-extern std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos;
+extern std::span<AnimGroupInfo> g_animGroupInfos;
 using FormID = UInt32;
 using GroupID = UInt16;
 
@@ -538,7 +538,9 @@ bool IsCustomAnim(BSAnimGroupSequence* sequence);
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim);
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID);
+bool IsAnimGroupReload(AnimGroupID animGroupId);
 bool IsAnimGroupReload(UInt8 animGroupId);
+bool IsAnimGroupMovement(AnimGroupID animGroupId);
 bool IsAnimGroupMovement(UInt8 animGroupId);
 
 bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod);
@@ -589,7 +591,7 @@ std::string ExtractCustomAnimGroupName(const std::filesystem::path& path);
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence = nullptr);
 UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);
 float GetIniFloat(UInt32 addr);
-NiControllerSequence::ControlledBlock* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);
+NiControllerSequence::InterpArrayItem* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);
 
 using AnimationResultCache = std::unordered_map<std::pair<UInt32, AnimData*>, std::optional<AnimationResult>, pair_hash, pair_equal>;
 extern AnimationResultCache g_animationResultCache;

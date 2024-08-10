@@ -804,9 +804,9 @@ public:
 	AnimData*							firstPersonAnimData;				// 690 ExtraDataAnim::Data
 	NiNode								* node1stPerson;					// 694 used as node if unk64A is true
 	UInt32								unk698;		// 698
-	UInt32								unk69C;		// 698
-	AnimData*							unkNotTpsAniMData;		// 698
-	UInt32								unk6A4;		// 698
+	NiNode*								spInventoryMenu;		// 69C
+	AnimData*							unkNotTpsAniMData;		// 6A0
+	UInt32								unk6A4;		// 6A4
 	TESTopic							* topic;						// 6A8
 	UInt32								unk6AC[3];						// 6AC
 	TESQuest							* quest;						// 6B8
@@ -888,6 +888,7 @@ public:
 	Decoding::HighProcess* GetHighProcess();
 	AnimData* Get3rdPersonAnimData();
 	void SetWeaponOut(bool bOut);
+	AnimData* GetAnimData(bool bFirstPerson) const;
 };
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);
 

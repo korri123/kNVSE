@@ -1542,6 +1542,11 @@ public:
 	}
 
 	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+
+	void Pause()
+	{
+		this->bPose = true;
+	}
 };
 static_assert(sizeof(NiTransformInterpolator) == 0x48);
 
@@ -1560,6 +1565,14 @@ public:
 		MANAGERCONTROLLED_MASK  = 0x0020,
 		COMPUTESCALEDTIME_MASK  = 0x0040,
 		FORCEUDPATE_MASK        = 0x0080
+	};
+
+	enum CycleType
+	{
+		LOOP,
+		REVERSE,
+		CLAMP,
+		MAX_CYCLE_TYPES
 	};
 	
 	UInt16 m_uFlags;
@@ -1809,7 +1822,7 @@ public:
 		UInt8		pad0E[2];	// 0E
 	};
 
-	struct ControlledBlock
+	struct InterpArrayItem
 	{
 		NiTransformInterpolator* interpolator;
 		NiMultiTargetTransformController* multiTargetCtrl;
@@ -1847,43 +1860,48 @@ public:
 		MAX_CYCLE_TYPES = 0x3,
 	};
 
-	std::span<ControlledBlock> GetControlledBlocks() const;
+	std::span<InterpArrayItem> GetControlledBlocks() const;
 	std::span<IDTag> GetIDTags() const;
 
-	const char* sequenceName; // 8
-	UInt32 numControlledBlocks; // C
-	UInt32 arrayGrowBy; // 10
-	NiControllerSequence::ControlledBlock* controlledBlocks; // 14
-	NiControllerSequence::IDTag* IDTagArray; // 18
-	float seqWeight; // 1C
-	NiTextKeyExtraData* textKeyData; // 20
-	CycleType cycleType;
-	float frequency;
-	float beginKeyTime;
-	float endKeyTime;
-	float lastTime;
-	float weightedLastTime;
-	float lastScaledTime;
-	NiControllerManager* owner;
-	AnimState state;
-	float offset;
-	float startTime;
-	float endTime;
-	float destFrame;
+	const char* m_kName; // 8
+	UInt32 m_uiArraySize; // C
+	UInt32 m_uiArrayGrowBy; // 10
+	InterpArrayItem* m_pkInterpArray; // 14
+	IDTag* m_pkIDTagArray; // 18
+	float m_fSeqWeight; // 1C
+	NiTextKeyExtraData* m_spTextKeys; // 20
+	CycleType m_eCycleType;
+	float m_fFrequency;
+	float m_fBeginKeyTime;
+	float m_fEndKeyTime;
+	float m_fLastTime;
+	float m_fWeightedLastTime;
+	float m_fLastScaledTime;
+	NiControllerManager* m_pkOwner;
+	AnimState m_eState;
+	float m_fOffset;
+	float m_fStartTime;
+	float m_fEndTime;
+	float m_fDestFrame;
 	NiControllerSequence* m_pkPartnerSequence;
-	const char* accumRootName;
-	UInt32 node60_maybeAccumRoot;
-	UInt32 deprecatedStringPalette; // deprecated string palette
-	SInt16 curAnimNIdx;
-	UInt16 wrd6A;
-	UInt32 spNotesA;
-	UInt16 numNotes;
-	UInt8 hasHashHashAtStartOfNodeName;
-	UInt8 byte73;
+	const char* m_kAccumRootName;
+	UInt32 m_pkAccumRoot;
+	UInt32 m_spDeprecatedStringPalette; // deprecated string palette
+	UInt16 usCurAnimNIdx;
+	void* spAnimNotes;
+	UInt16 usNumNotes;
+	bool bRemovableObjects;
 
-	ControlledBlock* GetControlledBlock(const char* name) const;
+	InterpArrayItem* GetControlledBlock(const char* name) const;
 
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
+	
+	void ResetSequence()
+	{
+		m_fOffset = -NI_INFINITY;
+	}
+	
+	void AttachInterpolators(char cPriority);
 
 	bool Activate(char cPriority, bool bStartOver, float fWeight,
 		float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
@@ -1891,12 +1909,12 @@ public:
 
 	NiControllerManager* GetOwner() const
 	{
-		return owner;
+		return m_pkOwner;
 	}
 
 	AnimState GetState() const
 	{
-		return state;
+		return m_eState;
 	}
 
 	bool StartBlend(NiControllerSequence* pkDestSequence, float fDuration,
@@ -1908,8 +1926,10 @@ public:
 	bool VerifyDependencies(NiControllerSequence *pkSequence) const;
 	bool VerifyMatchingMorphKeys(NiControllerSequence *pkTimeSyncSeq) const;
 	bool CanSyncTo(NiControllerSequence *pkTargetSequence) const;
+	void SetTimePassed(float fTime, bool bUpdateInterpolators);
 	
 };
+ASSERT_SIZE(NiControllerSequence, 0x74);
 
 // 06C
 class BSAnimGroupSequence : public NiControllerSequence
@@ -2222,6 +2242,9 @@ public:
 	bool Morph(NiControllerSequence* pkSourceSequence,
 	           NiControllerSequence* pkDestSequence, float fDuration, int iPriority,
 	           float fSourceWeight, float fDestWeight);
+	bool ActivateSequence(NiControllerSequence* pkSequence, int iPriority, bool bStartOver,
+		float fWeight, float fEaseInTime, NiControllerSequence* pkTimeSyncSeq);
+	bool DeactivateSequence(NiControllerSequence* pkSequence, float fEaseOutTime);
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
 
@@ -2238,6 +2261,52 @@ enum eAnimSequence
 	kSequence_SpecialIdle = 0x7,
 	kSequence_Death = 0x14,
 };
+
+struct AnimGroupInfo
+{
+	const char* name;
+	bool supportsVariants;
+	UInt8 pad[3];
+	UInt32 sequenceType;
+	UInt32 keyType;
+	UInt32 unk10;
+	UInt32 unk14[4];
+};
+
+AnimGroupInfo* GetGroupInfo(AnimGroupID groupId);
+AnimGroupInfo* GetGroupInfo(UInt8 groupId);
+eAnimSequence GetSequenceType(AnimGroupID groupId);
+eAnimSequence GetSequenceType(UInt8 groupId);
+
+namespace AnimGroup
+{
+	inline AnimGroupID GetBaseGroupID(UInt16 groupID)
+	{
+		return static_cast<AnimGroupID>(groupID & 0xFF);
+	}
+	
+	inline int GetMoveType(UInt16 groupID)
+	{
+		return (groupID & 0x7000) >> 12;
+	}
+
+	inline bool IsAttack(AnimGroupID groupID)
+	{
+		if (groupID == kAnimGroup_Invalid)
+			return false;
+		if (groupID >= kAnimGroup_AttackLoop && groupID <= kAnimGroup_AttackLoopISDown)
+			return true;
+		const auto* info = GetGroupInfo(groupID);
+		return info->keyType >= 5 && info->keyType <= 9;
+	}
+
+	inline bool IsAim(AnimGroupID groupID)
+	{
+		if (groupID == kAnimGroup_Invalid)
+			return false;
+		return groupID >= kAnimGroup_Aim && groupID <= kAnimGroup_AimISDown;
+	}
+}
 
 // 02C+
 class TESAnimGroup : public NiRefObject
@@ -2273,18 +2342,8 @@ public:
 	}
 	
 	// 24
-	struct AnimGroupInfo
-	{
-		const char* name;
-		bool supportsVariants;
-		UInt8 pad[3];
-		UInt32 sequenceType;
-		UInt32 keyType;
-		UInt32 unk10;
-		UInt32 unk14[4];
-	};
-
-	TESAnimGroup::AnimGroupInfo* GetGroupInfo() const;
+	
+	AnimGroupInfo* GetGroupInfo() const;
 
 	eAnimSequence GetSequenceType() const
 	{
@@ -2321,6 +2380,11 @@ public:
 
 	static const char* StringForAnimGroupCode(UInt32 groupCode);
 	static UInt32 AnimGroupForString(const char* groupName);
+
+	UInt16 GetMoveType() const
+	{
+		return AnimGroup::GetMoveType(groupID);
+	}
 };
 STATIC_ASSERT(sizeof(TESAnimGroup) == 0x3C);
 

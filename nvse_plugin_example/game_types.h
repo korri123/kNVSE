@@ -223,7 +223,7 @@ namespace Decoding
 		void* unk1B8;			// 1B8
 		MagicTarget* magicTarget1BC;	// 1BC
 		AnimData* animData;			// 1C0
-		BSAnimGroupSequence* animSequence[3];	// 1C4
+		BSAnimGroupSequence* weaponSequence[3];	// 1C4
 		float angle1D0;
 		float time1D4;
 		UInt8 byte1D8;
@@ -608,9 +608,6 @@ struct Sound
 
 extern OSInputGlobals** g_inputGlobals;
 
-TESAnimGroup::AnimGroupInfo* GetGroupInfo(UInt8 groupId);
-UInt32 GetSequenceType(UInt8 groupId);
-
 NiAVObject* __fastcall GetNifBlock(TESObjectREFR* thisObj, UInt32 pcNode, const char* blockName);
 
 #define GetExtraType(xDataList, Type) (Extra ## Type*)xDataList.GetByType(kExtraData_ ## Type)
@@ -819,5 +816,26 @@ enum MovementFlags
 	kMoveFlag_Slide = 0x8000,
 };
 
+struct SettingT
+{
+	union Info
+	{
+		unsigned int uint;
+		int i;
+		float f;
+		char* str;
+		bool b;
+		UInt16 us;
+	};
+
+	virtual ~SettingT();
+	Info uValue;
+	const char* pKey;
+
+	Info* GetFloatValue()
+	{
+		return ThisStdCall<Info*>(0x403E20, this);
+	}
+};
 
 const char* MoveFlagToString(UInt32 flag);

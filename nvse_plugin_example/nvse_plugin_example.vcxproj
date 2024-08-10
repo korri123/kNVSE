@@ -394,6 +394,7 @@
     <ClCompile Include="bethesda\bsfile.cpp" />
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="commands_misc.cpp" />
+    <ClCompile Include="decompiled\AnimDataHooks.cpp" />
     <ClCompile Include="dllmain.c">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug ng|Win32'">
       </ForcedIncludeFiles>
@@ -449,6 +450,7 @@
     <ClInclude Include="class_vtbls.h" />
     <ClInclude Include="commands_animation.h" />
     <ClInclude Include="commands_misc.h" />
+    <ClInclude Include="decompiled\AnimDataHooks.h" />
     <ClInclude Include="file_animations.h" />
     <ClInclude Include="hooks.h" />
     <ClInclude Include="game_types.h" />

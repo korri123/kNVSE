@@ -27,7 +27,7 @@
 #include "NiTypes.h"
 #include "ScriptUtils.h"
 
-std::span<TESAnimGroup::AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<TESAnimGroup::AnimGroupInfo*>(0x11977D8), 245 };
+std::span<AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<AnimGroupInfo*>(0x11977D8), 245 };
 JSONAnimContext g_jsonContext;
 
 AnimOverrideMap g_animGroupThirdPersonMap;
@@ -195,7 +195,7 @@ void HandleGarbageCollection()
 			if (!anim) 
 				continue;
 
-			if (anim->state == kAnimState_Inactive)
+			if (anim->m_eState == kAnimState_Inactive)
 			{
 				GameFuncs::NiControllerManager_RemoveSequence(animData->controllerManager, anim);
 				HandleOnSequenceDestroy(anim); // This should be called automatically in destructor
@@ -262,7 +262,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, A
 			{
 				// fix memory leak, can't previous anim in map since it might be blending
 				auto* anim = base->GetSequenceByIndex(-1);
-				if (anim && _stricmp(anim->sequenceName, path.c_str()) == 0)
+				if (anim && _stricmp(anim->m_kName, path.c_str()) == 0)
 					return BSAnimationContext(anim, base);
 				GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, groupId);
 			}
@@ -376,7 +376,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	if (!anim || !anim->animGroup)
 		return false;
 	auto applied = false;
-	std::span textKeys{ anim->textKeyData->m_pKeys, anim->textKeyData->m_uiNumKeys };
+	std::span textKeys{ anim->m_spTextKeys->m_pKeys, anim->m_spTextKeys->m_uiNumKeys };
 	auto* actor = animData->actor;
 	AnimTime* animTimePtr = nullptr;
 	const auto getAnimTimeStruct = [&]() -> AnimTime&
@@ -390,7 +390,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	};
 	const auto createTimedExecution = [&]<typename T>(std::unordered_map<std::string, T>& map)
 	{
-		const auto iter = map.emplace(anim->sequenceName, T());
+		const auto iter = map.emplace(anim->m_kName, T());
 		auto* timedExecution = &iter.first->second;
 		const bool uninitialized = iter.second;
 		return std::make_pair(timedExecution, uninitialized);
@@ -518,7 +518,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	}
 	if (hasKey({"blendToReloadLoop"}))
 	{
-		LoopingReloadPauseFix::g_reloadStartBlendFixes.insert(anim->sequenceName);
+		LoopingReloadPauseFix::g_reloadStartBlendFixes.insert(anim->m_kName);
 	}
 	if (hasKey({"scriptLine:", "allowAttack" }, KeyCheckType::KeyStartsWith))
 	{
@@ -559,7 +559,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		animTime.scriptLines = scriptLineKeys->CreateContext();
 	}
 
-	const auto basePath = GetAnimBasePath(anim->sequenceName);
+	const auto basePath = GetAnimBasePath(anim->m_kName);
 	if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
 	{
 		auto& animTime = getAnimTimeStruct();
@@ -642,7 +642,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 			BSAnimGroupSequence* toReplaceAnim = nullptr;
 			if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 				toReplaceAnim = base->GetSequenceByIndex(-1);
-			if (toReplaceAnim && FindStringCI(toReplaceAnim->sequenceName, "\\hurt\\")) // there really is no state on an animation which indicates it's a crippled anim
+			if (toReplaceAnim && FindStringCI(toReplaceAnim->m_kName, "\\hurt\\")) // there really is no state on an animation which indicates it's a crippled anim
 			{
 				animCustomStack->clear();
 				animCustomStack->push_back(AnimCustom::Hurt);
@@ -900,7 +900,7 @@ int SimpleGroupNameToId(const char* name)
 			alt = std::string(name, spacePos - name);
 			name = alt.c_str();
 		}
-		const auto iter = ra::find_if(g_animGroupInfos, _L(TESAnimGroup::AnimGroupInfo & i, _stricmp(i.name, name) == 0));
+		const auto iter = ra::find_if(g_animGroupInfos, _L(AnimGroupInfo& i, _stricmp(i.name, name) == 0));
 		if (iter == g_animGroupInfos.end())
 			return -1;
 		return iter - g_animGroupInfos.begin();
@@ -970,7 +970,7 @@ int GetAnimGroupId(const std::filesystem::path& path)
 		ThisStdCall(0x633C90, &ref, 0); // NiRefObject__NiRefObject
 		CdeclCall(0xA35700, bsStream, 0, &ref); // Read from file
 		auto* anim = static_cast<NiControllerSequence*>(ref);
-		const auto groupId = SimpleGroupNameToId(anim->sequenceName);
+		const auto groupId = SimpleGroupNameToId(anim->m_kName);
 		if (groupId == -1)
 			return -1;
 		//ref->Destructor(true);
@@ -1176,14 +1176,24 @@ float GetAnimMult(const AnimData* animData, UInt8 animGroupID)
 	return 1.0f;
 }
 
-bool IsAnimGroupReload(UInt8 animGroupId)
+bool IsAnimGroupReload(AnimGroupID animGroupId)
 {
 	return animGroupId >= kAnimGroup_ReloadWStart && animGroupId <= kAnimGroup_ReloadZ;
 }
 
-bool IsAnimGroupMovement(UInt8 animGroupId)
+bool IsAnimGroupReload(UInt8 animGroupId)
+{
+	return IsAnimGroupReload(static_cast<AnimGroupID>(animGroupId));
+}
+
+bool IsAnimGroupMovement(AnimGroupID animGroupId)
 {
 	return GetSequenceType(animGroupId) == kSequence_Movement;
+}
+
+bool IsAnimGroupMovement(UInt8 animGroupId)
+{
+	return IsAnimGroupMovement(static_cast<AnimGroupID>(animGroupId));
 }
 
 bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod)
@@ -1493,21 +1503,21 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 {
 	NVSEStringMapBuilder builder;
 
-	builder.Add("sequenceName", anim->sequenceName);
-	builder.Add("seqWeight", anim->seqWeight);
-	builder.Add("cycleType", anim->cycleType);
-	builder.Add("frequency", anim->frequency);
-	builder.Add("beginKeyTime", anim->beginKeyTime);
-	builder.Add("endKeyTime", anim->endKeyTime);
+	builder.Add("sequenceName", anim->m_kName);
+	builder.Add("seqWeight", anim->m_fSeqWeight);
+	builder.Add("cycleType", anim->m_eCycleType);
+	builder.Add("frequency", anim->m_fFrequency);
+	builder.Add("beginKeyTime", anim->m_fBeginKeyTime);
+	builder.Add("endKeyTime", anim->m_fEndKeyTime);
 	if (includeDynamic)
 	{
-		builder.Add("lastTime", anim->lastTime);
-		builder.Add("weightedLastTime", anim->weightedLastTime);
-		builder.Add("lastScaledTime", anim->lastScaledTime);
-		builder.Add("state", anim->state);
-		builder.Add("offset", anim->offset);
-		builder.Add("startTime", anim->startTime);
-		builder.Add("endTime", anim->endTime);
+		builder.Add("lastTime", anim->m_fLastTime);
+		builder.Add("weightedLastTime", anim->m_fWeightedLastTime);
+		builder.Add("lastScaledTime", anim->m_fLastScaledTime);
+		builder.Add("state", anim->m_eState);
+		builder.Add("offset", anim->m_fOffset);
+		builder.Add("startTime", anim->m_fStartTime);
+		builder.Add("endTime", anim->m_fEndTime);
 		if (animData)
 		{
 			builder.Add("calculatedTime", GetAnimTime(animData, anim));
@@ -1518,7 +1528,7 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 			}
 		}
 	}
-	builder.Add("accumRootName", anim->accumRootName);
+	builder.Add("accumRootName", anim->m_kAccumRootName);
 	if (anim->animGroup)
 	{
 		builder.Add("animGroupId", anim->animGroup->groupID);
@@ -1535,7 +1545,7 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 	builder.Add("address", address.c_str());
 #endif
 
-	const auto* textKeyData = anim->textKeyData;
+	const auto* textKeyData = anim->m_spTextKeys;
 	if (textKeyData)
 	{
 		NVSEArrayBuilder textKeyTimeBuilder;
@@ -1630,7 +1640,7 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const std::st
 BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, BSAnimGroupSequence* baseAnim)
 {
 	auto* animData = actor->baseProcess->GetAnimData();
-	const auto* path = baseAnim->sequenceName;
+	const auto* path = baseAnim->m_kName;
 	const auto groupId = baseAnim->animGroup->groupID;
 	if (!animData)
 		return nullptr;
@@ -1691,23 +1701,6 @@ BSAnimGroupSequence* FindOrLoadAnim(Actor* actor, const char* path, bool firstPe
 	return FindOrLoadAnim(animData, path);
 }
 
-struct SettingT
-{
-	union Info
-	{
-		unsigned int uint;
-		int i;
-		float f;
-		char* str;
-		bool b;
-		UInt16 us;
-	};
-
-	virtual ~SettingT();
-	Info uValue;
-	const char* pKey;
-};
-
 float GetIniFloat(UInt32 addr)
 {
 	return ThisStdCall<SettingT::Info*>(0x403E20, reinterpret_cast<void*>(addr))->f;
@@ -1747,10 +1740,10 @@ UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId)
 	return nearestGroupId;
 }
 
-NiControllerSequence::ControlledBlock* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName)
+NiControllerSequence::InterpArrayItem* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName)
 {
-	std::span idTags(anim->IDTagArray, anim->numControlledBlocks);
-	std::span interps(anim->controlledBlocks, anim->numControlledBlocks);
+	std::span idTags(anim->m_pkIDTagArray, anim->m_uiArraySize);
+	std::span interps(anim->m_pkInterpArray, anim->m_uiArraySize);
 	const auto iter = ra::find_if(idTags, [&](const auto& idTag)
 	{
 		return _stricmp(idTag.m_kAVObjectName.CStr(), interpName) == 0;
@@ -1761,7 +1754,7 @@ NiControllerSequence::ControlledBlock* FindAnimInterp(BSAnimGroupSequence* anim,
 	return &interps[index];
 }
 
-NiControllerSequence::ControlledBlock* FindAnimInterp(TESObjectREFR* thisObj, const char* animPath, const char* interpName)
+NiControllerSequence::InterpArrayItem* FindAnimInterp(TESObjectREFR* thisObj, const char* animPath, const char* interpName)
 {
 	auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 	if (!anim)
@@ -1812,7 +1805,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			for (const auto* anim : animData->animSequence)
 			{
 				if (anim)
-					arr.Add(anim->sequenceName);
+					arr.Add(anim->m_kName);
 				else
 					arr.Add("");
 			}
@@ -1880,14 +1873,14 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (base->IsSingle())
 			{
 				const auto* anim = base->GetSequenceByIndex(0);
-				builder.Add(anim->sequenceName);
+				builder.Add(anim->m_kName);
 				*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
 				return true;
 			}
 			const auto* multi = static_cast<AnimSequenceMultiple*>(base);
 			multi->anims->ForEach([&](BSAnimGroupSequence* sequence)
 			{
-				builder.Add(sequence->sequenceName);
+				builder.Add(sequence->m_kName);
 			});
 			*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
 			return true;
@@ -1933,7 +1926,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			DebugPrint("SetAnimationTextKeys: animation not found");
 			return true;
 		}
-		if (anim->state != kAnimState_Inactive)
+		if (anim->m_eState != kAnimState_Inactive)
 		{
 			DebugPrint("SetAnimationKeys: you can not call this function while the animation is playing.");
 			return true;
@@ -1963,28 +1956,28 @@ void CreateCommands(NVSECommandBuilder& builder)
 
 		auto* textKeyData = CdeclCall<NiTextKeyExtraData*>(0xA46B70); // NiTextKeyExtraData::Create
 
-		auto* oldTextKeyData = anim->textKeyData;
+		auto* oldTextKeyData = anim->m_spTextKeys;
 
 		textKeyData->m_uiNumKeys = textKeyVector.size();
 		textKeyData->m_pKeys = textKeys;
 
 		++oldTextKeyData->m_uiRefCount;
-		GameFuncs::NiRefObject_Replace(&anim->textKeyData, textKeyData);
+		GameFuncs::NiRefObject_Replace(&anim->m_spTextKeys, textKeyData);
 
 		auto* oldAnimGroup = anim->animGroup;
 
 		const auto* animGroupInfo = oldAnimGroup->GetGroupInfo();
 
 		anim->animGroup = nullptr;
-		auto* oldSequenceName = anim->sequenceName;
-		anim->sequenceName = animGroupInfo->name; // yes, the game initially has the sequence name set to the anim group name
+		auto* oldSequenceName = anim->m_kName;
+		anim->m_kName = animGroupInfo->name; // yes, the game initially has the sequence name set to the anim group name
 		auto* animGroup = GameFuncs::InitAnimGroup(anim, kfModel->path);
-		anim->sequenceName = oldSequenceName;
+		anim->m_kName = oldSequenceName;
 
 		if (!animGroup)
 		{
 			DebugPrint("SetAnimationTextKeys: Game failed to parse text key data, see falloutnv_error.log");
-			GameFuncs::NiRefObject_Replace(&anim->textKeyData, oldTextKeyData);
+			GameFuncs::NiRefObject_Replace(&anim->m_spTextKeys, oldTextKeyData);
 			GameFuncs::NiRefObject_Replace(&anim->animGroup, oldAnimGroup);
 			*result = 0;
 			return true;
@@ -2024,25 +2017,25 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim)
 			return true;
 		AnimData* animData;
-		if (actor == g_thePlayer && anim->owner == g_thePlayer->firstPersonAnimData->controllerManager)
+		if (actor == g_thePlayer && anim->m_pkOwner == g_thePlayer->firstPersonAnimData->controllerManager)
 			animData = g_thePlayer->firstPersonAnimData;
 		else
 			animData = actor->baseProcess->GetAnimData();
-		if (anim->state != kAnimState_Animating)
+		if (anim->m_eState != kAnimState_Animating)
 		{
 			*result = 0;
 			return true;
 		}
 
-		anim->offset = time - animData->timePassed;
+		anim->m_fOffset = time - animData->timePassed;
 		const auto animTime = GetAnimTime(animData, anim);
-		if (animTime < anim->beginKeyTime)
+		if (animTime < anim->m_fBeginKeyTime)
 		{
-			anim->offset = anim->endKeyTime - (anim->beginKeyTime - anim->offset);
+			anim->m_fOffset = anim->m_fEndKeyTime - (anim->m_fBeginKeyTime - anim->m_fOffset);
 		}
-		else if (animTime > anim->endKeyTime)
+		else if (animTime > anim->m_fEndKeyTime)
 		{
-			anim->offset = anim->beginKeyTime + (anim->offset - anim->endKeyTime);
+			anim->m_fOffset = anim->m_fBeginKeyTime + (anim->m_fOffset - anim->m_fEndKeyTime);
 		}
 		*result = 1;
 		return true;
@@ -2099,7 +2092,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto* anim = FindActiveAnimationForActor(actor, path);
 		if (!anim)
 			return true;
-		if (anim->state != kAnimState_Inactive && anim->state != kAnimState_EaseOut) 
+		if (anim->m_eState != kAnimState_Inactive && anim->m_eState != kAnimState_EaseOut) 
 			*result = 1;
 		return true;
 	});
@@ -2136,7 +2129,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim)
 			return true;
 		if (weight == FLT_MIN)
-			weight = anim->seqWeight;
+			weight = anim->m_fSeqWeight;
 		BSAnimGroupSequence* timeSyncSeq = nullptr;
 		if (timeSyncSequence[0])
 		{
@@ -2144,9 +2137,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (!timeSyncSeq)
 				return true;
 		}
-		auto* manager = anim->owner;
+		auto* manager = anim->m_pkOwner;
 
-		if (anim->state != kAnimState_Inactive)
+		if (anim->m_eState != kAnimState_Inactive)
 			// Deactivate sequence
 			GameFuncs::DeactivateSequence(manager, anim, 0.0);
 
@@ -2177,7 +2170,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindActiveAnimationForActor(actor, sequencePath);
 		if (!anim)
 			return true;
-		auto* manager = anim->owner;
+		auto* manager = anim->m_pkOwner;
 		*result = GameFuncs::DeactivateSequence(manager, anim, easeOutTime);
 		return true;
 	});
@@ -2226,15 +2219,15 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 
 		if (weight == FLT_MIN)
-			weight = destAnim->seqWeight;
+			weight = destAnim->m_fSeqWeight;
 
 		if (easeInTime == FLT_MIN)
 			easeInTime = GetDefaultBlendTime(destAnim, sourceAnim);
 
-		auto* manager = sourceAnim->owner;
+		auto* manager = sourceAnim->m_pkOwner;
 
-		if (destAnim->state != kAnimState_Inactive)
-			GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
+		if (destAnim->m_eState != kAnimState_Inactive)
+			GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
 
 		*result = GameFuncs::CrossFade(
 			manager,
@@ -2286,8 +2279,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 		if (duration == FLT_MIN)
 			duration = GetDefaultBlendTime(anim);
-		auto* manager = anim->owner;
-		if (anim->state != kAnimState_Inactive)
+		auto* manager = anim->m_pkOwner;
+		if (anim->m_eState != kAnimState_Inactive)
 			GameFuncs::DeactivateSequence(manager, anim, 0.0f);
 		*result = GameFuncs::BlendFromPose(
 			manager,
@@ -2346,11 +2339,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (duration == FLT_MIN)
 			duration = GetDefaultBlendTime(destAnim, sourceAnim);
 		if (sourceWeight == FLT_MIN)
-			sourceWeight = sourceAnim->seqWeight;
+			sourceWeight = sourceAnim->m_fSeqWeight;
 		if (destWeight == FLT_MIN)
-			destWeight = destAnim->seqWeight;
-		if (destAnim->state != kAnimState_Inactive)
-			GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
+			destWeight = destAnim->m_fSeqWeight;
+		if (destAnim->m_eState != kAnimState_Inactive)
+			GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
 		*result = GameFuncs::StartBlend(sourceAnim, destAnim, duration, destFrame, priority, sourceWeight, destWeight, timeSyncAnim);
 		return true;
 	});
@@ -2374,7 +2367,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			anim = GetAnimationByPath(sequencePath);
 		if (!anim)
 			return true;
-		anim->seqWeight = weight;
+		anim->m_fSeqWeight = weight;
 		*result = 1;
 		return true;
 	});
@@ -2430,7 +2423,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim)
 			return true;
 		AnimData* animData;
-		if (actor == g_thePlayer && anim->owner == g_thePlayer->firstPersonAnimData->controllerManager)
+		if (actor == g_thePlayer && anim->m_pkOwner == g_thePlayer->firstPersonAnimData->controllerManager)
 			animData = g_thePlayer->firstPersonAnimData;
 		else
 			animData = actor->baseProcess->GetAnimData();
@@ -2497,9 +2490,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim || !anim->animGroup)
 			return true;
 		auto* animData = actor->baseProcess->GetAnimData();
-		if (animData->controllerManager != anim->owner)
+		if (animData->controllerManager != anim->m_pkOwner)
 		{
-			if (actor != g_thePlayer || anim->owner != g_thePlayer->firstPersonAnimData->controllerManager)
+			if (actor != g_thePlayer || anim->m_pkOwner != g_thePlayer->firstPersonAnimData->controllerManager)
 				return true;
 			animData = g_thePlayer->firstPersonAnimData;
 		}
@@ -2553,7 +2546,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 		if (!anim)
 			return true;
-		auto* textKeyData = anim->textKeyData;
+		auto* textKeyData = anim->m_spTextKeys;
 		if (!textKeyData)
 			return true;
 		auto* newStr = GameFuncs::BSFixedString_CreateFromPool(textKey);
@@ -2586,7 +2579,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 		if (!anim)
 			return true;
-		auto* textKeyData = anim->textKeyData;
+		auto* textKeyData = anim->m_spTextKeys;
 		if (!textKeyData)
 			return true;
 		std::vector<NiTextKey> textKeys;
@@ -2620,11 +2613,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* destAnim = FindActiveAnimationForRef(thisObj, destAnimPath);
 		if (!sourceAnim || !destAnim)
 			return true;
-		const std::span srcControlledBlocks(sourceAnim->controlledBlocks, sourceAnim->numControlledBlocks);
+		const std::span srcControlledBlocks(sourceAnim->m_pkInterpArray, sourceAnim->m_uiArraySize);
 		int idx = 0;
 		for (const auto& srcControlledBlock : srcControlledBlocks)
 		{
-			auto& tag = sourceAnim->IDTagArray[idx];
+			auto& tag = sourceAnim->m_pkIDTagArray[idx];
 			auto* dstControlledBlock = destAnim->GetControlledBlock(tag.m_kAVObjectName.CStr());
 			if (dstControlledBlock)
 			{
@@ -2654,7 +2647,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = animData->animSequence[groupInfo.sequenceType];
 		if (!anim || !anim->animGroup)
 			return true;
-		if (anim->animGroup->GetBaseGroupID() == groupId && anim->state != kAnimState_Inactive)
+		if (anim->animGroup->GetBaseGroupID() == groupId && anim->m_eState != kAnimState_Inactive)
 			*result = 1;
 		return true;
 	});
@@ -2678,7 +2671,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindOrLoadAnim(actor, animPath, firstPerson);
 		if (!anim)
 			return true;
-		anim->destFrame = destFrame;
+		anim->m_fDestFrame = destFrame;
 		*result = 1;
 		return true;
 	});
@@ -2701,7 +2694,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = animData->animSequence[sequenceId];
 		if (!anim)
 			return true;
-		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, anim->sequenceName);
+		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, anim->m_kName);
 		return true;
 	}, nullptr, "GetAnimPathByType");
 

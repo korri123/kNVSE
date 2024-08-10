@@ -58,15 +58,15 @@ bool isEditor = false;
 
 float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 {
-	if (anim->endTime != -FLT_MAX && (anim->state == kAnimState_TransSource || anim->state == kAnimState_EaseOut))
+	if (anim->m_fEndTime != -FLT_MAX && (anim->m_eState == kAnimState_TransSource || anim->m_eState == kAnimState_EaseOut))
 	{
-		return anim->endTime - animData->timePassed;
+		return anim->m_fEndTime - animData->timePassed;
 	}
-	if (anim->startTime != -FLT_MAX && (anim->state == kAnimState_TransDest || anim->state == kAnimState_EaseIn))
+	if (anim->m_fStartTime != -FLT_MAX && (anim->m_eState == kAnimState_TransDest || anim->m_eState == kAnimState_EaseIn))
 	{
-		return animData->timePassed - anim->startTime;
+		return animData->timePassed - anim->m_fStartTime;
 	}
-	return anim->offset + animData->timePassed;
+	return anim->m_fOffset + animData->timePassed;
 }
 
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
@@ -194,7 +194,7 @@ void HandleAnimTimes()
 		}
 		auto* animData = animTime.GetAnimData(actor);
 
-		const auto isAnimPlaying = _L(, anim->state != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim);
+		const auto isAnimPlaying = _L(, anim->m_eState != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim);
 		
 		if (shouldErase(actor) || !animData
 			// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
@@ -211,7 +211,7 @@ void HandleAnimTimes()
 			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
 
 			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim != animTime.respectEndKeyData.anim3rdCounterpart);
-			const auto animHasEnded = _L(, anim->state == kAnimState_Inactive);
+			const auto animHasEnded = _L(, anim->m_eState == kAnimState_Inactive);
 			if (current3rdPersonAnimHasChanged() && animHasEnded())
 			{
 				erase();
@@ -284,7 +284,7 @@ void HandleAnimTimes()
 
 		if (animTime.hasCustomAnimGroups)
 		{
-			const auto basePath = GetAnimBasePath(animTime.anim->sequenceName);
+			const auto basePath = GetAnimBasePath(animTime.anim->m_kName);
 			if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
 			{
 				const auto& animPaths = iter->second;
@@ -326,7 +326,7 @@ void HandleAnimTimes()
 			continue;
 		}
 		
-		if (shouldErase(actor) || !animData || !anim || anim->state == kAnimState_Inactive && anim->cycleType != NiControllerSequence::LOOP || !conditionScript)
+		if (shouldErase(actor) || !animData || !anim || anim->m_eState == kAnimState_Inactive && anim->m_eCycleType != NiControllerSequence::LOOP || !conditionScript)
 		{
 			erase();
 			continue;
@@ -421,7 +421,7 @@ void HandleBurstFire()
 			iter = g_burstFireQueue.erase(iter);
 		};
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
-		if (!actor || actor->IsDeleted() || actor->IsDying(true) || !anim || !anim->animGroup || anim->lastScaledTime - lastNiTime < -0.01f && anim->cycleType != NiControllerSequence::LOOP)
+		if (!actor || actor->IsDeleted() || actor->IsDying(true) || !anim || !anim->animGroup || anim->m_fLastScaledTime - lastNiTime < -0.01f && anim->m_eCycleType != NiControllerSequence::LOOP)
 		{
 			erase();
 			continue;
@@ -432,7 +432,7 @@ void HandleBurstFire()
 			erase();
 			continue;
 		}
-		lastNiTime = anim->lastScaledTime;
+		lastNiTime = anim->m_fLastScaledTime;
 		auto* currentAnim = animData->animSequence[kSequence_Weapon];
 		auto* weapon = actor->GetWeaponForm();
 		if (currentAnim != anim)
@@ -520,7 +520,7 @@ void HandleMisc()
 		auto* anim = g_thePlayer->GetHighProcess()->animData->animSequence[kSequence_Weapon];
 		if (!anim)
 		{
-			if (g_fixHolsterUnequipAnim3rd->state == kAnimState_Inactive)
+			if (g_fixHolsterUnequipAnim3rd->m_eState == kAnimState_Inactive)
 			{
 				g_fixHolster = false;
 				ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);

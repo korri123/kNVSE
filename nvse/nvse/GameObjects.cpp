@@ -70,6 +70,11 @@ void PlayerCharacter::SetWeaponOut(bool bOut)
 	this->baseProcess->SetWeaponOut(this, bOut);
 }
 
+AnimData* PlayerCharacter::GetAnimData(bool bFirstPerson) const
+{
+	return bFirstPerson ? this->firstPersonAnimData : this->baseProcess->animData;
+}
+
 TESContainer* TESObjectREFR::GetContainer()
 {
 	if (IsActor())
