@@ -107,7 +107,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
 			currentAnim = animData->animSequence[groupInfo->sequenceType];
 	Apply3rdPersonRespectEndKeyEaseInFix(animData, destAnim);
-	auto* result = GameFuncs::TransitionToSequence(animData, destAnim, animGroupId, animSequence);
+	auto* result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
 	if (destAnim && currentAnim)
 	{
 		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
@@ -755,8 +755,6 @@ void ApplyHooks()
 #endif
 #endif
 	BlendFixes::ApplyHooks();
-#if _DEBUG
-	AnimDataHooks::WriteHooks();
-#endif
+
 }
 

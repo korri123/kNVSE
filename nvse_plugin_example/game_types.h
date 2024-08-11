@@ -832,9 +832,9 @@ struct SettingT
 	Info uValue;
 	const char* pKey;
 
-	Info* GetFloatValue()
+	float GetFloatValue()
 	{
-		return ThisStdCall<Info*>(0x403E20, this);
+		return ThisStdCall<Info*>(0x403E20, this)->f;
 	}
 };
 

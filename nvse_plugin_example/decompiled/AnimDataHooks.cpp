@@ -34,9 +34,13 @@ bool AnimData::IsAnimSequenceQueued(const BSAnimGroupSequence* apSequence) const
 // Function
 BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDestSequence, UInt16 usAnimGroup, eAnimSequence aSequenceType)
 {
-  const auto* pPlayer = g_thePlayer;
+#ifndef _DEBUG
+  return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, this, apDestSequence, usAnimGroup, aSequenceType);
+#endif
   
-  if ( IsAnimSequenceQueued(apDestSequence) )
+  const auto* pPlayer = PlayerCharacter::GetSingleton();
+  
+  if ( this->IsAnimSequenceQueued(apDestSequence) )
     return nullptr;
 
   auto eSequenceType = aSequenceType;
@@ -101,7 +105,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
     }
   }
   if ( apDestSequence->m_eState == NiControllerSequence::EASEOUT )
-    apDestSequence->Deactivate(0.0, 0);
+    apDestSequence->Deactivate(0.0, false);
   if ( (apDestSequence->m_eState && apDestSequence->m_eCycleType != NiControllerSequence::LOOP
      || apDestSequence->m_eState == NiControllerSequence::ANIMATING && apDestSequence == pCurrentSequence)
     && (!InterfaceManager::IsMenuMode() || apDestSequence->m_eState == NiControllerSequence::ANIMATING) )
@@ -214,7 +218,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
       shouldMorph = false;
     }
   }
-  float animationBlend = GameSettings::General::fAnimationDefaultBlend->GetFloatValue()->f;
+  float easeInTime = GameSettings::General::fAnimationDefaultBlend->GetFloatValue();
   UInt8 blend = 0;
   if ( pCurrentSequence )
   {
@@ -226,43 +230,43 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
     blend = blendIn;
   }
   if ( blend )
-    animationBlend = static_cast<float>(blend) / 30.0f;
+    easeInTime = static_cast<float>(blend) / 30.0f;
 
   if ( InterfaceManager::IsMenuMode() && this->nSceneRoot == pPlayer->spInventoryMenu
     || InterfaceManager::IsMenuActive(SurgeryMenu, 0) )
   {
-    animationBlend = GameSettings::Interface::fMenuModeAnimBlend->GetFloatValue()->f;
+    easeInTime = GameSettings::Interface::fMenuModeAnimBlend->GetFloatValue();
   }
   if ( groupId >= kAnimGroup_ReloadA && groupId <= kAnimGroup_ReloadZ && pCurrentSequence )
   {
-    if ( this->actor != pPlayer && animationBlend < 0.5 )
+    if ( this->actor != pPlayer && easeInTime < 0.5 )
     {
       if ( pDestAnimGroup->GetMoveType() == 1 && pCurrentAnimGroup->GetMoveType() != 1
         || pCurrentAnimGroup->GetMoveType() == 1 )
       {
-        animationBlend = 0.5;
+        easeInTime = 0.5;
       }
     }
   }
   if ( AnimGroup::IsAttack(baseGroupId) )
   {
     if ( groupId >= kAnimGroup_ReloadWStart && groupId <= kAnimGroup_ReloadZ && this->actor == pPlayer )
-      animationBlend = 0.0;
+      easeInTime = 0.0;
   }
   if ( this->noBlend120 )
-    animationBlend = 0.0;
-  auto* fAnimationMult = GameSettings::General::fAnimationMult->GetFloatValue();
-  animationBlend = animationBlend / fAnimationMult->f;
+    easeInTime = 0.0;
+  const auto fAnimationMult = GameSettings::General::fAnimationMult->GetFloatValue();
+  easeInTime = easeInTime / fAnimationMult;
   apDestSequence->SetTimePassed(0.0, false);
   if ( !pCurrentSequence && (eSequenceType == kSequence_WeaponUp || eSequenceType == kSequence_WeaponDown) )
   {
-    this->controllerManager->ActivateSequence(apDestSequence, 0, true, apDestSequence->m_fSeqWeight, animationBlend, nullptr);
+    this->controllerManager->ActivateSequence(apDestSequence, 0, true, apDestSequence->m_fSeqWeight, easeInTime, nullptr);
   }
-  else if ( animationBlend >= 0.01f )
+  else if ( easeInTime >= 0.01f )
   {
     if ( shouldMorph )
     {
-      this->controllerManager->Morph(pCurrentSequence, apDestSequence, animationBlend, 0, pCurrentSequence->m_fSeqWeight, apDestSequence->m_fSeqWeight);
+      this->controllerManager->Morph(pCurrentSequence, apDestSequence, easeInTime, 0, pCurrentSequence->m_fSeqWeight, apDestSequence->m_fSeqWeight);
     }
     else
     {
@@ -270,7 +274,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
       if ( pCurrentSequence && pCurrentSequence->m_eState != NiControllerSequence::INACTIVE )
       {
         crossFadeSuccess = this->controllerManager->CrossFade(pCurrentSequence, apDestSequence,
-          animationBlend, 0, false, apDestSequence->m_fSeqWeight, nullptr);
+          easeInTime, 0, true, apDestSequence->m_fSeqWeight, nullptr);
       }
       if ( !crossFadeSuccess )
       {
@@ -285,7 +289,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
           {
             this->actor->ragDollController->ApplyBoneTransforms();
           }
-          this->controllerManager->BlendFromPose(apDestSequence, 0.0, animationBlend,
+          this->controllerManager->BlendFromPose(apDestSequence, 0.0, easeInTime,
             0, nullptr);
         }
       }
@@ -310,5 +314,4 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
 
 void AnimDataHooks::WriteHooks()
 {
-  WriteRelJump(0x4949A0, &AnimData::MorphOrBlendToSequence);
 }

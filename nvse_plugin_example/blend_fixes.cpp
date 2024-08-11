@@ -498,6 +498,7 @@ void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimG
 
 void BlendFixes::ApplyHooks()
 {
+	return;
 	// AnimData::GetSceneRoot
 	WriteRelCall(0x896162, INLINE_HOOK(NiNode*, __fastcall, AnimData* animData)
 	{
