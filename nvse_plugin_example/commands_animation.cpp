@@ -1149,6 +1149,61 @@ void OverrideModIndexAnimation(const UInt8 modIdx, const std::filesystem::path& 
 	SetOverrideAnimation(modIdx, path, map, enable, groupIdFillSet, conditionScript, pollCondition, matchBaseGroupId);
 }
 
+//Export to pNVSE
+__declspec(dllexport) void Exported_OverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition) {
+	std::unordered_set<UInt16> groupIdFillSet;
+	OverrideFormAnimation(form, path, firstPerson, enable, groupIdFillSet, conditionScript, pollCondition);
+}
+
+bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm) {
+	if (fromForm->refID == toForm->refID) {
+		return false;
+	}
+	bool result = false;
+	for (auto* map : { &g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap })
+	{
+		if (const auto iter = map->find(fromForm->refID); iter != map->end())
+		{
+			auto& entry = iter->second;
+			for (auto& stacks : entry.stacks | std::views::values)
+			{
+				for (auto i = static_cast<int>(AnimCustom::None); i < static_cast<int>(AnimCustom::Max) + 1; ++i)
+				{
+					auto& stack = stacks.GetCustom(static_cast<AnimCustom>(i));
+					for (auto& anims : stack)
+					{
+						std::unordered_set<UInt16> variants;
+						for (auto& anim : anims->anims)
+						{
+							Script* condition = nullptr;
+							if (anims->conditionScript)
+								condition = **anims->conditionScript;
+							SetOverrideAnimation(toForm->refID, anim->path, *map, false, variants, condition, anims->pollCondition);
+							SetOverrideAnimation(toForm->refID, anim->path, *map, true, variants, condition, anims->pollCondition);
+							result = true;
+						}
+					}
+				}
+			}
+		}
+	}
+	return result;
+}
+
+bool RemoveFormAnimations(TESForm* form) {
+
+	bool result = false;
+	for (auto* map : { &g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap })
+	{
+		if (const auto iter = map->find(form->refID); iter != map->end())
+		{
+			map->erase(iter);
+			result = true;
+		}
+	}
+	return result;
+}
+
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID)
 {
 	if (animGroupID < kAnimGroup_Forward || animGroupID > kAnimGroup_TurnRight)

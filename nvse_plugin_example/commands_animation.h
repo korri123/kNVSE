@@ -529,6 +529,12 @@ void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, 
 void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson,
 	bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false, bool matchBaseGroupId = false);
 
+extern "C" { //Export to pNVSE
+	__declspec(dllexport) void Exported_OverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript = nullptr, bool pollCondition = false);
+	__declspec(dllexport) bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm);
+	__declspec(dllexport) bool RemoveFormAnimations(TESForm* form);
+}
+
 void HandleOnActorReload();
 
 float GetTimePassed(AnimData* animData, UInt8 animGroupID);

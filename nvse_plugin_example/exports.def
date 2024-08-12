@@ -1,4 +1,7 @@
 LIBRARY	"kNVSE"
 EXPORTS
-NVSEPlugin_Query
-NVSEPlugin_Load
+    NVSEPlugin_Query                        @1
+    NVSEPlugin_Load                         @2
+    Exported_OverrideFormAnimation          @3
+    CopyAnimationsToForm                    @4
+    RemoveFormAnimations                    @5
