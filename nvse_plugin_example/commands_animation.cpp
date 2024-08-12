@@ -1150,7 +1150,8 @@ void OverrideModIndexAnimation(const UInt8 modIdx, const std::filesystem::path& 
 }
 
 //Export to pNVSE
-__declspec(dllexport) void Exported_OverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition) {
+__declspec(dllexport) void Exported_OverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition) {
+	std::unordered_set<UInt16> groupIdFillSet;
 	OverrideFormAnimation(form, path, firstPerson, enable, groupIdFillSet, conditionScript, pollCondition);
 }
 
