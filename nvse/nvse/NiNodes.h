@@ -482,13 +482,23 @@ class NiRefObject : public NiMemObject
 {
 public:
 	NiRefObject();
-	~NiRefObject();
 
-	virtual void		Destructor(bool freeThis);	// 00
-	virtual void		Free(void);					// 01
+	virtual ~NiRefObject();								// 00
+	virtual void		DeleteThis();					// 01
 
 //	void		** _vtbl;		// 000
 	UInt32		m_uiRefCount;	// 004 - name known
+
+	void IncrementRefCount()
+	{
+		InterlockedIncrement(&m_uiRefCount);
+	}
+
+	void DecrementRefCount()
+	{
+		if (InterlockedDecrement(&m_uiRefCount) == 0)
+			DeleteThis();
+	}
 };
 
 // 008

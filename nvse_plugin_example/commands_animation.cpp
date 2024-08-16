@@ -1093,7 +1093,6 @@ void SetOverrideAnimation(const UInt32 refId,
 	const auto isCustomAnimGroupAnim = RegisterCustomAnimGroupAnim(fPath);
 	if (isCustomAnimGroupAnim)
 	{
-		Log("Found custom anim group animation");
 		// we do not want to add custom anim group anims to the stack or otherwise they'll play
 		return;
 	}
@@ -1107,12 +1106,10 @@ void SetOverrideAnimation(const UInt32 refId,
 
 	auto& anims = *stack.back();
 
-	Log(FormatString("AnimGroup %X for form %X will be overridden with animation %s\n", groupId, refId, path.c_str()));
 	auto& lastAnim = *anims.anims.emplace_back(std::make_unique<AnimPath>(path));
 	anims.matchBaseGroupId = matchBaseGroupId;
 	if (conditionScript)
 	{
-		Log("Got a condition script, this animation will now only fire under this condition!");
 		anims.conditionScript = conditionScript;
 		anims.pollCondition = pollCondition;
 #if _DEBUG
@@ -1124,12 +1121,10 @@ void SetOverrideAnimation(const UInt32 refId,
 		anims.hasOrder = true;
 		// sort alphabetically
 		std::ranges::sort(anims.anims, [&](const auto& a, const auto& b) {return a->path < b->path; });
-		Log("Detected _order_ in filename; animation variants for this anim group will be played sequentially");
 	}
 	if (FindStringCI(fileName, "_partial"))
 	{
 		lastAnim.partialReload = true;
-		Log("Partial reload detected");
 	}
 }
 

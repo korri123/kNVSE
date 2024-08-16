@@ -190,12 +190,34 @@ public:
 			}
 		}
 
+		bool operator!=(const Iterator& other) const
+		{
+			return m_curr != other.m_curr;
+		}
+
+		bool operator!=(Iterator&& other) const
+		{
+			return m_curr != other.m_curr;
+		}
+
 		Iterator(_Node* node = NULL) : m_curr(node) {}
 		Iterator(tList& _list) : m_curr(&_list.m_listHead) {}
 		Iterator(tList* _list) : m_curr(&_list->m_listHead) {}
 		Iterator(tList& _list, Item* _item) : m_curr(&_list.m_listHead) { Find(_item); }
 		Iterator(tList* _list, Item* _item) : m_curr(&_list->m_listHead) { Find(_item); }
 	};
+
+	// for use with C++11 range based loops only.
+	Iterator begin() const
+	{
+		return Begin();
+	}
+
+	// for use with C++11 range based loops only.
+	Iterator end() const
+	{
+		return Iterator(static_cast<_Node*>(nullptr));
+	}
 
 	const Iterator Begin() const { return Iterator(Head()); }
 

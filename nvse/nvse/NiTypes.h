@@ -863,7 +863,43 @@ template <typename T>
 class NiPointer
 {
 public:
-	NiPointer(T *init) : data(init)		{	}
+	NiPointer(T *init) : data(init)
+	{
+		if (data)
+			data->IncrementRefCount();
+	}
+
+	NiPointer(const NiPointer& other) : data(other.data)
+	{
+		if (data)
+			data->IncrementRefCount();
+	}
+
+	~NiPointer()
+	{
+		if (data)
+			data->DecrementRefCount();
+	}
+
+	NiPointer& operator=(const NiPointer& other)
+	{
+		if (data)
+			data->DecrementRefCount();
+		data = other.data;
+		if (data)
+			data->IncrementRefCount();
+		return *this;
+	}
+
+	NiPointer& operator=(T* other)
+	{
+		if (data)
+			data->DecrementRefCount();
+		data = other;
+		if (data)
+			data->IncrementRefCount();
+		return *this;
+	}
 
 	T* data;
 	T& operator *() { return *data; }
@@ -873,7 +909,9 @@ public:
 	T& operator *() const { return *data; }
 	operator T*() const { return data; }
 	T* operator->() const { return data; }
+	
 };
+
 #define NiSmartPointer(className) \
 	class className; \
 	typedef NiPointer<className> className##Ptr;

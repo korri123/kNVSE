@@ -7,12 +7,20 @@
 #include "file_animations.h"
 #include "lib/json/json.h"
 #include <fstream>
+#include <ranges>
 #include <utility>
 #include <type_traits>
+#include "bethesda/bethesda_types.h"
 
 template <typename T>
-requires std::is_same_v<T, nullptr_t> || std::is_same_v<T, UInt8> || std::is_same_v<T, const TESObjectWEAP*> || std::is_same_v<T, const Actor*>
-|| std::is_same_v<T, const TESRace*> || std::is_same_v<T, const TESForm*>
+concept AllowedType = std::same_as<T, std::nullptr_t> ||
+					  std::same_as<T, UInt8> ||
+					  std::same_as<T, const TESObjectWEAP*> ||
+					  std::same_as<T, const Actor*> ||
+					  std::same_as<T, const TESRace*> ||
+					  std::same_as<T, const TESForm*>;
+
+template <AllowedType T>
 void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, bool firstPerson)
 {
 	std::unordered_set<UInt16> variantIds;
@@ -23,7 +31,6 @@ void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, 
 			continue;
 		const auto& path = iter.path().string();
 		const auto& relPath = std::filesystem::path(path.substr(path.find("AnimGroupOverride\\")));
-		Log("Loading animation path " + dirPath.string() + "...");
 		try
 		{
 			if constexpr (std::is_same_v<T, nullptr_t>)
@@ -93,7 +100,6 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 	for (std::filesystem::directory_iterator iter(path), end; iter != end; ++iter)
 	{
 		const auto& iterPath = iter->path();
-		Log("Loading form ID " + iterPath.string());
 		if (iter->is_directory())
 		{
 			try
@@ -107,25 +113,19 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 					const auto formId = (id & 0x00FFFFFF) + (mod->modIndex << 24);
 					auto* form = LookupFormByID(formId);
 					if (form)
-					{
 						LoadForForm(iterPath, form);
-					}
 					else
-					{
 						DebugPrint(FormatString("Form %X not found!", formId));
-					}
 				}
 				else
-				{
 					DebugPrint("Failed to convert " + folderName + " to a form ID");
-				}
 			}
-			catch (std::exception&) {}
+			catch (std::exception& e)
+			{
+				DebugPrint("Failed to load anims for " + iterPath.string() + ": " + e.what());
+			}
 		}
-		else
-		{
-			DebugPrint("Skipping as path is not a directory...");
-		}
+		
 	}
 }
 
@@ -292,13 +292,31 @@ void HandleJson(const std::filesystem::path& path)
 	}
 }
 
-void LoadJsonEntries()
+bool LoadJSONInBSAPaths(const std::vector<std::filesystem::path>& bsaAnimPaths, const JSONEntry& entry)
 {
-	ra::sort(g_jsonEntries, [&](const JSONEntry& entry1, const JSONEntry& entry2)
+	const auto jsonFolderPath = "meshes\\animgroupoverride\\" + ToLower(entry.folderName) + "\\";
+	// append meshes
+	const auto thisModsPaths = bsaAnimPaths | std::ranges::views::filter([&](const auto& bsaPath)
 	{
-		return entry1.loadPriority < entry2.loadPriority;
-	});
-	for (const auto& entry : g_jsonEntries)
+		return bsaPath.string().starts_with(jsonFolderPath);
+	}) | std::ranges::to<std::vector>();
+	if (thisModsPaths.empty())
+		return false;
+	std::unordered_set<UInt16> variantIds;
+	for (const auto& path : thisModsPaths)
+	{
+		const auto firstPerson = path.string().contains("_1stperson");
+		const auto thirdPerson = path.string().contains("_male");
+		if (!thirdPerson && !firstPerson)
+			continue;
+		OverrideFormAnimation(entry.form, path, firstPerson, true, variantIds, entry.conditionScript, entry.pollCondition, entry.matchBaseGroupId);
+	}
+	return true;
+}
+
+struct ScopedJSONContext
+{
+	ScopedJSONContext(const JSONEntry& entry)
 	{
 		g_jsonContext.script = entry.conditionScript;
 		g_jsonContext.pollCondition = entry.pollCondition;
@@ -306,20 +324,75 @@ void LoadJsonEntries()
 #if _DEBUG
 		g_jsonContext.conditionScriptText = entry.conditionScriptText;
 #endif
+	}
+	
+	~ScopedJSONContext()
+	{
+		g_jsonContext.Reset();
+	}
+};
+
+void LoadJsonEntries(const std::vector<std::filesystem::path>& bsaAnimPaths)
+{
+	ra::sort(g_jsonEntries, [&](const JSONEntry& entry1, const JSONEntry& entry2)
+	{
+		return entry1.loadPriority < entry2.loadPriority;
+	});
+	for (const auto& entry : g_jsonEntries)
+	{
+		ScopedJSONContext scopedJsonCtx(entry);
+		
 		if (entry.form)
 			Log(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		else
 			Log("JSON: Loading animations for global override in path " + entry.folderName);
-		const auto path = R"(Data\Meshes\AnimGroupOverride\)" + entry.folderName;
+		const auto path = R"(data\meshes\animgroupoverride\)" + entry.folderName;
 		if (!std::filesystem::exists(path))
-			Log(FormatString("Path %s does not exist yet it is present in JSON", path.c_str()));
-		else if (!entry.form) // global
+		{
+			if (!LoadJSONInBSAPaths(bsaAnimPaths, entry))
+				Log(FormatString("Path %s does not exist yet it is present in JSON", path.c_str()));
+			continue;
+		}
+		if (!entry.form) // global
 			LoadPathsForPOV(path, nullptr);
-		else if (!LoadForForm(path, entry.form))
+		else if (LoadForForm(path, entry.form))
 			Log(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
-		g_jsonContext.Reset();
 	}
-	g_jsonEntries = std::vector<JSONEntry>();
+	g_jsonEntries.clear();
+}
+
+void LoadAnimPathsFromBSA(const std::filesystem::path& path, std::vector<std::filesystem::path>& animPaths)
+{
+	ArchivePtr archive = ArchiveManager::OpenArchive(path.string().c_str(), ARCHIVE_TYPE_MESHES, false);
+	
+	const char* dirStrings = archive->pDirectoryStringArray;
+	const char* fileStrings = archive->pFileNameStringArray;
+
+	
+	if (!dirStrings || !fileStrings)
+		return;
+        
+	for (UInt32 i = 0; i < archive->kArchive.uiDirectories; ++i)
+	{
+		const size_t dirOffset = archive->pDirectoryStringOffsets[i];
+		std::string_view directory(dirStrings + dirOffset);
+
+		if (!directory.starts_with("meshes\\animgroupoverride\\"))
+		{
+			Log("Skipping BSA directory entry " + std::string(directory) + " as it is not meshes\\animgroupoverride");
+			continue;
+		}
+
+		for (UInt32 j = 0; j < archive->kArchive.pDirectories[i].uiFiles; ++j)
+		{
+			const size_t fileOffset = archive->pFileNameStringOffsets[i][j];
+			std::string_view fileName(fileStrings + fileOffset);
+			std::filesystem::path animPath = std::filesystem::path(directory) / fileName;
+			if (animPath.extension() != ".kf")
+				continue;
+			animPaths.emplace_back(std::move(animPath));
+		}
+	}
 }
 
 void LoadFileAnimPaths()
@@ -327,6 +400,7 @@ void LoadFileAnimPaths()
 	Log("Loading file anims");
 	const std::filesystem::path dir = R"(Data\Meshes\AnimGroupOverride)";
 	const auto then = std::chrono::system_clock::now();
+	std::vector<std::filesystem::path> bsaAnimPaths;
 	if (exists(dir))
 	{
 		for (const auto& iter: std::filesystem::directory_iterator(dir))
@@ -348,17 +422,23 @@ void LoadFileAnimPaths()
 				
 			}
 			else if (_stricmp(path.extension().string().c_str(), ".json") == 0)
-			{
 				HandleJson(iter.path());
-			}
+			else if (path.extension() == ".bsa")
+				LoadAnimPathsFromBSA(iter.path(), bsaAnimPaths);
 		}
 	}
 	else
 	{
 		Log(dir.string() + " does not exist.");
 	}
-	LoadJsonEntries();
+	LoadJsonEntries(bsaAnimPaths);
 	const auto now = std::chrono::system_clock::now();
 	const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(now - then);
 	DebugPrint(FormatString("Loaded AnimGroupOverride in %d ms", diff.count()));
 }
+
+struct BSADirectory {
+	Archive*	spArchive;
+	UInt32		uiDirectory;
+};
+

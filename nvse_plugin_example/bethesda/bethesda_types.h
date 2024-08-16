@@ -14,7 +14,10 @@ public:
 	};
 
 	BSHash() : cLast(0), cLast2(0), cLength(0), cFirst(0), iCRC(0) {}
-	BSHash(char* apString, UInt32 aeProcess);
+	BSHash(const char* apString, UInt32 aeProcess)
+	{
+		ThisStdCall(0xAFD390, this, apString, aeProcess);
+	}
 
 	UInt8	cLast;
 	UInt8	cLast2;
@@ -211,7 +214,6 @@ struct ArchiveTypeExtension {
 	char			cExtension[4];
 	ARCHIVE_TYPE	eArchiveType;
 };
-NiSmartPointer(Archive);
 
 class Archive : public BSFile, public NiRefObject {
 public:
@@ -265,7 +267,9 @@ public:
 
 ASSERT_SIZE(Archive, 0x1D0);
 
-typedef BSSimpleList<ArchivePtr> ArchiveList;
+NiSmartPointer(Archive);
+
+using ArchiveList = BSSimpleList<Archive>;
 
 class ArchiveManager {
 public:
