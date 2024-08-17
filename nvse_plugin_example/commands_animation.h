@@ -273,6 +273,7 @@ using AnimOverrideMap = std::unordered_map<FormID, AnimOverrideStruct>;
 struct SavedAnims
 {
 	std::vector<std::unique_ptr<AnimPath>> anims;
+	std::string condition;
 	std::optional<LambdaVariableContext> conditionScript;
 	std::unordered_set<BSAnimGroupSequence*> linkedSequences;
 	bool hasOrder = false;
@@ -293,7 +294,7 @@ struct BurstState
 
 struct JSONAnimContext
 {
-	Script* script = nullptr;
+	std::string condition;
 	bool pollCondition = false;
 	bool matchBaseGroupId = false;
 #if _DEBUG
@@ -301,7 +302,7 @@ struct JSONAnimContext
 #endif
 	void Reset()
 	{
-		script = nullptr;
+		condition.clear();
 		pollCondition = false;
 		matchBaseGroupId = false;
 #if _DEBUG
@@ -525,9 +526,9 @@ DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 #endif
 
 void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, bool firstPerson,
-	bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript, bool pollCondition = false, bool matchBaseGroupId = false);
+	bool enable, std::unordered_set<UInt16>& groupIdFillSet, const std::string& condition, bool pollCondition = false, bool matchBaseGroupId = false);
 void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson,
-	bool enable, std::unordered_set<UInt16>& groupIdFillSet, Script* conditionScript = nullptr, bool pollCondition = false, bool matchBaseGroupId = false);
+	bool enable, std::unordered_set<UInt16>& groupIdFillSet, const std::string& condition, bool pollCondition = false, bool matchBaseGroupId = false);
 
 void HandleOnActorReload();
 

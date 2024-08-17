@@ -343,3 +343,5 @@ struct pair_equal {
 std::string DecompileScript(Script* script);
 
 std::filesystem::path GetRelativePath(const std::filesystem::path& fullPath, std::string_view target_dir);
+
+Script* CompileConditionScript(const std::string& condString);

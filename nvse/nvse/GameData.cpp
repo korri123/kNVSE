@@ -66,9 +66,9 @@ const char* DataHandler::GetNthModName(UInt32 modIndex)
 		return "";
 }
 
-void DataHandler::DisableAssignFormIDs(bool shouldAsssign)
+void DataHandler::SetAssignFormIDs(bool shouldAssign)
 {
-	ThisStdCall(0x464D30, this, shouldAsssign);
+	this->bDontRemoveFormIDs = !shouldAssign;
 }
 
 struct IsModLoaded

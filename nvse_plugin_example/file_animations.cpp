@@ -46,10 +46,6 @@ void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, 
 	}
 }
 
-void LogForm(const TESForm* form)
-{
-	Log(FormatString("Detected in-game form %X %s %s", form->refID, form->GetName(), form->GetFullName() ? form->GetFullName()->name.CStr() : "<no name>"));
-}
 
 
 template <typename T>
@@ -70,7 +66,6 @@ void LoadPathsForList(const std::filesystem::path& path, const BGSListForm* list
 
 bool LoadForForm(const std::filesystem::path& iterPath, const TESForm* form)
 {
-	LogForm(form);
 	if (const auto* weapon = DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
 		LoadPathsForPOV(iterPath, weapon);
 	else if (const auto* actor = DYNAMIC_CAST(form, TESForm, Actor))
@@ -88,7 +83,6 @@ void LoadPathsForList(const std::filesystem::path& path, const BGSListForm* list
 {
 	for (auto iter = listForm->list.Begin(); !iter.End(); ++iter)
 	{
-		LogForm(*iter);
 		LoadForForm(path, *iter);
 	}
 }
@@ -128,11 +122,28 @@ void LoadModAnimPaths(const std::filesystem::path& path, const ModInfo* mod)
 	}
 }
 
+struct ScopedTimer
+{
+	ScopedTimer(const char* name)
+	{
+		this->name = name;
+		this->timer = std::chrono::high_resolution_clock::now();
+	}
+	
+	~ScopedTimer()
+	{
+		const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - timer);
+		DebugPrint(FormatString("%s in %d ms", name, diff.count()));
+	}
+	std::chrono::high_resolution_clock::time_point timer;
+	const char* name;
+};
+
 struct JSONEntry
 {
 	std::string folderName;
 	const TESForm* form;
-	Script* conditionScript;
+	std::string condition;
 	int loadPriority;
 	bool pollCondition;
 	bool matchBaseGroupId;
@@ -140,8 +151,8 @@ struct JSONEntry
 	std::string conditionScriptText;
 #endif
 
-	JSONEntry(std::string folderName, const TESForm* form, Script* script, bool pollCondition, int priority, bool matchBaseGroupId)
-		: folderName(std::move(folderName)), form(form), conditionScript(script), loadPriority(priority), pollCondition(pollCondition),
+	JSONEntry(std::string folderName, const TESForm* form, std::string condition, bool pollCondition, int priority, bool matchBaseGroupId)
+		: folderName(std::move(folderName)), form(form), condition(std::move(condition)), loadPriority(priority), pollCondition(pollCondition),
 	matchBaseGroupId(matchBaseGroupId)
 	{
 	}
@@ -150,41 +161,9 @@ struct JSONEntry
 std::vector<JSONEntry> g_jsonEntries;
 // std::unordered_map<std::string, std::filesystem::path> g_jsonFolders;
 
-Script* CompileConditionScript(const std::string& condString, const std::string& folderName)
-{
-	ScriptBuffer buffer;
-	DataHandler::Get()->DisableAssignFormIDs(true);
-	auto condition = MakeUnique<Script, 0x5AA0F0, 0x5AA1A0>();
-	DataHandler::Get()->DisableAssignFormIDs(false);
-	std::string scriptSource;
-	if (!FindStringCI(condString, "SetFunctionValue"))
-		scriptSource = FormatString("begin function{}\nSetFunctionValue (%s)\nend\n", condString.c_str());
-	else
-	{
-		auto condStr = ReplaceAll(condString, "%r", "\r\n");
-		condStr = ReplaceAll(condStr, "%R", "\r\n");
-		scriptSource = FormatString("begin function{}\n%s\nend\n", condStr.c_str());
-	}
-	buffer.scriptName.Set(("kNVSEConditionScript_" + folderName).c_str());
-	buffer.scriptText = scriptSource.data();
-	buffer.partialScript = true;
-	*buffer.scriptData = 0x1D;
-	buffer.dataOffset = 4;
-	buffer.currentScript = condition.get();
-	const auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
-	const auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition.get(), &buffer);
-	buffer.scriptText = nullptr;
-	condition->text = nullptr;
-	if (!result)
-	{
-		DebugPrint("Failed to compile condition script " + condString);
-		return nullptr;
-	}
-	return condition.release();
-}
-
 void HandleJson(const std::filesystem::path& path)
 {
+	ScopedTimer timer("Loaded JSON from AnimGroupOverride");
 	Log("\nReading from JSON file " + path.string());
 	const auto strToFormID = [](const std::string& formIdStr)
 	{
@@ -233,14 +212,12 @@ void HandleJson(const std::filesystem::path& path)
 					if (std::ranges::find(formIds, -1) != formIds.end())
 						continue;
 				}
-				Script* condition = nullptr;
+				std::string condition;
 				auto pollCondition = false;
 				if (elem.contains("condition"))
 				{
-					const auto& condStr = elem["condition"].get<std::string>();
-					condition = CompileConditionScript(condStr, folder);
-					if (condition)
-						Log("Compiled condition script " + condStr + " successfully");
+					condition = elem["condition"].get<std::string>();
+					// condition = CompileConditionScript(condStr, folder);
 					if (elem.contains("pollCondition"))
 						pollCondition = elem["pollCondition"].get<bool>();
 				}
@@ -260,7 +237,6 @@ void HandleJson(const std::filesystem::path& path)
 							//DebugPrint(FormatString("Form %X was not found", formId));
 							continue;
 						}
-						LogForm(form);
 						Log(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
 						g_jsonEntries.emplace_back(folder, form, condition, pollCondition, priority, matchBaseGroupId);
 #if _DEBUG
@@ -310,7 +286,7 @@ bool LoadJSONInBSAPaths(const std::vector<std::filesystem::path>& bsaAnimPaths, 
 		const auto thirdPerson = path.string().contains("_male");
 		if (!thirdPerson && !firstPerson)
 			continue;
-		OverrideFormAnimation(entry.form, path, firstPerson, true, variantIds, entry.conditionScript, entry.pollCondition, entry.matchBaseGroupId);
+		OverrideFormAnimation(entry.form, path, firstPerson, true, variantIds, entry.condition, entry.pollCondition, entry.matchBaseGroupId);
 	}
 	return true;
 }
@@ -319,7 +295,7 @@ struct ScopedJSONContext
 {
 	ScopedJSONContext(const JSONEntry& entry)
 	{
-		g_jsonContext.script = entry.conditionScript;
+		g_jsonContext.condition = entry.condition;
 		g_jsonContext.pollCondition = entry.pollCondition;
 		g_jsonContext.matchBaseGroupId = entry.matchBaseGroupId;
 #if _DEBUG
@@ -398,9 +374,10 @@ void LoadAnimPathsFromBSA(const std::filesystem::path& path, std::vector<std::fi
 
 void LoadFileAnimPaths()
 {
+	ScopedTimer timer("Loaded AnimGroupOverride");
 	Log("Loading file anims");
+
 	const std::filesystem::path dir = R"(Data\Meshes\AnimGroupOverride)";
-	const auto then = std::chrono::system_clock::now();
 	std::vector<std::filesystem::path> bsaAnimPaths;
 	if (exists(dir))
 	{
@@ -426,10 +403,8 @@ void LoadFileAnimPaths()
 				HandleJson(iter.path());
 			else if (path.extension() == ".bsa")
 			{
-				const auto timer = std::chrono::high_resolution_clock::now();
+				ScopedTimer timer("Loaded BSA from AnimGroupOverride");
 				LoadAnimPathsFromBSA(iter.path(), bsaAnimPaths);
-				const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - timer);
-				DebugPrint(FormatString("Loaded BSA from AnimGroupOverride in %d ms", diff.count()));
 			}
 		}
 	}
@@ -438,9 +413,6 @@ void LoadFileAnimPaths()
 		Log(dir.string() + " does not exist.");
 	}
 	LoadJsonEntries(bsaAnimPaths);
-	const auto now = std::chrono::system_clock::now();
-	const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(now - then);
-	DebugPrint(FormatString("Loaded AnimGroupOverride in %d ms", diff.count()));
 }
 
 struct BSADirectory {

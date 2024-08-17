@@ -409,9 +409,9 @@ __declspec(naked) TESForm* __stdcall LookupFormByRefID(UInt32 refID)
 Script* Script::CompileFromText(const std::string& scriptSource, const std::string& name)
 {
 	ScriptBuffer buffer;
-	DataHandler::Get()->DisableAssignFormIDs(true);
+	DataHandler::Get()->SetAssignFormIDs(true);
 	auto condition = MakeUnique<Script, 0x5AA0F0, 0x5AA1A0>();
-	DataHandler::Get()->DisableAssignFormIDs(false);
+	DataHandler::Get()->SetAssignFormIDs(false);
 	buffer.scriptName.Set(("kNVSEScript_" + name).c_str());
 	buffer.scriptText = scriptSource.data();
 	buffer.partialScript = true;

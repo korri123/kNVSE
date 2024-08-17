@@ -1,4 +1,5 @@
 #include "commands_animation.h"
+#include "GameData.h"
 #include "main.h"
 #include "utility.h"
 #include "SafeWrite.h"
@@ -138,4 +139,47 @@ std::filesystem::path GetRelativePath(const std::filesystem::path& fullPath, std
 			relativePath /= part;
 	}
 	return relativePath;
+}
+
+std::unordered_map<std::string, Script*> g_conditionScripts;
+
+Script* CompileConditionScript(const std::string& condString)
+{
+	auto [iter, isNew] = g_conditionScripts.emplace(condString, nullptr);
+	if (!isNew)
+		return iter->second;
+	ScriptBuffer buffer;
+	const auto wasAssigningFormIDs = DataHandler::Get()->GetAssignFormIDs();
+	if (wasAssigningFormIDs)
+		DataHandler::Get()->SetAssignFormIDs(false);
+	auto condition = MakeUnique<Script, 0x5AA0F0, 0x5AA1A0>();
+	if (wasAssigningFormIDs)
+		DataHandler::Get()->SetAssignFormIDs(true);
+	std::string scriptSource;
+	if (!FindStringCI(condString, "SetFunctionValue"))
+		scriptSource = FormatString("begin function{}\nSetFunctionValue (%s)\nend\n", condString.c_str());
+	else
+	{
+		auto condStr = ReplaceAll(condString, "%r", "\r\n");
+		condStr = ReplaceAll(condStr, "%R", "\r\n");
+		scriptSource = FormatString("begin function{}\n%s\nend\n", condStr.c_str());
+	}
+	buffer.scriptName.Set("kNVSEConditionScript");
+	buffer.scriptText = scriptSource.data();
+	buffer.partialScript = true;
+	*buffer.scriptData = 0x1D;
+	buffer.dataOffset = 4;
+	buffer.currentScript = condition.get();
+	const auto* ctx = ConsoleManager::GetSingleton()->scriptContext;
+	const auto result = ThisStdCall<bool>(0x5AEB90, ctx, condition.get(), &buffer);
+	buffer.scriptText = nullptr;
+	condition->text = nullptr;
+	if (!result)
+	{
+		DebugPrint("Failed to compile condition script " + condString);
+		return nullptr;
+	}
+	auto* script = condition.release();
+	iter->second = script;
+	return script;
 }

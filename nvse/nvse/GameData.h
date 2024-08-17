@@ -279,7 +279,7 @@ public:
 	UInt8							unk61D;					// 61D
 	UInt8							unk61E;					// 61E
 	UInt8							unk61F;					// 61F
-	UInt8							unk620;					// 620	5AC
+	UInt8							bDontRemoveFormIDs;					// 620	5AC
 	UInt8							loading;				// 621	Init'd to 0 after loadForms
 	UInt8							unk622;					// 622	referenced during loading of modules. Compared with type = GameSetting but seems to always end up equal to 1.
 	UInt8							unk623;					// 623
@@ -296,7 +296,8 @@ public:
 	UInt8 GetModIndex(const char* modName);
 	UInt8 GetActiveModCount() const;
 	const char* GetNthModName(UInt32 modIndex);
-	void DisableAssignFormIDs(bool shouldAsssign);
+	void SetAssignFormIDs(bool shouldAssign);
+	bool GetAssignFormIDs() const { return !bDontRemoveFormIDs; }
 
 	MEMBER_FN_PREFIX(DataHandler);
 #if RUNTIME
