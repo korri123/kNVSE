@@ -956,27 +956,11 @@ int GetAnimGroupId(const std::filesystem::path& path)
 	const auto& baseName = GetBaseAnimGroupName(name);
 	if (const auto id = SimpleGroupNameToId(baseName.c_str()); id != -1)
 		return toFullId(id);
-	char bsStream[1492];
-	auto pathStr = FormatString("Meshes\\%s", path.string().c_str());
-	std::ranges::replace(pathStr, '/', '\\');
-
-	auto* file = GameFuncs::GetFilePtr(pathStr.c_str(), 0, -1, 1);
-	if (file)
-	{
-		GameFuncs::BSStream_Init(bsStream);
-		if (!GameFuncs::BSStream_SetFileAndName(bsStream, pathStr.c_str(), file))
-			throw std::exception(FormatString("Failure parsing file data of '%s'", pathStr.c_str()).c_str());
-		NiRefObject* ref;
-		ThisStdCall(0x633C90, &ref, 0); // NiRefObject__NiRefObject
-		CdeclCall(0xA35700, bsStream, 0, &ref); // Read from file
-		auto* anim = static_cast<NiControllerSequence*>(ref);
-		const auto groupId = SimpleGroupNameToId(anim->m_kName);
-		if (groupId == -1)
-			return -1;
-		//ref->Destructor(true);
-		GameFuncs::BSStream_Clear(bsStream);
-		return toFullId(groupId);
-	}
+	
+	// try to load kf model which is slower but if file name is wrong then we have to fall back
+	if (const auto* kfModel = ModelLoader::LoadKFModel(path.string().c_str()))
+		if (kfModel->animGroup)
+			return kfModel->animGroup->groupID;
 	return -1;
 }
 
@@ -1035,7 +1019,10 @@ void SetOverrideAnimation(const UInt32 refId,
 	const auto& path = fPath.string();
 	const auto groupId = GetAnimGroupId(fPath);
 	if (groupId == -1)
-		throw std::exception(FormatString("Failed to resolve file '%s'", path.c_str()).c_str());
+	{
+		DebugPrint(FormatString("Failed to resolve file '%s'", path.c_str()));
+		return;
+	}
 	auto& animGroupMap = map[refId];
 	auto& stacks = animGroupMap.stacks[groupId];
 

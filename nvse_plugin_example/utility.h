@@ -4,11 +4,12 @@
 #include <PluginAPI.h>
 #include <string>
 #include "GameAPI.h"
-#include "SafeWrite.h"
 #include "GameProcess.h"
 #include "GameObjects.h"
 #include <memory>
 #include <iterator>
+#include <filesystem>
+
 extern int g_logLevel;
 
 std::string GetCurPath();
@@ -340,3 +341,5 @@ struct pair_equal {
 };
 
 std::string DecompileScript(Script* script);
+
+std::filesystem::path GetRelativePath(const std::filesystem::path& fullPath, std::string_view target_dir);

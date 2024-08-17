@@ -547,4 +547,10 @@ public:
 	static ModelLoader* GetSingleton();
 
 	void QueueReference(TESObjectREFR* refr, UInt32 arg1, bool ifInMainThread);
+
+	static KFModel* LoadKFModel(const char* path)
+	{
+		const auto* pThis = GetSingleton();
+		return ThisStdCall<KFModel*>(0x4471C0, pThis, path);
+	}
 };

@@ -7,7 +7,7 @@
 #include "main.h"
 #include "nihooks.h"
 #include <array>
-
+#include "SafeWrite.h"
 #include "anim_fixes.h"
 #include "NiObjects.h"
 

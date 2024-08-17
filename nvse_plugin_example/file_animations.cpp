@@ -29,8 +29,7 @@ void LoadPathsForType(const std::filesystem::path& dirPath, const T identifier, 
 	{
 		if (_stricmp(iter.path().extension().string().c_str(), ".kf") != 0)
 			continue;
-		const auto& path = iter.path().string();
-		const auto& relPath = std::filesystem::path(path.substr(path.find("AnimGroupOverride\\")));
+		const auto& relPath = GetRelativePath(iter.path(), "AnimGroupOverride");
 		try
 		{
 			if constexpr (std::is_same_v<T, nullptr_t>)
@@ -199,6 +198,8 @@ void HandleJson(const std::filesystem::path& path)
 	try
 	{
 		std::ifstream i(path);
+		if (i.peek() == std::ifstream::traits_type::eof())
+			return;
 		nlohmann::json j;
 		i >> j;
 		if (j.is_array())
@@ -217,7 +218,7 @@ void HandleJson(const std::filesystem::path& path)
 				const auto* mod = !modName.empty() ? DataHandler::Get()->LookupModByName(modName.c_str()) : nullptr;
 				if (!mod && !modName.empty())
 				{
-					DebugPrint("Mod name " + modName + " was not found");
+					//DebugPrint("Mod name " + modName + " was not found");
 					continue;
 				}
 				const auto& folder = elem["folder"].get<std::string>();
@@ -256,7 +257,7 @@ void HandleJson(const std::filesystem::path& path)
 						auto* form = LookupFormByID(formId);
 						if (!form)
 						{
-							DebugPrint(FormatString("Form %X was not found", formId));
+							//DebugPrint(FormatString("Form %X was not found", formId));
 							continue;
 						}
 						LogForm(form);
@@ -424,7 +425,12 @@ void LoadFileAnimPaths()
 			else if (_stricmp(path.extension().string().c_str(), ".json") == 0)
 				HandleJson(iter.path());
 			else if (path.extension() == ".bsa")
+			{
+				const auto timer = std::chrono::high_resolution_clock::now();
 				LoadAnimPathsFromBSA(iter.path(), bsaAnimPaths);
+				const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - timer);
+				DebugPrint(FormatString("Loaded BSA from AnimGroupOverride in %d ms", diff.count()));
+			}
 		}
 	}
 	else

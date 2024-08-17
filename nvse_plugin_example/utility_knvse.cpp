@@ -1,7 +1,7 @@
 #include "commands_animation.h"
 #include "main.h"
 #include "utility.h"
-
+#include "SafeWrite.h"
 
 std::string GetCurPath()
 {
@@ -124,4 +124,18 @@ std::string DecompileScript(Script* script)
 	char buffer[0x400];
 	g_script->DecompileToBuffer(script, nullptr, buffer);
 	return buffer;
+}
+
+std::filesystem::path GetRelativePath(const std::filesystem::path& fullPath, std::string_view target_dir)
+{
+	std::filesystem::path relativePath;
+	bool found = false;
+	for (const auto& part : fullPath)
+	{
+		if (_stricmp(part.string().c_str(), target_dir.data()) == 0)
+			found = true;
+		if (found)
+			relativePath /= part;
+	}
+	return relativePath;
 }
