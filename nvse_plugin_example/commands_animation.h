@@ -15,6 +15,7 @@
 #include "game_types.h"
 #include "LambdaVariableContext.h"
 #include "ParamInfos.h"
+#include "string_view_util.h"
 #include "utility.h"
 #include "bethesda/bethesda_types.h"
 
@@ -204,7 +205,7 @@ extern std::map<std::pair<SavedAnims*, AnimData*>, std::shared_ptr<SavedAnimsTim
 
 struct AnimPath
 {
-	std::string path;
+	std::string_view path;
 	bool partialReload = false;
 };
 
@@ -274,16 +275,34 @@ struct SavedAnims
 {
 	std::vector<std::unique_ptr<AnimPath>> anims;
 	std::string condition;
-	std::optional<LambdaVariableContext> conditionScript;
+	LambdaVariableContext conditionScript = nullptr;
 	std::unordered_set<BSAnimGroupSequence*> linkedSequences;
 	bool hasOrder = false;
 	bool pollCondition = false;
 	bool matchBaseGroupId = false;
-#if _DEBUG
-	std::string conditionScriptText;
-	std::string decompiledScriptText;
-#endif
+	bool loaded = false;
 	SavedAnims() = default;
+
+	void Load()
+	{
+		if (loaded)
+			return;
+
+		if (!conditionScript && !condition.empty())
+			conditionScript = CompileConditionScript(condition);
+
+		for (const auto& anim : anims)
+		{
+			const auto fileName = sv::get_file_name(anim->path);
+			if (!hasOrder && FindStringCI(fileName, R"(\order\)"))
+				hasOrder = true;
+			if (!anim->partialReload && FindStringCI(fileName, R"(\partial\)"))
+				anim->partialReload = true;
+		}
+		if (hasOrder)
+			std::ranges::sort(anims, [&](const auto& a, const auto& b) {return a->path < b->path; });
+		loaded = true;
+	}
 };
 
 struct BurstState
@@ -312,8 +331,6 @@ struct JSONAnimContext
 
 	JSONAnimContext() { Reset(); }
 };
-
-extern JSONAnimContext g_jsonContext;
 
 enum AnimHandTypes
 {
@@ -458,7 +475,7 @@ struct BSAnimationContext
 	}
 };
 
-std::optional<BSAnimationContext> LoadCustomAnimation(const std::string& path, AnimData* animData);
+std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData);
 std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& ctx, UInt16 groupId, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 
@@ -525,10 +542,20 @@ DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 
 #endif
 
-void OverrideModIndexAnimation(UInt8 modIdx, const std::filesystem::path& path, bool firstPerson,
-	bool enable, std::unordered_set<UInt16>& groupIdFillSet, const std::string& condition, bool pollCondition = false, bool matchBaseGroupId = false);
-void OverrideFormAnimation(const TESForm* form, const std::filesystem::path& path, bool firstPerson,
-	bool enable, std::unordered_set<UInt16>& groupIdFillSet, const std::string& condition, bool pollCondition = false, bool matchBaseGroupId = false);
+struct AnimOverrideData
+{
+	std::string_view path;
+	UInt32 identifier{};
+	bool enable{};
+	std::unordered_set<UInt16> groupIdFillSet;
+	std::string_view condition;
+	Script* conditionScript{};
+	bool pollCondition{};
+	bool matchBaseGroupId{};
+};
+
+void OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson);
+void OverrideFormAnimation(AnimOverrideData& data, bool firstPerson);
 
 void HandleOnActorReload();
 
@@ -565,7 +592,6 @@ void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);
 bool DidActorReload(Actor* actor, ReloadSubscriber subscriber);
 
 AnimPath* GetAnimPath(SavedAnims& animResult, UInt16 groupId, AnimData* animData);
-int GroupNameToId(const std::string& name);
 
 extern std::unordered_map<UInt32, ReloadHandler> g_reloadTracker;
 
@@ -586,8 +612,8 @@ void CreateCommands(NVSECommandBuilder& builder);
 
 extern std::unordered_set<BaseProcess*> g_allowedNextAnims;
 
-std::string GetAnimBasePath(const std::string& path);
-std::string ExtractCustomAnimGroupName(const std::filesystem::path& path);
+std::string_view GetAnimBasePath(std::string_view path);
+std::string_view ExtractCustomAnimGroupName(std::string_view path);
 
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence = nullptr);
 UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);

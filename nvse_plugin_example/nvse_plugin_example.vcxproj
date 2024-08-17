@@ -469,6 +469,7 @@
     <ClInclude Include="SimpleINILibrary.h" />
     <ClInclude Include="blend_fixes.h" />
     <ClInclude Include="stack_allocator.h" />
+    <ClInclude Include="string_view_util.h" />
     <ClInclude Include="utility.h" />
   </ItemGroup>
   <ItemGroup>

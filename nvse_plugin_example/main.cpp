@@ -371,34 +371,6 @@ void HandleAnimTimes()
 					GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);
 				}
 			}
-#if 0
-			const auto currentRealAnimGroupId = GetActorRealAnimGroup(actor, curAnim->animGroup->GetBaseGroupID());
-			const auto curHandType = (curAnim->animGroup->groupID & 0xf00) >> 8;
-			const auto handType = (groupId & 0xf00) >> 8;
-			if (
-				handType >= curHandType &&
-				(realGroupId == currentRealAnimGroupId || realGroupId == curAnim->animGroup->groupID))
-			{
-				NVSEArrayVarInterface::Element arrResult;
-				if (g_script->CallFunction(conditionScript, actor, nullptr, &arrResult, 0))
-				{
-					const auto result = static_cast<bool>(arrResult.GetNumber());
-					const auto customAnimState = anim ? anim->state : kAnimState_Inactive;
-					if (customAnimState == kAnimState_Inactive && result && curAnim != anim
-						|| customAnimState != kAnimState_Inactive && !result && curAnim == anim)
-					{
-						// group id may have changed now that udf returns false
-						const auto groupIdFit = GameFuncs::GetActorAnimGroupId(actor, groupId & 0xFF, nullptr, false, animData);
-						//if (groupIdFit != curAnim->animGroup->groupID)
-							GameFuncs::PlayAnimGroup(animData, groupIdFit, 1, -1, -1);
-					}
-				}
-			}
-			else
-			{
-				erase();
-			}
-#endif
 		}
 		
 	}
@@ -590,7 +562,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 	info->infoVersion = PluginInfo::kInfoVersion;
 	info->name = "kNVSE";
 	info->version = VERSION_MAJOR;
-	Log("kNVSE version " + std::to_string(VERSION_MAJOR));
+	LOG("kNVSE version " + std::to_string(VERSION_MAJOR));
 
 	// version checks
 	if (!nvse->isEditor && nvse->nvseVersion < PACKED_NVSE_VERSION)
@@ -632,6 +604,7 @@ bool NVSEPlugin_Query(const NVSEInterface* nvse, PluginInfo* info)
 
 
 int g_logLevel = 0;
+int g_errorLogLevel = 0;
 
 bool NVSEPlugin_Load(const NVSEInterface* nvse)
 {

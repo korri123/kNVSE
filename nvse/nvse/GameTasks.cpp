@@ -5,7 +5,6 @@
 #include "Hooks_Gameplay.h"
 
 // IOManager** g_ioManager = (IOManager**)0x00B33A10;
-ModelLoader** g_modelLoader = (ModelLoader**)0x011C3B3C;
 UInt32 kModelLoader_QueueReference = 0x00444850;
 UInt32 * kBSTaskCounter = (UInt32*) 0x0011C3B38;
 
@@ -54,7 +53,7 @@ IOManager* IOManager::GetSingleton()
 
 ModelLoader* ModelLoader::GetSingleton()
 {
-	return *g_modelLoader;
+	return *reinterpret_cast<ModelLoader**>(0x011C3B3C);
 }
 
 void ModelLoader::QueueReference(TESObjectREFR* refr, UInt32 arg1, bool ifInMainThread)

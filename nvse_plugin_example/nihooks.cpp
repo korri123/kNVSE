@@ -21,7 +21,7 @@ void assert(bool bCondition)
 
 void NiOutputDebugString(const char* text)
 {
-    DebugPrint(text);
+    ERROR_LOG(text);
 }
 
 #if _DEBUG

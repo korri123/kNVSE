@@ -1,4 +1,4 @@
 #pragma once
-#include "GameForms.h"
 
 void LoadFileAnimPaths();
+std::string_view AddStringToPool(std::string_view str);

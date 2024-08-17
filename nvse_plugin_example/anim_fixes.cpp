@@ -9,7 +9,7 @@
 
 void LogAnimError(const BSAnimGroupSequence* anim, const std::string& msg)
 {
-	DebugPrint("Animation Error Detected: " + std::string(anim->m_kName) + "\n\t" + msg);
+	ERROR_LOG("Animation Error Detected: " + std::string(anim->m_kName) + "\n\t" + msg);
 }
 
 bool HasNoFixTextKey(const BSAnimGroupSequence* anim)

@@ -11,6 +11,34 @@
 #include <filesystem>
 
 extern int g_logLevel;
+extern int g_errorLogLevel;
+namespace ra = std::ranges;
+
+template <typename T>
+concept string_type = std::ranges::range<T> && 
+	std::convertible_to<std::ranges::range_value_t<T>, char>;
+
+template<typename ... Bases>
+struct overload : Bases ...
+{
+	using is_transparent = void;
+	using Bases::operator() ... ;
+};
+
+
+struct char_pointer_hash
+{
+	auto operator()( const char* ptr ) const noexcept
+	{
+		return std::hash<std::string_view>{}( ptr );
+	}
+};
+
+using transparent_string_hash = overload<
+	std::hash<std::string>,
+	std::hash<std::string_view>,
+	char_pointer_hash
+>;
 
 std::string GetCurPath();
 
@@ -18,18 +46,45 @@ bool ends_with(std::string const& value, std::string const& ending);
 
 std::string ReplaceAll(std::string str, const std::string& from, const std::string& to);
 
-/// Try to find in the Haystack the Needle - ignore case
-bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle);
+// Now you can use the concept like this:
+template <string_type Haystack, string_type Needle>
+bool FindStringCI(const Haystack& strHaystack, const Needle& strNeedle)
+{
+	const auto it = ra::search(strHaystack, strNeedle, [](char ch1, char ch2) { return std::tolower(ch1) == std::tolower(ch2); }).begin();
+	return it != std::ranges::end(strHaystack);
+}
 
-size_t FindStringPosCI(const std::string& strHaystack, const std::string& strNeedle);
+inline bool FindStringCI(const char* strHaystack, const char* strNeedle)
+{
+	return FindStringCI(std::string_view(strHaystack), std::string_view(strNeedle));
+}
 
-std::string ExtractUntilStringMatches(const std::string& str, const std::string& match, bool includeMatch = false);
+template <string_type Haystack, string_type Needle>
+size_t FindStringPosCI(const Haystack& strHaystack, const Needle& strNeedle)
+{
+    const auto it = ra::search(strHaystack,strNeedle,
+        [](char ch1, char ch2) { return std::tolower(ch1) == std::tolower(ch2); }
+    );
+	return it.begin() == strHaystack.end() ? std::string::npos : std::distance(strHaystack.begin(), it.begin());
+}
 
-void Log(const std::string& msg);
+template <string_type Str, string_type Match>
+std::string_view ExtractUntilStringMatches(const Str& str, const Match& match, bool includeMatch)
+{
+	const auto pos = FindStringPosCI(str, match);
+	if (pos == std::string::npos)
+		return "";
+	return str.substr(0, pos + (includeMatch ? match.length() : 0));
+}
+
+void _Log(const std::string& msg);
+#define LOG(msg) do { if (g_logLevel >= 1) _Log(msg); } while (0)
+
 
 int HexStringToInt(const std::string& str);
 
 void DebugPrint(const std::string& str);
+#define ERROR_LOG(msg) do { if (g_errorLogLevel >= 1) DebugPrint(msg); } while (0)
 
 // if player is in third person, returns true if anim data is the first person and vice versa
 bool IsPlayersOtherAnimData(AnimData* animData);
@@ -50,12 +105,12 @@ bool In(T t, std::initializer_list<T> l)
 #define _L(x, y) [&](x) {return y;}
 #define _VL(x, y)[&]x {return y;} // variable parenthesis lambda
 
-namespace ra = std::ranges;
+std::string ToLower(std::string data);
+std::string ToLower(std::string_view data);
+std::string ToLower(const char* data);
 
-std::string ToLower(const std::string& data);
-std::string& StripSpace(std::string&& data);
-
-bool StartsWith(const char* left, const char* right);
+bool StartsWith(const char* string, const char* prefix);
+bool StartsWith(std::string_view left, std::string_view right);
 
 template <typename T, typename S, typename F>
 std::vector<T*> Filter(const S& s, const F& f)
@@ -344,4 +399,28 @@ std::string DecompileScript(Script* script);
 
 std::filesystem::path GetRelativePath(const std::filesystem::path& fullPath, std::string_view target_dir);
 
-Script* CompileConditionScript(const std::string& condString);
+Script* CompileConditionScript(std::string_view condString);
+
+struct CaseInsensitiveHash {
+	std::size_t operator()(std::string_view str) const {
+		std::size_t hash = 0;
+		std::hash<char> charHash;
+		for (char c : str) {
+			hash ^= charHash(std::tolower(c)) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+		}
+		return hash;
+	}
+};
+
+// Custom equality function that ignores case
+struct CaseInsensitiveEqual
+{
+	bool operator()(std::string_view lhs, std::string_view rhs) const
+	{
+		return ra::equal(lhs, rhs,
+		                 [](char a, char b)
+		                 {
+			                 return std::tolower(a) == std::tolower(b);
+		                 });
+	}
+};

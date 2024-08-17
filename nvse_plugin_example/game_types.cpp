@@ -422,7 +422,7 @@ Script* Script::CompileFromText(const std::string& scriptSource, const std::stri
 	buffer.scriptText = nullptr;
 	if (!result)
 	{
-		DebugPrint("Failed to compile script");
+		ERROR_LOG("Failed to compile script");
 		return nullptr;
 	}
 	return condition.release();

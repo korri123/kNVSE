@@ -24,4 +24,9 @@ public:
 	friend bool operator!=(const LambdaVariableContext& lhs, const LambdaVariableContext& rhs);
 
 	Script*& operator*();
+
+	explicit operator bool() const
+	{
+		return scriptLambda != nullptr;
+	}
 };

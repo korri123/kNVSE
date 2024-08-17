@@ -27,29 +27,8 @@ std::string ReplaceAll(std::string str, const std::string& from, const std::stri
 	return str;
 }
 
-size_t FindStringPosCI(const std::string& strHaystack, const std::string& strNeedle)
-{
-	const auto lowerHaystack = ToLower(std::string(strHaystack));
-	const auto lowerNeedle = ToLower(std::string(strNeedle));
-	return lowerHaystack.find(lowerNeedle);
-}
 
-std::string ExtractUntilStringMatches(const std::string& str, const std::string& match, bool includeMatch)
-{
-	const auto pos = FindStringPosCI(str, match);
-	if (pos == std::string::npos)
-		return "";
-	return str.substr(0, pos + (includeMatch ? match.length() : 0));
-}
-
-/// Try to find in the Haystack the Needle - ignore case
-bool FindStringCI(const std::string& strHaystack, const std::string& strNeedle)
-{
-	const auto it = ra::search(strHaystack, strNeedle,[](char ch1, char ch2) { return std::toupper(ch1) == std::toupper(ch2); }).begin();
-	return it != strHaystack.end();
-}
-
-void Log(const std::string& msg)
+void _Log(const std::string& msg)
 {
 	_MESSAGE("%s", msg.c_str());
 	if (g_logLevel == 2)
@@ -67,9 +46,9 @@ int HexStringToInt(const std::string& str)
 
 void DebugPrint(const std::string& str)
 {
-	if (g_logLevel == 1)
+	_MESSAGE("%s", str.c_str());
+	if (g_errorLogLevel == 2)
 		Console_Print("kNVSE: %s", str.c_str());
-	Log(str);
 }
 
 bool IsPlayersOtherAnimData(AnimData* animData)
@@ -93,17 +72,21 @@ void PatchPause(UInt32 ptr)
 	SafeWriteBuf(ptr, "\xEB\xFE", 2);
 }
 
-std::string ToLower(const std::string& data)
+std::string ToLower(std::string data)
 {
-	std::string newData = data;
-	ra::transform(newData, newData.begin(),[](const unsigned char c) { return std::tolower(c); } );
-	return newData;
+	ra::transform(data, data.begin(),[](const unsigned char c) { return std::tolower(c); } );
+	return data;
 }
 
-std::string& StripSpace(std::string&& data)
+std::string ToLower(std::string_view data)
 {
-	std::erase_if(data, isspace);
-	return data;
+	const std::string kData(data);
+	return ToLower(kData);
+}
+
+std::string ToLower(const char* data)
+{
+	return ToLower(std::string_view(data));
 }
 
 bool StartsWith(const char* string, const char* prefix)
@@ -118,6 +101,13 @@ bool StartsWith(const char* string, const char* prefix)
 	if (!count)
 		return false;
 	return true;
+}
+
+bool StartsWith(std::string_view aString, std::string_view aPrefix)
+{
+	if (aString.size() < aPrefix.size())
+		return false;
+	return StartsWith(aString.data(), aPrefix.data());
 }
 
 std::string DecompileScript(Script* script)
@@ -143,7 +133,7 @@ std::filesystem::path GetRelativePath(const std::filesystem::path& fullPath, std
 
 std::unordered_map<std::string, Script*> g_conditionScripts;
 
-Script* CompileConditionScript(const std::string& condString)
+Script* CompileConditionScript(std::string_view condString)
 {
 	auto [iter, isNew] = g_conditionScripts.emplace(condString, nullptr);
 	if (!isNew)
@@ -157,10 +147,10 @@ Script* CompileConditionScript(const std::string& condString)
 		DataHandler::Get()->SetAssignFormIDs(true);
 	std::string scriptSource;
 	if (!FindStringCI(condString, "SetFunctionValue"))
-		scriptSource = FormatString("begin function{}\nSetFunctionValue (%s)\nend\n", condString.c_str());
+		scriptSource = FormatString("begin function{}\nSetFunctionValue (%s)\nend\n", condString.data());
 	else
 	{
-		auto condStr = ReplaceAll(condString, "%r", "\r\n");
+		auto condStr = ReplaceAll(std::string(condString), "%r", "\r\n");
 		condStr = ReplaceAll(condStr, "%R", "\r\n");
 		scriptSource = FormatString("begin function{}\n%s\nend\n", condStr.c_str());
 	}
@@ -176,7 +166,7 @@ Script* CompileConditionScript(const std::string& condString)
 	condition->text = nullptr;
 	if (!result)
 	{
-		DebugPrint("Failed to compile condition script " + condString);
+		ERROR_LOG("Failed to compile condition script " + std::string(condString));
 		return nullptr;
 	}
 	auto* script = condition.release();

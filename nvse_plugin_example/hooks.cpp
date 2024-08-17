@@ -170,7 +170,7 @@ int AnimErrorLogHook(const char* fmt, ...)
 	va_start(args, fmt);
 	char buf[0x400];
 	vsprintf_s(buf, sizeof buf, fmt, args);
-	DebugPrint(FormatString("GAME: %s", buf));
+	ERROR_LOG(FormatString("GAME: %s", buf));
 	va_end(args);
 
 	return 0;
@@ -469,7 +469,8 @@ void ApplyHooks()
 	CSimpleIniA ini;
 	ini.SetUnicode();
 	const auto errVal = ini.LoadFile(iniPath.c_str());
-	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no console log, 1 = error console log, 2 = ALL logs go to console");
+	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no log, 1 = kNVSE.log, 2 = console log");
+	g_errorLogLevel = ini.GetOrCreate("General", "iErrorLogLevel", 0, "; 0 = no log, 1 = kNVSE.log, 2 = error console log");
 
 #if 0
 	g_fixSpineBlendBug = ini.GetOrCreate("General", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down");

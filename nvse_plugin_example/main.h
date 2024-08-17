@@ -28,7 +28,8 @@ extern std::deque<std::function<void()>> g_executionQueue;
 extern NVSEArrayVarInterface* g_arrayVarInterface;
 extern NVSEStringVarInterface* g_stringVarInterface;
 extern std::unordered_map<std::string, std::vector<CustomAnimGroupScript>> g_customAnimGroups;
-extern std::unordered_map<std::string, std::unordered_set<std::string>> g_customAnimGroupPaths;
+using AnimGroupPathsMap = std::unordered_map<std::string, std::unordered_set<std::string>, transparent_string_hash, std::equal_to<>>;
+extern AnimGroupPathsMap g_customAnimGroupPaths;
 extern std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
 extern std::vector<std::string> g_eachFrameScriptLines;
 

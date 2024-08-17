@@ -2668,3 +2668,47 @@ public:
 	}
 };
 static_assert(sizeof(NiTextKeyExtraData) == 0x14);
+
+class NiGlobalStringTable : public NiMemObject {
+public:
+	typedef char* GlobalStringHandle;
+
+	NiTArray<GlobalStringHandle>		m_kHashArray[512];
+	void*									unk2000[32];
+	NiCriticalSection						m_kCriticalSection;
+	void*									unk20A0[24];
+
+	static GlobalStringHandle AddString(const char* pcString)
+	{
+		return CdeclCall<GlobalStringHandle>(0xA5B690, pcString);
+	}
+
+	static void IncRefCount(GlobalStringHandle& arHandle)
+	{
+		if (!arHandle)
+			return;
+
+		InterlockedIncrement(reinterpret_cast<size_t*>(GetRealBufferStart(arHandle)));
+	}
+	
+	static void DecRefCount(GlobalStringHandle& arHandle)
+	{
+		if (!arHandle)
+			return;
+
+		InterlockedDecrement(reinterpret_cast<size_t*>(GetRealBufferStart(arHandle)));
+	}
+	static UInt32 GetLength(const GlobalStringHandle& arHandle)
+	{
+		if (!arHandle)
+			return 0;
+
+		return GetRealBufferStart(arHandle)[1];
+	}
+
+	static char* GetRealBufferStart(const GlobalStringHandle& arHandle)
+	{
+		return static_cast<char*>(arHandle) - 2 * sizeof(size_t);
+	}
+};
+ASSERT_SIZE(NiGlobalStringTable, 0x2100);
