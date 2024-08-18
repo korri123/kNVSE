@@ -216,6 +216,10 @@ STATIC_ASSERT(sizeof(OSSoundGlobals) == 0x328);
 class OSSoundGlobals {
 };
 
+class OSGlobals;
+
+extern OSGlobals ** g_osGlobals;
+
 // A4
 class OSGlobals
 {
@@ -244,8 +248,12 @@ public:
 	UInt32*			unk50;				// 50, same object as unk18
 	//..
 	UInt32			unk60;				// 60 relates to unk50
+
+	static OSGlobals* GetSingleton()
+	{
+		return *g_osGlobals;
+	}
 };
 
 //STATIC_ASSERT(sizeof(OSGlobals) == 0x0A4);	// found in oldWinMain 0x0086AF4B
 
-extern OSGlobals ** g_osGlobals;

@@ -345,8 +345,19 @@ class ConsoleManager
 {
 public:
 #if RUNTIME
-	MEMBER_FN_PREFIX(ConsoleManager);
-	DEFINE_MEMBER_FN(Print, void, s_Console__Print, const char * fmt, va_list args);
+	
+	void Print(const char * fmt, va_list args) const
+	{
+		ThisStdCall(0x71D0A0, this, fmt, args);
+	}
+
+	void Print(const char* fmt, ...) const
+	{
+		va_list args;
+		va_start(args, fmt);
+		Print(fmt, args);
+		va_end(args);
+	}
 #endif
 
 	ConsoleManager();

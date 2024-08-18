@@ -2,6 +2,8 @@
 #include "GameObjects.h"
 #include "GameOSDepend.h"
 
+enum ARCHIVE_TYPE : int;
+
 namespace Decoding
 {
 
@@ -915,5 +917,15 @@ namespace GameSettings
 	namespace Interface
 	{
 		inline auto* fMenuModeAnimBlend = reinterpret_cast<SettingT*>(0x11c5740);
+	}
+}
+
+namespace FileFinder
+{
+	inline BSSimpleList<const char> FindFiles(const char* path, const char* renameDirectory, ARCHIVE_TYPE archiveType)
+	{
+		BSSimpleList<const char> result;
+		CdeclCall<BSSimpleList<const char>*>(0xAFE420, path, renameDirectory, archiveType, &result);
+		return result;
 	}
 }

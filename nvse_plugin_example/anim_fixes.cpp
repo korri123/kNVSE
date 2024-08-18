@@ -5,11 +5,12 @@
 #include "class_vtbls.h"
 #include "game_types.h"
 #include "hooks.h"
+#include "SafeWrite.h"
 #include "utility.h"
 
 void LogAnimError(const BSAnimGroupSequence* anim, const std::string& msg)
 {
-	ERROR_LOG("Animation Error Detected: " + std::string(anim->m_kName) + "\n\t" + msg);
+	ERROR_LOG("Fixed error in animation: " + std::string(anim->m_kName) + "\n\t" + msg);
 }
 
 bool HasNoFixTextKey(const BSAnimGroupSequence* anim)
@@ -176,7 +177,7 @@ void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
 	auto* textKeys = anim->m_spTextKeys;
 	if (ra::any_of(textKeys->GetKeys(), [](const NiTextKey& key) { return key.m_kText.CStr() == nullptr; }))
 	{
-		LogAnimError(anim, "Erased null text keys");
+		// LogAnimError(anim, "Erased null text keys");
 		const auto newKeys = textKeys->ToVector()
 			| ra::views::filter([](const NiTextKey& key) { return key.m_kText.CStr() != nullptr; })
 			| ra::to<std::vector<NiTextKey>>();
@@ -236,6 +237,37 @@ void AnimFixes::EraseNegativeAnimKeys(const BSAnimGroupSequence* anim)
 	}
 }
 
+void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)
+{
+	if (!g_fixWrongPrnKey || HasNoFixTextKey(anim))
+		return;
+	LogAnimError(anim, "Fixed malformed prn key in respectEndKey anim");
+	const auto* textKeys = anim->m_spTextKeys;
+	for (auto& key : textKeys->GetKeys())
+	{
+		if (std::string_view(key.m_kText.CStr()).starts_with("prn:"))
+		{
+			key.m_kText.Set("prn: Bip01 Translate");
+			break;
+		}
+	}
+	anim->animGroup->parentRootNode = NiGlobalStringTable::AddString("Bip01 Translate");
+}
+
+void AnimFixes::ApplyHooks()
+{
+	return;
+	WriteRelCall(0x923BC6, INLINE_HOOK(const char*, __fastcall, BSAnimGroupSequence* anim)
+	{
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		if (std::string_view(anim->animGroup->parentRootNode) == "Bip01 Translate")
+			return anim->m_kName; // didn't work so lets not create an infinite loop
+		FixWrongPrnKey(anim);
+		*addrOfRetn = 0x923B7E; // try again now
+		return "";
+	}));
+}
+
 void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)
 {
 	EraseNullTextKeys(anim);
@@ -243,3 +275,4 @@ void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)
 	FixWrongAKeyInRespectEndKey(animData, anim);
 	EraseNegativeAnimKeys(anim);
 }
+

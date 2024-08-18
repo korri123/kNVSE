@@ -15,6 +15,7 @@
 #include "SafeWrite.h"
 #include "game_types.h"
 #include <set>
+#include <thread>
 
 #include "knvse_version.h"
 #include "LambdaVariableContext.h"
@@ -38,6 +39,7 @@ NVSEInterface* g_nvseInterface;
 NVSECommandTableInterface* g_cmdTable;
 const CommandInfo* g_TFC;
 PlayerCharacter* g_player;
+ICriticalSection g_executionQueueCS;
 std::deque<std::function<void()>> g_executionQueue;
 ExpressionEvaluatorUtils s_expEvalUtils;
 
@@ -478,6 +480,7 @@ void HandleBurstFire()
 
 void HandleExecutionQueue()
 {
+	ScopedLock lock(g_executionQueueCS);
 	while (!g_executionQueue.empty())
 	{
 		g_executionQueue.front()();
@@ -509,20 +512,17 @@ void HandleMisc()
 	}
 }
 
+std::thread g_animFileThread;
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
 	{
-		//WIN32_FIND_DATA data;
-		std::string path = "Data\\Meshes\\AnimGroupOverride\\*.kf";
-		//auto result = FindFirstFileA(path.c_str(), &data);
-		//auto* list = CdeclCall<tList<const char>*>(0xAFE420, path.c_str(), "Data\\Meshes\\AnimGroupOverride\\IdleAnim", 1, 0);
-		// const auto kFiles = LoadAnimPathsFromBSA();
-		NiHooks::WriteDelayedHooks();
-		g_thePlayer = *(PlayerCharacter **)0x011DEA3C;
-		LoadFileAnimPaths();
 		Console_Print("kNVSE version %d", VERSION_MAJOR);
+		NiHooks::WriteDelayedHooks();
+		g_thePlayer = *reinterpret_cast<PlayerCharacter**>(0x011DEA3C);
+		g_animFileThread = std::thread(LoadFileAnimPaths);
+		g_animFileThread.detach();
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{
@@ -532,7 +532,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleOnActorReload();
 			HandleBurstFire();
 			HandleAnimTimes();
-			HandleExecutionQueue();
 			HandleMisc();
 #if 0 // experimental fixes
 			if (g_fixAttackISTransition)
@@ -542,6 +541,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			}
 #endif
 		}
+		HandleExecutionQueue();
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
 	{

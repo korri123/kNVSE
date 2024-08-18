@@ -2,6 +2,7 @@
 #include <functional>
 #include <deque>
 #include <PluginAPI.h>
+#include <thread>
 
 #include "commands_animation.h"
 
@@ -25,6 +26,7 @@ struct CustomAnimGroupScript
 extern NVSEScriptInterface* g_script;
 
 extern std::deque<std::function<void()>> g_executionQueue;
+extern ICriticalSection g_executionQueueCS;
 extern NVSEArrayVarInterface* g_arrayVarInterface;
 extern NVSEStringVarInterface* g_stringVarInterface;
 extern std::unordered_map<std::string, std::vector<CustomAnimGroupScript>> g_customAnimGroups;
@@ -32,6 +34,7 @@ using AnimGroupPathsMap = std::unordered_map<std::string, std::unordered_set<std
 extern AnimGroupPathsMap g_customAnimGroupPaths;
 extern std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
 extern std::vector<std::string> g_eachFrameScriptLines;
+extern std::thread g_animFileThread;
 
 void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);
 void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);

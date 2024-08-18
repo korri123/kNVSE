@@ -395,6 +395,7 @@ bool g_disableFirstPersonTurningAnims = false;
 
 bool g_fixEndKeyTimeShorterThanStopTime = false;
 bool g_fixWrongAKeyInRespectEndKeyAnim = false;
+bool g_fixWrongPrnKey = false;
 
 namespace LoopingReloadPauseFix
 {
@@ -469,8 +470,8 @@ void ApplyHooks()
 	CSimpleIniA ini;
 	ini.SetUnicode();
 	const auto errVal = ini.LoadFile(iniPath.c_str());
-	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 0, "; 0 = no log, 1 = kNVSE.log, 2 = console log");
-	g_errorLogLevel = ini.GetOrCreate("General", "iErrorLogLevel", 0, "; 0 = no log, 1 = kNVSE.log, 2 = error console log");
+	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 1, "; 0 = no log, 1 = kNVSE.log, 2 = console log");
+	g_errorLogLevel = ini.GetOrCreate("General", "iErrorLogLevel", 1, "; 0 = no log, 1 = kNVSE.log, 2 = error console log");
 
 #if 0
 	g_fixSpineBlendBug = ini.GetOrCreate("General", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down");
@@ -483,6 +484,7 @@ void ApplyHooks()
 	g_fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
 	g_fixEndKeyTimeShorterThanStopTime = ini.GetOrCreate("Anim Fixes", "bFixEndKeyTimeShorterThanStopTime", 1, "; try to fix animations with broken export stop time where it's greater than the end key time and time of last transform data");
 	g_fixWrongAKeyInRespectEndKeyAnim = ini.GetOrCreate("Anim Fixes", "bFixWrongAKeyInRespectEndKeyAnim", 1, "; try to fix animations where animator messed up the a: text key value in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
+	g_fixWrongPrnKey = ini.GetOrCreate("Anim Fixes", "bFixWrongPrnKey", 1, "; try to fix animations where animator messed up the prn text key value in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
 	//WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelCall(0x494989, HandleAnimationChange);
 	WriteRelCall(0x495E2A, HandleAnimationChange);
@@ -755,7 +757,10 @@ void ApplyHooks()
 	
 #endif
 #endif
+#if _DEBUG
 	BlendFixes::ApplyHooks();
+#endif
+	AnimFixes::ApplyHooks();
 
 }
 

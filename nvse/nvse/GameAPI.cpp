@@ -1,9 +1,14 @@
 #include "GameAPI.h"
+
+#include <deque>
+#include <functional>
+
 #include "GameRTTI.h"
 #include "GameForms.h"
 #include "GameObjects.h"
 #include "GameTypes.h"
 #include "CommandTable.h"
+#include "GameOSDepend.h"
 #include "GameScript.h"
 #include "StringVar.h"
 #include "printf.h"
@@ -165,22 +170,41 @@ bool ConsoleManager::HasConsoleOutputFilename(void) {
 
 bool s_InsideOnActorEquipHook = false;
 UInt32 s_CheckInsideOnActorEquipHook = 1;
+extern std::deque<std::function<void()>> g_executionQueue;
+extern ICriticalSection g_executionQueueCS;
 
 void Console_Print(const char * fmt, ...)
 {
-	//if (!s_CheckInsideOnActorEquipHook || !s_InsideOnActorEquipHook) {
-	ConsoleManager	* mgr = ConsoleManager::GetSingleton();
-	if(mgr)
+	const bool isConsoleReady = *reinterpret_cast<ConsoleManager**>(0x11D8CE8);
+	const bool isMainThread = OSGlobals::GetSingleton() && OSGlobals::GetSingleton()->mainThreadID == GetCurrentThreadId();
+	ConsoleManager* mgr = ConsoleManager::GetSingleton();
+	if (isConsoleReady && isMainThread)
 	{
-		va_list	args;
-
-		va_start(args, fmt);
-
-		CALL_MEMBER_FN(mgr, Print)(fmt, args);
-
-		va_end(args);
+		if(mgr)
+		{
+			va_list	args;
+			va_start(args, fmt);
+			mgr->Print(fmt, args);
+			va_end(args);
+		}
 	}
-	//}
+	else
+	{
+		char buffer[0x400];
+		va_list args;
+		va_start(args, fmt);
+		const auto result = vsprintf_s(buffer, fmt, args);
+		va_end(args);
+		if (result == -1)
+			return;
+		const std::string str(buffer);
+		ScopedLock lock(g_executionQueueCS);
+		g_executionQueue.emplace_back([=]
+		{
+			const auto* pManager = ConsoleManager::GetSingleton();
+			pManager->Print("%s", str.c_str());
+		});
+	}
 }
 
 TESSaveLoadGame * TESSaveLoadGame::Get()

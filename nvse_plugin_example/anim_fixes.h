@@ -11,4 +11,7 @@ namespace AnimFixes
     void EraseNullTextKeys(const BSAnimGroupSequence* anim);
     void EraseNegativeAnimKeys(const BSAnimGroupSequence* anim);
     void ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim);
+    void FixWrongPrnKey(BSAnimGroupSequence* anim);
+
+    void ApplyHooks();
 }

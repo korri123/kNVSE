@@ -453,7 +453,12 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 				if (StartsWith(key, "allowAttack"))
 				{
 					// already released this as beta with custom key but in future encourage scriptLine: AllowAttack
-					result = Script::CompileFromText("AllowAttack", "ScriptLineKey");
+					static Script* allowAttackScript = nullptr;
+					if (!allowAttackScript)
+					{
+						allowAttackScript = Script::CompileFromText("AllowAttack", "ScriptLineKey");
+					}
+					result = allowAttackScript;
 					animTime.allowAttack = true;
 					if (!result)
 					{
@@ -464,7 +469,14 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 				}
 				if (!StartsWith(key, "scriptLine:"))
 					return false;
-				auto line = GetTextAfterColon(key);
+				static std::unordered_map<const char*, Script*> s_scriptLines;
+				auto& cached = s_scriptLines[key]; // by pointer value
+				if (cached)
+				{
+					result = cached;
+					return true;
+				}
+				const auto line = GetTextAfterColon(key);
 				if (line.empty())
 					return false;
 				auto formattedLine = ReplaceAll(line, "%R", "\r\n");
@@ -475,6 +487,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 					ERROR_LOG("Failed to compile script in scriptLine key: " + line + " for anim " + std::string(anim->m_kName));
 					return false;
 				}
+				cached = result;
 				return true;
 			});
 		}
@@ -708,6 +721,9 @@ ICriticalSection g_getActorAnimationCS;
 
 std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData)
 {
+	// wait for file loading to finish
+	if (g_animFileThread.joinable())
+		g_animFileThread.join();
 	ScopedLock lock(g_getActorAnimationCS);
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
@@ -1109,6 +1125,7 @@ bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
 		return false;
 	auto* didReload = &iter->second.subscribers[subscriber];
 	const auto result = *didReload;
+	ScopedLock lock(g_executionQueueCS);
 	g_executionQueue.emplace_back([=]()
 	{
 		*didReload = false;
@@ -1162,27 +1179,29 @@ void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)
 		LOG("\tGLOBALLY on any form");
 }
 
-template <typename F>
-void OverrideAnimsFromScript(const char* path, F&& overrideAnim)
+BSSimpleList<const char> GetDirectoryAnimPaths(const char* path)
 {
-	const auto folderPath = FormatString("Data\\Meshes\\%s", path);
-	if (std::filesystem::is_directory(folderPath))
+	if (!sv::get_file_extension(path).empty()) // single file
 	{
-		for (std::filesystem::recursive_directory_iterator iter(folderPath), end; iter != end; ++iter)
-		{
-			if (iter->is_directory())
-				continue;
-			const auto& extension = iter->path().extension().string();
-			if (_stricmp(extension.c_str(), ".kf") != 0)
-				continue;
-			constexpr size_t len = sizeof "Data\\Meshes\\";		
-			overrideAnim(iter->path().string().c_str() + (len-1));
-		}
+		return { path };
 	}
-	else
+	const std::string searchPath = FormatString(R"(Data\Meshes\%s\*.kf)", path);
+	const std::string renamePath = FormatString("%s\\", path);
+	return FileFinder::FindFiles(searchPath.c_str(), renamePath.c_str(), ARCHIVE_TYPE_MESHES);
+}
+
+template <typename F>
+bool OverrideAnimsFromScript(const char* path, F&& overrideAnim)
+{
+	if (g_animFileThread.joinable())
+		g_animFileThread.join();
+
+	const auto animPaths = GetDirectoryAnimPaths(path);
+	for (const auto* animPath : animPaths)
 	{
-		overrideAnim(path);
+		overrideAnim(animPath);
 	}
+	return true;
 }
 
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
@@ -1215,8 +1234,7 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 			};
 			OverrideFormAnimation(animOverrideData, firstPerson);
 		};
-		OverrideAnimsFromScript(path, overrideAnim);
-		*result = 1;
+		*result = OverrideAnimsFromScript(path, overrideAnim);
 	}
 	catch (std::exception& e)
 	{
@@ -1258,7 +1276,7 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	}
 	try
 	{
-		OverrideAnimsFromScript(path, [&](const char* animPath)
+		*result = OverrideAnimsFromScript(path, [&](const char* animPath)
 		{
 			const auto pooledPath = AddStringToPool(ToLower(animPath));
 			AnimOverrideData animOverrideData = {
@@ -1271,7 +1289,6 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 			};
 			OverrideFormAnimation(animOverrideData, static_cast<bool>(firstPerson));
 		});
-		*result = 1;
 	}
 	catch (std::exception& e)
 	{
@@ -2642,6 +2659,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!baseProcess || !baseProcess->animData)
 			return true;
 		g_allowedNextAnims.insert(baseProcess);
+		ScopedLock lock(g_executionQueueCS);
 		g_executionQueue.emplace_back([=]
 		{
 			g_allowedNextAnims.erase(baseProcess);

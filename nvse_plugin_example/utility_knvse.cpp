@@ -131,7 +131,7 @@ std::filesystem::path GetRelativePath(const std::filesystem::path& fullPath, std
 	return relativePath;
 }
 
-std::unordered_map<std::string, Script*> g_conditionScripts;
+std::unordered_map<std::string_view, Script*, CaseInsensitiveHash, CaseInsensitiveEqual> g_conditionScripts;
 
 Script* CompileConditionScript(std::string_view condString)
 {
