@@ -1640,26 +1640,12 @@ UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId)
 	return nearestGroupId;
 }
 
-NiControllerSequence::InterpArrayItem* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName)
-{
-	std::span idTags(anim->m_pkIDTagArray, anim->m_uiArraySize);
-	std::span interps(anim->m_pkInterpArray, anim->m_uiArraySize);
-	const auto iter = ra::find_if(idTags, [&](const auto& idTag)
-	{
-		return _stricmp(idTag.m_kAVObjectName.CStr(), interpName) == 0;
-	});
-	if (iter == idTags.end())
-		return nullptr;
-	const auto index = std::distance(idTags.begin(), iter);
-	return &interps[index];
-}
-
 NiControllerSequence::InterpArrayItem* FindAnimInterp(TESObjectREFR* thisObj, const char* animPath, const char* interpName)
 {
 	auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 	if (!anim)
 		return nullptr;
-	return FindAnimInterp(anim, interpName);
+	return anim->GetControlledBlock(interpName);
 }
 
 void CreateCommands(NVSECommandBuilder& builder)
@@ -1907,7 +1893,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			animData = g_thePlayer->firstPersonAnimData;
 		else
 			animData = actor->baseProcess->GetAnimData();
-		if (anim->m_eState != kAnimState_Animating)
+		if (anim->m_eState != NiControllerSequence::ANIMATING)
 		{
 			*result = 0;
 			return true;
@@ -2314,12 +2300,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindActiveAnimationForActor(actor, path);
 		if (!anim)
 			return true;
-		AnimData* animData;
-		if (actor == g_thePlayer && anim->m_pkOwner == g_thePlayer->firstPersonAnimData->controllerManager)
-			animData = g_thePlayer->firstPersonAnimData;
-		else
-			animData = actor->baseProcess->GetAnimData();
-		*result = GetAnimTime(animData, anim);
+		*result = anim->m_fLastScaledTime;
 		return true;
 	});
 
@@ -2532,11 +2513,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindOrLoadAnim(actor, animPath, firstPerson);
 		if (!anim)
 			return true;
-		auto* destFrameKey = anim->m_spTextKeys->FindFirstByName("fDestFrame");
-		if (!destFrameKey)
-			anim->m_spTextKeys->AddKey("fDestFrame", destFrame);
-		else
-			destFrameKey->SetTime(destFrame);
+		anim->m_spTextKeys->SetOrAddKey("fDestFrame", destFrame);
 		*result = 1;
 		return true;
 	});
@@ -2576,6 +2553,29 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim || !anim->animGroup)
 			return true;
 		*result = anim->animGroup->groupID >> 8 & 0xF;
+		return true;
+	});
+
+	builder.Create("GetAnimTextKeyTime", kRetnType_Default, { ParamInfo{"sAnimPath", kParamType_String, false}, ParamInfo{"sTextKey", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = -1;
+		char animPath[0x400];
+		char textKey[0x400];
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &textKey))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		if (!actor)
+			return true;
+		auto* anim = FindActiveAnimationForActor(actor, animPath);
+		if (!anim || !anim->animGroup)
+			return true;
+		auto* textKeyData = anim->m_spTextKeys;
+		if (!textKeyData)
+			return true;
+		const NiTextKey* key = textKeyData->FindFirstByName(textKey);
+		if (!key)
+			return true;
+		*result = key->m_fTime;
 		return true;
 	});
 

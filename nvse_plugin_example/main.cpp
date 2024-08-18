@@ -60,11 +60,11 @@ bool isEditor = false;
 
 float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 {
-	if (anim->m_fEndTime != -FLT_MAX && (anim->m_eState == kAnimState_TransSource || anim->m_eState == kAnimState_EaseOut))
+	if (anim->m_fEndTime != -NI_INFINITY && (anim->m_eState == NiControllerSequence::TRANSSOURCE || anim->m_eState == NiControllerSequence::EASEOUT))
 	{
 		return anim->m_fEndTime - animData->timePassed;
 	}
-	if (anim->m_fStartTime != -FLT_MAX && (anim->m_eState == kAnimState_TransDest || anim->m_eState == kAnimState_EaseIn))
+	if (anim->m_fStartTime != -NI_INFINITY && (anim->m_eState == NiControllerSequence::TRANSDEST || anim->m_eState == NiControllerSequence::EASEIN))
 	{
 		return animData->timePassed - anim->m_fStartTime;
 	}

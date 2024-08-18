@@ -2032,6 +2032,11 @@ public:
 		return m_eState;
 	}
 
+	float ComputeScaledTime(float fTime, bool bStoreResult)
+	{
+		return ThisStdCall(0xA30970, this, fTime, bStoreResult);
+	}
+
 	bool StartBlend(NiControllerSequence* pkDestSequence, float fDuration,
 		float fDestFrame, int iPriority, float fSourceWeight,
 		float fDestWeight, NiControllerSequence* pkTimeSyncSeq);
@@ -2792,9 +2797,7 @@ public:
 		if (this == &other)
 			return *this;
 
-		for (auto& item : GetItems())
-			item.~T();
-		GameHeapFreeArray(m_pData);
+		DeleteAll();
 
 		m_uiNumItems = other.m_uiNumItems;
 		m_pData = GameHeapAllocArray<T>(other.m_uiNumItems);
@@ -2883,11 +2886,21 @@ public:
 		return &m_kKeyArray.GetItems().back();
 	}
 
+	NiTextKey* SetOrAddKey(const char* name, float time)
+	{
+		auto* key = FindFirstByName(name);
+		if (key)
+			key->SetTime(time);
+		else
+			AddKey(name, time);
+		return key;
+	}
+
 	bool RemoveKey(size_t index)
 	{
 		if (index >= m_kKeyArray.GetItems().size())
 			return false;
-		m_kKeyArray = ToVector() | std::views::drop(index) | std::ranges::to<std::vector>();
+		m_kKeyArray = GetKeys() | std::views::drop(index) | std::ranges::to<std::vector>();
 		return true;
 	}
 
