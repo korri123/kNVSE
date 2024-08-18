@@ -79,47 +79,6 @@ namespace InterceptStopSequence
     }
 }
 
-namespace InterceptSetPlayerMoveFlags
-{
-    const char* eventName = "kNVSE:InterceptSetPlayerMoveFlags";
-    EventParamType params[] = {
-        EventParamType::eParamType_Int
-    };
-
-    std::optional<UInt32> Dispatch(UInt32 flags)
-    {
-        static std::optional<UInt32> result;
-        result = std::nullopt;
-        g_eventManagerInterface->DispatchEventAlt(eventName, [](NVSEArrayVarInterface::Element& callbackResult, void*)
-        {
-            if (callbackResult.GetType() != NVSEArrayVarInterface::Element::kType_Numeric)
-                return true;
-            result = static_cast<UInt16>(callbackResult.GetNumber());
-            return false;
-        }, nullptr, g_thePlayer, flags);
-        return result;
-    }
-}
-
-namespace InterceptTurnAnims
-{
-    const char* eventName = "kNVSE:InterceptTurnAnims";
-
-    std::optional<bool> Dispatch()
-    {
-        static std::optional<bool> result;
-        result = std::nullopt;
-        g_eventManagerInterface->DispatchEventAlt(eventName, [](NVSEArrayVarInterface::Element& callbackResult, void*)
-        {
-            if (callbackResult.GetType() != NVSEArrayVarInterface::Element::kType_Numeric)
-                return true;
-            result = callbackResult.GetNumber() != 0.0;
-            return false;
-        }, nullptr, g_thePlayer);
-        return result;
-    }
-}
-
 #define REGISTER_EVENT(event) g_eventManagerInterface->RegisterEvent(event::eventName, std::size(event::params), event::params, EventFlags::kFlag_FlushOnLoad)
 #define REGISTER_EVENT_NO_PARAMS(event) g_eventManagerInterface->RegisterEvent(event::eventName, 0, nullptr, EventFlags::kFlag_FlushOnLoad)
 
@@ -127,6 +86,4 @@ void Events::RegisterEvents()
 {
     REGISTER_EVENT(InterceptPlayAnimGroup);
     REGISTER_EVENT(InterceptStopSequence);
-    REGISTER_EVENT(InterceptSetPlayerMoveFlags);
-    REGISTER_EVENT_NO_PARAMS(InterceptTurnAnims);
 }

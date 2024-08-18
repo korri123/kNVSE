@@ -110,8 +110,8 @@ void Save3rdPersonAnimGroupData(BSAnimGroupSequence* anim3rd)
 
 void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st)
 {
-	auto* animGroup3rd = anim3rd->animGroup;
-	auto* animGroup1st = anim1st->animGroup;
+	TESAnimGroup* animGroup3rd = anim3rd->animGroup;
+	const TESAnimGroup* animGroup1st = anim1st->animGroup;
 	if (!animGroup3rd || !animGroup1st)
 		return;
 	animGroup3rd->numKeys = animGroup1st->numKeys;
@@ -134,7 +134,7 @@ void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence*
 		anim3rd->animGroup->blendIn = savedData.blendIn;
 		anim3rd->animGroup->blendOut = savedData.blendOut;
 	}
-	const auto* animGroup = anim1st->animGroup;
+	const TESAnimGroup* animGroup = anim1st->animGroup;
 	if (animGroup && (animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
 	{
 		g_fixHolster = true;
@@ -267,12 +267,11 @@ void HandleAnimTimes()
 		}
 		if (animTime.soundPaths.Exists())
 		{
-			animTime.soundPaths.Update(time, animData, [&](Sound& sound)
+			animTime.soundPaths.Update(time, animData, [&](Sounds& sound)
 			{
 				if (!IsPlayersOtherAnimData(animData))
 				{
-					sound.Set3D(actor);
-					sound.Play();
+					sound.Play(actor);
 				}
 			});
 		}

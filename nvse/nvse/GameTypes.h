@@ -5,11 +5,18 @@
 #include "NiTypes.h"
 
 // 8
-class String
+class BSString
 {
 public:
-	String();
-	~String();
+	BSString();
+	BSString(char* str);
+	~BSString();
+
+	BSString(const BSString& other) = delete;
+	BSString& operator=(const BSString& other) = delete;
+
+	BSString(BSString&& other) noexcept;
+	BSString& operator=(BSString&& other) noexcept;
 
 	char	* m_data;
 	UInt16	m_dataLen;
@@ -19,9 +26,19 @@ public:
 	bool	Includes(const char* toFind) const;
 	bool	Replace(const char* toReplace, const char* replaceWith); // replaces instance of toReplace with replaceWith
 	bool	Append(const char* toAppend);
-	double	Compare(const String& compareTo, bool caseSensitive = false);
+	double	Compare(const BSString& compareTo, bool caseSensitive = false);
 
-	const char *	CStr(void);
+	operator std::string_view() const
+	{
+		return { m_data, m_dataLen };
+	}
+
+	operator const char*() const
+	{
+		return m_data;
+	}
+
+	const char *	CStr(void) const;
 };
 
 enum {
@@ -304,10 +321,10 @@ public:
 		}
 	}
 
-	void CopyFrom(tList& sourceList)
+	void CopyFrom(const tList& sourceList)
 	{
 		_Node* target = Head(), * source = sourceList.Head();
-		RemoveAll();
+		DeleteAll();
 		if (!source->data) return;
 		target->data = source->data;
 		while (source = source->next)
@@ -385,17 +402,28 @@ public:
 
 	void DeleteAll() const
 	{
-		_Node* nextNode = Head(), * currNode = nextNode->next;
-		FormHeap_Free(nextNode->data);
-		nextNode->data = NULL;
-		nextNode->next = NULL;
-		while (currNode)
+		_Node* currentNode = Head();
+		while (currentNode)
 		{
-			nextNode = currNode->next;
-			currNode->data->~Item();
-			FormHeap_Free(currNode->data);
-			FormHeap_Free(currNode);
-			currNode = nextNode;
+			_Node* nextNode = currentNode->next;
+
+			if (currentNode->data)
+			{
+				currentNode->data->~Item();
+				FormHeap_Free(static_cast<void*>(currentNode->data));
+			}
+
+			if (currentNode != Head()) // Don't free the head node
+			{
+				FormHeap_Free(currentNode);
+			}
+			else
+			{
+				currentNode->data = nullptr;
+				currentNode->next = nullptr;
+			}
+
+			currentNode = nextNode;
 		}
 	}
 

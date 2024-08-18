@@ -69,6 +69,63 @@ enum class POVSwitchState
 	NotSet, POV3rd, POV1st
 };
 
+struct Sounds
+{
+	std::vector<Sound> sounds;
+	bool failed = false;
+
+	Sounds() = default;
+
+	static bool IsSoundFile(const std::string_view& fileName)
+	{
+		const auto fileExt = sv::get_file_extension(fileName);
+		return fileExt == ".wav" || fileExt == ".mp3" || fileExt == ".ogg";
+	}
+	
+	Sounds(std::string_view path)
+	{
+		if (sv::get_file_extension(path).empty())
+		{
+			const std::string searchPath = FormatString(R"(data\sound\%s\*)", path.data());
+			const auto result = FileFinder::FindFiles(searchPath.c_str(), searchPath.c_str(), ARCHIVE_TYPE_SOUNDS);
+			for (const auto* file : result)
+			{
+				auto fileName = sv::get_file_name(file);
+				if (!IsSoundFile(fileName))
+					continue; // for some reason we get . and .. files
+				auto sound = Sound::InitByFilename(file);
+				if (!sound.soundID)
+					continue;
+				sounds.emplace_back(sound);
+			}
+			if (sounds.empty())
+				failed = true;
+			return;
+		}
+		if (!IsSoundFile(path))
+		{
+			failed = true;
+			return;
+		}
+		const std::string realPath = FormatString(R"(data\sound\%s)", path.data());
+		auto sound = Sound::InitByFilename(realPath.c_str());
+		if (!sound.soundID)
+			failed = true;
+		else
+			sounds = { sound };
+	}
+
+	void Play(Actor* actor)
+	{
+		if (sounds.empty())
+			return;
+		// pick random sound
+		auto& sound = sounds.at(GetRandomUInt(sounds.size()));
+		sound.Set3D(actor);
+		sound.Play();
+	}
+};
+
 template <typename T>
 class TimedExecution
 {
@@ -148,8 +205,8 @@ struct AnimTime
 	bool firstPerson = false;
 	TimedExecution<Script*>::Context scriptLines;
 	TimedExecution<Script*>::Context scriptCalls;
-	std::optional<TimedExecution<Sound>> soundPathsBase;
-	TimedExecution<Sound>::Context soundPaths;
+	std::optional<TimedExecution<Sounds>> soundPathsBase;
+	TimedExecution<Sounds>::Context soundPaths;
 	bool allowAttack = false;
 
 	using TimedCallbacks = TimedExecution<std::function<void()>>;
@@ -554,8 +611,8 @@ struct AnimOverrideData
 	bool matchBaseGroupId{};
 };
 
-void OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson);
-void OverrideFormAnimation(AnimOverrideData& data, bool firstPerson);
+bool OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson);
+bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson);
 
 void HandleOnActorReload();
 

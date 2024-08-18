@@ -390,7 +390,6 @@
     <ClCompile Include="..\nvse\nvse\utility.cpp" />
     <ClCompile Include="anim_fixes.cpp" />
     <ClCompile Include="bethesda\archive.cpp" />
-    <ClCompile Include="bethesda\bethesda_types.inl" />
     <ClCompile Include="bethesda\bsfile.cpp" />
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="commands_misc.cpp" />

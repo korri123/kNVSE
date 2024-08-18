@@ -16,7 +16,7 @@
 
 namespace fs = std::filesystem;
 
-std::string_view AddStringToPool(std::string_view str)
+std::string_view AddStringToPool(const std::string_view str)
 {
 	auto* handle = NiGlobalStringTable::AddString(str.data());
 	return { handle, str.size() };

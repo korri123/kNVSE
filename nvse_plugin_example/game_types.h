@@ -920,12 +920,54 @@ namespace GameSettings
 	}
 }
 
+template <typename T>
+class ScopedList : public BSSimpleList<T>
+{
+	ScopedList() = default;
+	ScopedList(typename BSSimpleList<T>::_Node node) : BSSimpleList(node) {}
+	ScopedList(const ScopedList&) = delete;
+	ScopedList& operator=(const ScopedList&) = delete;
+
+	ScopedList(ScopedList&& other) noexcept : BSSimpleList(other.m_listHead)
+	{
+		other.m_listHead = {};
+	}
+	
+	ScopedList& operator=(ScopedList&& other) noexcept
+	{
+		if (this != &other)
+		{
+			this->m_listHead = other.m_listHead;
+			other.m_listHead = {};
+		}
+		return *this;
+	}
+};
+
+template <>
+class ScopedList<char> : public BSSimpleList<char>
+{
+public:
+	~ScopedList()
+	{
+		for (auto iter = Head(); iter; iter = iter->next)
+		{
+			if (iter->data)
+			{
+				GameHeapFree(iter->data);
+				iter->data = nullptr;
+			}
+		}
+		this->RemoveAll();
+	}
+};
+
 namespace FileFinder
 {
-	inline BSSimpleList<const char> FindFiles(const char* path, const char* renameDirectory, ARCHIVE_TYPE archiveType)
+	inline ScopedList<char> FindFiles(const char* path, const char* renameDirectory, ARCHIVE_TYPE archiveType)
 	{
-		BSSimpleList<const char> result;
-		CdeclCall<BSSimpleList<const char>*>(0xAFE420, path, renameDirectory, archiveType, &result);
+		ScopedList<char> result;
+		CdeclCall<ScopedList<char>*>(0xAFE420, path, renameDirectory, archiveType, &result);
 		return result;
 	}
 }

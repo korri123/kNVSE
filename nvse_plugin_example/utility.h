@@ -334,7 +334,7 @@ inline UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false
 	return *reinterpret_cast<UInt8**>(basePtr);
 }
 
-inline UInt32* __declspec(naked) GetLambdaAddrOfRetnAddr(void* addressOfReturnAddress)
+inline UInt32* GetLambdaAddrOfRetnAddr(void* addressOfReturnAddress)
 {
 #if _DEBUG
 	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;
@@ -342,6 +342,7 @@ inline UInt32* __declspec(naked) GetLambdaAddrOfRetnAddr(void* addressOfReturnAd
 	return reinterpret_cast<UInt32*>(basePtr + 4);
 #else
 	return static_cast<UInt32*>(addressOfReturnAddress);
+
 #endif
 }
 

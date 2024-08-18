@@ -213,7 +213,18 @@ inline void GameHeapFree(void* ptr)
 
 inline void GameHeapFreeArray(void* ptr)
 {
-	GameHeapFree((void**)ptr - 1);
+	if (ptr)
+		GameHeapFree((void**)ptr - 1);
+}
+
+template <typename T>
+T* GameHeapAllocArray(UInt32 numElems)
+{
+	const auto msize = sizeof(T) * numElems + sizeof(UInt32);
+	auto* arr = static_cast<UInt32*>(GameHeapAlloc(msize));
+	memset(arr, 0, msize);
+	*arr = numElems;
+	return reinterpret_cast<T*>(arr + 1);
 }
 
 #endif

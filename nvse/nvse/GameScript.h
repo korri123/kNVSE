@@ -29,7 +29,7 @@ public:
 
 	struct RefVariable
 	{
-		String	name;		// 000 variable name/editorID (not used at run-time)
+		BSString	name;		// 000 variable name/editorID (not used at run-time)
 		TESForm	* form;		// 008
 		UInt32	varIdx;		// 00C
 
@@ -242,7 +242,7 @@ struct ScriptBuffer
 	const char* scriptText;		// 000
 	UInt32			textOffset;			// 004 
 	RuntimeMode		runtimeMode;		// 008
-	String			scriptName;			// 00C
+	BSString			scriptName;			// 00C
 	UInt32			errorCode;			// 014
 	bool			partialScript;		// 018
 	UInt8			pad019[3];			// 019

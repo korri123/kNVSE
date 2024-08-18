@@ -244,7 +244,7 @@ public:
 	virtual void		Unk_21(void * arg);
 	virtual void		InitItem(void);
 	virtual UInt32		GetTypeID(void);
-	virtual void		GetDebugName(String * dst);
+	virtual void		GetDebugName(BSString * dst);
 	virtual bool		IsQuestItem(void);
 										// Unk_26 though Unk_36 get or set flag bits
 	virtual bool		Unk_26(void);		// 00000040
@@ -295,7 +295,7 @@ public:
 	// 4E
 
 	struct EditorData {
-		String		editorID;			// 00
+		BSString		editorID;			// 00
 		UInt32		vcMasterFormID;		// 08 - Version control 1 (looks to be a refID inside the Version Control master)
 		UInt32		vcRevision;			// 0C
 	};
@@ -397,7 +397,7 @@ public:
 	TESFullName();
 	~TESFullName();
 
-	String	name;		// 004
+	BSString	name;		// 004
 };
 
 // 00C
@@ -408,10 +408,10 @@ public:
 	~TESTexture();
 
 	virtual UInt32	Unk_04(void);
-	virtual void	GetNormalMap(String * str);
+	virtual void	GetNormalMap(BSString * str);
 	virtual char *	GetPathRoot(void);
 
-	String ddsPath;
+	BSString ddsPath;
 };
 
 // 00C
@@ -553,7 +553,7 @@ public:
 	{
 		UInt32 scriptRefID;
 		UInt32 school;
-		String effectName;
+		BSString effectName;
 		UInt32 visualEffectCode;
 		UInt32 isHostile;
 
@@ -702,7 +702,7 @@ public:
 	virtual char *	GetModelPath(void);
 	virtual void	SetModelPath(char * path);	// 06
 
-	String	nifPath;		// 04
+	BSString	nifPath;		// 04
 	UInt32	unk0C;			// 0C	referenced when saving Texture Hashes, init'd as a byte or is it a pointer to a structure starting with a byte followed by a pointer to some allocated data ?
 	void	* unk10;		// 10
 	UInt8	facegenFlags;	// 14
@@ -1456,7 +1456,7 @@ public:
 
 	virtual void	Set(const char * str);
 
-	String	path;	// 4
+	BSString	path;	// 4
 };
 
 // 4+
@@ -1498,7 +1498,7 @@ public:
 	};
 
 	UInt32			objectiveId;	// 004 Objective Index in the GECK
-	String			displayText;	// 008
+	BSString			displayText;	// 008
 	TESQuest*		quest;			// 010
 	tList<Target*>	targets;		// 014
 	UInt32			unk01C;			// 01C
@@ -1567,7 +1567,7 @@ public:
 	UInt32				unk040;			// 040	NiFormArray, contains all idle anims in path if eIFgf_flagUnknown is set
 	TESIdleForm			* parent;		// 044
 	TESIdleForm			* previous;		// 048
-	String				str04C;			// 04C
+	BSString				str04C;			// 04C
 };
 
 struct TESTopicInfoResponse
@@ -1585,7 +1585,7 @@ struct TESTopicInfoResponse
 	};
 
 	Data			data;					//	000
-	String			responseText;			//	018
+	BSString			responseText;			//	018
 	TESIdleForm	*	spkeakerAnimation;		//	020
 	TESIdleForm	*	listenerAnimation;		//	024
 	TESTopicInfoResponse	* next;			//	028
@@ -1613,7 +1613,7 @@ public:
 	UInt8				flags1;				// 25
 	UInt8				flags2;				// 26
 	UInt8				pad27;				// 27
-	String				prompt;				// 28
+	BSString				prompt;				// 28
 	tList<TESTopic*>	addTopics;			// 30
 	RelatedTopics	*	relatedTopics;		// 38
 	UInt32				speaker;			// 3C
@@ -1650,7 +1650,7 @@ public:
 	UInt8			pad26[2];		// 26
 	float			priority;		// 28	PNAM
 	tList<Info*>	infos;			// 2C
-	String			unk34;			// 34	TDUM
+	BSString			unk34;			// 34	TDUM
 	UInt16			unk3C;			// 3C	XIDX
 	UInt16			unk3E;			// 3E
 };
@@ -1744,7 +1744,7 @@ public:
 		kType_Float =	'f'
 	};
 
-	String	name;		// 18
+	BSString	name;		// 18
 	UInt8	type;		// 20
 	UInt8	pad21[3];	// 21
 	float	data;		// 24
@@ -1832,8 +1832,8 @@ public:
 	// 1C
 	struct Rank
 	{
-		String		name;		// 00
-		String		femaleName;	// 08
+		BSString		name;		// 00
+		BSString		femaleName;	// 08
 		TESTexture	insignia;	// 10 - effectively unused, can be set but there is no faction UI
 	};
 
@@ -2003,7 +2003,7 @@ public:
 
 	UInt32			unk4B8[(0x4CC - 0x4B8) >> 2]; // 4B8
 
-	String				name;				// 4CC
+	BSString				name;				// 4CC
 	NiTArray <void *>	faceGenUndo;		// 4D4 - NiTPrimitiveArray<FaceGenUndo *>
 
 	bool IsPlayable() const { return (raceFlags & kFlag_Playable) == kFlag_Playable; }
@@ -2281,7 +2281,7 @@ public:
 	TESSound*					radioTemplate;		// 7C	INAM
 	TESWaterForm*				waterType;			// 80	WNAM 
 	BGSTalkingActivator*		radioStation;		// 84	RNAM
-	String						activationPrompt;	// 88	XATO
+	BSString						activationPrompt;	// 88	XATO
 };
 
 STATIC_ASSERT(sizeof(TESObjectACTI) == 0x90);
@@ -2321,8 +2321,8 @@ public:
 
 	struct MenuEntry
 	{
-		String				entryText;
-		String				resultText;
+		BSString				entryText;
+		BSString				resultText;
 		UInt8				entryFlags;
 		BGSNote*			displayNote;
 		BGSTerminal*		subMenu;
@@ -2330,7 +2330,7 @@ public:
 		tList<Condition*>	conditions;	
 	};
 
-	String				desc;			// 090	DESC
+	BSString				desc;			// 090	DESC
 	tList<MenuEntry>	menuEntries;	// 098
 	BGSNote*			password;		// 0A0	PNAM
 	TermData			data;			// 0A4	DNAM
@@ -2928,8 +2928,8 @@ public:
 	float						weight;					// 0B8
 	TESObjectMISC				* casing;				// 0BC
 	float						ammoPercentConsumed;	// 0C0
-	String						shortName;				// 0C4
-	String						abbreviation;			// 0CC
+	BSString						shortName;				// 0C4
+	BSString						abbreviation;			// 0CC
 	tList<TESAmmoEffect>		effectList;				// 0D4
 
 	bool IsNonPlayable() { return (flags & kFlags_NonPlayable) == kFlags_NonPlayable; }
@@ -3383,7 +3383,7 @@ public:
 	TESRegionDataMap();
 	~TESRegionDataMap();
 
-	String	mapName;	// 08
+	BSString	mapName;	// 08
 };
 
 struct SoundType
@@ -3603,7 +3603,7 @@ public:
 	CoordXY				min;				// 0A0 confirmed NAM0 min of all Offset_Data.min
 	CoordXY				max;				// 0A8 confirmed NAM9 max of all Offset_data.max
 	OffsetDataMap		offsetMap;			// 0B0 guarded by an isESM
-	String				str0C0;				// 0C0
+	BSString				str0C0;				// 0C0
 	float				defaultLandHeight;	// 0C8 confirmed DNAM for the two
 	float				defaultWaterHeight;	// 0CC
 	BGSEncounterZone	* encounterZone;	// 0D0 confirmed	
@@ -3657,7 +3657,7 @@ struct VariableInfo
 	UInt8			type;		// 10
 	UInt8			pad11[3];	// 11
 	UInt32			unk14;		// 14
-	String			name;		// 18
+	BSString			name;		// 18
 };
 
 // TESQuest (6C)
@@ -3698,7 +3698,7 @@ public:
 	ScriptEventList*			scriptEventList;			// 05C
 	UInt8						currentStage;				// 060
 	UInt8						pad061[3];					// 061
-	String						editorName;					// 064
+	BSString						editorName;					// 064
 };
 
 STATIC_ASSERT(offsetof(TESQuest, flags) == 0x03C);
@@ -4056,10 +4056,10 @@ public:
 STATIC_ASSERT(sizeof(TESPackage) == 0x80);
 
 struct DialogueResponse {
-	String			responseText;	// 000
+	BSString			responseText;	// 000
 	UInt32			emotionType;	// 008
 	SInt32			emotionValue;	// 00C
-	String			voiceFileName;	// 010
+	BSString			voiceFileName;	// 010
 	TESIdleForm*	speakerIdle;	// 018	idle
 	TESIdleForm*	listenerIdle;	// 01C	idle
 	TESSound*		sound;			// 020
@@ -4618,7 +4618,7 @@ public:
 	BGSEntryPointFunctionDataActivateChoice();
 	~BGSEntryPointFunctionDataActivateChoice();
 
-	String				label;				// 04
+	BSString				label;				// 04
 	Script				*script;			// 0C
 	UInt32				flags;				// 10
 };
@@ -4690,11 +4690,11 @@ public:
 		kFlags_Absolute =		64,
 	};
 
-	String				partNode;				// 04
-	String				VATSTarget;				// 0C
-	String				startNode;				// 14
-	String				partName;				// 1C
-	String				targetBone;				// 24
+	BSString				partNode;				// 04
+	BSString				VATSTarget;				// 0C
+	BSString				startNode;				// 14
+	BSString				partName;				// 1C
+	BSString				targetBone;				// 24
 	TESModel			limbReplacement;		// 2C
 	UInt32				unk44[6];				// 44	Another model?
 	float				damageMult;				// 5C
@@ -4956,7 +4956,7 @@ public:
 	~BGSMessage();
 
 	struct Button {
-		String				buttonText;	// 000
+		BSString				buttonText;	// 000
 		tList<Condition>	condition;	// 008
 	};
 

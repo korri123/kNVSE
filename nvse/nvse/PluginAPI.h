@@ -403,13 +403,14 @@ struct NVSEArrayVarInterface
 		}
 
 		template<typename T>
-		requires std::is_same_v<T, std::string> ||
+		requires std::is_same_v<T, BSString> ||
+			std::is_same_v<T, std::string> ||
 			std::is_same_v<T, const char*> ||
 			std::is_same_v<T, Array*> ||
 			std::is_same_v<T, UInt32> ||
 			std::is_same_v<T, TESForm*> ||
 			std::is_same_v<T, double>
-		T Get() const {
+		T Get() {
 			if constexpr (std::is_same_v<T, const char*>)
 			{
 				return GetString();
@@ -429,6 +430,14 @@ struct NVSEArrayVarInterface
 			else if constexpr (std::is_same_v<T, double>)
 			{
 				return GetNumber();
+			}
+			else if constexpr (std::is_same_v<T, BSString>)
+			{
+				// we will handle the freeing
+				BSString result = this->str;
+				this->str = nullptr;
+				this->type = kType_Invalid;
+				return result;
 			}
 			else if constexpr (std::is_same_v<T, std::string>)
 			{

@@ -298,7 +298,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	if (!anim || !anim->animGroup)
 		return false;
 	auto applied = false;
-	std::span textKeys{ anim->m_spTextKeys->m_pKeys, anim->m_spTextKeys->m_uiNumKeys };
+	const auto textKeys = anim->m_spTextKeys->GetKeys();
 	auto* actor = animData->actor;
 	AnimTime* animTimePtr = nullptr;
 	const auto getAnimTimeStruct = [&]() -> AnimTime&
@@ -423,16 +423,15 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	{
 		auto& animTime = getAnimTimeStruct();
 
-		animTime.soundPathsBase = TimedExecution<Sound>(textKeys, [&](const char* key, Sound& result)
+		animTime.soundPathsBase = TimedExecution<Sounds>(textKeys, [&](const char* key, Sounds& result)
 		{
 			if (!StartsWith(key, "SoundPath:"))
 				return false;
 			const auto line = GetTextAfterColon(key);
 			if (line.empty())
 				return false;
-			const auto path = "Data\\Sound\\" + line;
-			result = Sound::InitByFilename(path.c_str());
-			if (!result.soundID)
+			result = Sounds(line);
+			if (result.failed)
 				return false;
 			return true;
 		});
@@ -929,7 +928,7 @@ bool RegisterCustomAnimGroupAnim(std::string_view path)
 	return false;
 }
 
-void SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
+bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 {
 	const auto condition = data.condition;
 	const auto path = data.path;
@@ -937,7 +936,7 @@ void SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	if (groupId == INVALID_FULL_GROUP_ID)
 	{
 		ERROR_LOG(FormatString("Failed to resolve file '%s'", path.data()));
-		return;
+		return false;
 	}
 	auto& animGroupMap = map[data.identifier];
 	auto& stacks = animGroupMap.stacks[groupId];
@@ -967,13 +966,14 @@ void SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	
 	if (!data.enable)
 	{
+		size_t numErased = 0;
 		// remove from stack
 		if (const auto it = ra::find_if(stack, findFn); it != stack.end())
 		{
-			std::erase_if(g_timeTrackedGroups, _L(auto& it2, it2.first.first == &**it));
+			numErased += std::erase_if(g_timeTrackedGroups, _L(auto& it2, it2.first.first == &**it));
 			stack.erase(it);
 		}
-		return;
+		return numErased != 0;
 	}
 	// check if stack already contains path
 	if (const auto iter = std::ranges::find_if(stack, findFn); iter != stack.end())
@@ -988,13 +988,13 @@ void SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		}
 		// move iter to the top of stack
 		std::rotate(iter, std::next(iter), stack.end());
-		return;
+		return true;
 	}
 
 	if (RegisterCustomAnimGroupAnim(path))
 	{
 		// we do not want to add custom anim group anims to the stack or otherwise they'll play
-		return;
+		return true;
 	}
 
 	// if not inserted before, treat as variant; else add to stack as separate set
@@ -1009,9 +1009,10 @@ void SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	anims.conditionScript = data.conditionScript;
 	anims.pollCondition = data.pollCondition;
 	anims.condition = condition;
+	return true;
 }
 
-void OverrideFormAnimation(AnimOverrideData& data, bool firstPerson)
+bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson)
 {
 	if (!data.identifier)
 	{
@@ -1019,13 +1020,13 @@ void OverrideFormAnimation(AnimOverrideData& data, bool firstPerson)
 		return OverrideModIndexAnimation(data, firstPerson);
 	}
 	auto& map = GetMap(firstPerson);
-	SetOverrideAnimation(data, map);
+	return SetOverrideAnimation(data, map);
 }
 
-void OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson)
+bool OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson)
 {
 	auto& map = GetModIndexMap(firstPerson);
-	SetOverrideAnimation(data, map);
+	return SetOverrideAnimation(data, map);
 }
 
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID)
@@ -1179,29 +1180,34 @@ void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)
 		LOG("\tGLOBALLY on any form");
 }
 
-BSSimpleList<const char> GetDirectoryAnimPaths(const char* path)
+ScopedList<char> GetDirectoryAnimPaths(char* path)
 {
-	if (!sv::get_file_extension(path).empty()) // single file
-	{
-		return { path };
-	}
 	const std::string searchPath = FormatString(R"(Data\Meshes\%s\*.kf)", path);
 	const std::string renamePath = FormatString("%s\\", path);
 	return FileFinder::FindFiles(searchPath.c_str(), renamePath.c_str(), ARCHIVE_TYPE_MESHES);
 }
 
 template <typename F>
-bool OverrideAnimsFromScript(const char* path, F&& overrideAnim)
+bool OverrideAnimsFromScript(char* path, const F& overrideAnim)
 {
 	if (g_animFileThread.joinable())
 		g_animFileThread.join();
 
+	if (!sv::get_file_extension(path).empty()) // single file
+		return overrideAnim(path);
+	
+	// directory
 	const auto animPaths = GetDirectoryAnimPaths(path);
+
+	if (animPaths.Empty())
+		return false;
+
+	size_t numAnims = 0;
 	for (const auto* animPath : animPaths)
 	{
-		overrideAnim(animPath);
+		numAnims += overrideAnim(animPath);
 	}
-	return true;
+	return numAnims != 0;
 }
 
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
@@ -1232,7 +1238,7 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 				.pollCondition = false,
 				.matchBaseGroupId = false
 			};
-			OverrideFormAnimation(animOverrideData, firstPerson);
+			return OverrideFormAnimation(animOverrideData, firstPerson);
 		};
 		*result = OverrideAnimsFromScript(path, overrideAnim);
 	}
@@ -1287,7 +1293,7 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 				.pollCondition = static_cast<bool>(pollCondition),
 				.matchBaseGroupId = static_cast<bool>(matchBaseGroupId)
 			};
-			OverrideFormAnimation(animOverrideData, static_cast<bool>(firstPerson));
+			return OverrideFormAnimation(animOverrideData, static_cast<bool>(firstPerson));
 		});
 	}
 	catch (std::exception& e)
@@ -1446,9 +1452,8 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 		NVSEArrayBuilder textKeyTimeBuilder;
 		NVSEArrayBuilder textKeyValueBuilder;
 
-		for (int i = 0; i < textKeyData->m_uiNumKeys; ++i)
+		for (const auto& key : textKeyData->GetKeys())
 		{
-			auto& key = textKeyData->m_pKeys[i];
 			textKeyTimeBuilder.Add(key.m_fTime);
 			textKeyValueBuilder.Add(key.m_kText.CStr());
 		}
@@ -1821,14 +1826,14 @@ void CreateCommands(NVSECommandBuilder& builder)
 			ERROR_LOG("SetAnimationTextKeys: animation not found");
 			return true;
 		}
-		if (anim->m_eState != kAnimState_Inactive)
+		if (anim->m_eState != NiControllerSequence::INACTIVE)
 		{
 			ERROR_LOG("SetAnimationKeys: you can not call this function while the animation is playing.");
 			return true;
 		}
 
 		const auto textKeyTimesVector= NVSEArrayToVector<double>(g_arrayVarInterface, textKeyTimesArray);
-		const auto textKeyValuesVector = NVSEArrayToVector<std::string>(g_arrayVarInterface, textKeyValuesArray);
+		const auto textKeyValuesVector = NVSEArrayToVector<BSString>(g_arrayVarInterface, textKeyValuesArray);
 
 		if (textKeyTimesVector.size() != textKeyValuesVector.size())
 		{
@@ -1841,47 +1846,33 @@ void CreateCommands(NVSECommandBuilder& builder)
 		{
 			const auto key = textKeyTimesVector.at(i);
 			const auto& value = textKeyValuesVector.at(i);
-			auto* newStr = GameFuncs::BSFixedString_CreateFromPool(value.c_str());
-			textKeyVector.emplace_back(key, NiFixedString(newStr));
+			textKeyVector.emplace_back(key, value.CStr());
 		}
 
-		const auto textKeySize = textKeyVector.size() * sizeof(NiTextKey);
-		auto* textKeys = AllocateNiArray<NiTextKey>(textKeyVector.size());
-		memcpy_s(textKeys, textKeySize, textKeyVector.data(), textKeySize);
-
-		auto* textKeyData = CdeclCall<NiTextKeyExtraData*>(0xA46B70); // NiTextKeyExtraData::Create
-
-		auto* oldTextKeyData = anim->m_spTextKeys;
-
-		textKeyData->m_uiNumKeys = textKeyVector.size();
-		textKeyData->m_pKeys = textKeys;
-
-		++oldTextKeyData->m_uiRefCount;
-		GameFuncs::NiRefObject_Replace(&anim->m_spTextKeys, textKeyData);
-
-		auto* oldAnimGroup = anim->animGroup;
-
+		NiFixedArray<NiTextKey> newKeyArray(textKeyVector);
+		
+		NiPointer oldAnimGroup = anim->animGroup;
 		const auto* animGroupInfo = oldAnimGroup->GetGroupInfo();
 
+		// let the game parse the text keys
+		auto oldKeyArray = std::move(anim->m_spTextKeys->m_kKeyArray);
+		anim->m_spTextKeys->m_kKeyArray = std::move(newKeyArray);
 		anim->animGroup = nullptr;
 		auto* oldSequenceName = anim->m_kName;
 		anim->m_kName = animGroupInfo->name; // yes, the game initially has the sequence name set to the anim group name
-		auto* animGroup = GameFuncs::InitAnimGroup(anim, kfModel->path);
+		NiPointer animGroup = TESAnimGroup::Init(anim, kfModel->path);
 		anim->m_kName = oldSequenceName;
 
 		if (!animGroup)
 		{
+			anim->m_spTextKeys->m_kKeyArray = std::move(oldKeyArray);
+			anim->animGroup = oldAnimGroup;
+			
 			ERROR_LOG("SetAnimationTextKeys: Game failed to parse text key data, see falloutnv_error.log");
-			GameFuncs::NiRefObject_Replace(&anim->m_spTextKeys, oldTextKeyData);
-			GameFuncs::NiRefObject_Replace(&anim->animGroup, oldAnimGroup);
 			*result = 0;
 			return true;
 		}
-
-
-		GameFuncs::NiRefObject_Replace(&anim->animGroup, animGroup);
-		GameFuncs::NiRefObject_DecRefCount_FreeIfZero(oldAnimGroup); // required since the replace above will replace null
-		GameFuncs::NiRefObject_DecRefCount_FreeIfZero(oldTextKeyData);
+		anim->animGroup = animGroup;
 		*result = 1;
 		return true;
 	}, Cmd_Expression_Plugin_Parse);
@@ -2450,22 +2441,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* textKeyData = anim->m_spTextKeys;
 		if (!textKeyData)
 			return true;
-		auto* newStr = GameFuncs::BSFixedString_CreateFromPool(textKey);
-
-		std::span _v(textKeyData->m_pKeys, textKeyData->m_uiNumKeys);
-		std::vector<NiTextKey> textKeys;
-		
-		textKeys.assign(_v.begin(), _v.end());
-		textKeys.emplace_back(time, NiFixedString(newStr));
-
-		const auto textKeySize = textKeys.size() * sizeof(NiTextKey);
-		auto* newTextKeys = AllocateNiArray<NiTextKey>(textKeys.size());
-
-		FormHeap_Free(textKeyData->m_pKeys);
-		memcpy_s(newTextKeys, textKeySize, textKeys.data(), textKeySize);
-
-		textKeyData->m_uiNumKeys = textKeys.size();
-		textKeyData->m_pKeys = newTextKeys;
+		textKeyData->AddKey(textKey, time);
 		*result = 1;
 		return true;
 	});
@@ -2483,23 +2459,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* textKeyData = anim->m_spTextKeys;
 		if (!textKeyData)
 			return true;
-		std::vector<NiTextKey> textKeys;
-		std::span _v(textKeyData->m_pKeys, textKeyData->m_uiNumKeys);
-		textKeys.assign(_v.begin(), _v.end());
-		if (index == -1)
-			index = textKeys.size() - 1;
-		if (index >= textKeys.size())
-			return true;
-		textKeys.erase(textKeys.begin() + index);
-		const auto textKeySize = textKeys.size() * sizeof(NiTextKey);
-		auto* newTextKeys = AllocateNiArray<NiTextKey>(textKeys.size());
-
-		FormHeap_Free(textKeyData->m_pKeys);
-		memcpy_s(newTextKeys, textKeySize, textKeys.data(), textKeySize);
-
-		textKeyData->m_uiNumKeys = textKeys.size();
-		textKeyData->m_pKeys = newTextKeys;
-		*result = 1;
+		*result = textKeyData->RemoveKey(index);
 		return true;
 	});
 

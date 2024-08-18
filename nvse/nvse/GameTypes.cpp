@@ -6,19 +6,56 @@
 
 /*** String ***/
 
-String::String() : m_data(NULL), m_dataLen(0), m_bufLen(0) {}
+BSString::BSString() : m_data(NULL), m_dataLen(0), m_bufLen(0) {}
 
-String::~String()
+BSString::BSString(char* str)
+{
+	this->m_data = str;
+	this->m_dataLen = strlen(str);
+	this->m_bufLen = this->m_dataLen + 1;
+}
+
+BSString::~BSString()
 {
 	if (m_data)
 	{
 		FormHeap_Free(m_data);
-		m_data = NULL;
+		m_data = nullptr;
 	}
 	m_bufLen = m_dataLen = 0;
 }
 
-bool String::Set(const char * src)
+BSString::BSString(BSString&& other) noexcept
+{
+	m_data = other.m_data;
+	m_dataLen = other.m_dataLen;
+	m_bufLen = other.m_bufLen;
+	other.m_data = nullptr;
+	other.m_dataLen = 0;
+	other.m_bufLen = 0;
+}
+
+BSString& BSString::operator=(BSString&& other) noexcept
+{
+	if (this != &other)
+	{
+		if (m_data)
+		{
+			FormHeap_Free(m_data);
+			m_data = nullptr;
+		}
+		m_bufLen = m_dataLen = 0;
+		m_data = other.m_data;
+		m_dataLen = other.m_dataLen;
+		m_bufLen = other.m_bufLen;
+		other.m_data = nullptr;
+		other.m_dataLen = 0;
+		other.m_bufLen = 0;
+	}
+	return *this;
+}
+
+bool BSString::Set(const char * src)
 {
 	if (!src) {
 		FormHeap_Free(m_data);
@@ -51,7 +88,7 @@ bool String::Set(const char * src)
 	return m_data != NULL;
 }
 
-bool String::Includes(const char *toFind) const
+bool BSString::Includes(const char *toFind) const
 {
 	if (!m_data || !toFind)		//passing null ptr to std::string c'tor = CRASH
 		return false;
@@ -61,7 +98,7 @@ bool String::Includes(const char *toFind) const
 	return (std::search(curr.begin(), currEnd, str2.begin(), str2.end(), ci_equal) != currEnd);
 }
 
-bool String::Replace(const char *_toReplace, const char *_replaceWith)
+bool BSString::Replace(const char *_toReplace, const char *_replaceWith)
 {
 	if (!m_data || !_toReplace)
 		return false;
@@ -83,7 +120,7 @@ bool String::Replace(const char *_toReplace, const char *_replaceWith)
 	return false;
 }
 
-bool String::Append(const char* toAppend)
+bool BSString::Append(const char* toAppend)
 {
 	std::string curr("");
 	if (m_data)
@@ -94,7 +131,7 @@ bool String::Append(const char* toAppend)
 	return true;
 }
 
-double String::Compare(const String& compareTo, bool caseSensitive)
+double BSString::Compare(const BSString& compareTo, bool caseSensitive)
 {
 	if (!m_data)
 		return -2;		//signal value if comparison could not be made
@@ -117,8 +154,8 @@ double String::Compare(const String& compareTo, bool caseSensitive)
 	return comp;
 }
 
-const char * String::CStr(void)
+const char* BSString::CStr(void) const
 {
 
-	return (m_data && m_dataLen) ? m_data : "";
+	return m_data ? m_data : "";
 }

@@ -140,6 +140,12 @@ NiTextKey* GetNextAttackAnimGroupTextKey(BSAnimGroupSequence* sequence)
 	return nullptr;
 }
 
+bool HasRespectEndKey(BSAnimGroupSequence* anim)
+{
+	return anim->m_spTextKeys->FindFirstByName("respectEndKey") || anim->m_spTextKeys->FindFirstByName(
+		"respectTextKeys");
+}
+
 void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
 {
 	if (!g_fixWrongAKeyInRespectEndKeyAnim || animData != g_thePlayer->firstPersonAnimData || !anim->animGroup || HasNoFixTextKey(anim))
@@ -150,7 +156,7 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 	const auto groupId = static_cast<AnimGroupID>(fullGroupId);
 	if (groupId < kAnimGroup_AttackLeft || groupId > kAnimGroup_Attack8)
 		return;
-	if (!anim->m_spTextKeys->FindFirstByName("respectEndKey") && !anim->m_spTextKeys->FindFirstByName("respectTextKeys"))
+	if (!HasRespectEndKey(anim))
 		return;
 	const auto nextAttackKey = GetNextAttackAnimGroupTextKey(anim);
 	if (!nextAttackKey)
@@ -241,31 +247,44 @@ void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)
 {
 	if (!g_fixWrongPrnKey || HasNoFixTextKey(anim))
 		return;
-	LogAnimError(anim, "Fixed malformed prn key in respectEndKey anim");
 	const auto* textKeys = anim->m_spTextKeys;
+	const auto groupId = anim->animGroup->GetBaseGroupID();
 	for (auto& key : textKeys->GetKeys())
 	{
 		if (std::string_view(key.m_kText.CStr()).starts_with("prn:"))
 		{
-			key.m_kText.Set("prn: Bip01 Translate");
+			LogAnimError(anim, FormatString("Prn key %s does not exist so it was replaced by Bip01 Translate", key.m_kText.CStr()));
+			if (groupId == kAnimGroup_Unequip)
+				key.m_kText = "prn: Bip01 Translate";
+			else if (groupId == kAnimGroup_Equip)
+				key.m_kText = "prn: Bip01 R Hand";
 			break;
 		}
 	}
 	anim->animGroup->parentRootNode = NiGlobalStringTable::AddString("Bip01 Translate");
 }
 
+const char* __fastcall WrongPrnKeyHook(BSAnimGroupSequence* anim)
+{
+	if (HasNoFixTextKey(anim) || !HasRespectEndKey(anim))
+		return anim->m_kName;
+
+	if (const auto groupId = anim->animGroup->GetBaseGroupID(); groupId != kAnimGroup_Unequip && groupId != kAnimGroup_Equip)
+		return anim->m_kName;
+
+	const std::string_view parentRootName(anim->animGroup->parentRootNode);
+	if (parentRootName == "Bip01 Translate" || parentRootName == "Bip01 R Hand")
+		return anim->m_kName; // didn't work so lets not create an infinite loop
+	
+	AnimFixes::FixWrongPrnKey(anim);
+	auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
+	*addrOfRetn = 0x923B7E; // try again now
+	return "";
+}
+
 void AnimFixes::ApplyHooks()
 {
-	return;
-	WriteRelCall(0x923BC6, INLINE_HOOK(const char*, __fastcall, BSAnimGroupSequence* anim)
-	{
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		if (std::string_view(anim->animGroup->parentRootNode) == "Bip01 Translate")
-			return anim->m_kName; // didn't work so lets not create an infinite loop
-		FixWrongPrnKey(anim);
-		*addrOfRetn = 0x923B7E; // try again now
-		return "";
-	}));
+	WriteRelCall(0x923BC6, &WrongPrnKeyHook);
 }
 
 void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)

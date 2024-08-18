@@ -17,18 +17,6 @@ inline void NIASSERT(bool condition)
 	}
 }
 
-template <typename T>
-T* AllocateNiArray(UInt32 numElems)
-{
-	const auto msize = sizeof(T) * numElems + sizeof(UInt32);
-	auto* arr = static_cast<UInt32*>(GameHeapAlloc(msize));
-#if _DEBUG
-	memset(arr, 0xCD, msize);
-#endif
-	*arr = numElems;
-	return reinterpret_cast<T*>(arr + 1);
-}
-
 // 8
 struct NiRTTI
 {

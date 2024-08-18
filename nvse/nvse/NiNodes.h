@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ranges>
 #include <span>
 
 #include "GameForms.h"
@@ -1762,25 +1763,129 @@ public:
 	void _Update(float fTime, bool bSelective);
 };
 
+class NiGlobalStringTable : public NiMemObject {
+public:
+	typedef char* GlobalStringHandle;
+
+	NiTArray<GlobalStringHandle>		m_kHashArray[512];
+	void*									unk2000[32];
+	NiCriticalSection						m_kCriticalSection;
+	void*									unk20A0[24];
+
+	static GlobalStringHandle AddString(const char* pcString)
+	{
+		return CdeclCall<GlobalStringHandle>(0xA5B690, pcString);
+	}
+
+	static void IncRefCount(GlobalStringHandle& arHandle)
+	{
+		if (!arHandle)
+			return;
+
+		InterlockedIncrement(reinterpret_cast<size_t*>(GetRealBufferStart(arHandle)));
+	}
+	
+	static void DecRefCount(GlobalStringHandle& arHandle)
+	{
+		if (!arHandle)
+			return;
+
+		InterlockedDecrement(reinterpret_cast<size_t*>(GetRealBufferStart(arHandle)));
+	}
+	static UInt32 GetLength(const GlobalStringHandle& arHandle)
+	{
+		if (!arHandle)
+			return 0;
+
+		return GetRealBufferStart(arHandle)[1];
+	}
+
+	static char* GetRealBufferStart(const GlobalStringHandle& arHandle)
+	{
+		return static_cast<char*>(arHandle) - 2 * sizeof(size_t);
+	}
+};
+ASSERT_SIZE(NiGlobalStringTable, 0x2100);
+
+
 struct NiFixedString
 {
-private:
-	const char* data;
-public:
+	char* data;
+
+	NiFixedString()
+		: data(nullptr)
+	{
+	}
+
+	NiFixedString(const NiFixedString& other)
+		: data(other.data)
+	{
+		if (data)
+			NiGlobalStringTable::IncRefCount(data);
+	}
+
+	NiFixedString& operator=(const NiFixedString& other)
+	{
+		if (data)
+			NiGlobalStringTable::DecRefCount(data);
+		data = other.data;
+		if (data)
+			NiGlobalStringTable::IncRefCount(data);
+		return *this;
+	}
+
+	NiFixedString(NiFixedString&& other) noexcept
+		: data(other.data)
+	{
+		other.data = nullptr;
+	}
+
+	~NiFixedString()
+	{
+		if (data)
+			NiGlobalStringTable::DecRefCount(data);
+	}
+	
 	const char* CStr() const
 	{
 		return data;
 	}
 
-	explicit NiFixedString(const char* data)
-		: data(data)
+	NiFixedString(const char* data)
 	{
+		if (data)
+			this->data = NiGlobalStringTable::AddString(data);
+		else
+			this->data = nullptr;
 	}
 
 	void Set(const char* newString)
 	{
-		ThisStdCall(0xA2E750, this, newString);
+		if (data == newString)
+			return;
+		if (data)
+			NiGlobalStringTable::DecRefCount(data);
+		data = NiGlobalStringTable::AddString(newString);
 	}
+
+	operator char*() const
+	{
+		return data;
+	}
+
+	std::string_view Str() const
+	{
+		return data ? data : "";
+	}
+
+	// assignment operator
+	NiFixedString& operator=(const char* newString)
+	{
+		Set(newString);
+		return *this;
+	}
+
+
 };
 
 
@@ -1948,7 +2053,7 @@ public:
 	BSAnimGroupSequence();
 	~BSAnimGroupSequence();
 
-	TESAnimGroup		* animGroup;	//068
+	NiPointer<TESAnimGroup> animGroup;	//068
 
 	BSAnimGroupSequence* Get3rdPersonCounterpart() const;
 };
@@ -2405,6 +2510,11 @@ public:
 	{
 		return AnimGroup::GetMoveType(groupID);
 	}
+
+	static TESAnimGroup* Init(BSAnimGroupSequence* sequence, const char* path)
+	{
+		return CdeclCall<TESAnimGroup*>(0x5F3A20, sequence, path);
+	}
 };
 STATIC_ASSERT(sizeof(TESAnimGroup) == 0x3C);
 
@@ -2622,6 +2732,11 @@ public:
 		  m_kText(mKText)
 	{
 	}
+
+	void SetText(const char* text)
+	{
+		m_kText = text;
+	}
 };
 
 
@@ -2629,19 +2744,110 @@ class NiExtraData : public NiObject
 {
 public:
 	NiFixedString m_kName;
+};
 
+template <typename T>
+class NiFixedArray
+{
+public:
+	unsigned int m_uiNumItems;
+	T* m_pData;
 
+	NiFixedArray()
+		: m_uiNumItems(0),
+		  m_pData(nullptr)
+	{
+	}
+
+	template <std::ranges::input_range R>
+	NiFixedArray(const R& range)
+		: m_uiNumItems(std::ranges::size(range)),
+		  m_pData(GameHeapAllocArray<T>(m_uiNumItems))
+	{
+		std::ranges::copy(range, m_pData);
+	}
+
+	NiFixedArray(const NiFixedArray& other)
+			: m_uiNumItems(other.m_uiNumItems),
+			  m_pData(GameHeapAllocArray<T>(other.m_uiNumItems))
+	{
+		std::ranges::copy(other.GetItems(), m_pData);
+	}
+
+	NiFixedArray(NiFixedArray&& other) noexcept
+		: m_uiNumItems(other.m_uiNumItems),
+		  m_pData(other.m_pData)
+	{
+		other.m_uiNumItems = 0;
+		other.m_pData = nullptr;
+	}
+
+	NiFixedArray& operator=(const NiFixedArray& other)
+	{
+		if (this == &other)
+			return *this;
+
+		for (auto& item : GetItems())
+			item.~T();
+		GameHeapFreeArray(m_pData);
+
+		m_uiNumItems = other.m_uiNumItems;
+		m_pData = GameHeapAllocArray<T>(other.m_uiNumItems);
+		std::ranges::copy(other.GetItems(), GetItems());
+		return *this;
+	}
+
+	NiFixedArray& operator=(NiFixedArray&& other) noexcept
+	{
+		if (this == &other)
+			return *this;
+
+		DeleteAll();
+
+		m_uiNumItems = other.m_uiNumItems;
+		m_pData = other.m_pData;
+		other.m_uiNumItems = 0;
+		other.m_pData = nullptr;
+		return *this;
+	}
+
+	void DeleteAll()
+	{
+		for (auto& item : GetItems())
+			item.~T();
+		GameHeapFreeArray(m_pData);
+		m_uiNumItems = 0;
+	}
+
+	~NiFixedArray()
+	{
+		DeleteAll();
+	}
+
+	std::span<T> GetItems() const
+	{
+		return { m_pData, m_uiNumItems };
+	}
+
+	std::vector<T> ToVector() const
+	{
+		return std::vector(m_pData, m_pData + m_uiNumItems);
+	}
+
+	operator std::span<T>() const
+	{
+		return GetItems();
+	}
 };
 
 class NiTextKeyExtraData : public NiExtraData
 {
 public:
-	unsigned int m_uiNumKeys;
-	NiTextKey* m_pKeys;
+	NiFixedArray<NiTextKey> m_kKeyArray;
 
-	NiTextKey* FindFirstByName(const char* name)
+	NiTextKey* FindFirstByName(const char* name) const
 	{
-		std::span keys(m_pKeys, m_uiNumKeys);
+		const auto keys = GetKeys();
 		auto it = std::ranges::find_if(keys, [name](const NiTextKey& key) {
 			return _stricmp(key.m_kText.CStr(), name) == 0;
 		});
@@ -2650,65 +2856,40 @@ public:
 
 	std::span<NiTextKey> GetKeys() const
 	{
-		return { m_pKeys, m_uiNumKeys };
+		return m_kKeyArray.GetItems();
 	}
 
 	std::vector<NiTextKey> ToVector() const
 	{
-		return std::vector(m_pKeys, m_pKeys + m_uiNumKeys);
+		return m_kKeyArray.ToVector();
 	}
-	
-	void SetKeys(const std::vector<NiTextKey>& keys)
+
+	template <std::ranges::input_range R>
+	void SetKeys(const R& keys)
 	{
-		auto* newKeys = AllocateNiArray<NiTextKey>(keys.size());
-		std::ranges::copy(keys, newKeys);
-		GameHeapFreeArray(m_pKeys);
-		m_pKeys = newKeys;
-		m_uiNumKeys = keys.size();
+		m_kKeyArray = keys;
 	}
+
+	void AddKey(const char* name, float time)
+	{
+		auto vec = ToVector();
+		vec.push_back(NiTextKey(time, name));
+		m_kKeyArray = vec;
+	}
+
+	bool RemoveKey(size_t index)
+	{
+		if (index >= m_kKeyArray.GetItems().size())
+			return false;
+		m_kKeyArray = ToVector() | std::views::drop(index) | std::ranges::to<std::vector>();
+		return true;
+	}
+
+	operator std::span<NiTextKey>() const
+	{
+		return m_kKeyArray;
+	}
+
 };
 static_assert(sizeof(NiTextKeyExtraData) == 0x14);
 
-class NiGlobalStringTable : public NiMemObject {
-public:
-	typedef char* GlobalStringHandle;
-
-	NiTArray<GlobalStringHandle>		m_kHashArray[512];
-	void*									unk2000[32];
-	NiCriticalSection						m_kCriticalSection;
-	void*									unk20A0[24];
-
-	static GlobalStringHandle AddString(const char* pcString)
-	{
-		return CdeclCall<GlobalStringHandle>(0xA5B690, pcString);
-	}
-
-	static void IncRefCount(GlobalStringHandle& arHandle)
-	{
-		if (!arHandle)
-			return;
-
-		InterlockedIncrement(reinterpret_cast<size_t*>(GetRealBufferStart(arHandle)));
-	}
-	
-	static void DecRefCount(GlobalStringHandle& arHandle)
-	{
-		if (!arHandle)
-			return;
-
-		InterlockedDecrement(reinterpret_cast<size_t*>(GetRealBufferStart(arHandle)));
-	}
-	static UInt32 GetLength(const GlobalStringHandle& arHandle)
-	{
-		if (!arHandle)
-			return 0;
-
-		return GetRealBufferStart(arHandle)[1];
-	}
-
-	static char* GetRealBufferStart(const GlobalStringHandle& arHandle)
-	{
-		return static_cast<char*>(arHandle) - 2 * sizeof(size_t);
-	}
-};
-ASSERT_SIZE(NiGlobalStringTable, 0x2100);

@@ -685,41 +685,12 @@ void ApplyHooks()
 		return NiControllerSequence::kCycle_Loop;
 	}));
 
-	// PlayerMover::SetMovementFlags
-	WriteRelCall(0x9EA43E, INLINE_HOOK(void, __cdecl)
-	{
-		auto* addressOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		auto* _ebp = GetParentBasePtr(addressOfRetn);
-		auto moveFlags = *reinterpret_cast<UInt32*>(_ebp + 0x8);
-		if (const auto result = InterceptSetPlayerMoveFlags::Dispatch(moveFlags))
-		{
-			moveFlags = *result;	
-		}
-		auto* playerMover = static_cast<PlayerMover*>(g_thePlayer->actorMover);
-		playerMover->pcMovementFlags = moveFlags;
-		*addressOfRetn = 0x9EA444;
-	}));
-	PatchMemoryNop(0x9EA43E + 5, 1);
-
-	// PlayerMover::HandleTurnAnimationTimer
-	WriteRelCall(0x9EA353, INLINE_HOOK(void, __fastcall, PlayerMover* mover)
-	{
-		auto* addressOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		if (const auto result = InterceptTurnAnims::Dispatch(); !result || !*result)
-		{
-			// vanilla code
-			mover->pcMovementFlags |= mover->isTurnLeftOrRight;
-		}
-		*addressOfRetn = 0x9EA359;
-	}));
-	PatchMemoryNop(0x9EA353 + 5, 1);
-
 #if 0
 	// AnimData::GetNthSequenceGroupID(animData, sequenceType_1);
 	// Fix issue where new movement anim is played during equip or unequip
 	WriteRelCall(0x897237, INLINE_HOOK(UInt16, __fastcall, AnimData* animData, void*, eAnimSequence sequenceType)
 	{
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr();
 		auto* _ebp = GetParentBasePtr(addrOfRetn);
 		const auto groupId = animData->groupIDs[sequenceType];
 		const auto nextGroupId = *reinterpret_cast<UInt16*>(_ebp - 0x24);

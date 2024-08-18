@@ -114,7 +114,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
     apDestSequence->m_fOffset = -NI_INFINITY;
     return apDestSequence;
   }
-  const auto* pCurrentAnimGroup = pCurrentSequence ? pCurrentSequence->animGroup : nullptr;
+  TESAnimGroup* pCurrentAnimGroup = pCurrentSequence ? pCurrentSequence->animGroup : nullptr;
   if ( !InterfaceManager::IsMenuMode()
     || this->nSceneRoot != pPlayer->GetNode(false)
     || VATSCameraData::GetSingleton()->eMode != VATSCameraData::VATS_MODE_NONE )
@@ -174,7 +174,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
   }
   this->groupIDs[eSequenceType] = usAnimGroup;
   this->animSequence[eSequenceType] = apDestSequence;
-  const auto* pDestAnimGroup = apDestSequence->animGroup;
+  const TESAnimGroup* pDestAnimGroup = apDestSequence->animGroup;
   if ( (!InterfaceManager::IsMenuMode()
     || this->nSceneRoot != pPlayer->GetNode(false)) && pCurrentSequence )
   {

@@ -27,40 +27,6 @@ public:
 };
 ASSERT_SIZE(BSHash, 0x8);
 
-template <typename T>
-class BSStringT : BSMemObject
-{
-public:
-	BSStringT() = default;
-	BSStringT(const T* apText) { Set(apText); }
-	BSStringT(const BSStringT& aSrc) { Set(aSrc.CStr()); }
-	~BSStringT();
-
-	T* pString = 0;
-	UInt16 sLen = 0;
-	UInt16 sMaxLen = 0;
-
-	UInt32 GetLength() const;
-	void SetLength(UInt32 auiLen);
-	UInt16 GetMaxLength() const { return sMaxLen; }
-	void SetMaxLength(UInt16 auiLen) { sMaxLen = auiLen; }
-
-	bool Set(const T* apText, UInt32 auiLength = 0);
-	BSStringT* operator+=(const T* apText);
-
-	void Format(const T* fmt, ...);
-	void ApplyFormat(const T* fmt, va_list args);
-
-	bool Includes(const char* toFind) const;
-	bool Replace(const char* toReplace, const char* replaceWith); // replaces instance of toReplace with replaceWith
-	double Compare(const BSStringT& compareTo, bool caseSensitive = false) const;
-
-	const T* CStr() const;
-};
-
-typedef BSStringT<char>		BSString;
-typedef BSStringT<wchar_t>	BSWideString;
-
 class BSFileEntry : public BSHash {
 public:
 	UInt32 iSize;
@@ -319,4 +285,3 @@ public:
 	}
 };
 
-#include "bethesda_types.inl"

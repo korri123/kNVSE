@@ -801,7 +801,7 @@ public:
 		};
 
 		struct TextReplaced {
-			String	str000;	// 000	Init'd to ""
+			BSString	str000;	// 000	Init'd to ""
 			UInt32	unk008;	// 008	Init'd to arg1
 			UInt32	unk00C;	// 00C	Init'd to arg2
 			UInt32	unk010;	// 010	Init'd to arg3
