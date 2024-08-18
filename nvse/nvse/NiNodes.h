@@ -2737,6 +2737,11 @@ public:
 	{
 		m_kText = text;
 	}
+
+	void SetTime(float time)
+	{
+		m_fTime = time;
+	}
 };
 
 
@@ -2870,11 +2875,12 @@ public:
 		m_kKeyArray = keys;
 	}
 
-	void AddKey(const char* name, float time)
+	NiTextKey* AddKey(const char* name, float time)
 	{
 		auto vec = ToVector();
 		vec.push_back(NiTextKey(time, name));
 		m_kKeyArray = vec;
+		return &m_kKeyArray.GetItems().back();
 	}
 
 	bool RemoveKey(size_t index)

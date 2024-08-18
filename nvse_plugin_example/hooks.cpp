@@ -16,7 +16,6 @@
 #include "nihooks.h"
 #include "blend_fixes.h"
 #include "knvse_events.h"
-#include "decompiled/AnimDataHooks.h"
 
 #define CALL_EAX(addr) __asm mov eax, addr __asm call eax
 #define JMP_EAX(addr)  __asm mov eax, addr __asm jmp eax
@@ -634,9 +633,14 @@ void ApplyHooks()
 		void*, NiControllerSequence* seq, float fDuration, float fDestFrame, int iPriority,
 		float fSourceWeight, float fDestWeight, NiControllerSequence *pkTimeSyncSeq)
 	{
-		if (fDestFrame == 0.0f && seq->m_fDestFrame != -NI_INFINITY)
+		if (fDestFrame == 0.0f)
 		{
-			fDestFrame = seq->m_fDestFrame;
+			auto* destFrameKey = seq->m_spTextKeys->FindFirstByName("fDestFrame");
+			if (destFrameKey && destFrameKey->m_fTime != -NI_INFINITY)
+			{
+				fDestFrame = destFrameKey->m_fTime;
+				destFrameKey->SetTime(-NI_INFINITY);
+			}
 		}
 		return ThisStdCall<bool>(0xA350D0, tempSeq, seq, fDuration, fDestFrame, iPriority, fSourceWeight, fDestWeight, pkTimeSyncSeq);
 	}));

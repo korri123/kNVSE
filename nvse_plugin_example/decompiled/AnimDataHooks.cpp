@@ -36,7 +36,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
 {
 #ifndef _DEBUG
   return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, this, apDestSequence, usAnimGroup, aSequenceType);
-#endif
+#else
   
   const auto* pPlayer = PlayerCharacter::GetSingleton();
   
@@ -310,6 +310,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
   }
   this->sequenceState1[eSequenceType] = 0;
   return apDestSequence;
+#endif
 }
 
 void AnimDataHooks::WriteHooks()

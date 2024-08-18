@@ -2532,7 +2532,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindOrLoadAnim(actor, animPath, firstPerson);
 		if (!anim)
 			return true;
-		anim->m_fDestFrame = destFrame;
+		auto* destFrameKey = anim->m_spTextKeys->FindFirstByName("fDestFrame");
+		if (!destFrameKey)
+			anim->m_spTextKeys->AddKey("fDestFrame", destFrame);
+		else
+			destFrameKey->SetTime(destFrame);
 		*result = 1;
 		return true;
 	});
