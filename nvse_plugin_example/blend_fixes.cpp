@@ -176,7 +176,7 @@ float CalculateTransitionBlendTime(AnimData* animData, BSAnimGroupSequence* src,
 	auto* weaponNode = sceneRoot->GetBlock(blockName);
 	if (!weaponNode)
 		return blend;
-	const auto& weaponPoint = weaponNode->m_kWorld.m_Translate;
+	const auto& weaponPoint = weaponNode->m_kLocal.m_Translate;
 	auto* srcInterpItem = src->GetControlledBlock(blockName);
 	auto* destInterpItem = dst->GetControlledBlock(blockName);
 	if (!srcInterpItem || !destInterpItem)
@@ -273,8 +273,6 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	ManageTempBlendSequence(destAnim);
 	
 	SetCurrentSequence(animData, destAnim, true);
-	if (animData != g_thePlayer->firstPersonAnimData)
-		Console_Print("AimBlendFix: %s -> %s (%.4f)", srcAnim->animGroup->GetGroupInfo()->name, destAnim->animGroup->GetGroupInfo()->name, blend);
 #else
 	auto currentAnimTime = GetAnimTime(animData, srcAnim);
 	auto blend = GetIniBlend();
@@ -314,13 +312,13 @@ void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGrou
 	if (!targetSequence || !currentSequence || !currentSequence->animGroup)
 		return;
 	const auto blend = GetIniBlend();
-	const auto currentTime = GetAnimTime(animData, currentSequence);
+	const auto currentTime = currentSequence->m_fLastScaledTime;
 #if USE_BLEND_FROM_POSE
-	if (targetSequence->m_eState != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(targetSequence->m_pkOwner, targetSequence, 0.0f);
-	GameFuncs::BlendFromPose(targetSequence->m_pkOwner, targetSequence, currentTime, blend, 0, nullptr);
-	if (currentSequence->m_eState != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(currentSequence->m_pkOwner, currentSequence, 0.0f);
+	if (targetSequence->m_eState != NiControllerSequence::INACTIVE)
+		targetSequence->m_pkOwner->DeactivateSequence(targetSequence, 0.0f);
+	targetSequence->m_pkOwner->BlendFromPose(targetSequence, currentTime, blend, 0, nullptr);
+	if (currentSequence->m_eState != NiControllerSequence::INACTIVE)
+		targetSequence->m_pkOwner->DeactivateSequence(currentSequence, 0.0f);
 #else
 	if (attackISSequence->state != kAnimState_Inactive)
 		GameFuncs::DeactivateSequence(attackISSequence->owner, attackISSequence, blend);
