@@ -72,9 +72,14 @@
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="LambdaVariableContext.cpp" />
     <ClCompile Include="nihooks.cpp" />
-    <ClCompile Include="spine_snap.cpp">
-      <Filter>bug_fixes</Filter>
-    </ClCompile>
+    <ClCompile Include="..\nvse\nvse\NiTypes.cpp" />
+    <ClCompile Include="anim_fixes.cpp" />
+    <ClCompile Include="bethesda\archive.cpp" />
+    <ClCompile Include="bethesda\bsfile.cpp" />
+    <ClCompile Include="commands_misc.cpp" />
+    <ClCompile Include="decompiled\AnimDataHooks.cpp" />
+    <ClCompile Include="knvse_events.cpp" />
+    <ClCompile Include="blend_fixes.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">
@@ -141,7 +146,6 @@
     </ClInclude>
     <ClInclude Include="utility.h" />
     <ClInclude Include="file_animations.h" />
-    <ClInclude Include="json.h" />
     <ClInclude Include="game_types.h" />
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="stack_allocator.h" />
@@ -161,9 +165,18 @@
     <ClInclude Include="LambdaVariableContext.h" />
     <ClInclude Include="nihooks.h" />
     <ClInclude Include="class_vtbls.h" />
-    <ClInclude Include="spine_snap.h">
-      <Filter>bug_fixes</Filter>
-    </ClInclude>
+    <ClInclude Include="anim_fixes.h" />
+    <ClInclude Include="bethesda\bethesda_types.h" />
+    <ClInclude Include="commands_misc.h" />
+    <ClInclude Include="decompiled\AnimDataHooks.h" />
+    <ClInclude Include="knvse_events.h" />
+    <ClInclude Include="lib\clipboard\clipboardxx.hpp" />
+    <ClInclude Include="lib\clipboard\detail\exception.hpp" />
+    <ClInclude Include="lib\clipboard\detail\interface.hpp" />
+    <ClInclude Include="lib\clipboard\detail\windows.hpp" />
+    <ClInclude Include="lib\json\json.h" />
+    <ClInclude Include="blend_fixes.h" />
+    <ClInclude Include="string_view_util.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

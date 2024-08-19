@@ -723,7 +723,6 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* a
 	// wait for file loading to finish
 	if (g_animFileThread.joinable())
 		g_animFileThread.join();
-	ScopedLock lock(g_getActorAnimationCS);
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
 	auto [cache, isNew] = g_animationResultCache.emplace(std::make_pair(animGroupId, animData), std::nullopt);
@@ -966,14 +965,15 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	
 	if (!data.enable)
 	{
-		size_t numErased = 0;
+		bool erased = false;
 		// remove from stack
 		if (const auto it = ra::find_if(stack, findFn); it != stack.end())
 		{
-			numErased += std::erase_if(g_timeTrackedGroups, _L(auto& it2, it2.first.first == &**it));
+			std::erase_if(g_timeTrackedGroups, _L(auto& it2, it2.first.first == &**it));
 			stack.erase(it);
+			erased = true;
 		}
-		return numErased != 0;
+		return erased;
 	}
 	// check if stack already contains path
 	if (const auto iter = std::ranges::find_if(stack, findFn); iter != stack.end())

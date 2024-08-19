@@ -323,10 +323,10 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
 
-	if (animData->actor && LookupAnimFromMap(groupId, base, animData))
+	if ((*base = animMap->Lookup(groupId)))
 		return true;
 
-	if ((*base = animMap->Lookup(groupId)))
+	if (animData->actor && LookupAnimFromMap(groupId, base, animData))
 		return true;
 
 	return false;

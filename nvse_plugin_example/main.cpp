@@ -161,8 +161,7 @@ void HandleAnimTimes()
 	{
 		return !actor || actor->IsDying(true) || actor->IsDeleted() || !actor->baseProcess;
 	};
-	const auto timeTrackedAnims = std::map(g_timeTrackedAnims);
-	for (const auto& timeTrackedAnim : timeTrackedAnims)
+	for (const auto& timeTrackedAnim : g_timeTrackedAnims)
 	{
 		auto& animTime = *timeTrackedAnim.second;
 		auto* anim = animTime.anim;
@@ -311,8 +310,7 @@ void HandleAnimTimes()
 		}
 	}
 
-	const auto timeTrackedGroups = std::map(g_timeTrackedGroups); // copy to avoid iterator invalidation
-	for (auto& timeTrackedGroup : timeTrackedGroups)
+	for (auto& timeTrackedGroup : g_timeTrackedGroups)
 	{
 		const auto erase = [&]
 		{
