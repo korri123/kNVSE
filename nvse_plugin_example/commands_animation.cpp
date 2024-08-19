@@ -265,10 +265,8 @@ AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
 
 std::list<BurstFireData> g_burstFireQueue;
 
-std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
-
-
-std::map<std::pair<SavedAnims*, AnimData*>, std::shared_ptr<SavedAnimsTime>> g_timeTrackedGroups;
+TimeTrackedAnimsMap g_timeTrackedAnims;
+TimeTrackedGroupsMap g_timeTrackedGroups;
 
 enum class KeyCheckType
 {

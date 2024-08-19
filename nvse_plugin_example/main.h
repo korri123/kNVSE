@@ -48,4 +48,39 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 		NVSEArrayVarInterface::Element* result);
 
 
+struct ScriptPairHash {
+	std::size_t operator()(const std::pair<TESObjectREFR*, Script*>& pair) const {
+		std::size_t h1 = std::hash<TESObjectREFR*>{}(pair.first);
+		std::size_t h2 = 0;
 
+		if (pair.second && pair.second->data) {
+			// Hash for Script* part
+			h2 = std::hash<void*>{}(pair.second->data);
+			h2 ^= std::hash<UInt32>{}(pair.second->info.dataLength) + 0x9e3779b9 + (h2 << 6) + (h2 >> 2);
+		}
+
+		// Combine hashes
+		return h1 ^ (h2 << 1);
+	}
+};
+
+struct ScriptPairEqual {
+	bool operator()(const std::pair<TESObjectREFR*, Script*>& lhs, 
+					const std::pair<TESObjectREFR*, Script*>& rhs) const {
+		// Check TESObjectREFR* equality
+		if (lhs.first != rhs.first) return false;
+
+		// Check Script* equality
+		if (lhs.second == rhs.second) return true;
+		if (!lhs.second || !rhs.second) return false;
+		if (lhs.second->info.dataLength != rhs.second->info.dataLength) return false;
+		if (!lhs.second->data || !rhs.second->data) return false;
+		
+		// Compare the actual data content of Script
+		return std::memcmp(lhs.second->data, rhs.second->data, lhs.second->info.dataLength) == 0;
+	}
+};
+
+
+using ScriptCache = std::unordered_map<std::pair<TESObjectREFR*, Script*>, NVSEArrayVarInterface::Element, ScriptPairHash, ScriptPairEqual>;
+extern ScriptCache g_scriptCache;

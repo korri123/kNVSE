@@ -264,22 +264,22 @@ void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)
 	anim->animGroup->parentRootNode = NiGlobalStringTable::AddString("Bip01 Translate");
 }
 
-const char* __fastcall WrongPrnKeyHook(BSAnimGroupSequence* anim)
+const char** __fastcall WrongPrnKeyHook(BSAnimGroupSequence* anim)
 {
 	if (HasNoFixTextKey(anim) || !HasRespectEndKey(anim))
-		return anim->m_kName;
+		return &anim->m_kName;
 
 	if (const auto groupId = anim->animGroup->GetBaseGroupID(); groupId != kAnimGroup_Unequip && groupId != kAnimGroup_Equip)
-		return anim->m_kName;
+		return &anim->m_kName;
 
 	const std::string_view parentRootName(anim->animGroup->parentRootNode);
 	if (parentRootName == "Bip01 Translate" || parentRootName == "Bip01 R Hand")
-		return anim->m_kName; // didn't work so lets not create an infinite loop
+		return &anim->m_kName; // didn't work so lets not create an infinite loop
 	
 	AnimFixes::FixWrongPrnKey(anim);
 	auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
 	*addrOfRetn = 0x923B7E; // try again now
-	return "";
+	return &anim->m_kName;
 }
 
 void AnimFixes::ApplyHooks()

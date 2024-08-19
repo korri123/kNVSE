@@ -191,6 +191,7 @@ public:
 		bool End() const { return !m_curr || (!m_curr->data && !m_curr->next); }
 		Item* operator->() const { return m_curr->data; }
 		Item*& operator*() const { return m_curr->data; }
+		
 		const Iterator& operator=(const Iterator& rhs)
 		{
 			m_curr = rhs.m_curr;
@@ -209,15 +210,15 @@ public:
 
 		bool operator!=(const Iterator& other) const
 		{
-			return m_curr != other.m_curr;
+			return !this->End() && other.End();
 		}
 
 		bool operator!=(Iterator&& other) const
 		{
-			return m_curr != other.m_curr;
+			return !this->End() && other.End();
 		}
 
-		Iterator(_Node* node = NULL) : m_curr(node) {}
+		Iterator(_Node* node) : m_curr(node) {}
 		Iterator(tList& _list) : m_curr(&_list.m_listHead) {}
 		Iterator(tList* _list) : m_curr(&_list->m_listHead) {}
 		Iterator(tList& _list, Item* _item) : m_curr(&_list.m_listHead) { Find(_item); }

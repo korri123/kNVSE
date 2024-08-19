@@ -71,16 +71,30 @@ float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 	return anim->m_fOffset + animData->timePassed;
 }
 
+ScriptCache g_scriptCache;
+int g_cacheHits = 0;
+int g_cacheMisses = 0;
+
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 	NVSEArrayVarInterface::Element* result)
 {
-	return g_script->CallFunction(
+	auto [it, isNew] = g_scriptCache.emplace(std::make_pair(std::make_pair(callingObj, funcScript), NVSEArrayVarInterface::Element{}));
+	if (!isNew)
+	{
+		//++g_cacheHits;
+		*result = it->second;
+		return true;
+	}
+	//++g_cacheMisses;
+	const auto success = g_script->CallFunction(
 		funcScript,
 		callingObj,
 		container,
 		result,
 		0
 	);
+	it->second = *result;
+	return success;
 }
 
 bool g_fixHolster = false;
@@ -161,9 +175,9 @@ void HandleAnimTimes()
 	{
 		return !actor || actor->IsDying(true) || actor->IsDeleted() || !actor->baseProcess;
 	};
-	for (const auto& timeTrackedAnim : g_timeTrackedAnims)
+	for (auto it = g_timeTrackedAnims.begin(); it != g_timeTrackedAnims.end();)
 	{
-		auto& animTime = *timeTrackedAnim.second;
+		auto& animTime = *it->second;
 		auto* anim = animTime.anim;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
 
@@ -176,7 +190,7 @@ void HandleAnimTimes()
 					g_script->CallFunctionAlt(cleanUpScript, actor, 2, path.c_str(), animTime.firstPerson);
 				}
 			}
-			g_timeTrackedAnims.erase(timeTrackedAnim.first);
+			it = g_timeTrackedAnims.erase(it);
 		};
 
 		if (!anim || !anim->animGroup)
@@ -252,7 +266,10 @@ void HandleAnimTimes()
 			}
 		}
 		if (!isAnimPlaying())
+		{
+			++it;
 			continue; // we don't want text keys to apply on the pollCondition anim here but we need to track it until 3rd person has changed anim
+		}
 		if (animTime.callbacks.Exists())
 		{
 			animTime.callbacks.Update(time, animData, [](const std::function<void()>& callback)
@@ -308,15 +325,17 @@ void HandleAnimTimes()
 				}
 			}
 		}
+		++it;
 	}
 
-	for (auto& timeTrackedGroup : g_timeTrackedGroups)
+	for (auto it = g_timeTrackedGroups.begin(); it != g_timeTrackedGroups.end();)
 	{
 		const auto erase = [&]
 		{
-			g_timeTrackedGroups.erase(timeTrackedGroup.first);
+			it = g_timeTrackedGroups.erase(it);
 		};
-		const auto& animTime = *timeTrackedGroup.second;
+		auto& [pair, animTimePtr] = *it;
+		auto& animTime = *animTimePtr;
 		auto& [conditionScript, groupId, anim, actorId, animData] = animTime;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
 		if (!actor)
@@ -371,7 +390,7 @@ void HandleAnimTimes()
 				}
 			}
 		}
-		
+		++it;
 	}
 }
 
@@ -503,6 +522,10 @@ void HandleMisc()
 	}
 	g_animationResultCache.clear();
 	g_animPathFrameCache.clear();
+	g_scriptCache.clear();
+	// Console_Print("Cache hits: %d misses: %d", g_cacheHits, g_cacheMisses);
+	// g_cacheHits = 0;
+	// g_cacheMisses = 0;
 	for (const auto& line : g_eachFrameScriptLines)
 	{
 		g_consoleInterface->RunScriptLine(line.c_str(), nullptr);

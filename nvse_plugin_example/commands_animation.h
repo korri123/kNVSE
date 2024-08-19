@@ -256,8 +256,11 @@ struct SavedAnimsTime
 };
 
 
-extern std::map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>> g_timeTrackedAnims;
-extern std::map<std::pair<SavedAnims*, AnimData*>, std::shared_ptr<SavedAnimsTime>> g_timeTrackedGroups;
+using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>>;
+extern TimeTrackedAnimsMap g_timeTrackedAnims;
+
+using TimeTrackedGroupsMap = std::unordered_map<std::pair<SavedAnims*, AnimData*>, std::shared_ptr<SavedAnimsTime>, pair_hash, pair_equal>;
+extern TimeTrackedGroupsMap g_timeTrackedGroups;
 
 
 struct AnimPath
