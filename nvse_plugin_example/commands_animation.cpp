@@ -716,6 +716,87 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 AnimationResultCache g_animationResultCache;
 ICriticalSection g_getActorAnimationCS;
 
+struct FastLookupAnimKey
+{
+    UInt32 identifier;
+    FullAnimGroupID fullGroupId;
+    bool isFirstPerson;
+    bool isModIndexBased;
+
+    auto operator<=>(const FastLookupAnimKey& other) const = default;
+};
+
+struct FastLookupAnimKeyHasher
+{
+    size_t operator()(const FastLookupAnimKey& key) const noexcept
+    {
+        size_t hash = key.identifier;
+        hash = hash * 31 + std::hash<FullAnimGroupID>{}(key.fullGroupId);
+        hash = hash * 31 + key.isFirstPerson;
+        return hash * 31 + key.isModIndexBased;
+    }
+};
+
+using FastLookupAnimMap = std::unordered_map<FastLookupAnimKey, std::string_view, FastLookupAnimKeyHasher>;
+FastLookupAnimMap g_globalFastLookupAnimMap;
+
+AnimSequenceBase* GetActorAnimationFast(AnimData* animData, UInt16 groupId)
+{
+	const auto isFirstPerson = animData == g_thePlayer->firstPersonAnimData;
+	std::string_view modIndexResult;
+	const auto findAnim = [&](const TESForm* form) -> std::optional<std::string_view>
+	{
+		if (const auto iter = g_globalFastLookupAnimMap.find({form->refID, groupId, isFirstPerson, false});
+			iter != g_globalFastLookupAnimMap.end())
+			return iter->second;
+		
+		if (modIndexResult.empty())
+		{
+			if (const auto iter = g_globalFastLookupAnimMap.find({form->GetModIndex(), groupId, isFirstPerson, true});
+				iter != g_globalFastLookupAnimMap.end())
+				modIndexResult = iter->second;
+		}
+		return std::nullopt;
+	};
+	
+	const auto loadAnim = [&](std::string_view path) -> AnimSequenceBase*
+	{
+		if (auto ctx = LoadCustomAnimation(path, animData))
+			return ctx->base;
+		return nullptr;
+	};
+	
+	// actor
+	const auto* actor = animData->actor;
+	if (const auto path = findAnim(actor))
+		return loadAnim(*path);
+
+	// weapon
+	if (const auto* weapon = actor->GetWeaponForm())
+		if (const auto path = findAnim(weapon))
+			return loadAnim(*path);
+
+	// base form
+	if (const auto* baseForm = actor->baseForm)
+		if (const auto path = findAnim(baseForm))
+			return loadAnim(*path);
+
+	// race form
+	if (const auto* race = actor->GetRace())
+		if (const auto path = findAnim(race))
+			return loadAnim(*path);
+
+	// actor base
+	if (const auto* actorBase = actor->GetActorBase())
+		if (const auto path = findAnim(actorBase))
+			return loadAnim(*path);
+
+	if (!modIndexResult.empty())
+		return loadAnim(modIndexResult);
+
+	return nullptr;
+}
+
 std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData)
 {
 	// wait for file loading to finish
@@ -758,16 +839,14 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* a
 		if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData))))
 			return result;
 		// race form ID
-		TESNPC* npc; TESRace* race;
-		if (((npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC))) && ((race = npc->race.race)) && (result = getFormAnimation(race)))
+		auto* race = actor->GetRace();
+		if (race && ((result = getFormAnimation(race))))
 			return result;
-		// creature
-		TESCreature* creature;
-		if ((creature = static_cast<TESCreature*>(actor->GetActorBase())) && IS_ID(creature, Creature) && (result = getFormAnimation(creature)))
+		// actor base
+		auto* actorBase = actor->GetActorBase();
+		if (actorBase && ((result = getFormAnimation(actorBase))))
 			return result;
-
-		// equipped TODO
-
+		
 		// mod index (set in getFormAnimation if exists)
 		if (modIndexResult)
 			return modIndexResult;
@@ -960,7 +1039,13 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	{
 		return ra::any_of(a->anims, _L(const auto& s, sv::equals_ci(path, s->path)));
 	};
-	
+
+	const FastLookupAnimKey fastLookupKey = {
+		.identifier = data.identifier,
+		.fullGroupId = groupId,
+		.isFirstPerson = &map == &g_animGroupFirstPersonMap,
+		.isModIndexBased = &map == &g_animGroupModIdxFirstPersonMap || &map == &g_animGroupModIdxThirdPersonMap
+	};
 	if (!data.enable)
 	{
 		bool erased = false;
@@ -970,6 +1055,7 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 			std::erase_if(g_timeTrackedGroups, _L(auto& it2, it2.first.first == &**it));
 			stack.erase(it);
 			erased = true;
+			g_globalFastLookupAnimMap.erase(fastLookupKey);
 		}
 		return erased;
 	}
@@ -986,6 +1072,7 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		}
 		// move iter to the top of stack
 		std::rotate(iter, std::next(iter), stack.end());
+		g_globalFastLookupAnimMap[fastLookupKey] = path;
 		return true;
 	}
 
@@ -1007,6 +1094,8 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	anims.conditionScript = data.conditionScript;
 	anims.pollCondition = data.pollCondition;
 	anims.condition = condition;
+	
+	g_globalFastLookupAnimMap[fastLookupKey] = path;
 	return true;
 }
 
@@ -1124,7 +1213,6 @@ bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
 		return false;
 	auto* didReload = &iter->second.subscribers[subscriber];
 	const auto result = *didReload;
-	ScopedLock lock(g_executionQueueCS);
 	g_executionQueue.emplace_back([=]()
 	{
 		*didReload = false;

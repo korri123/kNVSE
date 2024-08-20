@@ -322,12 +322,17 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 {
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
+	
+
+	if ((*base = GetActorAnimationFast(animData, groupId)))
+		return true;
 
 	if ((*base = animMap->Lookup(groupId)))
 		return true;
 
-	if (animData->actor && LookupAnimFromMap(groupId, base, animData))
-		return true;
+	//if (LookupAnimFromMap(groupId, base, animData))
+	//	return true;
+
 
 	return false;
 }
@@ -398,7 +403,7 @@ bool g_fixWrongPrnKey = false;
 
 namespace LoopingReloadPauseFix
 {
-	std::unordered_set<std::string> g_reloadStartBlendFixes;
+	std::unordered_set<std::string_view> g_reloadStartBlendFixes;
 
 	bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
 	{
@@ -425,20 +430,35 @@ namespace LoopingReloadPauseFix
 		return newCondition();
 	}
 
-	__declspec(naked) void NoAimInReloadLoop()
+	void __fastcall NoAimInReloadLoopHook(AnimData* animData, void*, eAnimSequence sequenceId, bool bChar)
 	{
-		constexpr static auto jumpIfTrue = 0x492CB1;
-		constexpr static auto jumpIfFalse = 0x492BF8;
-		__asm
+		auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
+		const static std::unordered_set ids = { kAnimGroup_ReloadWStart, kAnimGroup_ReloadYStart, kAnimGroup_ReloadXStart, kAnimGroup_ReloadZStart };
+		auto* anim = animData->animSequence[sequenceId];
+
+		const auto dontEndSequence = _L(, *addrOfRetn = 0x492BF8 );
+		const auto endSequence = _L(, ThisStdCall(0x4994F0, animData, sequenceId, bChar));
+		if (!anim || !anim->animGroup || !ids.contains(anim->animGroup->GetBaseGroupID()))
 		{
-			lea ecx, [ebp]
-			call ShouldPlayAimAnim
-			test al, al
-			jz isFalse
-			jmp jumpIfTrue
-		isFalse:
-			jmp jumpIfFalse
+			endSequence();
+			return;
 		}
+		if (g_reloadStartBlendFixes.contains(anim->m_kName))
+		{
+			dontEndSequence();
+			return;
+		}
+		if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
+		{
+			const auto seqType = anim->animGroup->GetSequenceType();
+			auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
+			if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->m_kName))
+			{
+				dontEndSequence();
+				return;
+			}
+		}
+		endSequence();
 	}
 }
 
@@ -494,7 +514,7 @@ void ApplyHooks()
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 	WriteRelJump(0x941E4C, EndAttackLoopHook);
 
-	WriteRelJump(0x492BF2, LoopingReloadPauseFix::NoAimInReloadLoop);
+	WriteRelCall(0x492CF6, LoopingReloadPauseFix::NoAimInReloadLoopHook);
 
 	// WriteRelJump(0x4951D7, FixSpineBlendBug);
 

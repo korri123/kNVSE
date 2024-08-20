@@ -26,5 +26,5 @@ extern bool g_fixWrongPrnKey;
 
 namespace LoopingReloadPauseFix
 {
-    extern std::unordered_set<std::string> g_reloadStartBlendFixes;
+    extern std::unordered_set<std::string_view> g_reloadStartBlendFixes;
 }

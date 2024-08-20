@@ -203,7 +203,7 @@ bool TESObjectREFR::Update3D()
 
 #define GetExtraType(xDataList, Type) (Extra ## Type*)(xDataList)->GetByType(kExtraData_ ## Type)
 
-TESActorBase* Actor::GetActorBase()
+TESActorBase* Actor::GetActorBase() const
 {
 	if (baseForm->GetModIndex() == 0xFF)
 	{

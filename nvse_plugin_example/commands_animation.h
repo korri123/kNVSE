@@ -452,7 +452,7 @@ namespace GameFuncs
 	inline auto* GetAnims = reinterpret_cast<tList<char>*(__thiscall*)(TESObjectREFR*, int)>(0x566970);
 	inline auto* LoadAnimation = reinterpret_cast<bool(__thiscall*)(AnimData*, KFModel*, bool)>(0x490500);
 	inline auto* TransitionToSequence = reinterpret_cast<BSAnimGroupSequence * (__thiscall*)(AnimData*, BSAnimGroupSequence*, int, int)>(0x4949A0);
-	inline auto* PlayAnimGroup = reinterpret_cast<BSAnimGroupSequence * (__thiscall*)(AnimData*, int, int, int, int)>(0x494740);
+	inline auto* PlayAnimGroup = reinterpret_cast<BSAnimGroupSequence * (__thiscall*)(AnimData*, UInt16, int, int, int)>(0x494740);
 	inline auto* NiTPointerMap_Lookup = reinterpret_cast<bool (__thiscall*)(void*, int, AnimSequenceBase**)>(0x49C390);
 	inline auto* NiTPointerMap_RemoveKey = reinterpret_cast<bool(__thiscall*)(void*, UInt16)>(0x49C250);
 	inline auto* NiTPointerMap_Init = reinterpret_cast<GameAnimMap * (__thiscall*)(GameAnimMap*, int numBuckets)>(0x49C050);
@@ -685,3 +685,5 @@ extern AnimationResultCache g_animationResultCache;
 
 using AnimPathCache = std::unordered_map<std::pair<SavedAnims*, AnimData*>, AnimPath*, pair_hash, pair_equal>;
 extern AnimPathCache g_animPathFrameCache;
+
+AnimSequenceBase* GetActorAnimationFast(AnimData* animData, UInt16 groupId);

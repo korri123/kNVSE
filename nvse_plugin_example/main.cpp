@@ -40,6 +40,7 @@ NVSECommandTableInterface* g_cmdTable;
 const CommandInfo* g_TFC;
 PlayerCharacter* g_player;
 ICriticalSection g_executionQueueCS;
+std::deque<std::function<void()>> g_synchronizedExecutionQueue;
 std::deque<std::function<void()>> g_executionQueue;
 ExpressionEvaluatorUtils s_expEvalUtils;
 
@@ -328,6 +329,8 @@ void HandleAnimTimes()
 		++it;
 	}
 
+	std::vector<std::pair<AnimData*, FullAnimGroupID>> animsToPlay;
+
 	for (auto it = g_timeTrackedGroups.begin(); it != g_timeTrackedGroups.end();)
 	{
 		const auto erase = [&]
@@ -386,11 +389,17 @@ void HandleAnimTimes()
 				const auto shouldStopAnim = _L(, !result && !isAnimNextAnim && curAnim == anim);
 				if (shouldPlayAnim() || shouldStopAnim())
 				{
-					GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);
+					animsToPlay.emplace_back(animData, nextGroupId);
 				}
 			}
 		}
 		++it;
+	}
+	
+	for (const auto& [animData, nextGroupId] : animsToPlay)
+	{
+		// done here since PlayAnimGroup can mutate g_timeTrackedGroups and cause a rehash
+		GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);
 	}
 }
 
@@ -494,9 +503,18 @@ void HandleBurstFire()
 	}
 }
 
-void HandleExecutionQueue()
+void HandleSynchronizedExecutionQueue()
 {
 	ScopedLock lock(g_executionQueueCS);
+	while (!g_synchronizedExecutionQueue.empty())
+	{
+		g_synchronizedExecutionQueue.front()();
+		g_synchronizedExecutionQueue.pop_front();
+	}
+}
+
+void HandleExecutionQueue()
+{
 	while (!g_executionQueue.empty())
 	{
 		g_executionQueue.front()();
@@ -553,6 +571,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleBurstFire();
 			HandleAnimTimes();
 			HandleMisc();
+			HandleExecutionQueue();
 #if 0 // experimental fixes
 			if (g_fixAttackISTransition)
 			{
@@ -561,7 +580,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			}
 #endif
 		}
-		HandleExecutionQueue();
+		HandleSynchronizedExecutionQueue();
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
 	{

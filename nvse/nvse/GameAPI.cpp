@@ -170,7 +170,7 @@ bool ConsoleManager::HasConsoleOutputFilename(void) {
 
 bool s_InsideOnActorEquipHook = false;
 UInt32 s_CheckInsideOnActorEquipHook = 1;
-extern std::deque<std::function<void()>> g_executionQueue;
+extern std::deque<std::function<void()>> g_synchronizedExecutionQueue;
 extern ICriticalSection g_executionQueueCS;
 
 void Console_Print(const char * fmt, ...)
@@ -199,7 +199,7 @@ void Console_Print(const char * fmt, ...)
 			return;
 		const std::string str(buffer);
 		ScopedLock lock(g_executionQueueCS);
-		g_executionQueue.emplace_back([=]
+		g_synchronizedExecutionQueue.emplace_back([=]
 		{
 			const auto* pManager = ConsoleManager::GetSingleton();
 			pManager->Print("%s", str.c_str());

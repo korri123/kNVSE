@@ -935,8 +935,8 @@ struct AnimData
 	UInt16							groupIDs[8];		// 04C
 	SInt32							sequenceState1[8];	// 05C
 	SInt32							sequenceState2[8];	// 07C
-	UInt16							unk09C[8];			// 09C
-	UInt32							unk0AC[8];			// 0AC
+	UInt16							queuedGroupIDs[8];	// 09C
+	UInt32							queuedGroupSequenceStates[8];			// 0AC
 	UInt8							byte0CC;			// 0CC
 	UInt8							byte0CD;			// 0CD
 	UInt8							byte0CE;			// 0CE
