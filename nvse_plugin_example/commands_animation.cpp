@@ -736,68 +736,6 @@ struct FastLookupAnimKeyHasher
     }
 };
 
-using FastLookupAnimMap = std::unordered_map<FastLookupAnimKey, std::string_view, FastLookupAnimKeyHasher>;
-FastLookupAnimMap g_globalFastLookupAnimMap;
-
-AnimSequenceBase* GetActorAnimationFast(AnimData* animData, UInt16 groupId)
-{
-	const auto isFirstPerson = animData == g_thePlayer->firstPersonAnimData;
-	std::string_view modIndexResult;
-	const auto findAnim = [&](const TESForm* form) -> std::optional<std::string_view>
-	{
-		if (const auto iter = g_globalFastLookupAnimMap.find({form->refID, groupId, isFirstPerson, false});
-			iter != g_globalFastLookupAnimMap.end())
-		{
-			return iter->second;
-		}
-		
-		if (modIndexResult.empty())
-		{
-			if (const auto iter = g_globalFastLookupAnimMap.find({form->GetModIndex(), groupId, isFirstPerson, true});
-				iter != g_globalFastLookupAnimMap.end())
-				modIndexResult = iter->second;
-		}
-		return std::nullopt;
-	};
-	
-	const auto loadAnim = [&](std::string_view path) -> AnimSequenceBase*
-	{
-		if (auto ctx = LoadCustomAnimation(path, animData))
-			return ctx->base;
-		return nullptr;
-	};
-	
-	// actor
-	const auto* actor = animData->actor;
-	if (const auto path = findAnim(actor))
-		return loadAnim(*path);
-
-	// weapon
-	if (const auto* weapon = actor->GetWeaponForm())
-		if (const auto path = findAnim(weapon))
-			return loadAnim(*path);
-
-	// base form
-	if (const auto* baseForm = actor->baseForm)
-		if (const auto path = findAnim(baseForm))
-			return loadAnim(*path);
-
-	// race form
-	if (const auto* race = actor->GetRace())
-		if (const auto path = findAnim(race))
-			return loadAnim(*path);
-
-	// actor base
-	if (const auto* actorBase = actor->GetActorBase())
-		if (const auto path = findAnim(actorBase))
-			return loadAnim(*path);
-
-	if (!modIndexResult.empty())
-		return loadAnim(modIndexResult);
-
-	return nullptr;
-}
-
 std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData)
 {
 	// wait for file loading to finish
@@ -1057,7 +995,6 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 			std::erase_if(g_timeTrackedGroups, _L(auto& it2, it2.first.first == &**it));
 			stack.erase(it);
 			erased = true;
-			g_globalFastLookupAnimMap.erase(fastLookupKey);
 		}
 		return erased;
 	}
@@ -1074,7 +1011,6 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		}
 		// move iter to the top of stack
 		std::rotate(iter, std::next(iter), stack.end());
-		g_globalFastLookupAnimMap[fastLookupKey] = path;
 		return true;
 	}
 
@@ -1097,7 +1033,6 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	anims.pollCondition = data.pollCondition;
 	anims.condition = condition;
 	
-	g_globalFastLookupAnimMap[fastLookupKey] = path;
 	return true;
 }
 

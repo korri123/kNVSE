@@ -325,7 +325,7 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	
 
 	[[msvc::noinline_calls]]
-	if ((*base = GetActorAnimationFast(animData, groupId)))
+	if (LookupAnimFromMap(groupId, base, animData))
 		return true;
 
 	if ((*base = animMap->Lookup(groupId)))

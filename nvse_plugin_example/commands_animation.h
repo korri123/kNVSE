@@ -686,5 +686,4 @@ extern AnimationResultCache g_animationResultCache;
 using AnimPathCache = std::unordered_map<std::pair<SavedAnims*, AnimData*>, AnimPath*, pair_hash, pair_equal>;
 extern AnimPathCache g_animPathFrameCache;
 
-AnimSequenceBase* GetActorAnimationFast(AnimData* animData, UInt16 groupId);
-std::string_view GetBaseAnimGroupName(const std::string_view name);
+std::string_view GetBaseAnimGroupName(std::string_view name);
