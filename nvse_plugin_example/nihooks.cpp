@@ -892,7 +892,7 @@ void ApplyDestFrame(NiControllerSequence* sequence, float destFrame)
 
 bool IsTempBlendSequence(const NiControllerSequence* sequence)
 {
-    return strncmp("__", sequence->m_kName, 2) == 0;
+    return strncmp("__", sequence->m_kName.CStr(), 2) == 0;
 }
 
 void ClearTempBlendSequence(NiControllerSequence* sequence)
@@ -961,8 +961,8 @@ std::unordered_map<NiControllerManager*, NiControllerSequence*> g_lastTempBlendS
 NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager, void*, NiControllerSequence* source, NiControllerSequence* timeSync)
 {
     auto* tempBlendSeq = ThisStdCall<NiControllerSequence*>(0xA2F170, manager, source, timeSync);
-    const auto& str = "__TMP_BLEND_" + GetLastSubstringAfterSlash(source->m_kName);
-    tempBlendSeq->m_kName = GameFuncs::BSFixedString_CreateFromPool(str.c_str());
+    const auto& str = "__TMP_BLEND_" + GetLastSubstringAfterSlash(source->m_kName.CStr());
+    tempBlendSeq->m_kName = NiGlobalStringTable::AddString(str.c_str());
     g_lastTempBlendSequence[manager] = tempBlendSeq;
     return tempBlendSeq;
 }

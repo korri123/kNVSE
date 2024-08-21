@@ -348,8 +348,7 @@ void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGrou
 
 float GetKeyTime(BSAnimGroupSequence* anim, SequenceState1 keyTime)
 {
-	const auto keyTimes = std::span { anim->animGroup->keyTimes, anim->animGroup->numKeys };
-	return keyTimes[keyTime];
+	return anim->animGroup->keyTimes[keyTime];
 }
 
 void BlendFixes::ApplyAttackISToAttackFix()

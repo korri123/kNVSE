@@ -324,6 +324,7 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
 	
 
+	[[msvc::noinline_calls]]
 	if ((*base = GetActorAnimationFast(animData, groupId)))
 		return true;
 
@@ -357,7 +358,7 @@ bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
 	auto* multiple = static_cast<AnimSequenceMultiple*>(base);
 	for (auto* entry : *multiple->anims)
 	{
-		if (_stricmp(entry->m_kName, anim->m_kName) == 0)
+		if (_stricmp(entry->m_kName.CStr(), anim->m_kName.CStr()) == 0)
 			return true;
 	}
 	return false;
@@ -416,13 +417,13 @@ namespace LoopingReloadPauseFix
 		const auto defaultCondition = _L(, queuedId == 0xFF);
 		if (!anim || !anim->animGroup)
 			return defaultCondition();
-		if (!g_reloadStartBlendFixes.contains(anim->m_kName))
+		if (!g_reloadStartBlendFixes.contains(anim->m_kName.Str()))
 		{
 			if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
 			{
 				const auto seqType = GetSequenceType(anim->animGroup->GetBaseGroupID());
 				auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
-				if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->m_kName))
+				if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->m_kName.Str()))
 					return newCondition();
 			}
 			return defaultCondition();
@@ -443,7 +444,7 @@ namespace LoopingReloadPauseFix
 			endSequence();
 			return;
 		}
-		if (g_reloadStartBlendFixes.contains(anim->m_kName))
+		if (g_reloadStartBlendFixes.contains(anim->m_kName.Str()))
 		{
 			dontEndSequence();
 			return;
@@ -452,7 +453,7 @@ namespace LoopingReloadPauseFix
 		{
 			const auto seqType = anim->animGroup->GetSequenceType();
 			auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
-			if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->m_kName))
+			if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->m_kName.Str()))
 			{
 				dontEndSequence();
 				return;
@@ -693,11 +694,14 @@ void ApplyHooks()
 	WriteRelCall(0x43B831, INLINE_HOOK(BSAnimGroupSequence*, __fastcall, BSAnimGroupSequence** animPtr)
 	{
 		auto* anim = *animPtr;
-		if (anim->m_spTextKeys)
+		auto* fileName = GET_CALLER_VAR(const char*, 0x8, true);
+		
+		if (anim->m_spTextKeys) [[msvc::noinline_calls]]
 		{
 			AnimFixes::EraseNullTextKeys(anim);
 			AnimFixes::FixInconsistentEndTime(anim);
 			AnimFixes::EraseNegativeAnimKeys(anim);
+			AnimFixes::FixWrongKFName(anim, fileName);
 		}
 		return anim;
 	}));

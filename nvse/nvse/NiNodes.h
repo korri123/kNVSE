@@ -1777,7 +1777,7 @@ public:
 		return CdeclCall<GlobalStringHandle>(0xA5B690, pcString);
 	}
 
-	static void IncRefCount(GlobalStringHandle& arHandle)
+	static void IncRefCount(GlobalStringHandle arHandle)
 	{
 		if (!arHandle)
 			return;
@@ -1785,13 +1785,14 @@ public:
 		InterlockedIncrement(reinterpret_cast<size_t*>(GetRealBufferStart(arHandle)));
 	}
 	
-	static void DecRefCount(GlobalStringHandle& arHandle)
+	static void DecRefCount(GlobalStringHandle arHandle)
 	{
 		if (!arHandle)
 			return;
 
 		InterlockedDecrement(reinterpret_cast<size_t*>(GetRealBufferStart(arHandle)));
 	}
+	
 	static UInt32 GetLength(const GlobalStringHandle& arHandle)
 	{
 		if (!arHandle)
@@ -1871,6 +1872,16 @@ struct NiFixedString
 	operator char*() const
 	{
 		return data;
+	}
+
+	operator const char*() const
+	{
+		return data;
+	}
+
+	operator std::string_view() const
+	{
+		return data ? data : "";
 	}
 
 	std::string_view Str() const
@@ -1978,7 +1989,7 @@ public:
 	std::span<InterpArrayItem> GetControlledBlocks() const;
 	std::span<IDTag> GetIDTags() const;
 
-	const char* m_kName; // 8
+	NiFixedString m_kName; // 8
 	UInt32 m_uiArraySize; // C
 	UInt32 m_uiArrayGrowBy; // 10
 	InterpArrayItem* m_pkInterpArray; // 14
@@ -1999,7 +2010,7 @@ public:
 	float m_fEndTime;
 	float m_fDestFrame;
 	NiControllerSequence* m_pkPartnerSequence;
-	const char* m_kAccumRootName;
+	NiFixedString m_kAccumRootName;
 	UInt32 m_pkAccumRoot;
 	UInt32 m_spDeprecatedStringPalette; // deprecated string palette
 	UInt16 usCurAnimNIdx;
@@ -2428,6 +2439,115 @@ namespace AnimGroup
 	}
 }
 
+template <typename T>
+class NiFixedArray
+{
+public:
+	unsigned int m_uiNumItems;
+	T* m_pData;
+
+	NiFixedArray()
+		: m_uiNumItems(0),
+		  m_pData(nullptr)
+	{
+	}
+
+	NiFixedArray(const NiFixedArray& other)
+			: m_uiNumItems(other.m_uiNumItems),
+			  m_pData(GameHeapAllocArray<T>(other.m_uiNumItems))
+	{
+		std::ranges::copy(other.GetItems(), m_pData);
+	}
+
+	NiFixedArray(NiFixedArray&& other) noexcept
+		: m_uiNumItems(other.m_uiNumItems),
+		  m_pData(other.m_pData)
+	{
+		other.m_uiNumItems = 0;
+		other.m_pData = nullptr;
+	}
+
+	template <std::ranges::sized_range R>
+	NiFixedArray(R&& range)
+	: m_uiNumItems(std::ranges::size(range)),
+	  m_pData(GameHeapAllocArray<T>(m_uiNumItems))
+	{
+		std::ranges::copy(range, m_pData);
+	}
+
+	template <std::ranges::input_range R>
+	requires (!std::ranges::sized_range<R>)
+	NiFixedArray(R&& view)
+	{
+		m_uiNumItems = std::ranges::distance(view);
+		m_pData = GameHeapAllocArray<T>(m_uiNumItems);
+
+		std::ranges::copy(view, m_pData);
+	}
+
+	NiFixedArray& operator=(const NiFixedArray& other)
+	{
+		if (this == &other)
+			return *this;
+
+		DeleteAll();
+
+		m_uiNumItems = other.m_uiNumItems;
+		m_pData = GameHeapAllocArray<T>(other.m_uiNumItems);
+		std::ranges::copy(other.GetItems(), GetItems());
+		return *this;
+	}
+
+	NiFixedArray& operator=(NiFixedArray&& other) noexcept
+	{
+		if (this == &other)
+			return *this;
+
+		DeleteAll();
+
+		m_uiNumItems = other.m_uiNumItems;
+		m_pData = other.m_pData;
+		other.m_uiNumItems = 0;
+		other.m_pData = nullptr;
+		return *this;
+	}
+
+	void DeleteAll()
+	{
+		for (auto& item : GetItems())
+			std::destroy_at(std::addressof(item));
+		GameHeapFreeArray(m_pData);
+		m_uiNumItems = 0;
+	}
+
+	~NiFixedArray()
+	{
+		DeleteAll();
+	}
+
+	std::span<T> GetItems() const
+	{
+		return { m_pData, m_uiNumItems };
+	}
+
+	std::vector<T> ToVector() const
+	{
+		return std::vector(m_pData, m_pData + m_uiNumItems);
+	}
+
+	operator std::span<T>() const
+	{
+		return GetItems();
+	}
+
+	// operator []
+	T& operator[](size_t index)
+	{
+		return m_pData[index];
+	}
+};
+ASSERT_SIZE(NiFixedArray<float>, 0x8);
+
 // 02C+
 class TESAnimGroup : public NiRefObject
 {
@@ -2485,8 +2605,7 @@ public:
 	UInt8 byte08[8];
 	UInt16 groupID;
 	UInt8 unk12[1];
-	UInt32 numKeys;
-	float* keyTimes;
+	NiFixedArray<float>	keyTimes;
 	NiPoint3 moveVector;
 	UInt8 leftOrRight_whichFootToSwitch;
 	UInt8 blend;
@@ -2754,98 +2873,6 @@ class NiExtraData : public NiObject
 {
 public:
 	NiFixedString m_kName;
-};
-
-template <typename T>
-class NiFixedArray
-{
-public:
-	unsigned int m_uiNumItems;
-	T* m_pData;
-
-	NiFixedArray()
-		: m_uiNumItems(0),
-		  m_pData(nullptr)
-	{
-	}
-
-	template <std::ranges::input_range R>
-	NiFixedArray(const R& range)
-		: m_uiNumItems(std::ranges::size(range)),
-		  m_pData(GameHeapAllocArray<T>(m_uiNumItems))
-	{
-		std::ranges::copy(range, m_pData);
-	}
-
-	NiFixedArray(const NiFixedArray& other)
-			: m_uiNumItems(other.m_uiNumItems),
-			  m_pData(GameHeapAllocArray<T>(other.m_uiNumItems))
-	{
-		std::ranges::copy(other.GetItems(), m_pData);
-	}
-
-	NiFixedArray(NiFixedArray&& other) noexcept
-		: m_uiNumItems(other.m_uiNumItems),
-		  m_pData(other.m_pData)
-	{
-		other.m_uiNumItems = 0;
-		other.m_pData = nullptr;
-	}
-
-	NiFixedArray& operator=(const NiFixedArray& other)
-	{
-		if (this == &other)
-			return *this;
-
-		DeleteAll();
-
-		m_uiNumItems = other.m_uiNumItems;
-		m_pData = GameHeapAllocArray<T>(other.m_uiNumItems);
-		std::ranges::copy(other.GetItems(), GetItems());
-		return *this;
-	}
-
-	NiFixedArray& operator=(NiFixedArray&& other) noexcept
-	{
-		if (this == &other)
-			return *this;
-
-		DeleteAll();
-
-		m_uiNumItems = other.m_uiNumItems;
-		m_pData = other.m_pData;
-		other.m_uiNumItems = 0;
-		other.m_pData = nullptr;
-		return *this;
-	}
-
-	void DeleteAll()
-	{
-		for (auto& item : GetItems())
-			item.~T();
-		GameHeapFreeArray(m_pData);
-		m_uiNumItems = 0;
-	}
-
-	~NiFixedArray()
-	{
-		DeleteAll();
-	}
-
-	std::span<T> GetItems() const
-	{
-		return { m_pData, m_uiNumItems };
-	}
-
-	std::vector<T> ToVector() const
-	{
-		return std::vector(m_pData, m_pData + m_uiNumItems);
-	}
-
-	operator std::span<T>() const
-	{
-		return GetItems();
-	}
 };
 
 class NiTextKeyExtraData : public NiExtraData

@@ -136,6 +136,14 @@
       </CustomListItems>
     </Expand>
   </Type>
-
+  <Type Name="NiFixedArray&lt;*&gt;">
+  	<DisplayString>{{ Size={m_uiNumItems} }}</DisplayString>
+  	<Expand>
+  		<ArrayItems>
+  			<Size>m_uiNumItems</Size>
+  			<ValuePointer>m_pData</ValuePointer>
+  		</ArrayItems>
+  	</Expand>
+  </Type>
 
 </AutoVisualizer>

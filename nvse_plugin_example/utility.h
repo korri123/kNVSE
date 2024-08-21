@@ -323,7 +323,6 @@ std::vector<T> NVSEArrayToVector(const NVSEArrayVarInterface* arrayVarInterface,
 	return vec;
 }
 
-
 inline UInt8* GetParentBasePtr(void* addressOfReturnAddress, bool lambda = false)
 {
 	auto* basePtr = static_cast<UInt8*>(addressOfReturnAddress) - 4;

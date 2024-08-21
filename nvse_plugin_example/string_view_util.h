@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include <string_view>
+#include "utility.h"
 
 namespace sv
 {
@@ -40,5 +40,10 @@ namespace sv
                 return false;
         }
         return true;
+    }
+
+    inline bool contains_ci(std::string_view left, std::string_view right)
+    {
+        return FindStringCI(left, right);
     }
 }

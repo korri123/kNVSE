@@ -114,8 +114,8 @@ std::unordered_map<BSAnimGroupSequence*, ThirdPersonSavedData> g_thirdPersonSave
 void Save3rdPersonAnimGroupData(BSAnimGroupSequence* anim3rd)
 {
 	ThirdPersonSavedData thirdPersonSavedData{
-		.numKeys = anim3rd->animGroup->numKeys,
-		.keyTimes = anim3rd->animGroup->keyTimes,
+		.numKeys = anim3rd->animGroup->keyTimes.m_uiNumItems,
+		.keyTimes = anim3rd->animGroup->keyTimes.m_pData,
 		.blendIn = anim3rd->animGroup->blendIn,
 		.blendOut = anim3rd->animGroup->blendOut,
 		.blend = anim3rd->animGroup->blend,
@@ -129,8 +129,8 @@ void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* an
 	const TESAnimGroup* animGroup1st = anim1st->animGroup;
 	if (!animGroup3rd || !animGroup1st)
 		return;
-	animGroup3rd->numKeys = animGroup1st->numKeys;
-	animGroup3rd->keyTimes = animGroup1st->keyTimes;
+	animGroup3rd->keyTimes.m_uiNumItems = animGroup1st->keyTimes.m_uiNumItems;
+	animGroup3rd->keyTimes.m_pData = animGroup1st->keyTimes.m_pData;
 	animGroup3rd->blend = animGroup1st->blend;
 	animGroup3rd->blendIn = animGroup1st->blendIn;
 	animGroup3rd->blendOut = animGroup1st->blendOut;
@@ -143,8 +143,8 @@ void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence*
 	if (const auto iter = g_thirdPersonSavedData.find(anim3rd); iter != g_thirdPersonSavedData.end())
 	{
 		const auto& savedData = iter->second;
-		anim3rd->animGroup->numKeys = savedData.numKeys;
-		anim3rd->animGroup->keyTimes = savedData.keyTimes;
+		anim3rd->animGroup->keyTimes.m_uiNumItems = savedData.numKeys;
+		anim3rd->animGroup->keyTimes.m_pData = savedData.keyTimes;
 		anim3rd->animGroup->blend = savedData.blend;
 		anim3rd->animGroup->blendIn = savedData.blendIn;
 		anim3rd->animGroup->blendOut = savedData.blendOut;
@@ -302,7 +302,7 @@ void HandleAnimTimes()
 
 		if (animTime.hasCustomAnimGroups)
 		{
-			const auto basePath = GetAnimBasePath(animTime.anim->m_kName);
+			const auto basePath = GetAnimBasePath(animTime.anim->m_kName.Str());
 			if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
 			{
 				const auto& animPaths = iter->second;

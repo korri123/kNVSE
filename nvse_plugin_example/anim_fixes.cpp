@@ -184,10 +184,10 @@ void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
 	if (ra::any_of(textKeys->GetKeys(), [](const NiTextKey& key) { return key.m_kText.CStr() == nullptr; }))
 	{
 		// LogAnimError(anim, "Erased null text keys");
-		const auto newKeys = textKeys->ToVector()
+		auto newKeys = textKeys->GetKeys()
 			| ra::views::filter([](const NiTextKey& key) { return key.m_kText.CStr() != nullptr; })
-			| ra::to<std::vector<NiTextKey>>();
-		textKeys->SetKeys(newKeys);
+			| ra::to<NiFixedArray<NiTextKey>>();
+		textKeys->m_kKeyArray = std::move(newKeys);
 	}
 }
 
@@ -264,7 +264,7 @@ void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)
 	anim->animGroup->parentRootNode = NiGlobalStringTable::AddString("Bip01 Translate");
 }
 
-const char** __fastcall WrongPrnKeyHook(BSAnimGroupSequence* anim)
+NiFixedString* __fastcall WrongPrnKeyHook(BSAnimGroupSequence* anim)
 {
 	if (HasNoFixTextKey(anim) || !HasRespectEndKey(anim))
 		return &anim->m_kName;
@@ -293,5 +293,22 @@ void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)
 	FixInconsistentEndTime(anim);
 	FixWrongAKeyInRespectEndKey(animData, anim);
 	EraseNegativeAnimKeys(anim);
+}
+
+void AnimFixes::FixWrongKFName(BSAnimGroupSequence* anim, const char* filePath)
+{
+	const std::string_view fileName(filePath);
+	const auto fileGroupName = sv::get_file_stem(fileName);
+	const auto baseAnimGroupName = GetBaseAnimGroupName(fileGroupName);
+	const auto kfGroupName = std::string_view(anim->m_kName);
+	if (sv::equals_ci(baseAnimGroupName, kfGroupName)
+		|| !sv::contains_ci(filePath, "animgroupoverride")
+		|| HasNoFixTextKey(anim)) [[likely]]
+		return;
+	auto iter = ra::find_if(g_animGroupInfos, _L(AnimGroupInfo& i, sv::equals_ci(i.name, baseAnimGroupName)));
+	if (iter == g_animGroupInfos.end())
+		return;
+	LogAnimError(anim, FormatString("Fixed wrong KF name %s in %s", anim->m_kName.CStr(), filePath));
+	anim->m_kName = iter->name;
 }
 

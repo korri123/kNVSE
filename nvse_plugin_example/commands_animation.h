@@ -687,3 +687,4 @@ using AnimPathCache = std::unordered_map<std::pair<SavedAnims*, AnimData*>, Anim
 extern AnimPathCache g_animPathFrameCache;
 
 AnimSequenceBase* GetActorAnimationFast(AnimData* animData, UInt16 groupId);
+std::string_view GetBaseAnimGroupName(const std::string_view name);

@@ -196,7 +196,6 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
 						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
-						// anim->destFrame = kfModel->controllerSequence->destFrame;
 						const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return entry->second;
 					}
@@ -287,9 +286,9 @@ std::string GetTextAfterColon(std::string in)
 	std::unique_ptr<TimedExecution<Sound>> soundPaths = nullptr;
  */
 
-std::unordered_map<std::string, TimedExecution<Script*>> g_scriptLineExecutions;
-std::unordered_map<std::string, TimedExecution<Script*>> g_scriptCallExecutions;
-std::unordered_map<std::string, TimedExecution<Sound>> g_scriptSoundExecutions;
+std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptLineExecutions;
+std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptCallExecutions;
+std::unordered_map<BSAnimGroupSequence*, TimedExecution<Sound>> g_scriptSoundExecutions;
 
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 {
@@ -308,9 +307,9 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		}
 		return *animTimePtr;
 	};
-	const auto createTimedExecution = [&]<typename T>(std::unordered_map<std::string, T>& map)
+	const auto createTimedExecution = [&]<typename T>(std::unordered_map<BSAnimGroupSequence*, T>& map)
 	{
-		const auto iter = map.emplace(anim->m_kName, T());
+		const auto iter = map.emplace(anim, T());
 		auto* timedExecution = &iter.first->second;
 		const bool uninitialized = iter.second;
 		return std::make_pair(timedExecution, uninitialized);
@@ -437,7 +436,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	}
 	if (hasKey({"blendToReloadLoop"}))
 	{
-		LoopingReloadPauseFix::g_reloadStartBlendFixes.insert(anim->m_kName);
+		LoopingReloadPauseFix::g_reloadStartBlendFixes.insert(anim->m_kName.CStr());
 	}
 	if (hasKey({"scriptLine:", "allowAttack" }, KeyCheckType::KeyStartsWith))
 	{
@@ -481,7 +480,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 				result = Script::CompileFromText(formattedLine, "ScriptLineKey");
 				if (!result)
 				{
-					ERROR_LOG("Failed to compile script in scriptLine key: " + line + " for anim " + std::string(anim->m_kName));
+					ERROR_LOG("Failed to compile script in scriptLine key: " + line + " for anim " + std::string(anim->m_kName.CStr()));
 					return false;
 				}
 				cached = result;
@@ -491,7 +490,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		animTime.scriptLines = scriptLineKeys->CreateContext();
 	}
 
-	const auto basePath = GetAnimBasePath(anim->m_kName);
+	const auto basePath = GetAnimBasePath(anim->m_kName.Str());
 	if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
 	{
 		auto& animTime = getAnimTimeStruct();
@@ -574,7 +573,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 			BSAnimGroupSequence* toReplaceAnim = nullptr;
 			if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 				toReplaceAnim = base->GetSequenceByIndex(-1);
-			if (toReplaceAnim && FindStringCI(toReplaceAnim->m_kName, "\\hurt\\")) // there really is no state on an animation which indicates it's a crippled anim
+			if (toReplaceAnim && FindStringCI(toReplaceAnim->m_kName.Str(), "\\hurt\\")) // there really is no state on an animation which indicates it's a crippled anim
 			{
 				animCustomStack->clear();
 				animCustomStack->push_back(AnimCustom::Hurt);
@@ -748,7 +747,9 @@ AnimSequenceBase* GetActorAnimationFast(AnimData* animData, UInt16 groupId)
 	{
 		if (const auto iter = g_globalFastLookupAnimMap.find({form->refID, groupId, isFirstPerson, false});
 			iter != g_globalFastLookupAnimMap.end())
+		{
 			return iter->second;
+		}
 		
 		if (modIndexResult.empty())
 		{
@@ -1046,6 +1047,7 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		.isFirstPerson = &map == &g_animGroupFirstPersonMap,
 		.isModIndexBased = &map == &g_animGroupModIdxFirstPersonMap || &map == &g_animGroupModIdxThirdPersonMap
 	};
+	
 	if (!data.enable)
 	{
 		bool erased = false;
@@ -1279,21 +1281,29 @@ bool OverrideAnimsFromScript(char* path, const F& overrideAnim)
 	if (g_animFileThread.joinable())
 		g_animFileThread.join();
 
-	if (!sv::get_file_extension(path).empty()) // single file
-		return overrideAnim(path);
-	
-	// directory
-	const auto animPaths = GetDirectoryAnimPaths(path);
-
-	if (animPaths.Empty())
-		return false;
-
-	size_t numAnims = 0;
-	for (const auto* animPath : animPaths)
+	auto overrideAnims = [=]
 	{
-		numAnims += overrideAnim(animPath);
-	}
-	return numAnims != 0;
+		if (!sv::get_file_extension(path).empty()) // single file
+			return overrideAnim(path);
+	
+		// directory
+		const auto animPaths = GetDirectoryAnimPaths(path);
+
+		if (animPaths.Empty())
+			return false;
+
+		size_t numAnims = 0;
+		for (const auto* animPath : animPaths)
+		{
+			numAnims += overrideAnim(animPath);
+		}
+		return numAnims != 0;
+	};
+	if (GetCurrentThreadId() == OSGlobals::GetSingleton()->mainThreadID)
+		return overrideAnims();
+	ScopedLock lock(g_executionQueueCS);
+	g_synchronizedExecutionQueue.emplace_back(std::move(overrideAnims));
+	return true; // assume success
 }
 
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
@@ -1490,7 +1500,7 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 {
 	NVSEStringMapBuilder builder;
 
-	builder.Add("sequenceName", anim->m_kName);
+	builder.Add("sequenceName", anim->m_kName.CStr());
 	builder.Add("seqWeight", anim->m_fSeqWeight);
 	builder.Add("cycleType", anim->m_eCycleType);
 	builder.Add("frequency", anim->m_fFrequency);
@@ -1515,7 +1525,7 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 			}
 		}
 	}
-	builder.Add("accumRootName", anim->m_kAccumRootName);
+	builder.Add("accumRootName", anim->m_kAccumRootName.CStr());
 	if (anim->animGroup)
 	{
 		builder.Add("animGroupId", anim->animGroup->groupID);
@@ -1626,7 +1636,7 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, std::string_v
 BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, BSAnimGroupSequence* baseAnim)
 {
 	auto* animData = actor->baseProcess->GetAnimData();
-	const auto* path = baseAnim->m_kName;
+	const char* path = baseAnim->m_kName;
 	const auto groupId = baseAnim->animGroup->groupID;
 	if (!animData)
 		return nullptr;
@@ -1777,7 +1787,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			for (const auto* anim : animData->animSequence)
 			{
 				if (anim)
-					arr.Add(anim->m_kName);
+					arr.Add(anim->m_kName.CStr());
 				else
 					arr.Add("");
 			}
@@ -1845,14 +1855,14 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (base->IsSingle())
 			{
 				const auto* anim = base->GetSequenceByIndex(0);
-				builder.Add(anim->m_kName);
+				builder.Add(anim->m_kName.CStr());
 				*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
 				return true;
 			}
 			const auto* multi = static_cast<AnimSequenceMultiple*>(base);
 			multi->anims->ForEach([&](BSAnimGroupSequence* sequence)
 			{
-				builder.Add(sequence->m_kName);
+				builder.Add(sequence->m_kName.CStr());
 			});
 			*result = reinterpret_cast<UInt32>(builder.Build(g_arrayVarInterface, scriptObj));
 			return true;
@@ -1930,7 +1940,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto oldKeyArray = std::move(anim->m_spTextKeys->m_kKeyArray);
 		anim->m_spTextKeys->m_kKeyArray = std::move(newKeyArray);
 		anim->animGroup = nullptr;
-		auto* oldSequenceName = anim->m_kName;
+		NiFixedString oldSequenceName = anim->m_kName;
 		anim->m_kName = animGroupInfo->name; // yes, the game initially has the sequence name set to the anim group name
 		NiPointer animGroup = TESAnimGroup::Init(anim, kfModel->path);
 		anim->m_kName = oldSequenceName;
@@ -2622,7 +2632,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = animData->animSequence[sequenceId];
 		if (!anim)
 			return true;
-		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, anim->m_kName);
+		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, anim->m_kName.CStr());
 		return true;
 	}, nullptr, "GetAnimPathByType");
 
