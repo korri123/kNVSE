@@ -321,7 +321,7 @@ struct AnimStacks
 };
 
 using FormID = UInt32;
-using FullAnimGroupID = UInt32;
+using FullAnimGroupID = UInt16;
 // Per ref ID there is a stack of animation variants per group ID
 class AnimOverrideStruct
 {
@@ -539,7 +539,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& ctx, UInt16 groupId, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 
-std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData);
+std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData);
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {

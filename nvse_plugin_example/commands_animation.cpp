@@ -96,10 +96,11 @@ bool Cmd_ForceStopIdle_Execute(COMMAND_ARGS)
 	return true;
 }
 
-GameAnimMap* CreateGameAnimMap()
+GameAnimMap* CreateGameAnimMap(AnimData* animData)
 {
 	// see 0x48F9F1
 	auto* alloc = static_cast<GameAnimMap*>(FormHeap_Allocate(0x10));
+	PointerMapAnimData::Set(alloc, animData);
 	return GameFuncs::NiTPointerMap_Init(alloc, 0x65);
 }
 
@@ -196,8 +197,8 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
 						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
-						const auto& [entry, success] = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
-						return entry->second;
+						const auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
+						return iter.first->second;
 					}
 					ERROR_LOG("Map returned null anim " + std::string(path));
 				}
@@ -214,7 +215,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 
 	auto*& customMap = g_customMaps[animData];
 	if (!customMap)
-		customMap = CreateGameAnimMap();
+		customMap = CreateGameAnimMap(animData);
 
 	auto* defaultMap = animData->mapAnimSequenceBase;
 
@@ -713,30 +714,9 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 
 // clear this cache every frame
 AnimationResultCache g_animationResultCache;
-ICriticalSection g_getActorAnimationCS;
 
-struct FastLookupAnimKey
-{
-    UInt32 identifier;
-    FullAnimGroupID fullGroupId;
-    bool isFirstPerson;
-    bool isModIndexBased;
 
-    auto operator<=>(const FastLookupAnimKey& other) const = default;
-};
-
-struct FastLookupAnimKeyHasher
-{
-    size_t operator()(const FastLookupAnimKey& key) const noexcept
-    {
-        size_t hash = key.identifier;
-        hash = hash * 31 + std::hash<FullAnimGroupID>{}(key.fullGroupId);
-        hash = hash * 31 + key.isFirstPerson;
-        return hash * 31 + key.isModIndexBased;
-    }
-};
-
-std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* animData)
+std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData)
 {
 	// wait for file loading to finish
 	if (g_animFileThread.joinable())
@@ -750,7 +730,7 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* a
 	int _debug = 0;
 #endif
 
-	const auto getActorAnimation = [&](UInt32 animGroupId) -> std::optional<AnimationResult>
+	const auto getActorAnimation = [&](FullAnimGroupID animGroupId) -> std::optional<AnimationResult>
 	{
 		std::optional<AnimationResult> result;
 		std::optional<AnimationResult> modIndexResult;
@@ -796,10 +776,7 @@ std::optional<AnimationResult> GetActorAnimation(UInt32 animGroupId, AnimData* a
 	};
 	// first try base group id based anim
 	std::optional<AnimationResult> result = std::nullopt;
-	if (const auto lResult = getActorAnimation(animGroupId & 0xFF); lResult && lResult->parent->matchBaseGroupId)
-		result = lResult;
-	else
-		result = getActorAnimation(animGroupId);
+	result = getActorAnimation(animGroupId);
 	cache->second = result;
 	return result;
 }
@@ -977,13 +954,6 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	const auto findFn = [&](const std::shared_ptr<SavedAnims>& a)
 	{
 		return ra::any_of(a->anims, _L(const auto& s, sv::equals_ci(path, s->path)));
-	};
-
-	const FastLookupAnimKey fastLookupKey = {
-		.identifier = data.identifier,
-		.fullGroupId = groupId,
-		.isFirstPerson = &map == &g_animGroupFirstPersonMap,
-		.isModIndexBased = &map == &g_animGroupModIdxFirstPersonMap || &map == &g_animGroupModIdxThirdPersonMap
 	};
 	
 	if (!data.enable)

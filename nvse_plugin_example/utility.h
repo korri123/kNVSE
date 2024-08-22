@@ -367,6 +367,7 @@ T GetOptimizedVariableOfCallerStack(void* addressOfReturnAddress, int offset, bo
 
 #define GET_CALLER_VAR(type, offset, lambda) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
 #define GET_CALLER_VAR_PTR(type, offset, lambda) GetVariablePtrOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
+#define GET_CALLER_VAR_LAMBDA(type, offset) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, true)
 #define NI_GET_CALLER_VAR(type, offset, lambda) GetOptimizedVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
 
 // Hash function for std::pair

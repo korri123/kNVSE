@@ -551,10 +551,10 @@ template <typename T_Key, typename T_Data>
 class NiTPointerMap_t
 {
 public:
-	virtual ~NiTPointerMap_t();
-
 	typedef MapNode<T_Key, T_Data> Entry;
 
+	virtual ~NiTPointerMap_t();
+	
 	// note: traverses in non-numerical order
 	class Iterator
 	{

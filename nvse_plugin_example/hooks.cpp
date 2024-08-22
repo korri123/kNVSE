@@ -73,10 +73,17 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 			destAnim = queuedAnim;
 			HandleExtraOperations(animData, queuedAnim);
 		}
+		// first check matchBaseGroupId
+		else if (const auto lResult = GetActorAnimation(animGroupId & 0xFF, animData); lResult && lResult->parent->matchBaseGroupId)
+		{
+			if (auto* newAnim = LoadAnimationPath(*lResult, animData, animGroupId))
+			{
+				destAnim = newAnim;
+			}
+		}
 		else if ((animResult = GetActorAnimation(animGroupId, animData)))
 		{
-			auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId);
-			if (newAnim)
+			if (auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId))
 			{
 				destAnim = newAnim;
 			}
@@ -175,9 +182,9 @@ int AnimErrorLogHook(const char* fmt, ...)
 	return 0;
 }
 
-UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void* _edx, UInt16 groupID, bool noRecurse)
+UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void*, UInt16 groupID, bool noRecurse)
 {
-	const auto defaultRet = [&]()
+	const auto defaultRet = [&]
 	{
 		return ThisStdCall<UInt16>(0x495740, animData, groupID, noRecurse);
 	};
@@ -262,37 +269,25 @@ JMP_HOOK(0x8BB96A, ProlongedAimFix, 0x8BB974, {
 
 #endif
 
-bool LookupAnimFromMap(UInt16 groupId, AnimSequenceBase** base, AnimData* animData)
+bool LookupCustomAnim(FullAnimGroupID groupId, AnimSequenceBase** base, AnimData* animData)
 {
 	// we do not want non existing 3rd anim data to try to get played as nothing gets played if it can't find it
 	//if (animData == g_thePlayer->firstPersonAnimData)
 	//	animData = g_thePlayer->baseProcess->GetAnimData();
 
-	const auto findCustomAnim = [&](AnimData* animData) -> bool
+	if (const auto animResult = GetActorAnimation(groupId, animData))
 	{
-		if (const auto animResult = GetActorAnimation(groupId, animData))
+		if (const auto animCtx = LoadCustomAnimation(*animResult->parent, groupId, animData))
 		{
-			if (const auto animCtx = LoadCustomAnimation(*animResult->parent, groupId, animData))
-			{
-				*base = animCtx->base;
-				return true;
-			}
+			*base = animCtx->base;
+			return true;
 		}
-		if (animData->actor == g_thePlayer && animData != g_thePlayer->firstPersonAnimData && groupId != GetActorRealAnimGroup(g_thePlayer, groupId))
-		{
-			// hack to allow pollCondition to work correctly in first person when groupid is decayed
-			GetActorAnimation(groupId, g_thePlayer->firstPersonAnimData);
-		}
-		return false;
-	};
-	if (findCustomAnim(animData))
-		return true;
-	/*if (animData->actor == g_thePlayer && g_firstPersonAnimId == -1 && findCustomAnim(g_thePlayer->firstPersonAnimData))
+	}
+	if (animData->actor == g_thePlayer && animData != g_thePlayer->firstPersonAnimData && groupId != GetActorRealAnimGroup(g_thePlayer, groupId))
 	{
-		// allow 1st person to use anim if it exists instead of 3rd person anim which doesn't exist
-		g_firstPersonAnimId = groupId;
-		*base = nullptr;
-	}*/
+		// hack to allow pollCondition to work correctly in first person when groupid is decayed
+		GetActorAnimation(groupId, g_thePlayer->firstPersonAnimData);
+	}
 	return false;
 }
 
@@ -318,14 +313,14 @@ BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID groupId)
 
 // attempt to fix anims that don't get loaded since they aren't in the game to begin with
 template <int AnimDataOffset>
-bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void* _EDX, UInt16 groupId, AnimSequenceBase** base)
+bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void*, UInt16 groupId, AnimSequenceBase** base)
 {
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
 	
 
 	[[msvc::noinline_calls]]
-	if (LookupAnimFromMap(groupId, base, animData))
+	if (LookupCustomAnim(groupId, base, animData))
 		return true;
 
 	if ((*base = animMap->Lookup(groupId)))
@@ -484,6 +479,29 @@ BSAnimGroupSequence* Find1stPersonRespectEndKeyAnim(AnimData* animData, BSAnimGr
 	return nullptr;
 }
 
+
+namespace PointerMapAnimData
+{
+	std::unordered_map<NiTPointerMap<AnimSequenceBase>*, AnimData*> g_pointerMapAnimDataMap;
+
+	AnimData* Get(NiTPointerMap<AnimSequenceBase>* map) 
+	{
+		if (const auto iter = g_pointerMapAnimDataMap.find(map); iter != g_pointerMapAnimDataMap.end())
+			return iter->second;
+		return nullptr;
+	}
+	
+	void Set(NiTPointerMap<AnimSequenceBase>* map, AnimData* animData) 
+	{
+		g_pointerMapAnimDataMap[map] = animData;
+	}
+	
+	void Erase(NiTPointerMap<AnimSequenceBase>* map)
+	{
+		g_pointerMapAnimDataMap.erase(map);
+	}
+}
+
 void ApplyHooks()
 {
 	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
@@ -559,7 +577,20 @@ void ApplyHooks()
 	}
 #endif
 
+	// NiTPointerMap<UInt16, AnimSequenceBase*>::Lookup
+	WriteRelJump(0x49C390, INLINE_HOOK(bool, __fastcall, NiTPointerMap<AnimSequenceBase>* map, void*, FullAnimGroupID fullGroupId, AnimSequenceBase** base)
+	{
+		if (auto* gameAnim = map->Lookup(fullGroupId))
+		{
+			*base = gameAnim;
+			return true;
+		}
+		if (auto* animData = PointerMapAnimData::Get(map))
+			return LookupCustomAnim(fullGroupId, base, animData);
+		return false;
+	}));
 
+#if 0
 	// attempt to fix anims that don't get loaded since they aren't in the game to begin with
 	WriteRelCall(0x49575B, NonExistingAnimHook<-0x10>);
 	WriteRelCall(0x495965, NonExistingAnimHook<-0x10>);
@@ -588,7 +619,7 @@ void ApplyHooks()
 	//WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
 	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
 	/* experimental end */
-
+#endif
 
 	// BSAnimGroupSequence* destructor
 	WriteRelCall(0x4EEB4B, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim)
@@ -599,10 +630,19 @@ void ApplyHooks()
 		ThisStdCall(0xA35640, anim);
 	}));
 
+	// AnimData constructor
+	WriteRelCall(0x48F9F1, INLINE_HOOK(NiTPointerMap<AnimSequenceBase>*, __fastcall, NiTPointerMap<AnimSequenceBase>* map, void*, UInt32 numBuckets)
+	{
+		auto* animData = GET_CALLER_VAR_LAMBDA(AnimData*, -0x18);
+		[[msvc::noinline_calls]] { PointerMapAnimData::Set(map, animData); }
+		return ThisStdCall<NiTPointerMap<AnimSequenceBase>*>(0x49C050, map, numBuckets);
+	}));
+
 	// AnimData destructor
 	WriteRelCall(0x48FB82, INLINE_HOOK(void, __fastcall, AnimData* animData)
 	{
 		HandleOnAnimDataDelete(animData);
+		PointerMapAnimData::Erase(animData->mapAnimSequenceBase);
 
 		// hooked call
 		ThisStdCall(0x48FF50, animData);
@@ -611,9 +651,8 @@ void ApplyHooks()
 	// hooking TESForm::GetFlags
 	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
 	{
-		auto* _ebp = GetParentBasePtr(_AddressOfReturnAddress(), true);
-		auto* actor = *reinterpret_cast<Actor**>(_ebp - 0x1C);
-		HandleOnReload(actor);
+		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x1C);
+		[[msvc::noinline_calls]] { HandleOnReload(actor); }
 		return form->flags;
 	}));
 
