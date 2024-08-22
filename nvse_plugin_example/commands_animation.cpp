@@ -39,7 +39,6 @@ AnimOverrideMap g_animGroupFirstPersonMap;
 AnimOverrideMap g_animGroupModIdxThirdPersonMap;
 AnimOverrideMap g_animGroupModIdxFirstPersonMap;
 
-std::unordered_map<AnimData*, GameAnimMap*> g_customMaps;
 
 
 AnimData* GetAnimDataForPov(UInt32 playerPov, Actor* actor)
@@ -96,12 +95,11 @@ bool Cmd_ForceStopIdle_Execute(COMMAND_ARGS)
 	return true;
 }
 
-GameAnimMap* CreateGameAnimMap(AnimData* animData)
+GameAnimMap* CreateGameAnimMap(UInt32 bucketSize)
 {
 	// see 0x48F9F1
 	auto* alloc = static_cast<GameAnimMap*>(FormHeap_Allocate(0x10));
-	PointerMapAnimData::Set(alloc, animData);
-	return GameFuncs::NiTPointerMap_Init(alloc, 0x65);
+	return GameFuncs::NiTPointerMap_Init(alloc, bucketSize);
 }
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID)
@@ -150,28 +148,21 @@ void HandleOnAnimDataDelete(AnimData* animData)
 		auto iter = ra::find_if(g_cachedAnimMap, _L(auto& p, p.first.second == animData));
 		if (iter == g_cachedAnimMap.end())
 			break;
-		iter->second.base->Destroy(true);
-		// refcount will be 1 and sequence not destroyed but still better to end any time tracked anims
 
 		HandleOnSequenceDestroy(iter->second.anim);
 		// g_cachedAnimMap.erase is called from HandleOnSequenceDestroy
 	}
-	if (auto iter = g_customMaps.find(animData); iter != g_customMaps.end())
-	{
-		// delete custom anim map created by us
-		GameFuncs::NiTPointerMap_Delete(iter->second, true);
-		g_customMaps.erase(iter);
-	}
 	std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second->animData == animData));
 }
+
+thread_local GameAnimMap* s_customMap = nullptr;
 
 std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData)
 {
 	const auto key = std::make_pair(path, animData);
 	if (const auto iter = g_cachedAnimMap.find(key); iter != g_cachedAnimMap.end())
 	{
-		const auto ctx = iter->second;
-		return ctx;
+		return iter->second;
 	}
 
 	const auto tryCreateAnimation = [&]() -> std::optional<BSAnimationContext>
@@ -197,7 +188,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
 						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
-						const auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
+						auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return iter.first->second;
 					}
 					ERROR_LOG("Map returned null anim " + std::string(path));
@@ -212,16 +203,16 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 			ERROR_LOG("Failed to load KF Model " + std::string(path));
 		return std::nullopt;
 	};
-
-	auto*& customMap = g_customMaps[animData];
-	if (!customMap)
-		customMap = CreateGameAnimMap(animData);
-
+	
 	auto* defaultMap = animData->mapAnimSequenceBase;
 
-	animData->mapAnimSequenceBase = customMap;
-	auto result = tryCreateAnimation();
+	if (!s_customMap)
+		s_customMap = CreateGameAnimMap(1);
+	
+	animData->mapAnimSequenceBase = s_customMap;
+	const auto result = tryCreateAnimation();
 	animData->mapAnimSequenceBase = defaultMap;
+	s_customMap->DeleteItem(s_customMap->Begin());
 	
 	return result;
 }
@@ -303,7 +294,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	{
 		if (!animTimePtr)
 		{
-			const auto iter = g_timeTrackedAnims.emplace(anim, std::make_shared<AnimTime>(actor, anim));
+			const auto iter = g_timeTrackedAnims.emplace(anim, std::make_unique<AnimTime>(actor, anim));
 			animTimePtr = iter.first->second.get();
 		}
 		return *animTimePtr;
@@ -603,7 +594,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				{
 					auto& animTime = g_timeTrackedGroups[std::make_pair(savedAnims, animData)];
 					if (!animTime)
-						animTime = std::make_shared<SavedAnimsTime>();
+						animTime = std::make_unique<SavedAnimsTime>();
 					animTime->conditionScript = *savedAnims->conditionScript;
 					animTime->groupId = groupId;
 					animTime->actorId = animData->actor->refID;
@@ -695,7 +686,7 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 {
 	if (const auto animCtx = LoadCustomAnimation(*result.parent, groupId, animData))
 	{
-		auto* anim = animCtx->anim;
+		BSAnimGroupSequence* anim = animCtx->anim;
 		if (!anim)
 			return nullptr;
 		auto& [ctx, animsTime, stacks] = result;
@@ -1334,7 +1325,6 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 	g_animGroupThirdPersonMap.clear();
 	g_animGroupModIdxFirstPersonMap.clear();
 	g_animGroupModIdxThirdPersonMap.clear();
-	g_customMaps.clear();
 	g_scriptSoundExecutions.clear();
 	g_scriptCallExecutions.clear();
 	g_scriptLineExecutions.clear();
@@ -1524,7 +1514,7 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, std::string_v
 			const auto animCtx = LoadCustomAnimation((*iter)->path, animData);
 			if (animCtx)
 			{
-				auto* anim = animCtx->anim;
+				BSAnimGroupSequence* anim = animCtx->anim;
 				customAnim->parent->linkedSequences.insert(anim);
 				return anim;
 			}

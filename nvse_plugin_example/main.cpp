@@ -179,7 +179,7 @@ void HandleAnimTimes()
 	for (auto it = g_timeTrackedAnims.begin(); it != g_timeTrackedAnims.end();)
 	{
 		auto& animTime = *it->second;
-		auto* anim = animTime.anim;
+		BSAnimGroupSequence* anim = animTime.anim;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
 
 		const auto erase = [&]

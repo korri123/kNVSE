@@ -596,10 +596,15 @@ public:
 
 	virtual UInt32	CalculateBucket(UInt32 key);
 	virtual bool	CompareKey(UInt32 lhs, UInt32 rhs);
-	virtual void	Fn_03(UInt32 arg0, UInt32 arg1, UInt32 arg2);	// assign to entry
-	virtual void	Fn_04(UInt32 arg);
-	virtual void	Fn_05(void);	// locked operations
-	virtual void	Fn_06(void);	// locked operations
+	virtual void	SetValue(UInt32 arg0, UInt32 arg1, UInt32 arg2);	// assign to entry
+	virtual void	NullSub(UInt32 arg);
+	virtual void	NewItem(void);	// locked operations
+	virtual void	DeleteItem(Entry* entry);	// locked operations
+
+	Entry* Begin()
+	{
+		return m_buckets[0];
+	}
 
 	T_Data *	Lookup(T_Key key);
 	bool		Insert(Entry* nuEntry);
@@ -767,7 +772,7 @@ class NiTMapBase
 {
 public:
 	NiTMapBase();
-	~NiTMapBase();
+	virtual~NiTMapBase();
 
 	struct Entry
 	{
@@ -776,13 +781,17 @@ public:
 		T_Data	data;	// 008
 	};
 
-	virtual NiTMapBase<T_Key, T_Data>*	Destructor(bool doFree);						// 000
 	virtual UInt32						Hash(T_Key key);								// 001
 	virtual void						Equal(T_Key key1, T_Key key2);					// 002
-	virtual void						FillEntry(Entry entry, T_Key key, T_Data data);	// 003
-	virtual	void						Unk_004(void * arg0);							// 004
-	virtual	void						Unk_005(void);									// 005
-	virtual	void						Unk_006();										// 006
+	virtual void						SetValue(Entry* entry, T_Key key, T_Data data);	// 003
+	virtual	void						NullSub(Entry* entry);							// 004
+	virtual	void						NewItem();									// 005
+	virtual	void						DeleteItem(Entry* entry);										// 006
+
+	Entry* Begin()
+	{
+		return buckets[0];
+	}
 
 	//void	** _vtbl;	// 0
 	UInt32	numBuckets;	// 4

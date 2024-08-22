@@ -199,7 +199,7 @@ public:
 struct AnimTime
 {
 	UInt32 actorId = 0;
-	BSAnimGroupSequence* anim = nullptr;
+	NiPointer<BSAnimGroupSequence> anim = nullptr;
 	float lastNiTime = -FLT_MAX;
 	bool respectEndKey = false;
 	bool firstPerson = false;
@@ -248,7 +248,7 @@ struct SavedAnimsTime
 {
 	Script* conditionScript = nullptr;
 	UInt16 groupId = 0;
-	BSAnimGroupSequence* anim = nullptr;
+	NiPointer<BSAnimGroupSequence> anim = nullptr;
 	UInt32 actorId = 0;
 	AnimData* animData = nullptr;
 
@@ -256,10 +256,10 @@ struct SavedAnimsTime
 };
 
 
-using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::shared_ptr<AnimTime>>;
+using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::unique_ptr<AnimTime>>;
 extern TimeTrackedAnimsMap g_timeTrackedAnims;
 
-using TimeTrackedGroupsMap = std::unordered_map<std::pair<SavedAnims*, AnimData*>, std::shared_ptr<SavedAnimsTime>, pair_hash, pair_equal>;
+using TimeTrackedGroupsMap = std::unordered_map<std::pair<SavedAnims*, AnimData*>, std::unique_ptr<SavedAnimsTime>, pair_hash, pair_equal>;
 extern TimeTrackedGroupsMap g_timeTrackedGroups;
 
 
@@ -527,7 +527,7 @@ public:
 
 struct BSAnimationContext
 {
-	BSAnimGroupSequence* anim;
+	NiPointer<BSAnimGroupSequence> anim;
 	AnimSequenceBase* base;
 
 	BSAnimationContext(BSAnimGroupSequence* anim, AnimSequenceBase* base): anim(anim), base(base)
