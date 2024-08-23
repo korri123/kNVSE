@@ -24,12 +24,6 @@ void NiOutputDebugString(const char* text)
     ERROR_LOG(text);
 }
 
-#if _DEBUG
-extern std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
-extern std::unordered_map<NiInterpolator*, const char*> g_debugInterpNames;
-extern std::unordered_map<NiInterpolator*, const char*> g_debugInterpSequences;
-#endif
-
 bool NiBlendAccumTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 {
     float fTotalTransWeight = 1.0f;
@@ -140,6 +134,7 @@ bool NiBlendAccumTransformInterpolator::BlendValues(float fTime, NiObjectNET* pk
                 fFinalScale += kTransform.GetScale() *
                     kItem.m_fNormalizedWeight;
                 bScaleChanged = true;
+                NIASSERT(fFinalScale < 1000.0f && fFinalScale > -1000.0f);
             }
             else
             {
@@ -184,6 +179,7 @@ bool NiBlendAccumTransformInterpolator::BlendValues(float fTime, NiObjectNET* pk
             // weighted sum
             fFinalScale *= fTotalScaleWeightInv;
             kFinalTransform.SetScale(fFinalScale);
+            NIASSERT(fFinalScale < 1000.0f && fFinalScale > -1000.0f);
         }
 
         m_kAccumulatedTransformValue = m_kAccumulatedTransformValue *
@@ -352,6 +348,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
                     fFinalScale += kTransform.GetScale() *
                         kItem.m_fNormalizedWeight;
                     bScaleChanged = true;
+                    NIASSERT(fFinalScale < 1000.0f && fFinalScale > -1000.0f);
                 }
                 else
                 {
@@ -842,7 +839,7 @@ namespace NiHooks
         WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeights);
-        WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues);
+        // WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues); // modified and enhanced movement bugs out when sprinting
         WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
         WriteRelJump(0xA2F800, &NiControllerManager::BlendFromPose);
         WriteRelJump(0xA2E280, &NiControllerManager::CrossFade);

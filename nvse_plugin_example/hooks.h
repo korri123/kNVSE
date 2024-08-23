@@ -3,10 +3,6 @@
 
 #include "commands_animation.h"
 
-struct AnimData;
-class BSAnimGroupSequence;
-enum AnimGroupID : UInt8;
-
 extern bool g_startedAnimation;
 extern BSAnimGroupSequence* g_lastLoopSequence;
 void ApplyHooks();

@@ -1142,7 +1142,7 @@ public:
 
 	SInt8 GetFactionRank(TESFaction* faction);
 
-	bool IsFemale() { return flags & kFlags_Female ? true : false; }
+	bool IsFemale() const { return (flags & kFlags_Female) != 0; }
 };
 
 // 14

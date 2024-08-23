@@ -17,24 +17,11 @@
 #include "blend_fixes.h"
 #include "knvse_events.h"
 
-#define CALL_EAX(addr) __asm mov eax, addr __asm call eax
-#define JMP_EAX(addr)  __asm mov eax, addr __asm jmp eax
-#define JMP_EDX(addr)  __asm mov edx, addr __asm jmp edx
-
-
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
 
 std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
-
-#if _DEBUG
-MapNode<const char*, NiControllerSequence> g_mapNode__;
-NiTStringPointerMap<UInt32>* g_stringPointerMap__ = nullptr;
-std::unordered_map<NiBlendInterpolator*, std::unordered_set<NiControllerSequence*>> g_debugInterpMap;
-std::unordered_map<NiInterpolator*, const char*> g_debugInterpNames;
-std::unordered_map<NiInterpolator*, const char*> g_debugInterpSequences;
-#endif
 
 
 BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroupId)
@@ -233,8 +220,6 @@ void FixIdleAnimStrafe()
 	SafeWriteBuf(0x9EA0C8, "\xEB\xE", 2); // jmp 0x9EA0D8
 }
 
-#define HOOK __declspec(naked) void
-
 void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool bUpdateInterpolators)
 {
 	const auto* animData = GET_CALLER_VAR(AnimData*, -0x5C, false);
@@ -247,27 +232,6 @@ void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool
 	// hooked call
 	ThisStdCall(0xA328B0, anim, fTime, bUpdateInterpolators);
 }
-
-
-#if 0
-bool __fastcall ProlongedAimFix(UInt8* basePointer)
-{
-	const auto keyType = *reinterpret_cast<UInt32*>(basePointer - 0xC);
-	auto* actor = *reinterpret_cast<Actor**>(basePointer - 0x30);
-	if (actor != g_thePlayer)
-		return keyType == kAnimKeyType_LoopingSequenceOrAim;
-	auto* process = g_thePlayer->GetHighProcess();
-	return keyType == kAnimKeyType_Attack && !process->isAiming || keyType == kAnimKeyType_LoopingSequenceOrAim;
-}
-
-JMP_HOOK(0x8BB96A, ProlongedAimFix, 0x8BB974, {
-	_A lea ecx,[ebp]
-	_A call ProlongedAimFix
-	_A cmp al, 1
-	_A jmp retnAddr
-	})
-
-#endif
 
 bool LookupCustomAnim(FullAnimGroupID groupId, AnimSequenceBase** base, AnimData* animData)
 {
@@ -318,18 +282,33 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
 	
-
-	[[msvc::noinline_calls]]
-	if (LookupCustomAnim(groupId, base, animData))
-		return true;
-
 	if ((*base = animMap->Lookup(groupId)))
 		return true;
 
-	//if (LookupAnimFromMap(groupId, base, animData))
-	//	return true;
+	// do this last as it's worse for performance
+	if (LookupCustomAnim(groupId, base, animData)) [[msvc::noinline_calls]]
+	{
+		return true;
+	}
+	
+	return false;
+}
 
+// here we first try to get kNVSE anims without murdering performance
+template <int AnimDataOffset>
+bool __fastcall OverrideWithCustomAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void*, UInt16 groupId, AnimSequenceBase** base)
+{
+	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
+	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
 
+	if (LookupCustomAnim(groupId, base, animData)) [[msvc::noinline_calls]]
+	{
+		return true;
+	}
+	
+	if ((*base = animMap->Lookup(groupId)))
+		return true;
+	
 	return false;
 }
 
@@ -359,7 +338,7 @@ bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
 	return false;
 }
 
-HOOK PreventDuplicateAnimationsHook()
+__declspec(naked) void PreventDuplicateAnimationsHook()
 {
 	const static UInt32 skipAddress = 0x490D7E;
 	const static UInt32 retnAddress = 0x490A4D;
@@ -479,35 +458,16 @@ BSAnimGroupSequence* Find1stPersonRespectEndKeyAnim(AnimData* animData, BSAnimGr
 	return nullptr;
 }
 
-
-namespace PointerMapAnimData
-{
-	std::unordered_map<NiTPointerMap<AnimSequenceBase>*, AnimData*> g_pointerMapAnimDataMap;
-
-	AnimData* Get(NiTPointerMap<AnimSequenceBase>* map) 
-	{
-		if (const auto iter = g_pointerMapAnimDataMap.find(map); iter != g_pointerMapAnimDataMap.end())
-			return iter->second;
-		return nullptr;
-	}
-	
-	void Set(NiTPointerMap<AnimSequenceBase>* map, AnimData* animData) 
-	{
-		g_pointerMapAnimDataMap[map] = animData;
-	}
-	
-	void Erase(NiTPointerMap<AnimSequenceBase>* map)
-	{
-		g_pointerMapAnimDataMap.erase(map);
-	}
-}
-
 void ApplyHooks()
 {
 	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
 	CSimpleIniA ini;
 	ini.SetUnicode();
-	const auto errVal = ini.LoadFile(iniPath.c_str());
+	if (ini.LoadFile(iniPath.c_str()) < 0)
+	{
+		ERROR_LOG("Failed to load ini file");
+		return;
+	}
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 1, "; 0 = no log, 1 = kNVSE.log, 2 = console log");
 	g_errorLogLevel = ini.GetOrCreate("General", "iErrorLogLevel", 1, "; 0 = no log, 1 = kNVSE.log, 2 = error console log");
 
@@ -553,7 +513,10 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelCall(0x4951D2, FixBlendMult);
 
-	ini.SaveFile(iniPath.c_str(), false);
+	if (ini.SaveFile(iniPath.c_str(), false) < 0)
+	{
+		ERROR_LOG("Failed to save ini file");
+	}
 
 	ApplyNiHooks();
 	
@@ -577,20 +540,7 @@ void ApplyHooks()
 	}
 #endif
 
-	// NiTPointerMap<UInt16, AnimSequenceBase*>::Lookup
-	WriteRelJump(0x49C390, INLINE_HOOK(bool, __fastcall, NiTPointerMap<AnimSequenceBase>* map, void*, FullAnimGroupID fullGroupId, AnimSequenceBase** base)
-	{
-		if (auto* gameAnim = map->Lookup(fullGroupId))
-		{
-			*base = gameAnim;
-			return true;
-		}
-		if (auto* animData = PointerMapAnimData::Get(map))
-			return LookupCustomAnim(fullGroupId, base, animData);
-		return false;
-	}));
-
-#if 0
+#if 1
 	// attempt to fix anims that don't get loaded since they aren't in the game to begin with
 	WriteRelCall(0x49575B, NonExistingAnimHook<-0x10>);
 	WriteRelCall(0x495965, NonExistingAnimHook<-0x10>);
@@ -598,7 +548,6 @@ void ApplyHooks()
 	WriteRelCall(0x495A03, NonExistingAnimHook<-0x10>);
 
 	WriteRelCall(0x4948E6, NonExistingAnimHook<-0x14>);
-	WriteRelCall(0x49472B, NonExistingAnimHook<-0x8>);
 
 	/* experimental */
 	WriteRelCall(0x9D0E80, NonExistingAnimHook<-0x1C>);
@@ -606,8 +555,6 @@ void ApplyHooks()
 	WriteRelCall(0x97FE09, NonExistingAnimHook<-0xC>);
 	WriteRelCall(0x97F36D, NonExistingAnimHook<-0xC>);
 	WriteRelCall(0x8B7985, NonExistingAnimHook<-0x14>);
-	WriteRelCall(0x49651B, NonExistingAnimHook<-0x14>);
-	WriteRelCall(0x49651B, NonExistingAnimHook<-0x8>);
 	WriteRelCall(0x495DC6, NonExistingAnimHook<-0x10>);
 	WriteRelCall(0x4956CE, NonExistingAnimHook<-0x14>);
 	WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
@@ -619,30 +566,17 @@ void ApplyHooks()
 	//WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
 	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
 	/* experimental end */
+
+	// AnimData::GetSequenceBaseFromMap
+	WriteRelCall(0x49472B, OverrideWithCustomAnimHook<-0x8>);
+	//  AnimData::GetAnimGroupForID
+	WriteRelCall(0x49651B, OverrideWithCustomAnimHook<-0x8>);
 #endif
-
-	// BSAnimGroupSequence* destructor
-	WriteRelCall(0x4EEB4B, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim)
-	{
-		HandleOnSequenceDestroy(anim);
-
-		// hooked call
-		ThisStdCall(0xA35640, anim);
-	}));
-
-	// AnimData constructor
-	WriteRelCall(0x48F9F1, INLINE_HOOK(NiTPointerMap<AnimSequenceBase>*, __fastcall, NiTPointerMap<AnimSequenceBase>* map, void*, UInt32 numBuckets)
-	{
-		auto* animData = GET_CALLER_VAR_LAMBDA(AnimData*, -0x18);
-		[[msvc::noinline_calls]] { PointerMapAnimData::Set(map, animData); }
-		return ThisStdCall<NiTPointerMap<AnimSequenceBase>*>(0x49C050, map, numBuckets);
-	}));
 
 	// AnimData destructor
 	WriteRelCall(0x48FB82, INLINE_HOOK(void, __fastcall, AnimData* animData)
 	{
 		HandleOnAnimDataDelete(animData);
-		PointerMapAnimData::Erase(animData->mapAnimSequenceBase);
 
 		// hooked call
 		ThisStdCall(0x48FF50, animData);

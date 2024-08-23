@@ -702,6 +702,18 @@ public:
 		const auto* npc = static_cast<TESNPC*>(baseForm);
 		return npc->race.race;
 	}
+
+	bool HasCrippledLegs() const
+	{
+		return ThisStdCall<bool>(0x8B7B70, this);
+	}
+
+	bool IsFemale() const
+	{
+		return IS_ID(baseForm, TESNPC) && static_cast<TESNPC*>(baseForm)->baseData.IsFemale();
+	}
+
+	bool HasWeaponWithMod(UInt32 mod) const;
 };
 STATIC_ASSERT(offsetof(Actor, magicCaster) == 0x088);
 
@@ -904,7 +916,6 @@ public:
 	AnimData* Get3rdPersonAnimData();
 	void SetWeaponOut(bool bOut);
 	AnimData* GetAnimData(bool bFirstPerson) const;
-
 	NiNode* GetNode(bool bFirstPerson) const;
 };
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);

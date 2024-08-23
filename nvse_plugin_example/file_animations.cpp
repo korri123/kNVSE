@@ -49,13 +49,13 @@ void LoadPathsForType(const fs::path& dirPath, const UInt32 identifier, bool fir
 	};
 	if (jsonEntry)
 	{
-		animOverrideData.condition = std::move(jsonEntry->condition);
+		animOverrideData.conditionScriptText = jsonEntry->condition;
 		animOverrideData.pollCondition = jsonEntry->pollCondition;
 		animOverrideData.matchBaseGroupId = jsonEntry->matchBaseGroupId;
 	}
 	for (const auto& iter : fs::recursive_directory_iterator(dirPath))
 	{
-		if (_stricmp(iter.path().extension().string().c_str(), ".kf") != 0)
+		if (!sv::equals_ci(iter.path().extension().string(), ".kf"))
 			continue;
 		const auto& relPath = GetRelativePath(iter.path(), "AnimGroupOverride");
 		const std::string_view path = AddStringToPool(ToLower(relPath.string()));
@@ -260,7 +260,7 @@ bool LoadJSONInBSAPaths(const std::vector<std::string_view>& bsaAnimPaths, JSONE
 	AnimOverrideData animOverrideData = {
 		.identifier = entry.form->refID,
 		.enable = true,
-		.condition = entry.condition,
+		.conditionScriptText = entry.condition,
 		.pollCondition = entry.pollCondition,
 		.matchBaseGroupId = entry.matchBaseGroupId,
 	};

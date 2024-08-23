@@ -1,13 +1,12 @@
 #pragma once
 
-#include "class_vtbls.h"
 #include "NiNodes.h"
 #include "GameForms.h"
 #include "GameTasks.h"
+#include "class_vtbls.h"
 
 class TESAmmo;
 class TESObjectWEAP;
-struct AnimData;
 
 // Straight from OBSE. Needs to be debugged ! ! ! 
 // This is used all over the game code to manage actors and occassionally other objects.
@@ -44,6 +43,129 @@ public:
 
 extern ActorProcessManager * g_actorProcessManager;
 
+class AnimIdle : public NiRefObject
+{
+public:
+	UInt32 unk008;
+	UInt32 unk00C;
+	UInt32 unk010;
+	eAnimSequence sequenceID0;
+	BSAnimGroupSequence* animSequence018;
+	NiRefObject* unk01C[2];
+	NiRefObject* unk024[2];
+	TESIdleForm* idleForm;
+	UInt32 unk030;
+	Actor* actor;
+};
+STATIC_ASSERT(sizeof(AnimIdle) == 0x38);
+
+
+class AnimSequenceBase
+{
+public:
+	virtual void Destroy(bool doFree);
+	virtual void AddAnimGroupSequence(BSAnimGroupSequence* sequence, int unused);
+	virtual bool RemoveAnimGroupSequence(BSAnimGroupSequence* sequence, int unused);
+	virtual bool IsSingle();
+	virtual BSAnimGroupSequence* GetSequenceByIndex(int index);
+	virtual BSAnimGroupSequence* GetSequenceByAnimGroup(TESAnimGroup* group);
+	virtual signed int GetIndexOfSequenceName(const char* name);
+	bool Contains(BSAnimGroupSequence* anim);
+};
+
+class AnimSequenceSingle : public AnimSequenceBase
+{
+public:
+	BSAnimGroupSequence* anim;
+};
+
+// 08
+class AnimSequenceMultiple : public AnimSequenceBase
+{
+public:
+	DList<BSAnimGroupSequence>* anims; // 04
+};
+
+struct AnimData
+{
+	struct Unk124
+	{
+		struct Unk18
+		{
+			UInt32			unk00[9];
+			UInt32			unk24;
+		};
+
+		UInt32			unk00[6];
+		Unk18* unk18;
+	};
+
+	struct Unk128
+	{
+		UInt32			unk00[11];
+		TESIdleForm* idle2C;
+	};
+
+	UInt32							unk000;				// 000
+	Actor* actor;				// 004
+	NiNode* nSceneRoot;		// 008
+	NiNode* nBip01;			// 00C
+	NiPoint3						pt010;				// 010
+	NiPoint3						pt01C;				// 01C
+	NiNode* nPelvis;			// 028
+	NiNode* nBip01Copy;		// 02C
+	NiNode* nLForearm;			// 030
+	NiNode* nHead;				// 034
+	NiNode* nWeapon;			// 038
+	NiNode* UNUSED03C;			// 03C
+	NiNode* UNUSED040;			// 040
+	NiNode* nNeck1;			// 044
+	float							unk048;				// 048
+	UInt16							groupIDs[8];		// 04C
+	SInt32							sequenceState1[8];	// 05C
+	SInt32							sequenceState2[8];	// 07C
+	UInt16							queuedGroupIDs[8];	// 09C
+	UInt32							queuedGroupSequenceStates[8];			// 0AC
+	UInt8							byte0CC;			// 0CC
+	UInt8							byte0CD;			// 0CD
+	UInt8							byte0CE;			// 0CE
+	UInt8							byte0CF;			// 0CF
+	float							timePassed;			// 0D0
+	UInt32							unk0D4;				// 0D4
+	NiControllerManager* controllerManager;			// 0D8
+	NiTPointerMap<AnimSequenceBase>* mapAnimSequenceBase;// 0DC
+	BSAnimGroupSequence* animSequence[8];	// 0E0
+	BSAnimGroupSequence* animSeq100;		// 100
+	tList<KFModel>	loadingAnims;		// 104
+	float movementSpeedMult;			// 10C
+	float rateOfFire;					// 110
+	float turboSpeedMult; 			    // 114
+	float weaponReloadSpeed; 		    // 118
+	float equipSpeed; 				    // 11C
+	bool noBlend120; 				    // 120
+	UInt8 byte121; 				    // 121
+	UInt16 unk122; 				    // 122
+	AnimIdle* idleAnim; 		    	// 124
+	AnimIdle* idleAnimQueued; 		    // 128
+	AnimIdle* spIdle12C; 			    	// 12C
+	AnimIdle* spIdle130; 		    		// 130
+	tList<void> list134; 		    	// 134
+
+	AnimGroupID GetNextAttackGroupID() const;
+
+	BSAnimGroupSequence* MorphOrBlendToSequence(BSAnimGroupSequence *apDestSequence,
+		UInt16 groupID,
+		eAnimSequence sequenceID);
+
+	bool IsAnimSequenceQueued(const BSAnimGroupSequence* apSequence) const;
+
+	void ResetSequenceState(eAnimSequence seqID, float blendAmount)
+	{
+		ThisStdCall(0x496080, this, seqID, blendAmount);
+	}
+};
+STATIC_ASSERT(sizeof(AnimData) == 0x13C);
+
 class BaseProcess
 {
 public:
@@ -77,10 +199,12 @@ public:
 		UInt32			unk04;
 		TESObjectWEAP	*weapon;
 
-		ExtraDataList *GetExtraData()
+		ExtraDataList *GetExtraData() const
 		{
 			return xData ? *xData : NULL;
 		}
+
+		bool HasWeaponMod(UInt32 mod) const;
 	};
 
 	struct Data004 {
@@ -852,127 +976,3 @@ public:
 };
 
 
-class AnimIdle : public NiRefObject
-{
-public:
-	UInt32 unk008;
-	UInt32 unk00C;
-	UInt32 unk010;
-	eAnimSequence sequenceID0;
-	BSAnimGroupSequence* animSequence018;
-	NiRefObject* unk01C[2];
-	NiRefObject* unk024[2];
-	TESIdleForm* idleForm;
-	UInt32 unk030;
-	Actor* actor;
-};
-STATIC_ASSERT(sizeof(AnimIdle) == 0x38);
-
-
-class AnimSequenceBase
-{
-public:
-	virtual void Destroy(bool doFree);
-	virtual void AddAnimGroupSequence(BSAnimGroupSequence* sequence, int unused);
-	virtual bool RemoveAnimGroupSequence(BSAnimGroupSequence* sequence, int unused);
-	virtual bool IsSingle();
-	virtual BSAnimGroupSequence* GetSequenceByIndex(int index);
-	virtual BSAnimGroupSequence* GetSequenceByAnimGroup(TESAnimGroup* group);
-	virtual signed int GetIndexOfSequenceName(const char* name);
-	bool Contains(BSAnimGroupSequence* anim);
-};
-
-class AnimSequenceSingle : public AnimSequenceBase
-{
-public:
-	BSAnimGroupSequence* anim;
-};
-
-
-
-// 08
-class AnimSequenceMultiple : public AnimSequenceBase
-{
-public:
-	DList<BSAnimGroupSequence>* anims; // 04
-};
-
-struct AnimData
-{
-	struct Unk124
-	{
-		struct Unk18
-		{
-			UInt32			unk00[9];
-			UInt32			unk24;
-		};
-
-		UInt32			unk00[6];
-		Unk18* unk18;
-	};
-
-	struct Unk128
-	{
-		UInt32			unk00[11];
-		TESIdleForm* idle2C;
-	};
-
-	UInt32							unk000;				// 000
-	Actor* actor;				// 004
-	NiNode* nSceneRoot;		// 008
-	NiNode* nBip01;			// 00C
-	NiPoint3						pt010;				// 010
-	NiPoint3						pt01C;				// 01C
-	NiNode* nPelvis;			// 028
-	NiNode* nBip01Copy;		// 02C
-	NiNode* nLForearm;			// 030
-	NiNode* nHead;				// 034
-	NiNode* nWeapon;			// 038
-	NiNode* UNUSED03C;			// 03C
-	NiNode* UNUSED040;			// 040
-	NiNode* nNeck1;			// 044
-	float							unk048;				// 048
-	UInt16							groupIDs[8];		// 04C
-	SInt32							sequenceState1[8];	// 05C
-	SInt32							sequenceState2[8];	// 07C
-	UInt16							queuedGroupIDs[8];	// 09C
-	UInt32							queuedGroupSequenceStates[8];			// 0AC
-	UInt8							byte0CC;			// 0CC
-	UInt8							byte0CD;			// 0CD
-	UInt8							byte0CE;			// 0CE
-	UInt8							byte0CF;			// 0CF
-	float							timePassed;			// 0D0
-	UInt32							unk0D4;				// 0D4
-	NiControllerManager* controllerManager;			// 0D8
-	NiTPointerMap<AnimSequenceBase>* mapAnimSequenceBase;// 0DC
-	BSAnimGroupSequence* animSequence[8];	// 0E0
-	BSAnimGroupSequence* animSeq100;		// 100
-	tList<KFModel>	loadingAnims;		// 104
-	float movementSpeedMult;			// 10C
-	float rateOfFire;					// 110
-	float turboSpeedMult; 			    // 114
-	float weaponReloadSpeed; 		    // 118
-	float equipSpeed; 				    // 11C
-	bool noBlend120; 				    // 120
-	UInt8 byte121; 				    // 121
-	UInt16 unk122; 				    // 122
-	AnimIdle* idleAnim; 		    	// 124
-	AnimIdle* idleAnimQueued; 		    // 128
-	AnimIdle* spIdle12C; 			    	// 12C
-	AnimIdle* spIdle130; 		    		// 130
-	tList<void> list134; 		    	// 134
-
-	AnimGroupID GetNextAttackGroupID() const;
-
-	BSAnimGroupSequence* MorphOrBlendToSequence(BSAnimGroupSequence *apDestSequence,
-		UInt16 groupID,
-		eAnimSequence sequenceID);
-
-	bool IsAnimSequenceQueued(const BSAnimGroupSequence* apSequence) const;
-
-	void ResetSequenceState(eAnimSequence seqID, float blendAmount)
-	{
-		ThisStdCall(0x496080, this, seqID, blendAmount);
-	}
-};
-STATIC_ASSERT(sizeof(AnimData) == 0x13C);

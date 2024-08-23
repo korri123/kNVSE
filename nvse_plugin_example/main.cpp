@@ -75,18 +75,19 @@ float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 ScriptCache g_scriptCache;
 int g_cacheHits = 0;
 int g_cacheMisses = 0;
-
+int g_totalCalls = 0;
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 	NVSEArrayVarInterface::Element* result)
 {
+	++g_totalCalls;
 	auto [it, isNew] = g_scriptCache.emplace(std::make_pair(std::make_pair(callingObj, funcScript), NVSEArrayVarInterface::Element{}));
 	if (!isNew)
 	{
-		//++g_cacheHits;
+		++g_cacheHits;
 		*result = it->second;
 		return true;
 	}
-	//++g_cacheMisses;
+	++g_cacheMisses;
 	const auto success = g_script->CallFunction(
 		funcScript,
 		callingObj,
@@ -157,9 +158,8 @@ void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence*
 	}
 }
 
-bool IsAnimNextInSelection(AnimData* animData, UInt16 nearestGroupId, BSAnimGroupSequence* anim)
+bool IsAnimNextInSelection(AnimData* animData, UInt16 nearestGroupId, const std::optional<AnimationResult>& ctx, BSAnimGroupSequence* anim)
 {
-	const auto ctx = GetActorAnimation(nearestGroupId, animData);
 	if (!ctx)
 	{
 		auto* animBase = animData->mapAnimSequenceBase->Lookup(nearestGroupId);
@@ -199,7 +199,7 @@ void HandleAnimTimes()
 			erase();
 			continue;
 		}
-		auto* groupInfo = GetGroupInfo(anim->animGroup->groupID);
+		auto* groupInfo = GetGroupInfo(static_cast<AnimGroupID>(anim->animGroup->groupID));
 #if _DEBUG
 		auto animTimeDupl = TempObject(animTime); // see vals in debugger after erase
 #endif
@@ -330,6 +330,28 @@ void HandleAnimTimes()
 	}
 
 	std::vector<std::pair<AnimData*, FullAnimGroupID>> animsToPlay;
+	animsToPlay.reserve(1);
+
+#if _DEBUG
+	struct DebugInfo
+	{
+		std::string_view anim;
+		FullAnimGroupID groupId;
+		std::string_view conditionScript;
+		std::string_view actorName;
+	};
+	std::vector<DebugInfo> anims;
+	for (const auto& [pair, animTimePtr] : g_timeTrackedGroups)
+	{
+		if (pair.first->conditionScriptText.empty())
+		{
+			pair.first->conditionScriptText = AddStringToPool(DecompileScript(*pair.first->conditionScript));
+		}
+		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTimePtr->actorId), TESForm, Actor);
+		std::string_view actorName = actor ? actor->GetFullName()->name.CStr() : "NULL";
+		anims.emplace_back(animTimePtr->anim->m_kName.Str(), animTimePtr->groupId, pair.first->conditionScriptText, actorName);
+	}
+#endif
 
 	for (auto it = g_timeTrackedGroups.begin(); it != g_timeTrackedGroups.end();)
 	{
@@ -340,26 +362,20 @@ void HandleAnimTimes()
 		auto& [pair, animTimePtr] = *it;
 		auto& animTime = *animTimePtr;
 		auto& [conditionScript, groupId, anim, actorId, animData] = animTime;
-		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
+		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
 		if (!actor)
 		{
 			erase();
 			continue;
 		}
 		
-		if (shouldErase(actor) || !animData || !anim || anim->m_eState == kAnimState_Inactive && anim->m_eCycleType != NiControllerSequence::LOOP || !conditionScript)
-		{
-			erase();
-			continue;
-		}
-		
-		if (!animData)
+		if (shouldErase(actor) || !animData || !anim || anim->m_eState == NiControllerSequence::INACTIVE && anim->m_eCycleType != NiControllerSequence::LOOP || !conditionScript)
 		{
 			erase();
 			continue;
 		}
 
-		const auto* animInfo = GetGroupInfo(groupId);
+		const auto* animInfo = GetGroupInfo(static_cast<AnimGroupID>(groupId));
 		auto* curAnim = animData->animSequence[animInfo->sequenceType];
 		if (!curAnim || !curAnim->animGroup)
 		{
@@ -367,8 +383,16 @@ void HandleAnimTimes()
 			continue;
 		}
 
+		const UInt16 currentGroupId = curAnim->animGroup->groupID;
+		
 		// check if current anim is running at sequence type
-		if ((curAnim->animGroup->groupID & 0xFF) != (groupId & 0xFF))
+		if ((currentGroupId & 0xFF) != (groupId & 0xFF))
+		{
+			erase();
+			continue;
+		}
+		
+		if (!AnimGroup::FallbacksTo(animData, groupId, currentGroupId))
 		{
 			erase();
 			continue;
@@ -382,8 +406,9 @@ void HandleAnimTimes()
 				const auto result = static_cast<bool>(arrResult.GetNumber());
 				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
 				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
-				const auto isAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, anim);
-				const auto isCurAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, curAnim);
+				const auto customAnimResult = GetActorAnimation(nextGroupId, animData);
+				const auto isAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, customAnimResult, anim);
+				const auto isCurAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, customAnimResult, curAnim);
 				
 				const auto shouldPlayAnim = _L(, result && isAnimNextAnim && !isCurAnimNextAnim);
 				const auto shouldStopAnim = _L(, !result && !isAnimNextAnim && curAnim == anim);
@@ -542,8 +567,10 @@ void HandleMisc()
 	g_animPathFrameCache.clear();
 	g_scriptCache.clear();
 	// Console_Print("Cache hits: %d misses: %d", g_cacheHits, g_cacheMisses);
-	// g_cacheHits = 0;
-	// g_cacheMisses = 0;
+	Console_Print("Calls: %d Cache hits: %d misses: %d", g_totalCalls, g_cacheHits, g_cacheMisses);
+	g_cacheHits = 0;
+	g_cacheMisses = 0;
+	g_totalCalls = 0;
 	for (const auto& line : g_eachFrameScriptLines)
 	{
 		g_consoleInterface->RunScriptLine(line.c_str(), nullptr);

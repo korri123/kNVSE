@@ -601,11 +601,6 @@ public:
 	virtual void	NewItem(void);	// locked operations
 	virtual void	DeleteItem(Entry* entry);	// locked operations
 
-	Entry* Begin()
-	{
-		return m_buckets[0];
-	}
-
 	T_Data *	Lookup(T_Key key);
 	bool		Insert(Entry* nuEntry);
 
@@ -617,6 +612,11 @@ public:
 				traverse->data = data;
 				break;
 			}
+	}
+
+	void Clear()
+	{
+		ThisStdCall(0x438AF0, this);
 	}
 
 	[[nodiscard]] Iterator begin()
@@ -907,6 +907,15 @@ public:
 	operator T*() const { return data; }
 	T* operator->() const { return data; }
 	
+};
+
+template <typename T>
+struct std::hash<NiPointer<T>>
+{
+	std::size_t operator()(const NiPointer<T>& ptr) const
+	{
+		return std::hash<T*>()(ptr.data);
+	}
 };
 
 #define NiSmartPointer(className) \

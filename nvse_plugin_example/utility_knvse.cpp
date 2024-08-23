@@ -112,7 +112,7 @@ bool StartsWith(std::string_view aString, std::string_view aPrefix)
 
 std::string DecompileScript(Script* script)
 {
-	char buffer[0x400];
+	char buffer[0x4000];
 	g_script->DecompileToBuffer(script, nullptr, buffer);
 	return buffer;
 }

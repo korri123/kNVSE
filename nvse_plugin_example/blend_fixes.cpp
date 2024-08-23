@@ -263,12 +263,12 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 		blend = GetIniBlend();
 	
 	if (destAnim->m_eState != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
+		destAnim->m_pkOwner->DeactivateSequence(destAnim, 0.0f);
 	
 	if (srcAnim->m_eState != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(srcAnim->m_pkOwner, srcAnim, 0.0f);
+		srcAnim->m_pkOwner->DeactivateSequence(srcAnim, 0.0f);
 
-	GameFuncs::BlendFromPose(destAnim->m_pkOwner, destAnim, 0.0f, blend, 0, nullptr);
+	destAnim->m_pkOwner->BlendFromPose(destAnim, 0.0f, blend, 0, nullptr);
 
 	ManageTempBlendSequence(destAnim);
 	

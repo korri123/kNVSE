@@ -4,7 +4,7 @@
 
 #include "game_types.h"
 #include "NiObjects.h"
-#include "SafeWrite.h"
+#include "GameProcess.h"
 
 using HighProcess = Decoding::HighProcess;
 

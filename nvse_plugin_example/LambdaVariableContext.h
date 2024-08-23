@@ -25,6 +25,8 @@ public:
 
 	Script*& operator*();
 
+	Script* operator*() const;
+
 	explicit operator bool() const
 	{
 		return scriptLambda != nullptr;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <chrono>
 #include <filesystem>
 #include <optional>
 #include <set>
@@ -19,32 +18,14 @@
 #include "utility.h"
 #include "bethesda/bethesda_types.h"
 
-
-struct SavedAnims;
 extern std::span<AnimGroupInfo> g_animGroupInfos;
 using FormID = UInt32;
 using GroupID = UInt16;
 
-enum QueuedIdleFlags
-{
-  kIdleFlag_FireWeapon = 0x1,
-  kIdleFlag_Reload = 0x2,
-  kIdleFlag_CrippledLimb = 0x10,
-  kIdleFlag_Death = 0x20,
-  kIdleFlag_ForcedIdle = 0x80,
-  kIdleFlag_HandGrip = 0x100,
-  kIdleFlag_Activate = 0x400,
-  kIdleFlag_StandingLayingDownChange = 0x800,
-  kIdleFlag_EquipOrUnequip = 0x4000,
-  kIdleFlag_AimWeapon = 0x10000,
-  kIdleFlag_AttackEjectEaseInFollowThrough = 0x20000,
-  kIdleFlag_SomethingAnimatingReloadLoop = 0x40000,
-};
-
 struct BurstFireData
 {
 	bool firstPerson = false;
-	BSAnimGroupSequence* anim;
+	NiPointer<BSAnimGroupSequence> anim;
 	std::size_t index;
 	std::vector<NiTextKey*> hitKeys;
 	float timePassed;
@@ -57,12 +38,6 @@ struct BurstFireData
 };
 
 extern std::list<BurstFireData> g_burstFireQueue;
-
-struct CallScriptKeyData
-{
-	std::vector<NiTextKey*> hitKeys;
-	float timePassed = 0;
-};
 
 enum class POVSwitchState
 {
@@ -241,7 +216,6 @@ struct AnimTime
 	}
 
 	~AnimTime();
-
 };
 
 struct SavedAnimsTime
@@ -254,14 +228,6 @@ struct SavedAnimsTime
 
 	friend auto operator<=>(const SavedAnimsTime& lhs, const SavedAnimsTime& rhs) = default;
 };
-
-
-using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::unique_ptr<AnimTime>>;
-extern TimeTrackedAnimsMap g_timeTrackedAnims;
-
-using TimeTrackedGroupsMap = std::unordered_map<std::pair<SavedAnims*, AnimData*>, std::unique_ptr<SavedAnimsTime>, pair_hash, pair_equal>;
-extern TimeTrackedGroupsMap g_timeTrackedGroups;
-
 
 struct AnimPath
 {
@@ -292,64 +258,32 @@ enum AnimKeyTypes
 
 using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
 
-struct AnimStacks
-{
-	std::vector<std::shared_ptr<SavedAnims>> anims;
-	std::vector<std::shared_ptr<SavedAnims>> maleAnims;
-	std::vector<std::shared_ptr<SavedAnims>> femaleAnims;
-	std::vector<std::shared_ptr<SavedAnims>> mod1Anims;
-	std::vector<std::shared_ptr<SavedAnims>> mod2Anims;
-	std::vector<std::shared_ptr<SavedAnims>> mod3Anims;
-
-	std::vector<std::shared_ptr<SavedAnims>> hurtAnims;
-	std::vector<std::shared_ptr<SavedAnims>> humanAnims;
-
-	std::vector<std::shared_ptr<SavedAnims>>& GetCustom(const AnimCustom custom)
-	{
-		switch (custom) { case AnimCustom::None: return anims;
-		case AnimCustom::Male: return maleAnims;
-		case AnimCustom::Female: return femaleAnims;
-		case AnimCustom::Mod1: return mod1Anims;
-		case AnimCustom::Mod2: return mod2Anims;
-		case AnimCustom::Mod3: return mod3Anims;
-		case AnimCustom::Hurt: return hurtAnims;
-		case AnimCustom::Human: return humanAnims;
-		}
-		return anims;
-	}
-
-};
-
-using FormID = UInt32;
-using FullAnimGroupID = UInt16;
-// Per ref ID there is a stack of animation variants per group ID
-class AnimOverrideStruct
-{
-public:
-	std::unordered_map<FullAnimGroupID, AnimStacks> stacks;
-};
-
-using AnimOverrideMap = std::unordered_map<FormID, AnimOverrideStruct>;
-
 struct SavedAnims
 {
-	std::vector<std::unique_ptr<AnimPath>> anims;
-	std::string condition;
-	LambdaVariableContext conditionScript = nullptr;
-	std::unordered_set<BSAnimGroupSequence*> linkedSequences;
+	std::vector<std::unique_ptr<AnimPath>> anims; // inludes all variants
+	std::unordered_set<NiPointer<BSAnimGroupSequence>> linkedSequences;
 	bool hasOrder = false;
+	bool loaded = false;
+	std::function<bool(const Actor*)> folderCondition;
+	LambdaVariableContext conditionScript = nullptr;
+	std::string_view conditionScriptText;
 	bool pollCondition = false;
 	bool matchBaseGroupId = false;
-	bool loaded = false;
 	SavedAnims() = default;
+
+	bool MatchesConditions(const Actor* actor) const
+	{
+		if (!folderCondition)
+			return true;
+		return folderCondition(actor);
+	}
 
 	void Load()
 	{
 		if (loaded)
 			return;
-
-		if (!conditionScript && !condition.empty())
-			conditionScript = CompileConditionScript(condition);
+		if (!conditionScript && !conditionScriptText.empty())
+			conditionScript = CompileConditionScript(conditionScriptText);
 
 		for (const auto& anim : anims)
 		{
@@ -364,6 +298,20 @@ struct SavedAnims
 		loaded = true;
 	}
 };
+
+struct AnimStacks
+{
+	std::vector<std::shared_ptr<SavedAnims>> anims;
+};
+
+// Per ref ID there is a stack of animation variants per group ID
+class AnimOverrideStruct
+{
+public:
+	std::unordered_map<FullAnimGroupID, AnimStacks> stacks;
+};
+
+using AnimOverrideMap = std::unordered_map<FormID, AnimOverrideStruct>;
 
 struct BurstState
 {
@@ -392,46 +340,11 @@ struct JSONAnimContext
 	JSONAnimContext() { Reset(); }
 };
 
-enum AnimHandTypes
-{
-	kAnim_None = 0x0,
-	kAnim_H2H  = 0x1,
-	kAnim_1HM  = 0x2,
-	kAnim_2HM  = 0x3,
-	kAnim_1HP  = 0x4,
-	kAnim_2HR  = 0x5,
-	kAnim_2HA  = 0x6,
-	kAnim_2HH  = 0x7,
-	kAnim_2HL  = 0x8,
-	kAnim_1GT  = 0x9,
-	kAnim_1MD  = 0xA,
-	kAnim_1LM  = 0xB,
-	kAnim_Max  = 0xC
-};
+using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::unique_ptr<AnimTime>>;
+extern TimeTrackedAnimsMap g_timeTrackedAnims;
 
-
-enum AnimAction : SInt16
-{
-	kAnimAction_None = -1,
-	kAnimAction_Equip_Weapon = 0x0,
-	kAnimAction_Unequip_Weapon = 0x1,
-	kAnimAction_Attack = 0x2,
-	kAnimAction_Attack_Eject = 0x3,
-	kAnimAction_Attack_Follow_Through = 0x4,
-	kAnimAction_Attack_Throw = 0x5,
-	kAnimAction_Attack_Throw_Attach = 0x6,
-	kAnimAction_Block = 0x7,
-	kAnimAction_Recoil = 0x8,
-	kAnimAction_Reload = 0x9,
-	kAnimAction_Stagger = 0xA,
-	kAnimAction_Dodge = 0xB,
-	kAnimAction_Wait_For_Lower_Body_Anim = 0xC,
-	kAnimAction_Wait_For_Special_Idle = 0xD,
-	kAnimAction_Force_Script_Anim = 0xE,
-	kAnimAction_ReloadLoopStart = 0xF,
-	kAnimAction_ReloadLoopEnd = 0x10,
-	kAnimAction_ReloadLoop = 0x11,
-};
+using TimeTrackedGroupsMap = std::unordered_map<std::pair<SavedAnims*, AnimData*>, std::unique_ptr<SavedAnimsTime>, pair_hash, pair_equal>;
+extern TimeTrackedGroupsMap g_timeTrackedGroups;
 
 #define THISCALL(address, returnType, ...) reinterpret_cast<returnType(__thiscall*)(__VA_ARGS__)>(address)
 #define _CDECL(address, returnType, ...) reinterpret_cast<returnType(__cdecl*)(__VA_ARGS__)>(address)
@@ -484,34 +397,12 @@ namespace GameFuncs
 	inline auto NiControllerManager_LookupSequence = THISCALL(0x47A520, NiControllerSequence*, NiControllerManager* mgr, const char** animGroupName);
 	inline auto Actor_Attack = THISCALL(0x8935F0, bool, Actor* actor, UInt32 animGroupId);
 	inline auto AnimData_ResetSequenceState = THISCALL(0x496080, void, AnimData* animData, eAnimSequence sequenceId, float blendAmound);
-
-	inline auto InitAnimGroup = _CDECL(0x5F3A20, TESAnimGroup*, BSAnimGroupSequence* anim, const char* path);
-	inline auto BSFixedString_CreateFromPool = _CDECL(0xA5B690, const char*, const char* str);
-	inline auto NiTextKeyExtraData_Destroy = THISCALL(0xA46D50, UInt32, NiTextKeyExtraData * textKeys);
-	inline auto TESAnimGroup_Destroy = THISCALL(0x5F22A0, void, TESAnimGroup * animGroup, bool free);
-	inline auto NiRefObject_Replace = THISCALL(0x66B0D0, void, void* target, void* src);
-	inline auto NiRefObject_IncRefCount = THISCALL(0x40F6E0, void, void* target);
-	inline auto NiRefObject_DecRefCount_FreeIfZero = THISCALL(0x401970, void, void* target);
 }
 
 BSAnimGroupSequence* GetAnimationByPath(const char* path);
 
 void HandleOnAnimDataDelete(AnimData* animData);
 
-enum SequenceState1
-{
-	kSeqState_Start = 0x0,
-	kSeqState_HitOrDetach = 0x1,
-	kSeqState_EjectOrUnequipEnd = 0x2,
-	kSeqState_Unk3 = 0x3,
-	kSeqState_End = 0x4,
-};
-
-enum PlayerAnimDataType
-{
-  kPlayerAnimData_3rd = 0x0,
-  kPlayerAnimData_1st = 0x1,
-};
 
 class AnimationResult
 {
@@ -608,7 +499,7 @@ struct AnimOverrideData
 	UInt32 identifier{};
 	bool enable{};
 	std::unordered_set<UInt16> groupIdFillSet;
-	std::string_view condition;
+	std::string_view conditionScriptText;
 	Script* conditionScript{};
 	bool pollCondition{};
 	bool matchBaseGroupId{};
@@ -620,8 +511,6 @@ bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson);
 void HandleOnActorReload();
 
 float GetTimePassed(AnimData* animData, UInt8 animGroupID);
-
-bool IsCustomAnim(BSAnimGroupSequence* sequence);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim);
@@ -663,8 +552,6 @@ enum class PartialLoopingReloadState
 };
 
 extern PartialLoopingReloadState g_partialLoopReloadState;
-
-void HandleOnSequenceDestroy(BSAnimGroupSequence* anim);
 
 void HandleGarbageCollection();
 

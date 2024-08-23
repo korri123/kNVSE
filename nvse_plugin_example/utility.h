@@ -423,3 +423,17 @@ struct CaseInsensitiveEqual
 		                 });
 	}
 };
+
+template<typename T, typename... U>
+size_t GetAddress(std::function<T(U...)> f) {
+	typedef T(fnType)(U...);
+	fnType ** fnPointer = f.template target<fnType*>();
+	if (!fnPointer)
+		return 0;
+	return reinterpret_cast<size_t>(*fnPointer);
+}
+
+template<typename T, typename... U>
+bool FunctionCompare(std::function<T(U...)> f1, std::function<T(U...)> f2) {
+	return GetAddress(f1) == GetAddress(f2);
+}

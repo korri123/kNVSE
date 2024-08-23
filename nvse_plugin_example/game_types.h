@@ -4,6 +4,9 @@
 
 enum ARCHIVE_TYPE : int;
 
+using FormID = UInt32;
+using FullAnimGroupID = UInt16;
+
 namespace Decoding
 {
 
@@ -970,4 +973,117 @@ namespace FileFinder
 		CdeclCall<ScopedList<char>*>(0xAFE420, path, renameDirectory, archiveType, &result);
 		return result;
 	}
+}
+
+enum QueuedIdleFlags
+{
+	kIdleFlag_FireWeapon = 0x1,
+	kIdleFlag_Reload = 0x2,
+	kIdleFlag_CrippledLimb = 0x10,
+	kIdleFlag_Death = 0x20,
+	kIdleFlag_ForcedIdle = 0x80,
+	kIdleFlag_HandGrip = 0x100,
+	kIdleFlag_Activate = 0x400,
+	kIdleFlag_StandingLayingDownChange = 0x800,
+	kIdleFlag_EquipOrUnequip = 0x4000,
+	kIdleFlag_AimWeapon = 0x10000,
+	kIdleFlag_AttackEjectEaseInFollowThrough = 0x20000,
+	kIdleFlag_SomethingAnimatingReloadLoop = 0x40000,
+};
+
+enum AnimHandTypes
+{
+	kAnimHandType_None = 0x0,
+	kAnimHandType_H2H  = 0x1,
+	kAnimHandType_1HM  = 0x2,
+	kAnimHandType_2HM  = 0x3,
+	kAnimHandType_1HP  = 0x4,
+	kAnimHandType_2HR  = 0x5,
+	kAnimHandType_2HA  = 0x6,
+	kAnimHandType_2HH  = 0x7,
+	kAnimHandType_2HL  = 0x8,
+	kAnimHandType_1GT  = 0x9,
+	kAnimHandType_1MD  = 0xA,
+	kAnimHandType_1LM  = 0xB,
+	kAnimHandType_Max  = 0xC
+};
+
+enum AnimAction
+{
+	kAnimAction_None = -1,
+	kAnimAction_Equip_Weapon = 0x0,
+	kAnimAction_Unequip_Weapon = 0x1,
+	kAnimAction_Attack = 0x2,
+	kAnimAction_Attack_Eject = 0x3,
+	kAnimAction_Attack_Follow_Through = 0x4,
+	kAnimAction_Attack_Throw = 0x5,
+	kAnimAction_Attack_Throw_Attach = 0x6,
+	kAnimAction_Block = 0x7,
+	kAnimAction_Recoil = 0x8,
+	kAnimAction_Reload = 0x9,
+	kAnimAction_Stagger = 0xA,
+	kAnimAction_Dodge = 0xB,
+	kAnimAction_Wait_For_Lower_Body_Anim = 0xC,
+	kAnimAction_Wait_For_Special_Idle = 0xD,
+	kAnimAction_Force_Script_Anim = 0xE,
+	kAnimAction_ReloadLoopStart = 0xF,
+	kAnimAction_ReloadLoopEnd = 0x10,
+	kAnimAction_ReloadLoop = 0x11,
+};
+
+enum SequenceState1
+{
+	kSeqState_Start = 0x0,
+	kSeqState_HitOrDetach = 0x1,
+	kSeqState_EjectOrUnequipEnd = 0x2,
+	kSeqState_Unk3 = 0x3,
+	kSeqState_End = 0x4,
+};
+
+enum PlayerAnimDataType
+{
+	kPlayerAnimData_3rd = 0x0,
+	kPlayerAnimData_1st = 0x1,
+};
+
+AnimGroupInfo* GetGroupInfo(AnimGroupID groupId);
+eAnimSequence GetSequenceType(AnimGroupID groupId);
+
+namespace AnimGroup
+{
+	inline AnimGroupID GetBaseGroupID(UInt16 groupID)
+	{
+		return static_cast<AnimGroupID>(groupID & 0xFF);
+	}
+	
+	inline int GetMoveType(UInt16 groupID)
+	{
+		return (groupID & 0x7000) >> 12;
+	}
+
+	inline bool IsAttack(AnimGroupID groupID)
+	{
+		if (groupID == kAnimGroup_Invalid)
+			return false;
+		if (groupID >= kAnimGroup_AttackLoop && groupID <= kAnimGroup_AttackLoopISDown)
+			return true;
+		const auto* info = GetGroupInfo(groupID);
+		return info->keyType >= 5 && info->keyType <= 9;
+	}
+
+	inline bool IsAttackIS(AnimGroupID groupID)
+	{
+		return CdeclCall<bool>(0x5F2750, groupID);
+	}
+
+	inline bool IsAim(AnimGroupID groupID)
+	{
+		if (groupID == kAnimGroup_Invalid)
+			return false;
+		return groupID >= kAnimGroup_Aim && groupID <= kAnimGroup_AimISDown;
+	}
+
+	AnimHandTypes GetHandType(UInt16 groupId);
+
+	bool FallbacksTo(AnimData* animData, FullAnimGroupID sourceGroupId, FullAnimGroupID destGroupId);
 }

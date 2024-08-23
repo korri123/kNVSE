@@ -192,11 +192,6 @@ AnimGroupInfo* GetGroupInfo(AnimGroupID groupId)
 	return &g_animGroupInfos[groupId];
 }
 
-AnimGroupInfo* GetGroupInfo(UInt8 groupId)
-{
-	return GetGroupInfo(static_cast<AnimGroupID>(groupId));
-}
-
 eAnimSequence GetSequenceType(AnimGroupID groupId)
 {
 	return static_cast<eAnimSequence>(GetGroupInfo(groupId)->sequenceType);
@@ -496,16 +491,139 @@ const char* MoveFlagToString(UInt32 flag)
 	case kMoveFlag_Right: return "Right";
 	case kMoveFlag_TurnLeft: return "TurnLeft";
 	case kMoveFlag_TurnRight: return "TurnRight";
-	case kMoveFlag_NonController: break;
-	case kMoveFlag_Walking: break;
-	case kMoveFlag_Running: break;
-	case kMoveFlag_Sneaking: break;
-	case kMoveFlag_Swimming: break;
-	case kMoveFlag_Jump: break;
-	case kMoveFlag_Flying: break;
-	case kMoveFlag_Fall: break;
-	case kMoveFlag_Slide: break;
-	default: ;
+	case kMoveFlag_NonController: return "NonController";
+	case kMoveFlag_Walking: return "Walking";
+	case kMoveFlag_Running: return "Running";
+	case kMoveFlag_Sneaking: return "Sneaking";
+	case kMoveFlag_Swimming: return "Swimming";
+	case kMoveFlag_Jump: return "Jump";
+	case kMoveFlag_Flying: return "Flying";
+	case kMoveFlag_Fall: return "Fall";
+	case kMoveFlag_Slide: return "Slide";
 	}
 	return "";
+}
+
+bool BaseProcess::WeaponInfo::HasWeaponMod(UInt32 mod) const
+{
+	if (auto* xData = GetExtraData(); xData)
+	{
+		const auto* modFlags = static_cast<ExtraWeaponModFlags*>(xData->GetByType(kExtraData_WeaponModFlags));
+		if (modFlags && modFlags->flags)
+			return (modFlags->flags & mod) != 0;
+	}
+	return false;
+}
+
+
+bool Actor::HasWeaponWithMod(UInt32 mod) const
+{
+	if (auto* weaponInfo = this->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon)
+		return weaponInfo->HasWeaponMod(mod);
+	return false;
+}
+
+AnimHandTypes AnimGroup::GetHandType(UInt16 groupId)
+{
+	return static_cast<AnimHandTypes>((groupId & 0xF00) >> 8);
+}
+
+UInt16 TESAnimGroup::GetMoveType() const
+{
+	return AnimGroup::GetMoveType(groupID);
+}
+
+// based on 0x495740
+bool AnimGroup::FallbacksTo(AnimData* animData, FullAnimGroupID sourceGroupId, FullAnimGroupID destGroupId)
+{
+	if (sourceGroupId == destGroupId)
+		return true;
+
+	const AnimGroupID sourceBaseGroupId = GetBaseGroupID(sourceGroupId);
+
+	// Check for special upper bit flags
+	if ((sourceGroupId & 0x8000) != 0)
+	{
+		if (FallbacksTo(animData, sourceGroupId & ~0x8000, destGroupId))
+			return true;
+		if (IsAttackIS(sourceBaseGroupId) && destGroupId == sourceGroupId - 3)
+			return true;
+	}
+	const auto sequenceType = GetSequenceType(sourceBaseGroupId);
+	const bool isWeaponSequence = sequenceType >= kSequence_Weapon && sequenceType <= kSequence_WeaponDown;
+
+	// Check for player-specific weapon animations
+	if (animData == g_thePlayer->firstPersonAnimData &&
+		(sourceGroupId & 0x7000) != 0 &&
+		(isWeaponSequence && FallbacksTo(animData, sourceGroupId & ~0xF000, destGroupId)))
+		return true;
+
+	// Check for attack group fallback
+	if (IsAttackIS(sourceBaseGroupId))
+		return FallbacksTo(animData, sourceGroupId - 3, destGroupId);
+
+	// Check sequence type
+	if (isWeaponSequence)
+		return false;
+
+	constexpr auto mask1HM = kAnimHandType_1HM << 8;
+	constexpr auto mask1HP = kAnimHandType_1HP << 8;
+
+	// Check hand type fallbacks
+	if ((sourceGroupId & 0xF00) != 0)
+	{
+		const AnimHandTypes handType = GetHandType(sourceGroupId);
+		const UInt16 fallbackGroupId = sourceGroupId & 0xF0FF;
+
+		if (handType == kAnimHandType_2HM)
+		{
+			if (destGroupId == (fallbackGroupId | mask1HM))
+				return true;
+		}
+		else if (handType != kAnimHandType_1HP && handType != kAnimHandType_1HM)
+		{
+			if (destGroupId == (fallbackGroupId | mask1HP))
+				return true;
+		}
+
+		if (destGroupId == fallbackGroupId)
+			return true;
+	}
+
+	// Check movement group fallbacks
+	UInt16 movementGroupId = 0xFFFF;
+	const UInt16 masked = sourceGroupId & ~0x80FF;
+	switch (sourceBaseGroupId)
+	{
+	case kAnimGroup_FastForward:
+		movementGroupId = masked | kAnimGroup_Forward;
+		break;
+	case kAnimGroup_FastBackward:
+		movementGroupId = masked | kAnimGroup_Backward;
+		break;
+	case kAnimGroup_FastLeft:
+		movementGroupId = masked | kAnimGroup_Left;
+		break;
+	case kAnimGroup_FastRight:
+		movementGroupId = masked | kAnimGroup_Right;
+		break;
+	default:
+		break;
+	}
+
+	if (movementGroupId != 0xFFFF &&
+		FallbacksTo(animData, movementGroupId, destGroupId))
+	{
+		return true;
+	}
+
+	// Check upper bits fallback
+	if ((sourceGroupId & 0x7000) != 0 &&
+		FallbacksTo(animData, sourceGroupId & 0xFFF, destGroupId))
+	{
+		return true;
+	}
+
+	// Final fallback check
+	return destGroupId == (sourceGroupId & 0x7F00);
 }

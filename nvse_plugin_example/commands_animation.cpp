@@ -120,13 +120,6 @@ BSAnimGroupSequence* GetAnimationByPath(const char* path)
 
 std::map<std::pair<std::string_view, AnimData*>, BSAnimationContext> g_cachedAnimMap;
 
-void HandleOnSequenceDestroy(BSAnimGroupSequence* anim)
-{
-	g_timeTrackedAnims.erase(anim);
-	std::erase_if(g_timeTrackedGroups, _L(auto& iter, iter.second->anim == anim));
-	std::erase_if(g_burstFireQueue, _L(auto& p, p.anim == anim));
-	std::erase_if(g_cachedAnimMap, _L(auto & p, p.second.anim == anim));
-}
 
 #if _DEBUG
 NiTPointerMap_t<const char*, NiAVObject>::Entry entry;
@@ -149,8 +142,11 @@ void HandleOnAnimDataDelete(AnimData* animData)
 		if (iter == g_cachedAnimMap.end())
 			break;
 
-		HandleOnSequenceDestroy(iter->second.anim);
-		// g_cachedAnimMap.erase is called from HandleOnSequenceDestroy
+		auto anim = iter->second.anim;
+		g_timeTrackedAnims.erase(anim);
+		std::erase_if(g_timeTrackedGroups, _L(auto& iter, iter.second->anim == anim));
+		std::erase_if(g_burstFireQueue, _L(auto& p, p.anim == anim));
+		std::erase_if(g_cachedAnimMap, _L(auto & p, p.second.anim == anim));
 	}
 	std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second->animData == animData));
 }
@@ -212,7 +208,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 	animData->mapAnimSequenceBase = s_customMap;
 	const auto result = tryCreateAnimation();
 	animData->mapAnimSequenceBase = defaultMap;
-	s_customMap->DeleteItem(s_customMap->Begin());
+	s_customMap->Clear();
 	
 	return result;
 }
@@ -546,81 +542,38 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 	{
 		auto& animStacks = stacksIter->second;
 		auto* actor = animData->actor;
-
-		StackVector<AnimCustom, static_cast<size_t>(AnimCustom::Max) + 1> animCustomStack;
-		animCustomStack->push_back(AnimCustom::None);
-
-		auto* npc = DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC);
-		if (actor == g_thePlayer || npc)
-			animCustomStack->push_back(AnimCustom::Human);
-		if (npc)
+		
+		auto& stack = animStacks.anims;
+		for (auto& ctx : ra::reverse_view(stack))
 		{
-			if (npc && !npc->baseData.IsFemale())
-				animCustomStack->push_back(AnimCustom::Male);
-			else
-				animCustomStack->push_back(AnimCustom::Female);
-		}
-		if (actor->avOwner.GetActorValueInt(kAVCode_LeftMobilityCondition) <= 0 || actor->avOwner.GetActorValueInt(kAVCode_RightMobilityCondition) <= 0 && IsAnimGroupMovement(groupId))
-		{
-			BSAnimGroupSequence* toReplaceAnim = nullptr;
-			if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
-				toReplaceAnim = base->GetSequenceByIndex(-1);
-			if (toReplaceAnim && FindStringCI(toReplaceAnim->m_kName.Str(), "\\hurt\\")) // there really is no state on an animation which indicates it's a crippled anim
+			if (!ctx->MatchesConditions(actor))
+				continue;
+			const auto initAnimTime = [&](SavedAnims* savedAnims)
 			{
-				animCustomStack->clear();
-				animCustomStack->push_back(AnimCustom::Hurt);
+				auto& animTime = g_timeTrackedGroups[std::make_pair(savedAnims, animData)];
+				if (!animTime)
+					animTime = std::make_unique<SavedAnimsTime>();
+				animTime->conditionScript = *savedAnims->conditionScript;
+				animTime->groupId = groupId;
+				animTime->actorId = animData->actor->refID;
+				animTime->animData = animData;
+				if (const auto animCtx = LoadCustomAnimation(*savedAnims, groupId, animData))
+					animTime->anim = animCtx->anim;
+				return &animTime;
+			};
+			ctx->Load();
+			SavedAnimsTime* animsTime = nullptr;
+			if (ctx->conditionScript)
+			{
+				if (ctx->pollCondition)
+					animsTime = initAnimTime(&*ctx)->get(); // init'd here so conditions can activate despite not being overridden
+				NVSEArrayVarInterface::Element result;
+				if (!CallFunction(*ctx->conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
+					continue;
 			}
-		}
-		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->GetExtraData())
-		{
-			const auto* xData = weaponInfo->GetExtraData();
-			auto* modFlags = static_cast<ExtraWeaponModFlags*>(xData->GetByType(kExtraData_WeaponModFlags));
-			if (modFlags && modFlags->flags)
+			if (!ctx->anims.empty())
 			{
-				if (modFlags->flags & 1 && !animStacks.mod1Anims.empty())
-					animCustomStack->push_back(AnimCustom::Mod1);
-				if (modFlags->flags & 2 && !animStacks.mod2Anims.empty())
-					animCustomStack->push_back(AnimCustom::Mod2);
-				if (modFlags->flags & 4 && !animStacks.mod3Anims.empty())
-					animCustomStack->push_back(AnimCustom::Mod3);
-			}
-		}
-		for (auto& animCustomIter : ra::reverse_view(*animCustomStack))
-		{
-			auto& stack = animStacks.GetCustom(animCustomIter);
-			for (auto& ctx : ra::reverse_view(stack))
-			{
-				const auto initAnimTime = [&](SavedAnims* savedAnims)
-				{
-					auto& animTime = g_timeTrackedGroups[std::make_pair(savedAnims, animData)];
-					if (!animTime)
-						animTime = std::make_unique<SavedAnimsTime>();
-					animTime->conditionScript = *savedAnims->conditionScript;
-					animTime->groupId = groupId;
-					animTime->actorId = animData->actor->refID;
-					animTime->animData = animData;
-					if (const auto animCtx = LoadCustomAnimation(*savedAnims, groupId, animData))
-						animTime->anim = animCtx->anim;
-					return &animTime;
-				};
-				ctx->Load();
-				SavedAnimsTime* animsTime = nullptr;
-				if (!ctx->conditionScript && !ctx->condition.empty())
-				{
-					ctx->conditionScript = CompileConditionScript(ctx->condition);
-				}
-				if (ctx->conditionScript)
-				{
-					if (ctx->pollCondition)
-						animsTime = initAnimTime(&*ctx)->get(); // init'd here so conditions can activate despite not being overridden
-					NVSEArrayVarInterface::Element result;
-					if (!CallFunction(*ctx->conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
-						continue;
-				}
-				if (!ctx->anims.empty())
-				{
-					return AnimationResult(ctx, animsTime, &animStacks);
-				}
+				return AnimationResult(ctx, animsTime, &animStacks);
 			}
 		}
 	}
@@ -830,7 +783,7 @@ AnimGroupID SimpleGroupNameToId(std::string_view name)
 
 bool TESAnimGroup::IsLoopingReloadStart() const
 {
-	switch (this->GetBaseGroupID())
+	switch (GetBaseGroupID())
 	{
 	case kAnimGroup_ReloadWStart:
 	case kAnimGroup_ReloadXStart:
@@ -913,7 +866,6 @@ bool RegisterCustomAnimGroupAnim(std::string_view path)
 
 bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 {
-	const auto condition = data.condition;
 	const auto path = data.path;
 	const auto groupId = GetAnimGroupId(path);
 	if (groupId == INVALID_FULL_GROUP_ID)
@@ -924,24 +876,7 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	auto& animGroupMap = map[data.identifier];
 	auto& stacks = animGroupMap.stacks[groupId];
 
-	// condition based animations
-	auto animCustom = AnimCustom::None;
-	if (FindStringCI(path, R"(\human\)"))
-		animCustom = AnimCustom::Human;
-	else if (FindStringCI(path, R"(\male\)"))
-		animCustom = AnimCustom::Male;
-	else if (FindStringCI(path, R"(\female\)"))
-		animCustom = AnimCustom::Female;
-	else if (FindStringCI(path, R"(\hurt\)"))
-		animCustom = AnimCustom::Hurt;
-	else if (FindStringCI(path, R"(\mod1\)"))
-		animCustom = AnimCustom::Mod1;
-	else if (FindStringCI(path, R"(\mod2\)"))
-		animCustom = AnimCustom::Mod2;
-	else if (FindStringCI(path, R"(\mod3\)"))
-		animCustom = AnimCustom::Mod3;
-
-	auto& stack = stacks.GetCustom(animCustom);
+	auto& stack = stacks.anims;
 	const auto findFn = [&](const std::shared_ptr<SavedAnims>& a)
 	{
 		return ra::any_of(a->anims, _L(const auto& s, sv::equals_ci(path, s->path)));
@@ -962,14 +897,6 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	// check if stack already contains path
 	if (const auto iter = std::ranges::find_if(stack, findFn); iter != stack.end())
 	{
-		auto& anims = **iter;
-		anims.matchBaseGroupId = data.matchBaseGroupId;
-		if (data.conditionScript) // in case of hot reload
-		{
-			anims.condition = condition;
-			anims.conditionScript = data.conditionScript;
-			anims.pollCondition = data.pollCondition;
-		}
 		// move iter to the top of stack
 		std::rotate(iter, std::next(iter), stack.end());
 		return true;
@@ -981,18 +908,34 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		return true;
 	}
 
+	std::function<bool(const Actor*)> folderCondition;
+	if (FindStringCI(path, R"(\mod1\)"))
+		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(1); };
+	else if (FindStringCI(path, R"(\mod2\)"))
+		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(2); };
+	else if (FindStringCI(path, R"(\mod3\)"))
+		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(3); };
+	else if (FindStringCI(path, R"(\hurt\)"))
+		folderCondition = [&](const Actor* actor) { return actor->HasCrippledLegs(); };
+	else if (FindStringCI(path, R"(\human\)"))
+		folderCondition = [&](const Actor* actor) { return actor == g_thePlayer || IS_ID(actor->baseForm, TESNPC); };
+	else if (FindStringCI(path, R"(\male\)"))
+		folderCondition = [&](const Actor* actor) { return !actor->IsFemale(); };
+	else if (FindStringCI(path, R"(\female\)"))
+		folderCondition = [&](const Actor* actor) { return actor->IsFemale(); };
+	
 	// if not inserted before, treat as variant; else add to stack as separate set
 	auto [_, newItem] = data.groupIdFillSet.emplace(groupId);
-	if (newItem || stack.empty())
+	if (newItem || stack.empty() || !FunctionCompare(folderCondition, stack.back()->folderCondition))
 		stack.emplace_back(std::make_shared<SavedAnims>());
 	
 	auto& anims = *stack.back();
-
 	anims.anims.emplace_back(std::make_unique<AnimPath>(path));
 	anims.matchBaseGroupId = data.matchBaseGroupId;
 	anims.conditionScript = data.conditionScript;
 	anims.pollCondition = data.pollCondition;
-	anims.condition = condition;
+	anims.conditionScriptText = data.conditionScriptText;
+	anims.folderCondition = std::move(folderCondition);
 	
 	return true;
 }
@@ -1919,27 +1862,24 @@ void CreateCommands(NVSECommandBuilder& builder)
 				auto& entry = iter->second;
 				for (auto& stacks : entry.stacks | std::views::values)
 				{
-					for (auto i = static_cast<int>(AnimCustom::None); i < static_cast<int>(AnimCustom::Max) + 1; ++i)
+					auto& stack = stacks.anims;
+					for (auto& anims : stack)
 					{
-						auto& stack = stacks.GetCustom(static_cast<AnimCustom>(i));
-						for (auto& anims : stack)
+						std::unordered_set<UInt16> variants;
+						for (const auto& anim : anims->anims)
 						{
-							std::unordered_set<UInt16> variants;
-							for (const auto& anim : anims->anims)
-							{
-								AnimOverrideData animOverrideData = {
-									.path = anim->path,
-									.identifier = toForm->refID,
-									.enable = false,
-									.conditionScript = *anims->conditionScript,
-									.pollCondition = anims->pollCondition,
-									.matchBaseGroupId = false
-								};
-								SetOverrideAnimation(animOverrideData, *map);
-								animOverrideData.enable = true;
-								SetOverrideAnimation(animOverrideData, *map);
-								*result = 1;
-							}
+							AnimOverrideData animOverrideData = {
+								.path = anim->path,
+								.identifier = toForm->refID,
+								.enable = false,
+								.conditionScript = *anims->conditionScript,
+								.pollCondition = anims->pollCondition,
+								.matchBaseGroupId = false
+							};
+							SetOverrideAnimation(animOverrideData, *map);
+							animOverrideData.enable = true;
+							SetOverrideAnimation(animOverrideData, *map);
+							*result = 1;
 						}
 					}
 				}

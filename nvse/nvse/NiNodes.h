@@ -1170,6 +1170,9 @@ struct NiFloatKey : NiAnimationKey
 		if (uiNumKeys == 1)
 			return pkKeys->GetKeyAt(0, ucSize)->GetValue();
 
+		if (fTime == -NI_INFINITY)
+			return pkKeys->GetKeyAt(0, ucSize)->GetValue();
+
 		unsigned int uiNumKeysM1 = uiNumKeys - 1;
 
 		// This code assumes that the time values in the keys are ordered by
@@ -1186,113 +1189,27 @@ struct NiFloatKey : NiAnimationKey
 		if(fTime < fLastTime)
 		{
 			uiStackLastIdx = 0;
-			fLastTime = pkKeys->GetKeyAt(0, ucSize)->GetTime();
 		}
 
 		unsigned int uiNextIdx;
-		float fNextTime = 0.0f;
-		for(uiNextIdx = uiStackLastIdx + 1; uiNextIdx <= uiNumKeysM1; uiNextIdx++)
+		for (uiNextIdx = uiStackLastIdx + 1; uiNextIdx <= uiNumKeysM1; uiNextIdx++)
 		{
-			fNextTime = pkKeys->GetKeyAt(uiNextIdx, ucSize)->GetTime();
+			float fNextTime = pkKeys->GetKeyAt(uiNextIdx, ucSize)->GetTime();
 			if(fTime <= fNextTime)
 				break;
 
 			uiStackLastIdx++;
-			fLastTime = fNextTime;
 		}
     
 		NIASSERT(uiNextIdx < uiNumKeys);
 
 		// interpolate the keys, requires that the time is normalized to [0,1]
-		float fNormTime = (fTime - fLastTime)/(fNextTime - fLastTime);
-		NiAnimationKey::InterpFunction interp = 
-			NiFloatKey::GetInterpFunction(eType);
+		InterpFunction interp = GetInterpFunction(eType);
 		NIASSERT(interp);
 		float fReturn;
-		//interp(fNormTime, pkKeys->GetKeyAt(uiStackLastIdx, ucSize),
-		//	pkKeys->GetKeyAt(uiNextIdx, ucSize), &fReturn);
 		interp(uiNumKeys, pkKeys->GetKeyAt(uiStackLastIdx, ucSize), pkKeys->GetKeyAt(uiNextIdx, ucSize), &fReturn);
 		uiLastIdx = uiStackLastIdx;
 		return fReturn;
-	}
-
-	static float GenInterpAlt(
-		float fTime,
-		NiFloatKey *pkKeys,
-		KeyType eType,
-		unsigned int uiNumKeys,
-		unsigned __int16& uiLastIdx,
-		unsigned int ucSize)
-	{
-		NIASSERT(uiNumKeys != 0);
-		if (uiNumKeys == 1) {
-			return pkKeys->GetKeyAt(0, ucSize)->GetValue();
-		}
-
-		unsigned int uiNumKeysM1 = uiNumKeys - 1;
-		unsigned int lastIdx = uiLastIdx;
-		float lastTime = pkKeys->GetKeyAt(lastIdx, ucSize)->GetTime();
-
-		if (fTime < lastTime) {
-			lastIdx = 0;
-			lastTime = pkKeys->GetKeyAt(0, ucSize)->GetTime();
-		}
-
-		unsigned int nextIdx;
-		float nextTime = 0.0f;
-
-		if ((uiNumKeys - 1 - lastIdx) < 4) {
-			for (nextIdx = lastIdx + 1; nextIdx <= uiNumKeysM1; ++nextIdx) {
-				nextTime = pkKeys->GetKeyAt(nextIdx, ucSize)->GetTime();
-				if (fTime <= nextTime) {
-					break;
-				}
-				lastIdx++;
-				lastTime = nextTime;
-			}
-		} else {
-			unsigned int steps[] = {1, 2, 3, 4};
-			for (int i = 0; i < 4; ++i) {
-				nextIdx = lastIdx + steps[i];
-				nextTime = pkKeys->GetKeyAt(nextIdx, ucSize)->GetTime();
-				if (fTime <= nextTime) {
-					lastIdx += steps[i - 1];
-					break;
-				}
-				lastTime = nextTime;
-			}
-		}
-
-		if (nextIdx >= uiNumKeys) {
-			nextIdx = uiNumKeysM1;
-			nextTime = pkKeys->GetKeyAt(nextIdx, ucSize)->GetTime();
-		}
-
-		NIASSERT(nextIdx < uiNumKeys);
-
-		float normTime = (fTime - lastTime) / (nextTime - lastTime);
-		InterpFunction interp = GetInterpFunction(eType);
-		NIASSERT(interp);
-
-		float result;
-		interp(normTime, pkKeys->GetKeyAt(lastIdx, ucSize), pkKeys->GetKeyAt(nextIdx, ucSize), &result);
-
-		uiLastIdx = lastIdx;
-		return result;
-	}
-
-	static float GenInterpVanilla(
-		float fTime,
-		NiFloatKey *pkKeys,
-		KeyType eType,
-		unsigned int uiNumKeys,
-		unsigned short& usLastIdx,
-		unsigned int ucSize)
-	{
-		UInt32 uiLastIdx = usLastIdx;
-		float result = CdeclCall<float>(0xA26B40, fTime, pkKeys, eType, uiNumKeys, &uiLastIdx, ucSize);
-		usLastIdx = uiLastIdx;
-		return result;
 	}
 
 };
@@ -2404,41 +2321,6 @@ struct AnimGroupInfo
 	UInt32 unk14[4];
 };
 
-AnimGroupInfo* GetGroupInfo(AnimGroupID groupId);
-AnimGroupInfo* GetGroupInfo(UInt8 groupId);
-eAnimSequence GetSequenceType(AnimGroupID groupId);
-eAnimSequence GetSequenceType(UInt8 groupId);
-
-namespace AnimGroup
-{
-	inline AnimGroupID GetBaseGroupID(UInt16 groupID)
-	{
-		return static_cast<AnimGroupID>(groupID & 0xFF);
-	}
-	
-	inline int GetMoveType(UInt16 groupID)
-	{
-		return (groupID & 0x7000) >> 12;
-	}
-
-	inline bool IsAttack(AnimGroupID groupID)
-	{
-		if (groupID == kAnimGroup_Invalid)
-			return false;
-		if (groupID >= kAnimGroup_AttackLoop && groupID <= kAnimGroup_AttackLoopISDown)
-			return true;
-		const auto* info = GetGroupInfo(groupID);
-		return info->keyType >= 5 && info->keyType <= 9;
-	}
-
-	inline bool IsAim(AnimGroupID groupID)
-	{
-		if (groupID == kAnimGroup_Invalid)
-			return false;
-		return groupID >= kAnimGroup_Aim && groupID <= kAnimGroup_AimISDown;
-	}
-}
-
 template <typename T>
 class NiFixedArray
 {
@@ -2630,10 +2512,7 @@ public:
 		return ThisStdCall(0x495520, this);
 	}
 
-	UInt16 GetMoveType() const
-	{
-		return AnimGroup::GetMoveType(groupID);
-	}
+	UInt16 GetMoveType() const;
 
 	static TESAnimGroup* Init(BSAnimGroupSequence* sequence, const char* path)
 	{

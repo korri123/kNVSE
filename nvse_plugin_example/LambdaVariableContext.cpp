@@ -3,7 +3,9 @@
 LambdaVariableContext::LambdaVariableContext(Script* scriptLambda) : scriptLambda(scriptLambda)
 {
 	if (scriptLambda)
+	{
 		CaptureLambdaVars(scriptLambda);
+	}
 }
 
 LambdaVariableContext::LambdaVariableContext(LambdaVariableContext&& other) noexcept : scriptLambda(other.scriptLambda)
@@ -28,9 +30,12 @@ LambdaVariableContext::~LambdaVariableContext()
 		UncaptureLambdaVars(this->scriptLambda);
 }
 
-
-
 Script*& LambdaVariableContext::operator*()
+{
+	return scriptLambda;
+}
+
+Script* LambdaVariableContext::operator*() const
 {
 	return scriptLambda;
 }
