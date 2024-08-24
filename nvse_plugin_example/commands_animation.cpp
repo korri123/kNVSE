@@ -678,6 +678,7 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 	{
 		std::optional<AnimationResult> result;
 		std::optional<AnimationResult> modIndexResult;
+		StackVector<UInt8, 8> visitedModIndices;
 
 		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
 		auto& map = GetMap(firstPerson);
@@ -688,8 +689,11 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 			if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData))
 				return lResult;
 			// mod index
-			if (!modIndexResult.has_value())
+			if (!modIndexResult.has_value() && ra::find(*visitedModIndices, form->GetModIndex()) == visitedModIndices->end())
+			{
 				modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData);
+				visitedModIndices->push_back(form->GetModIndex());
+			}
 			return std::nullopt;
 		};
 		// actor ref ID

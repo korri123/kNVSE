@@ -404,6 +404,19 @@ void HandleAnimTimes()
 			if (CallFunction(conditionScript, actor, nullptr, &arrResult))
 			{
 				const auto result = static_cast<bool>(arrResult.GetNumber());
+				if (curAnim == anim)
+				{
+					// optimizations
+					if (result)
+					{
+						++it;
+						continue;
+					}
+					// if the current anim is the tracked anim, and the condition is now false, it probably won't be selected again
+					animsToPlay.emplace_back(animData, groupId);
+					erase();
+					continue;
+				}
 				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
 				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
 				const auto customAnimResult = GetActorAnimation(nextGroupId, animData);
