@@ -56,6 +56,8 @@ NVSEConsoleInterface* g_consoleInterface = nullptr;
 _CaptureLambdaVars CaptureLambdaVars;
 _UncaptureLambdaVars UncaptureLambdaVars;
 std::vector<std::string> g_eachFrameScriptLines;
+MapHitCounters g_mapHitCounters;
+AverageTimers g_averageTimers;
 
 bool isEditor = false;
 
@@ -73,21 +75,16 @@ float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 }
 
 ScriptCache g_scriptCache;
-int g_cacheHits = 0;
-int g_cacheMisses = 0;
-int g_totalCalls = 0;
+
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 	NVSEArrayVarInterface::Element* result)
 {
-	++g_totalCalls;
 	auto [it, isNew] = g_scriptCache.emplace(std::make_pair(std::make_pair(callingObj, funcScript), NVSEArrayVarInterface::Element{}));
 	if (!isNew)
 	{
-		++g_cacheHits;
 		*result = it->second;
 		return true;
 	}
-	++g_cacheMisses;
 	const auto success = g_script->CallFunction(
 		funcScript,
 		callingObj,
@@ -560,6 +557,25 @@ void HandleExecutionQueue()
 	}
 }
 
+void ClearAnimationResultCache() 
+{
+	// .clear() deallocates memory which is slow
+	for (auto iter = g_animationResultCache.begin(); iter != g_animationResultCache.end(); ++iter)
+	{
+		iter->second = std::nullopt;
+	}
+}
+
+void ClearAnimPathFrameCache() 
+{
+	g_animPathFrameCache.clear();
+}
+
+void ClearScriptCallExecutions() 
+{
+	g_scriptCache.clear();
+}
+
 void HandleMisc()
 {
 	if (g_fixHolster && g_thePlayer->IsThirdPerson())
@@ -576,18 +592,14 @@ void HandleMisc()
 		else if (anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
 			g_fixHolster = false;
 	}
-	g_animationResultCache.clear();
-	g_animPathFrameCache.clear();
-	g_scriptCache.clear();
+	//g_animationResultCache.clear();
+	//g_animPathFrameCache.clear();
+	//g_scriptCache.clear();
 	// Console_Print("Cache hits: %d misses: %d", g_cacheHits, g_cacheMisses);
-	Console_Print("Calls: %d Cache hits: %d misses: %d", g_totalCalls, g_cacheHits, g_cacheMisses);
-	g_cacheHits = 0;
-	g_cacheMisses = 0;
-	g_totalCalls = 0;
-	for (const auto& line : g_eachFrameScriptLines)
-	{
-		g_consoleInterface->RunScriptLine(line.c_str(), nullptr);
-	}
+	//Console_Print("Calls: %d Cache hits: %d misses: %d", g_totalCalls, g_cacheHits, g_cacheMisses);
+	ClearAnimationResultCache();
+	ClearAnimPathFrameCache();
+	ClearScriptCallExecutions();
 }
 
 std::thread g_animFileThread;

@@ -85,3 +85,81 @@ struct ScriptPairEqual {
 
 using ScriptCache = std::unordered_map<std::pair<TESObjectREFR*, Script*>, NVSEArrayVarInterface::Element, ScriptPairHash, ScriptPairEqual>;
 extern ScriptCache g_scriptCache;
+
+struct MapHitCounter
+{
+	const char* name;
+	int hits = 0;
+	int misses = 0;
+	int total = 0;
+
+	void Print()
+	{
+		Console_Print("%s Hits: %d misses: %d total: %d", name, hits, misses, total);
+		hits = 0;
+		misses = 0;
+		total = 0;
+	}
+};
+
+struct MapHitCounters
+{
+	MapHitCounter getActorAnimation{"GetActorAnimation"};
+	MapHitCounter scriptCall{"ScriptCall"};
+};
+
+extern MapHitCounters g_mapHitCounters;
+
+struct AverageTimer
+{
+	const char* name;
+	unsigned int count = 0;
+	std::chrono::high_resolution_clock::duration totalDuration = std::chrono::high_resolution_clock::duration::zero();
+
+	void Add(std::chrono::high_resolution_clock::duration duration)
+	{
+		count++;
+		totalDuration += duration;
+	}
+
+	void Print()
+	{
+		if (count == 0)
+			return;
+		long long average = std::chrono::duration_cast<std::chrono::nanoseconds>(totalDuration).count() / count;
+		char buf[0x100];
+		sprintf_s(buf, 0x100, "%lld ns", average);
+		Console_Print("%s", buf);
+		if (count % 1000 == 0)
+		{
+			count = 0;
+			totalDuration = std::chrono::high_resolution_clock::duration::zero();
+		}
+	}
+};
+
+struct FunctionTimer
+{
+	AverageTimer* timer;
+	std::chrono::high_resolution_clock::time_point startTime;
+	std::chrono::high_resolution_clock::time_point endTime;
+
+	FunctionTimer(AverageTimer* timer) : timer(timer)
+	{
+		startTime = std::chrono::high_resolution_clock::now();
+	}
+
+	~FunctionTimer()
+	{
+		endTime = std::chrono::high_resolution_clock::now();
+		timer->Add(endTime - startTime);
+	}
+
+};
+
+struct AverageTimers
+{
+	AverageTimer getActorAnimation{"GetActorAnimation"};
+};
+
+extern AverageTimers g_averageTimers;

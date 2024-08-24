@@ -118,7 +118,7 @@ BSAnimGroupSequence* GetAnimationByPath(const char* path)
 	return kfModel ? kfModel->controllerSequence : nullptr;
 }
 
-std::map<std::pair<std::string_view, AnimData*>, BSAnimationContext> g_cachedAnimMap;
+std::unordered_map<std::pair<std::string_view, AnimData*>, BSAnimationContext, pair_hash, pair_equal> g_cachedAnimMap;
 
 
 #if _DEBUG
@@ -659,7 +659,6 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 // clear this cache every frame
 AnimationResultCache g_animationResultCache;
 
-
 std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData)
 {
 	// wait for file loading to finish
@@ -668,8 +667,10 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
 	auto [cache, isNew] = g_animationResultCache.emplace(std::make_pair(animGroupId, animData), std::nullopt);
-	if (!isNew)
+	if (cache->second)
+	{
 		return cache->second;
+	}
 #if _DEBUG
 	int _debug = 0;
 #endif
