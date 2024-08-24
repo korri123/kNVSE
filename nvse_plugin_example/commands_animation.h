@@ -260,7 +260,7 @@ using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
 
 struct SavedAnims
 {
-	std::vector<std::unique_ptr<AnimPath>> anims; // inludes all variants
+	std::vector<std::unique_ptr<AnimPath>> anims; // inludes all random variants, or ordered variants, or in case reloads normal and partial reload animations
 	std::unordered_set<NiPointer<BSAnimGroupSequence>> linkedSequences;
 	bool hasOrder = false;
 	bool loaded = false;
@@ -269,6 +269,7 @@ struct SavedAnims
 	std::string_view conditionScriptText;
 	bool pollCondition = false;
 	bool matchBaseGroupId = false;
+	bool disabled = false;
 	SavedAnims() = default;
 
 	bool MatchesConditions(const Actor* actor) const
@@ -301,7 +302,7 @@ struct SavedAnims
 
 struct AnimStacks
 {
-	std::vector<std::shared_ptr<SavedAnims>> anims;
+	std::vector<std::unique_ptr<SavedAnims>> anims;
 };
 
 // Per ref ID there is a stack of animation variants per group ID
@@ -399,19 +400,14 @@ namespace GameFuncs
 	inline auto AnimData_ResetSequenceState = THISCALL(0x496080, void, AnimData* animData, eAnimSequence sequenceId, float blendAmound);
 }
 
-BSAnimGroupSequence* GetAnimationByPath(const char* path);
-
 void HandleOnAnimDataDelete(AnimData* animData);
 
 
 class AnimationResult
 {
 public:
-	std::shared_ptr<SavedAnims> parent;
-	SavedAnimsTime* animsTime;
-	AnimStacks* stacks;
-	AnimationResult(const std::shared_ptr<SavedAnims>& parent, SavedAnimsTime* animsTime, AnimStacks* stacks)
-		: parent(parent), animsTime(animsTime), stacks(stacks)
+	SavedAnims* animBundle;
+	AnimationResult(SavedAnims* animBundle): animBundle(animBundle)
 	{
 	}
 };
@@ -427,7 +423,7 @@ struct BSAnimationContext
 };
 
 std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData);
-std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& ctx, UInt16 groupId, AnimData* animData);
+std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UInt16 groupId, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 
 std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData);
@@ -567,10 +563,17 @@ UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);
 float GetIniFloat(UInt32 addr);
 NiControllerSequence::InterpArrayItem* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);
 
-using AnimationResultCache = std::unordered_map<std::pair<UInt32, AnimData*>, std::optional<AnimationResult>, pair_hash, pair_equal>;
+using AnimationResultKey = std::pair<UInt32, AnimData*>;
+using AnimationResultValue = std::optional<AnimationResult>;
+using AnimationResultPair = std::pair<const AnimationResultKey, AnimationResultValue>;
+using AnimationResultCache = std::unordered_map<AnimationResultKey, AnimationResultValue, pair_hash, pair_equal>;
 extern AnimationResultCache g_animationResultCache;
 
-using AnimPathCache = std::unordered_map<std::pair<SavedAnims*, AnimData*>, AnimPath*, pair_hash, pair_equal>;
+using AnimPathKey = std::pair<SavedAnims*, AnimData*>;
+using AnimPathValue = AnimPath*;
+using AnimPathPair = std::pair<const AnimPathKey, AnimPathValue>;
+using AnimPathCache = std::unordered_map<AnimPathKey, AnimPathValue, pair_hash, pair_equal>;
+
 extern AnimPathCache g_animPathFrameCache;
 
 std::string_view GetBaseAnimGroupName(std::string_view name);

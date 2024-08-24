@@ -61,7 +61,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 			HandleExtraOperations(animData, queuedAnim);
 		}
 		// first check matchBaseGroupId
-		else if (const auto lResult = GetActorAnimation(animGroupId & 0xFF, animData); lResult && lResult->parent->matchBaseGroupId)
+		else if (const auto lResult = GetActorAnimation(animGroupId & 0xFF, animData); lResult && lResult->animBundle->matchBaseGroupId)
 		{
 			if (auto* newAnim = LoadAnimationPath(*lResult, animData, animGroupId))
 			{
@@ -241,7 +241,7 @@ bool LookupCustomAnim(FullAnimGroupID groupId, AnimSequenceBase** base, AnimData
 
 	if (const auto animResult = GetActorAnimation(groupId, animData))
 	{
-		if (const auto animCtx = LoadCustomAnimation(*animResult->parent, groupId, animData))
+		if (const auto animCtx = LoadCustomAnimation(*animResult->animBundle, groupId, animData))
 		{
 			*base = animCtx->base;
 			return true;
@@ -258,7 +258,7 @@ bool LookupCustomAnim(FullAnimGroupID groupId, AnimSequenceBase** base, AnimData
 BSAnimGroupSequence* GetAnimByFullGroupID(AnimData* animData, UInt16 groupId)
 {
 	if (const auto result = GetActorAnimation(groupId, animData))
-		if (const auto ctx = LoadCustomAnimation(*result->parent, groupId, animData))
+		if (const auto ctx = LoadCustomAnimation(*result->animBundle, groupId, animData))
 			return ctx->anim;
 	if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 		return base->GetSequenceByIndex(-1);

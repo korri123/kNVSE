@@ -79,7 +79,7 @@ ScriptCache g_scriptCache;
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 	NVSEArrayVarInterface::Element* result)
 {
-	auto [it, isNew] = g_scriptCache.emplace(std::make_pair(std::make_pair(callingObj, funcScript), NVSEArrayVarInterface::Element{}));
+	auto [it, isNew] = g_scriptCache.emplace(std::make_pair(std::make_pair(callingObj, funcScript), NVSEArrayVarInterface::Element()));
 	if (!isNew)
 	{
 		*result = it->second;
@@ -164,15 +164,129 @@ bool IsAnimNextInSelection(AnimData* animData, UInt16 nearestGroupId, const std:
 			return false;
 		return animBase->Contains(anim);
 	}
-	return ctx->parent->linkedSequences.contains(anim);
+	return ctx->animBundle->linkedSequences.contains(anim);
 }
 
-void HandleAnimTimes()
+bool IsActorInvalid(Actor* actor)
 {
-	constexpr auto shouldErase = [](Actor* actor)
+	return !actor || actor->IsDying(true) || actor->IsDeleted() || !actor->baseProcess;
+}
+
+void HandlePollConditionAnims()
+{
+	std::vector<std::pair<AnimData*, FullAnimGroupID>> animsToPlay;
+	animsToPlay.reserve(1);
+
+#if _DEBUG
+	struct DebugInfo
 	{
-		return !actor || actor->IsDying(true) || actor->IsDeleted() || !actor->baseProcess;
+		std::string_view anim;
+		FullAnimGroupID groupId;
+		std::string_view conditionScript;
+		std::string_view actorName;
 	};
+	std::vector<DebugInfo> anims;
+	for (const auto& [pair, animTimePtr] : g_timeTrackedGroups)
+	{
+		if (pair.first->conditionScriptText.empty())
+		{
+			pair.first->conditionScriptText = AddStringToPool(DecompileScript(*pair.first->conditionScript));
+		}
+		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTimePtr->actorId), TESForm, Actor);
+		std::string_view actorName = actor ? actor->GetFullName()->name.CStr() : "NULL";
+		anims.emplace_back(animTimePtr->anim->m_kName.Str(), animTimePtr->groupId, pair.first->conditionScriptText, actorName);
+	}
+#endif
+
+	for (auto it = g_timeTrackedGroups.begin(); it != g_timeTrackedGroups.end();)
+	{
+		const auto erase = [&]
+		{
+			it = g_timeTrackedGroups.erase(it);
+		};
+		auto& [pair, animTimePtr] = *it;
+		auto& animTime = *animTimePtr;
+		auto& [conditionScript, groupId, anim, actorId, animData] = animTime;
+		const auto& ctx = *pair.first;
+		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
+		
+		if (IsActorInvalid(actor) || !animData || !anim ||
+			anim->m_eState == NiControllerSequence::INACTIVE && anim->m_eCycleType != NiControllerSequence::LOOP ||
+			!conditionScript || ctx.disabled)
+		{
+			erase();
+			continue;
+		}
+
+		const auto* animInfo = GetGroupInfo(static_cast<AnimGroupID>(groupId));
+		auto* curAnim = animData->animSequence[animInfo->sequenceType];
+		if (!curAnim || !curAnim->animGroup)
+		{
+			erase();
+			continue;
+		}
+
+		const UInt16 currentGroupId = curAnim->animGroup->groupID;
+		
+		// check if current anim is running at sequence type
+		if ((currentGroupId & 0xFF) != (groupId & 0xFF))
+		{
+			erase();
+			continue;
+		}
+		
+		if (!AnimGroup::FallbacksTo(animData, groupId, currentGroupId))
+		{
+			erase();
+			continue;
+		}
+		
+		if (conditionScript)
+		{
+			NVSEArrayVarInterface::Element arrResult;
+			if (CallFunction(conditionScript, actor, nullptr, &arrResult))
+			{
+				const auto result = static_cast<bool>(arrResult.GetNumber());
+				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
+				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
+				if (curAnim == anim)
+				{
+					// optimizations
+					if (result)
+					{
+						++it;
+						continue;
+					}
+					// if the current anim is the tracked anim, and the condition is now false, it probably won't be selected again
+					animsToPlay.emplace_back(animData, nextGroupId);
+					erase();
+					continue;
+				}
+				
+				const auto customAnimResult = GetActorAnimation(nextGroupId, animData);
+				const auto isAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, customAnimResult, anim);
+				const auto isCurAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, customAnimResult, curAnim);
+				
+				const auto shouldPlayAnim = _L(, result && isAnimNextAnim && !isCurAnimNextAnim);
+				const auto shouldStopAnim = _L(, !result && !isAnimNextAnim && curAnim == anim);
+				if (shouldPlayAnim() || shouldStopAnim())
+				{
+					animsToPlay.emplace_back(animData, nextGroupId);
+				}
+			}
+		}
+		++it;
+	}
+	
+	for (const auto& [animData, nextGroupId] : animsToPlay)
+	{
+		// done here since PlayAnimGroup can mutate g_timeTrackedGroups and cause a rehash
+		GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);
+	}
+}
+
+void HandleCustomTextKeys()
+{
 	for (auto it = g_timeTrackedAnims.begin(); it != g_timeTrackedAnims.end();)
 	{
 		auto& animTime = *it->second;
@@ -209,7 +323,7 @@ void HandleAnimTimes()
 
 		const auto isAnimPlaying = _L(, anim->m_eState != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim);
 		
-		if (shouldErase(actor) || !animData
+		if (IsActorInvalid(actor) || !animData
 			// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
 			|| (!animTime.respectEndKey && !isAnimPlaying()))
 		{
@@ -325,117 +439,12 @@ void HandleAnimTimes()
 		}
 		++it;
 	}
+}
 
-	std::vector<std::pair<AnimData*, FullAnimGroupID>> animsToPlay;
-	animsToPlay.reserve(1);
-
-#if _DEBUG
-	struct DebugInfo
-	{
-		std::string_view anim;
-		FullAnimGroupID groupId;
-		std::string_view conditionScript;
-		std::string_view actorName;
-	};
-	std::vector<DebugInfo> anims;
-	for (const auto& [pair, animTimePtr] : g_timeTrackedGroups)
-	{
-		if (pair.first->conditionScriptText.empty())
-		{
-			pair.first->conditionScriptText = AddStringToPool(DecompileScript(*pair.first->conditionScript));
-		}
-		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTimePtr->actorId), TESForm, Actor);
-		std::string_view actorName = actor ? actor->GetFullName()->name.CStr() : "NULL";
-		anims.emplace_back(animTimePtr->anim->m_kName.Str(), animTimePtr->groupId, pair.first->conditionScriptText, actorName);
-	}
-#endif
-
-	for (auto it = g_timeTrackedGroups.begin(); it != g_timeTrackedGroups.end();)
-	{
-		const auto erase = [&]
-		{
-			it = g_timeTrackedGroups.erase(it);
-		};
-		auto& [pair, animTimePtr] = *it;
-		auto& animTime = *animTimePtr;
-		auto& [conditionScript, groupId, anim, actorId, animData] = animTime;
-		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
-		if (!actor)
-		{
-			erase();
-			continue;
-		}
-		
-		if (shouldErase(actor) || !animData || !anim || anim->m_eState == NiControllerSequence::INACTIVE && anim->m_eCycleType != NiControllerSequence::LOOP || !conditionScript)
-		{
-			erase();
-			continue;
-		}
-
-		const auto* animInfo = GetGroupInfo(static_cast<AnimGroupID>(groupId));
-		auto* curAnim = animData->animSequence[animInfo->sequenceType];
-		if (!curAnim || !curAnim->animGroup)
-		{
-			erase();
-			continue;
-		}
-
-		const UInt16 currentGroupId = curAnim->animGroup->groupID;
-		
-		// check if current anim is running at sequence type
-		if ((currentGroupId & 0xFF) != (groupId & 0xFF))
-		{
-			erase();
-			continue;
-		}
-		
-		if (!AnimGroup::FallbacksTo(animData, groupId, currentGroupId))
-		{
-			erase();
-			continue;
-		}
-		
-		if (conditionScript)
-		{
-			NVSEArrayVarInterface::Element arrResult;
-			if (CallFunction(conditionScript, actor, nullptr, &arrResult))
-			{
-				const auto result = static_cast<bool>(arrResult.GetNumber());
-				if (curAnim == anim)
-				{
-					// optimizations
-					if (result)
-					{
-						++it;
-						continue;
-					}
-					// if the current anim is the tracked anim, and the condition is now false, it probably won't be selected again
-					animsToPlay.emplace_back(animData, groupId);
-					erase();
-					continue;
-				}
-				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
-				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
-				const auto customAnimResult = GetActorAnimation(nextGroupId, animData);
-				const auto isAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, customAnimResult, anim);
-				const auto isCurAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, customAnimResult, curAnim);
-				
-				const auto shouldPlayAnim = _L(, result && isAnimNextAnim && !isCurAnimNextAnim);
-				const auto shouldStopAnim = _L(, !result && !isAnimNextAnim && curAnim == anim);
-				if (shouldPlayAnim() || shouldStopAnim())
-				{
-					animsToPlay.emplace_back(animData, nextGroupId);
-				}
-			}
-		}
-		++it;
-	}
-	
-	for (const auto& [animData, nextGroupId] : animsToPlay)
-	{
-		// done here since PlayAnimGroup can mutate g_timeTrackedGroups and cause a rehash
-		GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);
-	}
+void HandleAnimTimes()
+{
+	HandleCustomTextKeys();
+	HandlePollConditionAnims();
 }
 
 bool IsGodMode()
@@ -560,19 +569,18 @@ void HandleExecutionQueue()
 void ClearAnimationResultCache() 
 {
 	// .clear() deallocates memory which is slow
-	for (auto iter = g_animationResultCache.begin(); iter != g_animationResultCache.end(); ++iter)
-	{
-		iter->second = std::nullopt;
-	}
+	g_animationResultCache.clear();
 }
 
 void ClearAnimPathFrameCache() 
 {
+	// .clear() deallocates memory which is slow
 	g_animPathFrameCache.clear();
 }
 
 void ClearScriptCallExecutions() 
 {
+	// .clear() deallocates memory which is slow
 	g_scriptCache.clear();
 }
 
