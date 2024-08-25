@@ -46,7 +46,7 @@ enum class POVSwitchState
 
 struct Sounds
 {
-	std::vector<Sound> sounds;
+	std::vector<BSSoundHandle> sounds;
 	bool failed = false;
 
 	Sounds() = default;
@@ -68,7 +68,7 @@ struct Sounds
 				auto fileName = sv::get_file_name(file);
 				if (!IsSoundFile(fileName))
 					continue; // for some reason we get . and .. files
-				auto sound = Sound::InitByFilename(file);
+				auto sound = BSSoundHandle::InitByFilename(file);
 				if (!sound.soundID)
 					continue;
 				sounds.emplace_back(sound);
@@ -83,7 +83,7 @@ struct Sounds
 			return;
 		}
 		const std::string realPath = FormatString(R"(data\sound\%s)", path.data());
-		auto sound = Sound::InitByFilename(realPath.c_str());
+		auto sound = BSSoundHandle::InitByFilename(realPath.c_str());
 		if (!sound.soundID)
 			failed = true;
 		else

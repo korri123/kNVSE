@@ -563,9 +563,26 @@ enum class ControlCode
 	Screenshot = 0x1E,
 };
 
-// 0C
-struct Sound
+class BSSoundHandle;
+
+class BSAudioManager
 {
+public:
+	static BSAudioManager* GetSingleton()
+	{
+		return reinterpret_cast<BSAudioManager*>(0x11F6D98);
+	}
+
+	void InitSound(BSSoundHandle* sound, const char* path, UInt32 flags)
+	{
+		ThisStdCall(0xAD7550, sound, path, flags);
+	}
+};
+
+// 0C
+class BSSoundHandle
+{
+public:
 	UInt32 soundID{};
 	UInt8 success{};
 	UInt8 pad05{};
@@ -573,16 +590,49 @@ struct Sound
 	UInt8 pad07{};
 	UInt32 unk08{};
 
-	Sound() = default;
-
-	Sound(const char* soundPath, UInt32 flags)
+	enum AudioFlags
 	{
-		ThisStdCall(0xAD7550, CdeclCall<void*>(0xAD9060), this, soundPath, flags);
+		kAudioFlags_2D = 0x1,
+		kAudioFlags_3D = 0x2,
+		kAudioFlags_IsVoice = 0x4,
+		kAudioFlags_IsFootsteps = 0x8,
+		kAudioFlags_Loop = 0x10,
+		kAudioFlags20_NotDialogue = 0x20,
+		kAudioFlags_RandomFrequencyShift = 0x40,
+		kAudioFlags80 = 0x80,
+		kAudioFlags100 = 0x100,
+		kAudioFlags_IsMusic = 0x800,
+		kAudioFlags_MuteWhenSubmerged = 0x1000,
+		kAudioFlags_MaybeUnderwater = 0x2000,
+		kAudioFlags4000 = 0x4000,
+		kAudioFlags_IsTemporary8000 = 0x8000,
+		kAudioFlags_DontCache = 0x10000,
+		kAudioFlags20000 = 0x20000,
+		kAudioFlags_FirstPerson = 0x40000,
+		kAudioFlags_Modulated = 0x80000,
+		kAudioFlags_IsRadio = 0x100000,
+		kAudioFlags200000 = 0x200000,
+		kAudioFlags_Radio400000 = 0x400000,
+		kAudioFlags_IsMusic2 = 0x800000,
+		kAudioFlags1000000 = 0x1000000,
+		kAudioFlags_EnvelopeFast = 0x2000000,
+		kAudioFlags_EnvelopeSlow = 0x4000000,
+		kAudioFlags_2DRadius = 0x8000000,
+		kAudioFlags20000000 = 0x20000000,
+		kAudioFlags40000000 = 0x40000000,
+	};
+
+
+	BSSoundHandle() = default;
+
+	BSSoundHandle(const char* soundPath, UInt32 flags)
+	{
+		BSAudioManager::GetSingleton()->InitSound(this, soundPath, flags);
 	}
 
 	void Play()
 	{
-		ThisStdCall(0xAD8830, this, 1);
+		ThisStdCall(0xAD8830, this, TESSound::kFlag_MuteWhenSubmerged);
 	}
 
 	void PlayDelayed(int delayMS, int unused)
@@ -590,13 +640,24 @@ struct Sound
 		ThisStdCall(0xAD8870, this, delayMS, unused);
 	}
 
-	static Sound InitByFilename(const char* path)
+	static BSSoundHandle InitByFilename(const char* path)
 	{
-		Sound sound;
-		ThisStdCall(0xAD7480, CdeclCall<void*>(0x453A70), &sound, path, 0, nullptr);
+		BSSoundHandle sound;
+		const auto* audioManager = BSAudioManager::GetSingleton();
+		ThisStdCall(0xAD7480, audioManager, &sound, path, kAudioFlags_3D, nullptr);
 		return sound;
 	}
 
+	void SetPosition(NiPoint3* pos)
+	{
+		ThisStdCall(0xAD8B60, this, pos->x, pos->y, pos->z);
+	}
+
+	void SetObjectToFollow(NiNode* node)
+	{
+		ThisStdCall(0xAD8F20, this, node);
+	}
+	
 	void Set3D(Actor* actor)
 	{
 		if (!actor)
@@ -605,8 +666,9 @@ struct Sound
 		auto* node = actor->GetNiNode();
 		if (pos && node)
 		{
-			ThisStdCall(0xAD8B60, this, pos->x, pos->y, pos->z);
-			ThisStdCall(0xAD8F20, this, node);
+			// BSSoundHandle::SetPosition
+			SetPosition(pos);
+			SetObjectToFollow(node);
 		}
 	}
 };

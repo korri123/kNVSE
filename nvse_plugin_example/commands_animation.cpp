@@ -276,7 +276,7 @@ std::string GetTextAfterColon(std::string in)
 
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptLineExecutions;
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptCallExecutions;
-std::unordered_map<BSAnimGroupSequence*, TimedExecution<Sound>> g_scriptSoundExecutions;
+std::unordered_map<BSAnimGroupSequence*, TimedExecution<BSSoundHandle>> g_scriptSoundExecutions;
 
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 {

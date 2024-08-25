@@ -2474,19 +2474,19 @@ public:
 
 	AnimGroupID GetBaseGroupID() const;
 
-	struct __declspec(align(4)) AnimGroupSound
+	struct AnimGroupSound
 	{
 		float playTime;
 		UInt8 soundID;
 		UInt8 gap05[3];
-		float unk08;
+		float speed;
 		TESSound* sound;
 	};
 
 
 	UInt8 byte08[8];
 	UInt16 groupID;
-	UInt8 unk12[1];
+	UInt8 unk12;
 	NiFixedArray<float>	keyTimes;
 	NiPoint3 moveVector;
 	UInt8 leftOrRight_whichFootToSwitch;
@@ -2496,8 +2496,7 @@ public:
 	UInt8 decal;
 	UInt8 gap2D[3];
 	NiFixedString parentRootNode;
-	UInt32 numSounds;
-	AnimGroupSound* sounds;
+	NiFixedArray<AnimGroupSound> sounds;
 
 	static const char* StringForAnimGroupCode(UInt32 groupCode);
 	static UInt32 AnimGroupForString(const char* groupName);
