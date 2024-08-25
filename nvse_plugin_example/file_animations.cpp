@@ -274,7 +274,10 @@ bool LoadJSONInBSAPaths(const std::vector<std::string_view>& bsaAnimPaths, JSONE
 		if (!thirdPerson && !firstPerson)
 			continue;
 		animOverrideData.path = path;
-		OverrideFormAnimation(animOverrideData, firstPerson);
+		if (animOverrideData.identifier == 0xFF)
+			OverrideModIndexAnimation(animOverrideData, firstPerson);
+		else
+			OverrideFormAnimation(animOverrideData, firstPerson);
 	}
 	return true;
 }

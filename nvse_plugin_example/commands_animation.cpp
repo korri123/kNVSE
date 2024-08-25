@@ -863,8 +863,6 @@ bool RegisterCustomAnimGroupAnim(std::string_view path)
 bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 {
 	const auto path = data.path;
-	if (sv::contains_ci(path, "2hrfastforward"))
-		int i = 0;
 	const auto groupId = GetAnimGroupId(path);
 	if (groupId == INVALID_FULL_GROUP_ID)
 	{
@@ -893,7 +891,13 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	// check if stack already contains path
 	if (const auto iter = std::ranges::find_if(stack, findFn); iter != stack.end())
 	{
-		(*iter)->disabled = false;
+		auto& existingEntry = **iter;
+		existingEntry.disabled = false;
+		if (data.conditionScript != existingEntry.conditionScript) // hot reload
+		{
+			existingEntry.conditionScript = data.conditionScript;
+			existingEntry.conditionScriptText = data.conditionScriptText;
+		}
 		// move iter to the top of stack
 		std::rotate(iter, std::next(iter), stack.end());
 		return true;
