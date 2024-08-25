@@ -365,10 +365,10 @@ T GetOptimizedVariableOfCallerStack(void* addressOfReturnAddress, int offset, bo
 	return *reinterpret_cast<T*>(static_cast<UInt8*>(addressOfReturnAddress) + offset);
 }
 
-#define GET_CALLER_VAR(type, offset, lambda) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
-#define GET_CALLER_VAR_PTR(type, offset, lambda) GetVariablePtrOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
+#define GET_CALLER_VAR(type, offset) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, false)
 #define GET_CALLER_VAR_LAMBDA(type, offset) GetVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, true)
-#define NI_GET_CALLER_VAR(type, offset, lambda) GetOptimizedVariableOfCallerStack<type>(_AddressOfReturnAddress(), offset, lambda)
+#define GET_CALLER_VAR_PTR(type, offset) GetVariablePtrOfCallerStack<type>(_AddressOfReturnAddress(), offset, false)
+#define GET_CALLER_VAR_PTR_LAMBDA(type, offset) GetVariablePtrOfCallerStack<type>(_AddressOfReturnAddress(), offset, true)
 
 // Hash function for std::pair
 struct pair_hash {

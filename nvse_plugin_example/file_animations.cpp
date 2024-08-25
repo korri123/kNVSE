@@ -41,7 +41,7 @@ struct JSONEntry
 void LoadPathsForType(const fs::path& dirPath, const UInt32 identifier, bool firstPerson, JSONEntry* jsonEntry = nullptr)
 {
 	AnimOverrideData animOverrideData = {
-		.identifier = identifier,
+		.identifier = identifier != 0 ? identifier : 0xFF,
 		.enable = true,
 		.conditionScript = nullptr,
 		.pollCondition = false,
@@ -62,7 +62,10 @@ void LoadPathsForType(const fs::path& dirPath, const UInt32 identifier, bool fir
 		animOverrideData.path = path;
 		try
 		{
-			OverrideFormAnimation(animOverrideData, firstPerson);
+			if (identifier < 0xFF)
+				OverrideModIndexAnimation(animOverrideData, firstPerson);
+			else
+				OverrideFormAnimation(animOverrideData, firstPerson);
 		}
 		catch (std::exception& e)
 		{
@@ -227,7 +230,7 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 							//ERROR_LOG(FormatString("Form %X was not found", formId));
 							continue;
 						}
-						LOG(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
+						//LOG(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
 						jsonEntries.emplace_back(folder, form, condition, pollCondition, priority, matchBaseGroupId);
 					}
 				}
@@ -258,7 +261,7 @@ bool LoadJSONInBSAPaths(const std::vector<std::string_view>& bsaAnimPaths, JSONE
 		return false;
 	
 	AnimOverrideData animOverrideData = {
-		.identifier = entry.form->refID,
+		.identifier = entry.form ? entry.form->refID : 0xFF,
 		.enable = true,
 		.conditionScriptText = entry.condition,
 		.pollCondition = entry.pollCondition,

@@ -11,14 +11,20 @@ BSAnimGroupSequence* GetAnimByFullGroupID(AnimData* animData, UInt16 groupId);
 BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID ani);
 void ApplyDestFrame(NiControllerSequence* sequence, float destFrame);
 
-extern bool g_fixSpineBlendBug;
-extern bool g_fixAttackISTransition;
-extern bool g_fixBlendSamePriority;
-extern bool g_fixLoopingReloadStart;
-extern bool g_disableFirstPersonTurningAnims;
-extern bool g_fixEndKeyTimeShorterThanStopTime;
-extern bool g_fixWrongAKeyInRespectEndKeyAnim;
-extern bool g_fixWrongPrnKey;
+struct PluginINISettings
+{
+    bool fixSpineBlendBug = false;
+    bool fixAttackISTransition = false;
+    bool fixBlendSamePriority = false;
+    bool fixLoopingReloadStart = false;
+    bool disableFirstPersonTurningAnims = false;
+    bool fixEndKeyTimeShorterThanStopTime = false;
+    bool fixWrongAKeyInRespectEndKeyAnim = false;
+    bool fixWrongPrnKey = false;
+    bool fixWrongAnimName = false;
+};
+
+extern PluginINISettings g_pluginSettings;
 
 namespace LoopingReloadPauseFix
 {

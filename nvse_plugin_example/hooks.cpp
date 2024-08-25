@@ -46,9 +46,9 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 // UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
 BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
 {
+#ifdef _DEBUG
 	const auto baseAnimGroup = static_cast<AnimGroupID>(animGroupId);
-	if (g_disableFirstPersonTurningAnims && animData == g_thePlayer->firstPersonAnimData && (baseAnimGroup == kAnimGroup_TurnLeft || baseAnimGroup == kAnimGroup_TurnRight))
-		return destAnim;
+#endif
 	if (animData && animData->actor)
 	{
 		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
@@ -92,7 +92,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	else if (bSkip)
 		return destAnim;
 
-	if (g_fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
+	if (g_pluginSettings.fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		return destAnim;
 
 	BSAnimGroupSequence* currentAnim = nullptr;
@@ -222,8 +222,8 @@ void FixIdleAnimStrafe()
 
 void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool bUpdateInterpolators)
 {
-	const auto* animData = GET_CALLER_VAR(AnimData*, -0x5C, false);
-	auto* animBlend = GET_CALLER_VAR_PTR(float*, -0x34, false);
+	const auto* animData = GET_CALLER_VAR(AnimData*, -0x5C);
+	auto* animBlend = GET_CALLER_VAR_PTR(float*, -0x34);
 	const auto mult = GetAnimMult(animData, static_cast<UInt8>(anim->animGroup->groupID));
 	if (mult > 1.0f)
 	{
@@ -324,9 +324,9 @@ void __fastcall HandleOnReload(Actor* actor)
 	//std::erase_if(g_burstFireQueue, _L(BurstFireData & b, b.actorId == g_thePlayer->refID));
 }
 
-bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
+[[msvc::noinline]]
+bool HasAnimBaseDuplicate(AnimSequenceBase* base, const BSAnimGroupSequence* anim)
 {
-	const auto* anim = kfModel->controllerSequence;
 	if (base->IsSingle()) // single anims are always valid
 		return false;
 	auto* multiple = static_cast<AnimSequenceMultiple*>(base);
@@ -338,43 +338,21 @@ bool __fastcall HasAnimBaseDuplicate(AnimSequenceBase* base, KFModel* kfModel)
 	return false;
 }
 
-__declspec(naked) void PreventDuplicateAnimationsHook()
+bool __cdecl RemoveDuplicateAnimsHook(void* aTypeBSAnimGroupSequence, BSAnimGroupSequence* arg1)
 {
-	const static UInt32 skipAddress = 0x490D7E;
-	const static UInt32 retnAddress = 0x490A4D;
-    __asm
-    {
-        mov edx, [ebp+0x8]   // Load KFModel* into edx
-        mov ecx, [ebp-0x10]  // Load AnimSequenceBase* into ecx
-        call HasAnimBaseDuplicate
-
-        test al, al
-        jnz skip_to_address  // Jump if AL is not zero (HasAnimBaseDuplicate returned true)
-
-        // Original code path
-        mov eax, 0x43B300    // Load Ni_IsKindOf address into eax
-        call eax             // Call Ni_IsKindOf
-        jmp finish
-
-    skip_to_address:
-		add esp, 8          
-        jmp skipAddress      // Jump to skipAddress
-
-    finish:
-        add esp, 8           // Adjust the stack pointer once for both branches
-        jmp retnAddress      // Jump to return address
-    }
+	auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
+	auto* base = GET_CALLER_VAR(AnimSequenceBase*, -0x10);
+	const auto* kfModel = GET_CALLER_VAR(KFModel*, 0x8);
+	const auto* anim = kfModel->controllerSequence;
+	if (HasAnimBaseDuplicate(base, anim))
+	{
+		*addrOfRetn = 0x490D7E;
+		return false;
+	}
+	return CdeclCall<bool>(0x43B300, aTypeBSAnimGroupSequence, arg1);
 }
 
-bool g_fixSpineBlendBug = false;
-bool g_fixAttackISTransition = false;
-bool g_fixBlendSamePriority = false;
-bool g_fixLoopingReloadStart = false;
-bool g_disableFirstPersonTurningAnims = false;
 
-bool g_fixEndKeyTimeShorterThanStopTime = false;
-bool g_fixWrongAKeyInRespectEndKeyAnim = false;
-bool g_fixWrongPrnKey = false;
 
 namespace LoopingReloadPauseFix
 {
@@ -458,6 +436,8 @@ BSAnimGroupSequence* Find1stPersonRespectEndKeyAnim(AnimData* animData, BSAnimGr
 	return nullptr;
 }
 
+PluginINISettings g_pluginSettings;
+
 void ApplyHooks()
 {
 	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
@@ -470,19 +450,21 @@ void ApplyHooks()
 	}
 	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 1, "; 0 = no log, 1 = kNVSE.log, 2 = console log");
 	g_errorLogLevel = ini.GetOrCreate("General", "iErrorLogLevel", 1, "; 0 = no log, 1 = kNVSE.log, 2 = error console log");
+	auto& conf = g_pluginSettings;
 
 #if 0
-	g_fixSpineBlendBug = ini.GetOrCreate("General", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down");
-	g_fixBlendSamePriority = ini.GetOrCreate("General", "bFixBlendSamePriority", 1, "; fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority");
-	g_fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim control");
-	g_fixLoopingReloadStart = ini.GetOrCreate("General", "bFixLoopingReloadStart", 1, "; fix looping reload start anims transitioning to aim anim before main looping reload anim");
+	conf.fixSpineBlendBug = ini.GetOrCreate("General", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down");
+	conf.fixBlendSamePriority = ini.GetOrCreate("General", "bFixBlendSamePriority", 1, "; fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority");
+	conf.fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim control");
+	conf.fixLoopingReloadStart = ini.GetOrCreate("General", "bFixLoopingReloadStart", 1, "; fix looping reload start anims transitioning to aim anim before main looping reload anim");
 
 	g_disableFirstPersonTurningAnims = ini.GetOrCreate("General", "bDisableFirstPersonTurningAnims", 1, "; disable first person turning anims (they mess with shit and serve barely any purpose)");
 #endif
-	g_fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
-	g_fixEndKeyTimeShorterThanStopTime = ini.GetOrCreate("Anim Fixes", "bFixEndKeyTimeShorterThanStopTime", 1, "; try to fix animations with broken export stop time where it's greater than the end key time and time of last transform data");
-	g_fixWrongAKeyInRespectEndKeyAnim = ini.GetOrCreate("Anim Fixes", "bFixWrongAKeyInRespectEndKeyAnim", 1, "; try to fix animations where animator messed up the a: text key value in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
-	g_fixWrongPrnKey = ini.GetOrCreate("Anim Fixes", "bFixWrongPrnKey", 1, "; try to fix animations where animator messed up the prn text key value in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
+	conf.fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
+	conf.fixEndKeyTimeShorterThanStopTime = ini.GetOrCreate("Anim Fixes", "bFixEndKeyTimeShorterThanStopTime", 1, "; try to fix animations with broken export stop time where it's greater than the end key time and time of last transform data");
+	conf.fixWrongAKeyInRespectEndKeyAnim = ini.GetOrCreate("Anim Fixes", "bFixWrongAKeyInRespectEndKeyAnim", 1, "; try to fix animations where animator messed up the a: text key value in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
+	conf.fixWrongPrnKey = ini.GetOrCreate("Anim Fixes", "bFixWrongPrnKey", 1, "; try to fix animations where animator messed up the prn text key value in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
+	conf.fixWrongAnimName = ini.GetOrCreate("Anim Fixes", "bFixWrongAnimName", 1, "; try to fix animations where the name of the animation file does not match anim group name. This can happen when the animator is not careful.");
 	//WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelCall(0x494989, HandleAnimationChange);
 	WriteRelCall(0x495E2A, HandleAnimationChange);
@@ -498,7 +480,7 @@ void ApplyHooks()
 	// WriteRelJump(0x4951D7, FixSpineBlendBug);
 
 
-	if (g_fixSpineBlendBug)
+	if (conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
 	
 	if (ini.GetOrCreate("General", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
@@ -527,7 +509,7 @@ void ApplyHooks()
 		// fix reloadloopstart blending into aim before reloadloop
 		WriteRelCall(0x492CF6, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, eAnimSequence sequenceId, bool bChar)
 		{
-			const auto* anim = GET_CALLER_VAR(BSAnimGroupSequence*, -0xA0, true);
+			const auto* anim = GET_CALLER_VAR_LAMBDA(BSAnimGroupSequence*, -0xA0);
 			if (anim && anim->animGroup)
 			{
 				const auto groupId = anim->animGroup->GetBaseGroupID();
@@ -542,25 +524,30 @@ void ApplyHooks()
 
 #if 1
 	// attempt to fix anims that don't get loaded since they aren't in the game to begin with
+	
+	// AnimData::FindNearestGroupIDAnim
 	WriteRelCall(0x49575B, NonExistingAnimHook<-0x10>);
 	WriteRelCall(0x495965, NonExistingAnimHook<-0x10>);
 	WriteRelCall(0x4959B9, NonExistingAnimHook<-0x10>);
-	WriteRelCall(0x495A03, NonExistingAnimHook<-0x10>);
-
-	WriteRelCall(0x4948E6, NonExistingAnimHook<-0x14>);
-
-	/* experimental */
-	WriteRelCall(0x9D0E80, NonExistingAnimHook<-0x1C>);
-	WriteRelCall(0x97FF06, NonExistingAnimHook<-0x8>);
-	WriteRelCall(0x97FE09, NonExistingAnimHook<-0xC>);
-	WriteRelCall(0x97F36D, NonExistingAnimHook<-0xC>);
-	WriteRelCall(0x8B7985, NonExistingAnimHook<-0x14>);
+	WriteRelCall(0x495A03, NonExistingAnimHook<-0x10>); 
+	// AnimData::MorphToSequenceIDOrGroup
+	WriteRelCall(0x4948E6, NonExistingAnimHook<-0x14>); 
 	WriteRelCall(0x495DC6, NonExistingAnimHook<-0x10>);
 	WriteRelCall(0x4956CE, NonExistingAnimHook<-0x14>);
-	WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
+
+	// AnimData::GetPlayingAnimGroupMovementVectorMagnitude (not sure this is needed)
 	WriteRelCall(0x49431B, NonExistingAnimHook<-0xC>);
+
+	/* experimental */
+	// WriteRelCall(0x9D0E80, NonExistingAnimHook<-0x1C>);
+	// WriteRelCall(0x97FF06, NonExistingAnimHook<-0x8>);
+	// WriteRelCall(0x97FE09, NonExistingAnimHook<-0xC>);
+	// WriteRelCall(0x97F36D, NonExistingAnimHook<-0xC>);
+	// WriteRelCall(0x8B7985, NonExistingAnimHook<-0x14>);
+	
+	// WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
 	// WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>); no go - causes stack overflow in PickAnimations since it calls LoadCustomAnimation that calls this
-	WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
+	// WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
 
 	//WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
 	//WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
@@ -590,7 +577,7 @@ void ApplyHooks()
 		return form->flags;
 	}));
 
-	WriteRelJump(0x490A45, PreventDuplicateAnimationsHook);
+	WriteRelCall(0x490A45, RemoveDuplicateAnimsHook);
 
 	// AnimData::GetNextWeaponSequenceKey
 	// fixes respectEndKey not working for a: keys
@@ -667,7 +654,7 @@ void ApplyHooks()
 	WriteRelCall(0x43B831, INLINE_HOOK(BSAnimGroupSequence*, __fastcall, BSAnimGroupSequence** animPtr)
 	{
 		auto* anim = *animPtr;
-		auto* fileName = GET_CALLER_VAR(const char*, 0x8, true);
+		auto* fileName = GET_CALLER_VAR_LAMBDA(const char*, 0x8);
 		
 		if (anim->m_spTextKeys) [[msvc::noinline_calls]]
 		{

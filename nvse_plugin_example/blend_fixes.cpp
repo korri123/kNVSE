@@ -468,7 +468,7 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
 
 void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimGroupSequence* pkDest)
 {
-	if (!g_fixBlendSamePriority || !pkDest || !pkSource || !pkDest->animGroup || !pkSource->animGroup)
+	if (!g_pluginSettings.fixBlendSamePriority || !pkDest || !pkSource || !pkDest->animGroup || !pkSource->animGroup)
 		return;
 	auto* groupInfo = pkDest->animGroup->GetGroupInfo();
 	if (!groupInfo)

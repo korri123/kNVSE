@@ -863,6 +863,8 @@ bool RegisterCustomAnimGroupAnim(std::string_view path)
 bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 {
 	const auto path = data.path;
+	if (sv::contains_ci(path, "2hrfastforward"))
+		int i = 0;
 	const auto groupId = GetAnimGroupId(path);
 	if (groupId == INVALID_FULL_GROUP_ID)
 	{
@@ -937,11 +939,6 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 
 bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson)
 {
-	if (!data.identifier)
-	{
-		data.identifier = 0xFF;
-		return OverrideModIndexAnimation(data, firstPerson);
-	}
 	auto& map = GetMap(firstPerson);
 	return SetOverrideAnimation(data, map);
 }

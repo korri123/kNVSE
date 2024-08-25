@@ -2495,7 +2495,7 @@ public:
 	UInt8 blendOut;
 	UInt8 decal;
 	UInt8 gap2D[3];
-	char* parentRootNode;
+	NiFixedString parentRootNode;
 	UInt32 numSounds;
 	AnimGroupSound* sounds;
 

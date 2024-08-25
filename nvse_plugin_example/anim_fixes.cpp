@@ -22,20 +22,20 @@ bool HasNoFixTextKey(const BSAnimGroupSequence* anim)
 
 void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 {
-	if (!g_fixEndKeyTimeShorterThanStopTime || HasNoFixTextKey(anim))
+	if (!g_pluginSettings.fixEndKeyTimeShorterThanStopTime || HasNoFixTextKey(anim))
 		return;
 	const auto endKeyTime = anim->m_fEndKeyTime;
 	if (auto* endKey = anim->m_spTextKeys->FindFirstByName("end"))
 	{
 		endKey->m_fTime = endKeyTime;
 	}
-#if _DEBUG
+#ifdef _DEBUG
 	const auto tags = anim->GetIDTags();
 	auto idx = 0;
 #endif
 	for (const auto& block : anim->GetControlledBlocks())
 	{
-#if _DEBUG
+#ifdef _DEBUG
 		auto& tag = tags[idx++];
 #endif
 		auto* interpolator = block.interpolator;
@@ -78,7 +78,7 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 char GetCharAfterAKey(const char* name)
 {
 	if (name[0] == 'a' && name[1] == ':')
-		return std::tolower(name[2]);
+		return static_cast<char>(std::tolower(name[2]));
 	return '\0';
 }
 
@@ -148,7 +148,7 @@ bool HasRespectEndKey(BSAnimGroupSequence* anim)
 
 void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
 {
-	if (!g_fixWrongAKeyInRespectEndKeyAnim || animData != g_thePlayer->firstPersonAnimData || !anim->animGroup || HasNoFixTextKey(anim))
+	if (!g_pluginSettings.fixWrongAKeyInRespectEndKeyAnim || animData != g_thePlayer->firstPersonAnimData || !anim->animGroup || HasNoFixTextKey(anim))
 		return;
 	auto fullGroupId = anim->animGroup->groupID;
 	if (anim->animGroup->IsAttackIS())
@@ -245,8 +245,6 @@ void AnimFixes::EraseNegativeAnimKeys(const BSAnimGroupSequence* anim)
 
 void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)
 {
-	if (!g_fixWrongPrnKey || HasNoFixTextKey(anim))
-		return;
 	const auto* textKeys = anim->m_spTextKeys;
 	const auto groupId = anim->animGroup->GetBaseGroupID();
 	for (auto& key : textKeys->GetKeys())
@@ -261,12 +259,12 @@ void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)
 			break;
 		}
 	}
-	anim->animGroup->parentRootNode = NiGlobalStringTable::AddString("Bip01 Translate");
+	anim->animGroup->parentRootNode = "Bip01 Translate";
 }
 
 NiFixedString* __fastcall WrongPrnKeyHook(BSAnimGroupSequence* anim)
 {
-	if (HasNoFixTextKey(anim) || !HasRespectEndKey(anim))
+	if (!g_pluginSettings.fixWrongPrnKey || HasNoFixTextKey(anim) || !HasRespectEndKey(anim))
 		return &anim->m_kName;
 
 	if (const auto groupId = anim->animGroup->GetBaseGroupID(); groupId != kAnimGroup_Unequip && groupId != kAnimGroup_Equip)
@@ -297,13 +295,14 @@ void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)
 
 void AnimFixes::FixWrongKFName(BSAnimGroupSequence* anim, const char* filePath)
 {
+	if (!g_pluginSettings.fixWrongAnimName || HasNoFixTextKey(anim))
+		return;
 	const std::string_view fileName(filePath);
 	const auto fileGroupName = sv::get_file_stem(fileName);
 	const auto baseAnimGroupName = GetBaseAnimGroupName(fileGroupName);
 	const auto kfGroupName = std::string_view(anim->m_kName);
 	if (sv::equals_ci(baseAnimGroupName, kfGroupName)
-		|| !sv::contains_ci(filePath, "animgroupoverride")
-		|| HasNoFixTextKey(anim)) [[likely]]
+		|| !sv::contains_ci(filePath, "animgroupoverride")) [[likely]]
 		return;
 	auto iter = ra::find_if(g_animGroupInfos, _L(AnimGroupInfo& i, sv::equals_ci(i.name, baseAnimGroupName)));
 	if (iter == g_animGroupInfos.end())
