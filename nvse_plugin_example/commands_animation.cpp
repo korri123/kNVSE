@@ -560,7 +560,8 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				if (const auto animCtx = LoadCustomAnimation(*savedAnims, groupId, animData))
 					animTime->anim = animCtx->anim;
 			};
-			ctx->Load();
+			if (!ctx->loaded)
+				ctx->Load();
 			if (ctx->conditionScript)
 			{
 				if (ctx->pollCondition)
@@ -605,6 +606,9 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 	auto [iter, isNew] = g_animPathFrameCache.emplace(std::make_pair(&ctx, animData), nullptr);
 	if (!isNew)
 		return iter->second;
+
+	if (!ctx.loaded)
+		ctx.Load();
 	
 	AnimPath* savedAnimPath = nullptr;
 	Actor* actor = animData->actor;
@@ -909,25 +913,47 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		return true;
 	}
 
+	auto folderConditionType = FolderConditionType::None;
 	std::function<bool(const Actor*)> folderCondition;
-	if (FindStringCI(path, R"(\mod1\)"))
+	if (sv::contains_ci(path, R"(\mod1\)"))
+	{
+		folderConditionType = FolderConditionType::Mod1;
 		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(1); };
-	else if (FindStringCI(path, R"(\mod2\)"))
+	}
+	else if (sv::contains_ci(path, R"(\mod2\)"))
+	{
+		folderConditionType = FolderConditionType::Mod2;
 		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(2); };
-	else if (FindStringCI(path, R"(\mod3\)"))
+	}
+	else if (sv::contains_ci(path, R"(\mod3\)"))
+	{
+		folderConditionType = FolderConditionType::Mod3;
 		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(3); };
-	else if (FindStringCI(path, R"(\hurt\)"))
+	}
+	else if (sv::contains_ci(path, R"(\hurt\)"))
+	{
+		folderConditionType = FolderConditionType::Hurt;
 		folderCondition = [&](const Actor* actor) { return actor->HasCrippledLegs(); };
-	else if (FindStringCI(path, R"(\human\)"))
+	}
+	else if (sv::contains_ci(path, R"(\human\)"))
+	{
+		folderConditionType = FolderConditionType::Human;
 		folderCondition = [&](const Actor* actor) { return actor == g_thePlayer || IS_ID(actor->baseForm, TESNPC); };
-	else if (FindStringCI(path, R"(\male\)"))
+	}
+	else if (sv::contains_ci(path, R"(\male\)"))
+	{
+		folderConditionType = FolderConditionType::Male;
 		folderCondition = [&](const Actor* actor) { return !actor->IsFemale(); };
-	else if (FindStringCI(path, R"(\female\)"))
+	}
+	else if (sv::contains_ci(path, R"(\female\)"))
+	{
+		folderConditionType = FolderConditionType::Female;
 		folderCondition = [&](const Actor* actor) { return actor->IsFemale(); };
+	}
 	
 	// if not inserted before, treat as variant; else add to stack as separate set
 	auto [_, newItem] = data.groupIdFillSet.emplace(groupId);
-	if (newItem || stack.empty() || !FunctionCompare(folderCondition, stack.back()->folderCondition))
+	if (newItem || stack.empty() || folderConditionType != stack.back()->folderConditionType)
 		stack.emplace_back(std::make_unique<SavedAnims>());
 	
 	auto& anims = *stack.back();
@@ -936,6 +962,7 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	anims.conditionScript = data.conditionScript;
 	anims.pollCondition = data.pollCondition;
 	anims.conditionScriptText = data.conditionScriptText;
+	anims.folderConditionType = folderConditionType;
 	anims.folderCondition = std::move(folderCondition);
 	
 	return true;

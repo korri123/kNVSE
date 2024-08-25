@@ -14,9 +14,6 @@ extern int g_logLevel;
 extern int g_errorLogLevel;
 namespace ra = std::ranges;
 
-template <typename T>
-concept string_type = std::ranges::range<T> && 
-	std::convertible_to<std::ranges::range_value_t<T>, char>;
 
 template<typename ... Bases>
 struct overload : Bases ...
@@ -46,9 +43,7 @@ bool ends_with(std::string const& value, std::string const& ending);
 
 std::string ReplaceAll(std::string str, const std::string& from, const std::string& to);
 
-// Now you can use the concept like this:
-template <string_type Haystack, string_type Needle>
-bool FindStringCI(const Haystack& strHaystack, const Needle& strNeedle)
+inline bool FindStringCI(const std::string_view strHaystack, const std::string_view strNeedle)
 {
 	const auto it = ra::search(strHaystack, strNeedle, [](char ch1, char ch2) { return std::tolower(ch1) == std::tolower(ch2); }).begin();
 	return it != std::ranges::end(strHaystack);
@@ -59,8 +54,7 @@ inline bool FindStringCI(const char* strHaystack, const char* strNeedle)
 	return FindStringCI(std::string_view(strHaystack), std::string_view(strNeedle));
 }
 
-template <string_type Haystack, string_type Needle>
-size_t FindStringPosCI(const Haystack& strHaystack, const Needle& strNeedle)
+inline size_t FindStringPosCI(const std::string_view strHaystack, const std::string_view strNeedle)
 {
     const auto it = ra::search(strHaystack,strNeedle,
         [](char ch1, char ch2) { return std::tolower(ch1) == std::tolower(ch2); }
@@ -68,8 +62,7 @@ size_t FindStringPosCI(const Haystack& strHaystack, const Needle& strNeedle)
 	return it.begin() == strHaystack.end() ? std::string::npos : std::distance(strHaystack.begin(), it.begin());
 }
 
-template <string_type Str, string_type Match>
-std::string_view ExtractUntilStringMatches(const Str& str, const Match& match, bool includeMatch)
+inline std::string_view ExtractUntilStringMatches(const std::string_view str, const std::string_view match, bool includeMatch)
 {
 	const auto pos = FindStringPosCI(str, match);
 	if (pos == std::string::npos)
@@ -172,7 +165,7 @@ game_unique_ptr<T> MakeUnique(T* t)
 template <typename T, const UInt32 ConstructorPtr = 0, const UInt32 DestructorPtr = 0, typename... ConstructorArgs>
 game_unique_ptr<T> MakeUnique(ConstructorArgs &&... args)
 {
-	auto* obj = New<T, ConstructorPtr>(std::forward(args)...);
+	auto* obj = New<T, ConstructorPtr>(std::forward<ConstructorArgs>(args)...);
 	return MakeUnique<T, DestructorPtr>(obj);
 }
 
@@ -423,17 +416,3 @@ struct CaseInsensitiveEqual
 		                 });
 	}
 };
-
-template<typename T, typename... U>
-size_t GetAddress(std::function<T(U...)> f) {
-	typedef T(fnType)(U...);
-	fnType ** fnPointer = f.template target<fnType*>();
-	if (!fnPointer)
-		return 0;
-	return reinterpret_cast<size_t>(*fnPointer);
-}
-
-template<typename T, typename... U>
-bool FunctionCompare(std::function<T(U...)> f1, std::function<T(U...)> f2) {
-	return GetAddress(f1) == GetAddress(f2);
-}

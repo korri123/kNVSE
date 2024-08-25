@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "NiNodes.h"
+#include "game_types.h"
 
 class BSMemObject {
 };
@@ -275,6 +276,19 @@ public:
 	static bool GetRandomFileNameForDirectory(const char* apDirectory, char* apFileName, ARCHIVE_TYPE aeArchiveType);
 
 	static const char* TrimFileName(const char* apFileName);
+
+	static ScopedList<char> GetDirectoryPaths(const char* searchName, const char* baseName, ARCHIVE_TYPE aeArchiveType)
+	{
+		ScopedList<char> result;
+		CdeclCall(0xAF6BA0, &result, searchName, baseName, aeArchiveType);
+		return result;
+	}
+
+	static ScopedList<char> GetDirectoryAnimPaths(std::string_view path)
+	{
+		const std::string searchPath = FormatString(R"(%s*.kf)", path.data());
+		return GetDirectoryPaths(searchPath.c_str(), searchPath.c_str(), ARCHIVE_TYPE_MESHES);
+	}
 
 	static void Lock() {
 		pCriticalSection->Lock();

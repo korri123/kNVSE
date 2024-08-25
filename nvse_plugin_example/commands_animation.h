@@ -235,7 +235,7 @@ struct AnimPath
 	bool partialReload = false;
 };
 
-enum class AnimCustom
+enum class FolderConditionType
 {
 	None, Male, Female, Mod1, Mod2, Mod3, Hurt, Human, Max=Human
 };
@@ -265,6 +265,7 @@ struct SavedAnims
 	bool hasOrder = false;
 	bool loaded = false;
 	std::function<bool(const Actor*)> folderCondition;
+	FolderConditionType folderConditionType = FolderConditionType::None;
 	LambdaVariableContext conditionScript = nullptr;
 	std::string_view conditionScriptText;
 	bool pollCondition = false;
@@ -281,17 +282,15 @@ struct SavedAnims
 
 	void Load()
 	{
-		if (loaded)
-			return;
 		if (!conditionScript && !conditionScriptText.empty())
 			conditionScript = CompileConditionScript(conditionScriptText);
 
 		for (const auto& anim : anims)
 		{
 			const auto fileName = sv::get_file_name(anim->path);
-			if (!hasOrder && FindStringCI(fileName, R"(\order\)"))
+			if (!hasOrder && sv::contains_ci(fileName, "_order_"))
 				hasOrder = true;
-			if (!anim->partialReload && FindStringCI(fileName, R"(\partial\)"))
+			if (!anim->partialReload && sv::contains_ci(fileName, "_partial"))
 				anim->partialReload = true;
 		}
 		if (hasOrder)

@@ -183,11 +183,20 @@ public:
 		_Node* m_curr;
 
 	public:
-		Iterator operator++()
+		Iterator& operator++()
 		{
 			if (m_curr) m_curr = m_curr->next;
 			return *this;
 		}
+
+		// Post-increment operator
+		Iterator operator++(int)
+		{
+			Iterator temp = *this;
+			++*this;
+			return temp;
+		}
+		
 		bool End() const { return !m_curr || (!m_curr->data && !m_curr->next); }
 		Item* operator->() const { return m_curr->data; }
 		Item*& operator*() const { return m_curr->data; }
@@ -225,13 +234,11 @@ public:
 		Iterator(tList* _list, Item* _item) : m_curr(&_list->m_listHead) { Find(_item); }
 	};
 
-	// for use with C++11 range based loops only.
 	Iterator begin() const
 	{
 		return Begin();
 	}
 
-	// for use with C++11 range based loops only.
 	Iterator end() const
 	{
 		return Iterator(static_cast<_Node*>(nullptr));
