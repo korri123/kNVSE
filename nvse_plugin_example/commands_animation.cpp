@@ -415,7 +415,8 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 			const auto line = GetTextAfterColon(key);
 			if (line.empty())
 				return false;
-			result = Sounds(line);
+			const auto is3D = animData != g_thePlayer->firstPersonAnimData;
+			result = Sounds(line, is3D);
 			if (result.failed)
 				return false;
 			return true;
@@ -1469,7 +1470,7 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const char* p
 {
 	if (auto* anim = animData->controllerManager->m_kSequenceMap.Lookup(path))
 		return static_cast<BSAnimGroupSequence*>(anim);
-	const std::string_view pooledPath = AddStringToPool(ToLower(path));
+	const std::string_view pooledPath = AddStringToPool(path);
 	const auto& ctx = LoadCustomAnimation(pooledPath, animData);
 	if (ctx)
 		return ctx->anim;
@@ -1647,6 +1648,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char path[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return true;
+		SetLowercase(path);
 		BSAnimGroupSequence* anim = FindActiveAnimationForRef(thisObj, path);
 
 		if (!anim)
@@ -1730,7 +1732,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* textKeyValuesArray = eval.GetNthArg(2)->GetArrayVar();
 		if (!path || !textKeyTimesArray || !textKeyValuesArray)
 			return true;
-		auto* anim = FindActiveAnimationForRef(thisObj, path);
+		const auto lowerPath = ToLower(path);
+		auto* anim = FindActiveAnimationForRef(thisObj, lowerPath.c_str());
 				
 		if (!anim)
 		{
@@ -1769,7 +1772,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto oldKeyArray = std::move(anim->m_spTextKeys->m_kKeyArray);
 		anim->m_spTextKeys->m_kKeyArray = std::move(newKeyArray);
 		anim->animGroup = nullptr;
-		NiFixedString oldSequenceName = anim->m_kName;
+		const NiFixedString oldSequenceName = anim->m_kName;
 		anim->m_kName = animGroupInfo->name; // yes, the game initially has the sequence name set to the anim group name
 		NiPointer animGroup = TESAnimGroup::Init(anim, path);
 		anim->m_kName = oldSequenceName;
@@ -1791,7 +1794,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	builder.Create("AllowAttack", kRetnType_Default, {}, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
-		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		const auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor || !actor->baseProcess)
 			return true;
 		actor->baseProcess->currentAction = Decoding::kAnimAction_None;
@@ -1807,6 +1810,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		float time;
 		if (!ExtractArgs(EXTRACT_ARGS, &path, &time))
 			return true;
+		SetLowercase(path);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -1886,6 +1890,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char path[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return true;
+		SetLowercase(path);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -1918,6 +1923,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char timeSyncSequence[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &firstPerson, &priority, &startOver, &weight, &easeInTime, &timeSyncSequence))
 			return true;
+		SetLowercase(sequencePath);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -1933,6 +1939,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		BSAnimGroupSequence* timeSyncSeq = nullptr;
 		if (timeSyncSequence[0])
 		{
+			SetLowercase(timeSyncSequence);
 			timeSyncSeq = FindOrLoadAnim(actor, timeSyncSequence, firstPerson);
 			if (!timeSyncSeq)
 				return true;
@@ -1964,6 +1971,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		float easeOutTime = 0.0f;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &easeOutTime))
 			return true;
+		SetLowercase(sequencePath);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -1999,6 +2007,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 		int startOver = 1;
 		if (!ExtractArgs(EXTRACT_ARGS, &sourceSequence, &destSequence, &firstPerson, &easeInTime, &priority, &startOver, &weight, &timeSyncSequence))
 			return true;
+		SetLowercase(sourceSequence);
+		SetLowercase(destSequence);
+		SetLowercase(timeSyncSequence);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -2062,6 +2073,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		int priority = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &firstPerson, &duration, &destFrame, &priority, &timeSyncSequence))
 			return true;
+		SetLowercase(sequencePath);
+		SetLowercase(timeSyncSequence);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -2120,6 +2133,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!ExtractArgs(EXTRACT_ARGS, &sourceSequence, &destSequence, &firstPerson, &duration, &destFrame, &sourceWeight,
 		                 &destWeight, &priority, &timeSyncSequence))
 			return true;
+		SetLowercase(sourceSequence);
+		SetLowercase(destSequence);
+		SetLowercase(timeSyncSequence);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -2155,6 +2171,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		float weight = 0.0f;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &weight) || !thisObj)
 			return true;
+		SetLowercase(sequencePath);
 		BSAnimGroupSequence* anim;
 		if (thisObj)
 		{
@@ -2216,6 +2233,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char path[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return true;
+		SetLowercase(path);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -2254,6 +2272,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		int firstPerson = -1;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &firstPerson))
 			return true;
+		SetLowercase(animPath);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -2277,6 +2296,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char animPath[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
 			return true;
+		SetLowercase(animPath);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -2307,6 +2327,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char interpName[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &interpName))
 			return true;
+		SetLowercase(animPath);
 		auto* interp = FindAnimInterp(thisObj, animPath, interpName);
 		if (!interp)
 			return true;
@@ -2322,6 +2343,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		UInt32 priority = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &interpName, &priority) || priority > 255)
 			return true;
+		SetLowercase(animPath);
 		auto* interp = FindAnimInterp(thisObj, animPath, interpName);
 		if (!interp)
 			return true;
@@ -2338,6 +2360,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char textKey[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &time, &textKey))
 			return true;
+		SetLowercase(animPath);
 		const auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 		if (!anim)
 			return true;
@@ -2356,6 +2379,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		UInt32 index;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &index))
 			return true;
+		SetLowercase(animPath);
 		const auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 		if (!anim)
 			return true;
@@ -2373,6 +2397,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char destAnimPath[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &sourceAnimPath, &destAnimPath) || !thisObj)
 			return true;
+		SetLowercase(sourceAnimPath);
+		SetLowercase(destAnimPath);
 		auto* sourceAnim = FindActiveAnimationForRef(thisObj, sourceAnimPath);
 		auto* destAnim = FindActiveAnimationForRef(thisObj, destAnimPath);
 		if (!sourceAnim || !destAnim)
@@ -2429,6 +2455,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		int firstPerson = false;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &destFrame, &firstPerson) || !thisObj)
 			return true;
+		SetLowercase(animPath);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -2468,6 +2495,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char animPath[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
 			return true;
+		SetLowercase(animPath);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
@@ -2485,6 +2513,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char textKey[0x400];
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &textKey))
 			return true;
+		SetLowercase(animPath);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;

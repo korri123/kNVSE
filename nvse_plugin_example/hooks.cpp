@@ -649,6 +649,7 @@ void ApplyHooks()
 	}));
 	PatchMemoryNop(0x4994F9 + 2, 1);
 
+	
 	// KFModel::LoadAnimGroup dereference
 	// apply text key fixes before AnimGroup is init
 	WriteRelCall(0x43B831, INLINE_HOOK(BSAnimGroupSequence*, __fastcall, BSAnimGroupSequence** animPtr)
@@ -664,13 +665,6 @@ void ApplyHooks()
 			AnimFixes::FixWrongKFName(anim, fileName);
 		}
 		return anim;
-	}));
-
-	// BSAnimGroupSequence::GetCycleType
-	// stop dumb limitation on CLAMP sequences not being allowed to locomotion
-	WriteRelCall(0x4909BC, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* anim)
-	{
-		return NiControllerSequence::kCycle_Loop;
 	}));
 
 #if 0
@@ -717,9 +711,9 @@ void ApplyHooks()
 #endif
 #endif
 #if _DEBUG
-	BlendFixes::ApplyHooks();
+	//BlendFixes::ApplyHooks();
 #endif
-	AnimFixes::ApplyHooks();
+	//AnimFixes::ApplyHooks();
 
 }
 

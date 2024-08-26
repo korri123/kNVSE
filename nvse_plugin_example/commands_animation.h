@@ -57,8 +57,9 @@ struct Sounds
 		return fileExt == ".wav" || fileExt == ".mp3" || fileExt == ".ogg";
 	}
 	
-	Sounds(std::string_view path)
+	Sounds(std::string_view path, bool is3D)
 	{
+		const auto flags = is3D ? BSSoundHandle::kAudioFlags_3D : BSSoundHandle::kAudioFlags_2D;
 		if (sv::get_file_extension(path).empty())
 		{
 			const std::string searchPath = FormatString(R"(data\sound\%s\*)", path.data());
@@ -68,7 +69,7 @@ struct Sounds
 				auto fileName = sv::get_file_name(file);
 				if (!IsSoundFile(fileName))
 					continue; // for some reason we get . and .. files
-				auto sound = BSSoundHandle::InitByFilename(file);
+				auto sound = BSSoundHandle::InitByFilename(file, flags);
 				if (!sound.soundID)
 					continue;
 				sounds.emplace_back(sound);
@@ -83,20 +84,21 @@ struct Sounds
 			return;
 		}
 		const std::string realPath = FormatString(R"(data\sound\%s)", path.data());
-		auto sound = BSSoundHandle::InitByFilename(realPath.c_str());
+		auto sound = BSSoundHandle::InitByFilename(realPath.c_str(), flags);
 		if (!sound.soundID)
 			failed = true;
 		else
 			sounds = { sound };
 	}
 
-	void Play(Actor* actor)
+	void Play(Actor* actor, bool is3D)
 	{
 		if (sounds.empty())
 			return;
 		// pick random sound
 		auto& sound = sounds.at(GetRandomUInt(sounds.size()));
-		sound.Set3D(actor);
+		if (is3D)
+			sound.Set3D(actor);
 		sound.Play();
 	}
 };

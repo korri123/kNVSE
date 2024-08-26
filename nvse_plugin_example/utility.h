@@ -416,3 +416,5 @@ struct CaseInsensitiveEqual
 		                 });
 	}
 };
+
+void SetLowercase(char* data);

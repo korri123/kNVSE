@@ -46,4 +46,100 @@ namespace sv
     {
         return FindStringCI(left, right);
     }
+
+    template <size_t N>
+    class stack_string
+    {
+        char data_[N];
+        size_t size_ = 0;
+    public:
+        stack_string()
+        {
+            data_[0] = '\0';
+            size_ = 0;
+        }
+
+        stack_string(const char* str)
+        {
+            strncpy_s(data, str, N);
+            size_ = strlen(data_);
+        }
+
+        stack_string(const char* format, ...)
+        {
+            va_list args;
+            va_start(args, format);
+            auto numCopied = vsprintf_s(data_, N, N, format, args);
+            va_end(args);
+            if (numCopied > 0)
+            {
+                size_ = numCopied;
+            }
+#ifdef _DEBUG
+            assert(size_ <= N);
+            assert(numCopied >= 0);
+#endif
+        }
+
+        operator const char* () const
+        {
+            return data_;
+        }
+
+        operator std::string_view() const
+        {
+            return { data_, size_ };
+        }
+
+        const char* c_str() const
+        {
+            return data_;
+        }
+
+        char* data()
+        {
+            return data_;
+        }
+
+        std::string_view str() const
+        {
+            return { data_, size_ };
+        }
+
+        void clear()
+        {
+            data_[0] = '\0';
+            size_ = 0;
+        }
+
+        bool empty() const
+        {
+            return size_ == 0;
+        }
+
+        size_t size() const
+        {
+            return size_;
+        }
+
+        char& operator[](size_t index)
+        {
+            return data_[index];
+        }
+
+        const char& operator[](size_t index) const
+        {
+            return data_[index];
+        }
+
+        void to_lower()
+        {
+            std::transform(data_, data_ + size_, data_, [](const unsigned char c) { return std::tolower(c); });
+        }
+
+        void calculate_size()
+        {
+            size_ = strlen(data_);
+        }
+    };
 }

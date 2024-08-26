@@ -640,11 +640,11 @@ public:
 		ThisStdCall(0xAD8870, this, delayMS, unused);
 	}
 
-	static BSSoundHandle InitByFilename(const char* path)
+	static BSSoundHandle InitByFilename(const char* path, UInt32 flags)
 	{
 		BSSoundHandle sound;
 		const auto* audioManager = BSAudioManager::GetSingleton();
-		ThisStdCall(0xAD7480, audioManager, &sound, path, kAudioFlags_3D, nullptr);
+		ThisStdCall(0xAD7480, audioManager, &sound, path, flags, nullptr);
 		return sound;
 	}
 

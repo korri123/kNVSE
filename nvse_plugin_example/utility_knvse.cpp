@@ -84,6 +84,11 @@ std::string ToLower(std::string_view data)
 	return ToLower(kData);
 }
 
+void SetLowercase(char* data)
+{
+	std::transform(data, data + strlen(data), data, [](const unsigned char c) { return std::tolower(c); });
+}
+
 std::string ToLower(const char* data)
 {
 	return ToLower(std::string_view(data));

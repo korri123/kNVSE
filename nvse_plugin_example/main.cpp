@@ -399,7 +399,8 @@ void HandleCustomTextKeys()
 			{
 				if (!IsPlayersOtherAnimData(animData))
 				{
-					sound.Play(actor);
+					const auto is3D = animData != g_thePlayer->firstPersonAnimData;
+					sound.Play(actor, is3D);
 				}
 			});
 		}
