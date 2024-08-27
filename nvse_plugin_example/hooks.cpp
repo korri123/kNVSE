@@ -189,7 +189,7 @@ bool __fastcall IsCustomAnimKey(const char* key)
 {
 	const static auto customKeys = {
 		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:",
-		"blendToReloadLoop", "scriptLine:", "replaceWithGroup:", "allowAttack", "noFix"
+		"blendToReloadLoop", "scriptLine:", "replaceWithGroup:", "allowAttack", "noFix", "allowClampInLocomotion"
 	};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }
@@ -589,6 +589,16 @@ void ApplyHooks()
 			return anim1st->m_spTextKeys;
 		return defaultData;
 	}));
+
+	// BSAnimGroupSequence::GetCycleType
+	// stop dumb limitation on CLAMP sequences not being allowed to locomotion
+	WriteRelCall(0x4909BC, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* anim)
+	{
+		if (anim->m_spTextKeys->FindFirstByName("allowClampInLocomotion"))
+			return NiControllerSequence::kCycle_Loop;
+		return anim->m_eCycleType;
+	}));
+
 
 #if 0
 	// AnimData::GetSequenceOffsetPlusTimePassed
