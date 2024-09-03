@@ -596,3 +596,5 @@ std::string_view GetBaseAnimGroupName(std::string_view name);
 
 extern std::shared_mutex g_animMapMutex;
 extern std::shared_mutex g_animPathFrameCacheMutex;
+
+AnimGroupID GroupNameToId(std::string_view name);

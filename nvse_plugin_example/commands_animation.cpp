@@ -800,17 +800,11 @@ std::string_view GetBaseAnimGroupName(const std::string_view name)
 	return oName;
 }
 
-AnimGroupID SimpleGroupNameToId(std::string_view name)
+static std::unordered_map<std::string_view, AnimGroupID, CaseInsensitiveHash, CaseInsensitiveEqual> s_animGroupNameToIDMap;
+
+
+AnimGroupID GroupNameToId(std::string_view name)
 {
-	static std::unordered_map<std::string_view, AnimGroupID, CaseInsensitiveHash, CaseInsensitiveEqual> s_animGroupNameToIDMap;
-	if (const auto underscorePos = name.find('_'); underscorePos != std::string_view::npos)
-	{
-		name = name.substr(0, underscorePos);
-	}
-	if (const auto spacePos = name.find(' '); spacePos != std::string_view::npos)
-	{
-		name = name.substr(0, spacePos);
-	}
 	if (const auto iter = s_animGroupNameToIDMap.find(name); iter != s_animGroupNameToIDMap.end())
 		return iter->second;
 	const auto iter = ra::find_if(g_animGroupInfos, _L(AnimGroupInfo& i, sv::equals_ci(i.name, name)));
@@ -821,6 +815,19 @@ AnimGroupID SimpleGroupNameToId(std::string_view name)
 	const auto result = static_cast<AnimGroupID>(groupId);
 	s_animGroupNameToIDMap[std::string_view(iter->name)] = result;
 	return result;
+}
+
+AnimGroupID SimpleGroupNameToId(std::string_view name)
+{
+	if (const auto underscorePos = name.find('_'); underscorePos != std::string_view::npos)
+	{
+		name = name.substr(0, underscorePos);
+	}
+	if (const auto spacePos = name.find(' '); spacePos != std::string_view::npos)
+	{
+		name = name.substr(0, spacePos);
+	}
+	return GroupNameToId(name);
 }
 
 bool TESAnimGroup::IsLoopingReloadStart() const

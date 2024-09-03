@@ -13,6 +13,11 @@ void LogAnimError(const BSAnimGroupSequence* anim, const std::string& msg)
 	ERROR_LOG("Fixed error in animation: " + std::string(anim->m_kName) + "\n\t" + msg);
 }
 
+void LogAnimError(const char* anim, const std::string& msg)
+{
+	ERROR_LOG("Fixed error in animation: " + std::string(anim) + "\n\t" + msg);
+}
+
 bool HasNoFixTextKey(const BSAnimGroupSequence* anim)
 {
 	if (!anim->m_spTextKeys || anim->m_spTextKeys->FindFirstByName("noFix"))
@@ -262,6 +267,21 @@ void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)
 	anim->animGroup->parentRootNode = "Bip01 Translate";
 }
 
+void AnimFixes::FixMissingPrnKey(BSAnimGroupSequence* anim, const char* filePath)
+{
+	if (!g_pluginSettings.fixMissingPrnKey || HasNoFixTextKey(anim) || !HasRespectEndKey(anim))
+		return;
+	const auto groupId = GroupNameToId(anim->m_kName); // animgroup is not loaded yet
+	if (groupId != kAnimGroup_Unequip && groupId != kAnimGroup_Equip)
+		return;
+	auto prnKey = ra::find_if(anim->m_spTextKeys->GetKeys(), [](const NiTextKey& key) { return sv::contains_ci(key.m_kText, "prn:"); });
+	if (prnKey != anim->m_spTextKeys->GetKeys().end())
+		return;
+	auto* prnName = groupId == kAnimGroup_Unequip ? "prn: Bip01 Translate" : "prn: Bip01 R Hand";
+	LogAnimError(filePath, FormatString("Missing prn key in %s, added %s", anim->m_kName.CStr(), prnName));
+	anim->m_spTextKeys->AddKey(prnName, 0.0f);
+}
+
 NiFixedString* __fastcall WrongPrnKeyHook(BSAnimGroupSequence* anim)
 {
 	if (!g_pluginSettings.fixWrongPrnKey || HasNoFixTextKey(anim) || !HasRespectEndKey(anim))
@@ -307,7 +327,7 @@ void AnimFixes::FixWrongKFName(BSAnimGroupSequence* anim, const char* filePath)
 	auto iter = ra::find_if(g_animGroupInfos, _L(AnimGroupInfo& i, sv::equals_ci(i.name, baseAnimGroupName)));
 	if (iter == g_animGroupInfos.end())
 		return;
-	LogAnimError(anim, FormatString("Fixed wrong KF name %s in %s", anim->m_kName.CStr(), filePath));
+	LogAnimError(filePath, FormatString("Fixed wrong KF name %s", anim->m_kName.CStr()));
 	anim->m_kName = iter->name;
 }
 

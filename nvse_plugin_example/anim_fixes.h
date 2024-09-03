@@ -13,6 +13,7 @@ namespace AnimFixes
     void ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim);
     void FixWrongKFName(BSAnimGroupSequence* anim, const char* filePath);
     void FixWrongPrnKey(BSAnimGroupSequence* anim);
+    void FixMissingPrnKey(BSAnimGroupSequence* anim, const char* filePath);
 
     void ApplyHooks();
 }

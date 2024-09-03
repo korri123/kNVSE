@@ -22,6 +22,7 @@ struct PluginINISettings
     bool fixWrongAKeyInRespectEndKeyAnim = false;
     bool fixWrongPrnKey = false;
     bool fixWrongAnimName = false;
+    bool fixMissingPrnKey = false;
 };
 
 extern PluginINISettings g_pluginSettings;
