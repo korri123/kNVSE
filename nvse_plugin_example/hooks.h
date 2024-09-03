@@ -31,7 +31,4 @@ namespace LoopingReloadPauseFix
     extern std::unordered_set<std::string_view> g_reloadStartBlendFixes;
 }
 
-namespace PointerMapAnimData
-{
-    void Set(NiTPointerMap<AnimSequenceBase>* map, AnimData* animData);
-}
+void WriteDelayedHooks();

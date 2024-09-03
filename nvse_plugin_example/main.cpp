@@ -58,6 +58,7 @@ _UncaptureLambdaVars UncaptureLambdaVars;
 std::vector<std::string> g_eachFrameScriptLines;
 MapHitCounters g_mapHitCounters;
 AverageTimers g_averageTimers;
+std::recursive_mutex g_pollConditionMutex;
 
 bool isEditor = false;
 
@@ -75,15 +76,18 @@ float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 }
 
 ScriptCache g_scriptCache;
+std::shared_mutex g_scriptCacheMutex;
 
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 	NVSEArrayVarInterface::Element* result)
 {
-	auto [it, isNew] = g_scriptCache.emplace(std::make_pair(std::make_pair(callingObj, funcScript), NVSEArrayVarInterface::Element()));
-	if (!isNew)
 	{
-		*result = it->second;
-		return true;
+		std::shared_lock lock(g_scriptCacheMutex);
+		if (auto iter = g_scriptCache.find(std::make_pair(callingObj, funcScript)); iter != g_scriptCache.end())
+		{
+			*result = iter->second;
+			return true;
+		}
 	}
 	const auto success = g_script->CallFunction(
 		funcScript,
@@ -92,7 +96,8 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 		result,
 		0
 	);
-	it->second = *result;
+	std::unique_lock lock(g_scriptCacheMutex);
+	g_scriptCache.emplace(std::make_pair(callingObj, funcScript), *result);
 	return success;
 }
 
@@ -174,9 +179,9 @@ bool IsActorInvalid(Actor* actor)
 
 void HandlePollConditionAnims()
 {
-	std::vector<std::pair<AnimData*, FullAnimGroupID>> animsToPlay;
-	animsToPlay.reserve(1);
-
+	std::unique_lock lock(g_pollConditionMutex);
+	if (g_timeTrackedGroups.empty())
+		return;
 #if _DEBUG
 	struct DebugInfo
 	{
@@ -198,16 +203,30 @@ void HandlePollConditionAnims()
 	}
 #endif
 
-	for (auto it = g_timeTrackedGroups.begin(); it != g_timeTrackedGroups.end();)
+	std::vector<std::pair<TimeTrackedGroupsKey, SavedAnimsTime*>> trackedGroups;
+	trackedGroups.reserve(g_timeTrackedGroups.size());
+	
+	for (auto& [pair, animTimePtr] : g_timeTrackedGroups)
+	{
+		auto& ctx = *pair.first;
+		if (!ctx.disabled)
+			trackedGroups.emplace_back(pair, animTimePtr.get());
+	}
+
+	const auto playAnimGroup = [](AnimData* animData, const UInt16 groupId)
+	{
+		GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
+	};
+
+	for (auto& [key, animTimePtr] : trackedGroups)
 	{
 		const auto erase = [&]
 		{
-			it = g_timeTrackedGroups.erase(it);
+			g_timeTrackedGroups.erase(key);
 		};
-		auto& [pair, animTimePtr] = *it;
 		auto& animTime = *animTimePtr;
 		auto& [conditionScript, groupId, anim, actorId, animData] = animTime;
-		const auto& ctx = *pair.first;
+		const auto& ctx = *key.first;
 		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
 		
 		if (IsActorInvalid(actor) || !animData || !anim ||
@@ -254,11 +273,10 @@ void HandlePollConditionAnims()
 					// optimizations
 					if (result)
 					{
-						++it;
 						continue;
 					}
 					// if the current anim is the tracked anim, and the condition is now false, it probably won't be selected again
-					animsToPlay.emplace_back(animData, nextGroupId);
+					playAnimGroup(animData, nextGroupId);
 					erase();
 					continue;
 				}
@@ -271,17 +289,10 @@ void HandlePollConditionAnims()
 				const auto shouldStopAnim = _L(, !result && !isAnimNextAnim && curAnim == anim);
 				if (shouldPlayAnim() || shouldStopAnim())
 				{
-					animsToPlay.emplace_back(animData, nextGroupId);
+					playAnimGroup(animData, nextGroupId);
 				}
 			}
 		}
-		++it;
-	}
-	
-	for (const auto& [animData, nextGroupId] : animsToPlay)
-	{
-		// done here since PlayAnimGroup can mutate g_timeTrackedGroups and cause a rehash
-		GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);
 	}
 }
 
@@ -569,19 +580,19 @@ void HandleExecutionQueue()
 
 void ClearAnimationResultCache() 
 {
-	// .clear() deallocates memory which is slow
+	std::unique_lock lock(g_animMapMutex);
 	g_animationResultCache.clear();
 }
 
 void ClearAnimPathFrameCache() 
 {
-	// .clear() deallocates memory which is slow
+	std::unique_lock lock(g_animPathFrameCacheMutex);
 	g_animPathFrameCache.clear();
 }
 
 void ClearScriptCallExecutions() 
 {
-	// .clear() deallocates memory which is slow
+	std::unique_lock lock(g_scriptCacheMutex);
 	g_scriptCache.clear();
 }
 
@@ -618,10 +629,9 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
 	{
 		Console_Print("kNVSE version %d", VERSION_MAJOR);
-		NiHooks::WriteDelayedHooks();
+		WriteDelayedHooks();
 		g_thePlayer = *reinterpret_cast<PlayerCharacter**>(0x011DEA3C);
 		g_animFileThread = std::thread(LoadFileAnimPaths);
-		g_animFileThread.detach();
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{
@@ -649,6 +659,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 		g_reloadTracker.clear();
 		g_timeTrackedAnims.clear();
+		std::unique_lock lock(g_pollConditionMutex);
 		g_timeTrackedGroups.clear();
 	}
 }

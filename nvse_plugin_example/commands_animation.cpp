@@ -19,6 +19,7 @@
 #include "PluginAPI.h"
 #include "stack_allocator.h"
 #include <cassert>
+#include <shared_mutex>
 
 #include "anim_fixes.h"
 #include "nihooks.h"
@@ -38,7 +39,7 @@ AnimOverrideMap g_animGroupFirstPersonMap;
 AnimOverrideMap g_animGroupModIdxThirdPersonMap;
 AnimOverrideMap g_animGroupModIdxFirstPersonMap;
 
-
+std::shared_mutex g_animMapMutex;
 
 AnimData* GetAnimDataForPov(UInt32 playerPov, Actor* actor)
 {
@@ -133,32 +134,39 @@ NiTPointerMap_t<const char*, NiAVObject>::Entry entry;
  * After a call to DeleteAnimSequence it will be reduced to 1, only KFModel reference persists and is reused next time
  * when LoadAnimation is called.
  */
+std::shared_mutex g_loadCustomAnimationMutex;
+
 void HandleOnAnimDataDelete(AnimData* animData)
 {
-	while (true)
+	const auto actorId = animData->actor ? animData->actor->refID : 0;
+	if (actorId)
 	{
-		// delete all animations when anim data destructor runs
-		auto iter = ra::find_if(g_cachedAnimMap, _L(auto& p, p.first.second == animData));
-		if (iter == g_cachedAnimMap.end())
-			break;
-
-		auto anim = iter->second.anim;
-		g_timeTrackedAnims.erase(anim);
-		std::erase_if(g_timeTrackedGroups, _L(auto& iter, iter.second->anim == anim));
-		std::erase_if(g_burstFireQueue, _L(auto& p, p.anim == anim));
-		std::erase_if(g_cachedAnimMap, _L(auto & p, p.second.anim == anim));
+		std::erase_if(g_timeTrackedAnims, _L(auto& p, p.second->actorId == actorId));
+		std::erase_if(g_burstFireQueue, _L(auto& p, p.actorId == actorId));
 	}
-	std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second->animData == animData));
+	
+	{
+		std::unique_lock lock(g_pollConditionMutex);
+		std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second->animData == animData));
+	}
+	
+	{
+		std::unique_lock lock(g_loadCustomAnimationMutex);
+		std::erase_if(g_cachedAnimMap, _L(auto & p, p.first.second == animData));
+	}
 }
 
-thread_local GameAnimMap* s_customMap = nullptr;
+GameAnimMap* s_customMap = nullptr;
 
 std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData)
 {
 	const auto key = std::make_pair(path.data(), animData);
-	if (const auto iter = g_cachedAnimMap.find(key); iter != g_cachedAnimMap.end())
 	{
-		return iter->second;
+		std::shared_lock lock(g_loadCustomAnimationMutex);
+		if (const auto iter = g_cachedAnimMap.find(key); iter != g_cachedAnimMap.end())
+		{
+			return iter->second;
+		}
 	}
 
 	const auto tryCreateAnimation = [&]() -> std::optional<BSAnimationContext>
@@ -184,6 +192,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
 						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
+						std::unique_lock lock(g_loadCustomAnimationMutex);
 						auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return iter.first->second;
 					}
@@ -213,11 +222,9 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 	return result;
 }
 
-ICriticalSection g_loadCustomAnimationCS;
 
 std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UInt16 groupId, AnimData* animData)
 {
-	ScopedLock lock(g_loadCustomAnimationCS);
 	if (const auto* animPath = GetAnimPath(animBundle, groupId, animData))
 	{
 		const auto animCtx = LoadCustomAnimation(animPath->path, animData);
@@ -234,7 +241,7 @@ AnimTime::~AnimTime()
 }
 
 // Make sure that Aim, AimUp and AimDown all use the same index
-AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
+AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, std::vector<AnimPath*>& anims)
 {
 	UInt32 baseId;
 	if (const auto animGroupMinor = animGroupId & 0xFF; animGroupMinor >= kAnimGroup_Aim && animGroupMinor <= kAnimGroup_AimISDown && (baseId = kAnimGroup_Aim)
@@ -242,10 +249,10 @@ AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, SavedAnims& anims)
 		|| animGroupMinor >= kAnimGroup_PlaceMine && animGroupMinor <= kAnimGroup_AttackThrow8ISDown && (baseId = kAnimGroup_PlaceMine))
 	{
 		static unsigned int s_lastRandomId = 0;
-		if ((animGroupMinor - baseId) % 3 == 0 || s_lastRandomId >= anims.anims.size())
-			s_lastRandomId = GetRandomUInt(anims.anims.size());
+		if ((animGroupMinor - baseId) % 3 == 0 || s_lastRandomId >= anims.size())
+			s_lastRandomId = GetRandomUInt(anims.size());
 
-		return anims.anims.at(s_lastRandomId).get();
+		return anims.at(s_lastRandomId);
 	}
 	return nullptr;
 }
@@ -302,27 +309,32 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		const bool uninitialized = iter.second;
 		return std::make_pair(timedExecution, uninitialized);
 	};
-	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, KeyCheckType type = KeyCheckType::KeyEquals)
+	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, KeyCheckType type = KeyCheckType::KeyEquals, float* time = nullptr)
 	{
-		auto result = false;
+		auto iter = textKeys.end();
 		for (const char* keyText : keyTexts)
 		{
 			switch (type)
 			{
-			case KeyCheckType::KeyEquals: 
-				result = ra::any_of(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.CStr(), keyText) == 0));
+			case KeyCheckType::KeyEquals:
+				iter = ra::find_if(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.CStr(), keyText) == 0));
 				break;
 			case KeyCheckType::KeyStartsWith:
-				result = ra::any_of(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), keyText)));
+				iter = ra::find_if(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), keyText)));
 				break;
 			}
-			if (result)
+			if (iter != textKeys.end())
 				break;
 		}
-		if (result)
+		if (iter != textKeys.end())
+		{
 			applied = true;
+			if (time)
+				*time = iter->m_fTime;
+			return true;
+		}
 		
-		return result;
+		return false;
 	};
 
 	if (anim->animGroup->IsAttack() && hasKey({"burstFire"}))
@@ -427,7 +439,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	{
 		LoopingReloadPauseFix::g_reloadStartBlendFixes.insert(anim->m_kName.CStr());
 	}
-	if (hasKey({"scriptLine:", "allowAttack" }, KeyCheckType::KeyStartsWith))
+	if (hasKey({"scriptLine:" }, KeyCheckType::KeyStartsWith))
 	{
 		auto& animTime = getAnimTimeStruct();
 		auto [scriptLineKeys, uninitialized] = createTimedExecution(g_scriptLineExecutions);
@@ -435,23 +447,6 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		{
 			*scriptLineKeys = TimedExecution<Script*>(textKeys, [&](const char* key, Script*& result)
 			{
-				if (StartsWith(key, "allowAttack"))
-				{
-					// already released this as beta with custom key but in future encourage scriptLine: AllowAttack
-					static Script* allowAttackScript = nullptr;
-					if (!allowAttackScript)
-					{
-						allowAttackScript = Script::CompileFromText("AllowAttack", "ScriptLineKey");
-					}
-					result = allowAttackScript;
-					animTime.allowAttack = true;
-					if (!result)
-					{
-						ERROR_LOG("Failed to compile script in allowAttack key");
-						return false;
-					}
-					return true;
-				}
 				if (!StartsWith(key, "scriptLine:"))
 					return false;
 				static std::unordered_map<const char*, Script*> s_scriptLines;
@@ -477,6 +472,13 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 			});
 		}
 		animTime.scriptLines = scriptLineKeys->CreateContext();
+	}
+	float time;
+	if (hasKey({"allowAttack"}, KeyCheckType::KeyEquals, &time))
+	{
+		auto& animTime = getAnimTimeStruct();
+		animTime.allowAttack = true;
+		animTime.allowAttackTime = time;
 	}
 
 	const auto basePath = GetAnimBasePath(anim->m_kName.Str());
@@ -506,32 +508,37 @@ std::map<std::pair<FormID, SavedAnims*>, int> g_actorAnimOrderMap;
 
 PartialLoopingReloadState g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 
-AnimPath* GetPartialReload(SavedAnims& ctx, Actor* actor, UInt16 groupId)
+AnimPath* GetPartialReload(std::vector<AnimPath*>& candidates, SavedAnims& ctx, Actor* actor, UInt16 groupId)
 {
-	auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
-	auto* weapon = actor->GetWeaponForm();
+	const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+	const auto* weapon = actor->GetWeaponForm();
 	if (!weapon || !ammoInfo)
 		return nullptr;
-	std::vector<AnimPath*> reloads;
-	if ((ammoInfo->count == 0 || DidActorReload(actor, ReloadSubscriber::Partial) || g_partialLoopReloadState == PartialLoopingReloadState::NotPartial) 
-		&& g_partialLoopReloadState != PartialLoopingReloadState::Partial)
+	
+	if (ammoInfo->count != 0 && !DidActorReload(actor, ReloadSubscriber::Partial) &&
+		g_partialLoopReloadState != PartialLoopingReloadState::NotPartial || g_partialLoopReloadState == PartialLoopingReloadState::Partial)
 	{
-		reloads = ctx.anims | std::views::filter([](const auto& animTimePtr) { return !animTimePtr->partialReload; })
-			| std::views::transform([](const auto& animTimePtr) { return animTimePtr.get(); })
-			| std::ranges::to<std::vector>();
-		if (IsLoopingReload(groupId) && g_partialLoopReloadState == PartialLoopingReloadState::NotSet)
-			g_partialLoopReloadState = PartialLoopingReloadState::NotPartial;
-	}
-	else
-	{
-		reloads = ctx.anims | std::views::filter([](const auto& animTimePtr) { return animTimePtr->partialReload; })
-			| std::views::transform([](const auto& animTimePtr) { return animTimePtr.get(); })
-			| std::ranges::to<std::vector>();
 		if (IsLoopingReload(groupId) && g_partialLoopReloadState == PartialLoopingReloadState::NotSet)
 			g_partialLoopReloadState = PartialLoopingReloadState::Partial;
 	}
+	else
+	{
+		g_partialLoopReloadState = PartialLoopingReloadState::NotPartial;
+		for (auto iter = candidates.begin(); iter != candidates.end();)
+		{
+			if ((*iter)->partialReload)
+				iter = candidates.erase(iter);
+			else
+				++iter;
+		}
+		return nullptr;
+	}
+	std::vector<AnimPath*> reloads = candidates | std::views::filter([](const auto& animPath) { return animPath->partialReload; })
+			| std::ranges::to<std::vector>();
 	if (reloads.empty())
 		return nullptr;
+	if (reloads.size() == 1)
+		return *reloads.begin();
 	if (!ctx.hasOrder)
 		return reloads.at(GetRandomUInt(reloads.size()));
 	return reloads.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % reloads.size());
@@ -551,6 +558,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				continue;
 			const auto initAnimTime = [&](SavedAnims* savedAnims)
 			{
+				std::unique_lock lock(g_pollConditionMutex);
 				auto& animTime = g_timeTrackedGroups[std::make_pair(savedAnims, animData)];
 				if (!animTime)
 					animTime = std::make_unique<SavedAnimsTime>();
@@ -601,41 +609,72 @@ AnimOverrideMap& GetModIndexMap(bool firstPerson)
 
 // preserve randomization of variants
 AnimPathCache g_animPathFrameCache;
+std::shared_mutex g_animPathFrameCacheMutex;
 
 AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 {
-	auto [iter, isNew] = g_animPathFrameCache.emplace(std::make_pair(&ctx, animData), nullptr);
-	if (!isNew)
-		return iter->second;
+	auto cacheKey = std::make_pair(&ctx, animData);
+	{
+		std::shared_lock lock(g_animPathFrameCacheMutex);
+		if (auto iter = g_animPathFrameCache.find(cacheKey); iter != g_animPathFrameCache.end())
+			return iter->second;
+	}
 
 	if (!ctx.loaded)
 		ctx.Load();
-	
-	AnimPath* savedAnimPath = nullptr;
+		
 	Actor* actor = animData->actor;
 
-	if (IsAnimGroupReload(groupId) && ra::any_of(ctx.anims, _L(const auto & p, p->partialReload)))
+	const auto getAnimPath = [&]() -> AnimPath*
 	{
-		if (auto* path = GetPartialReload(ctx, actor, groupId))
-			savedAnimPath = path;
-	}
-
-	else if (!ctx.hasOrder)
-	{
-		// Make sure that Aim, AimUp and AimDown all use the same index
-		if (auto* path = HandleAimUpDownRandomness(groupId, ctx))
-			savedAnimPath = path;
-		else
+		if (ctx.anims.size() == 1) [[likely]]
+			return ctx.anims[0].get();
+		auto candidates = ctx.anims 
+            | std::views::transform([](const auto& anim) { return anim.get(); }) 
+            | std::ranges::to<std::vector<AnimPath*>>();
+		const auto baseGroupId = static_cast<AnimGroupID>(groupId);
+		if (ctx.hasStartAnim)
+		{
+			const auto startAnimIt = ra::find_if(candidates, [&](const auto& animPath)
+			{
+				return animPath->isStartAnim;
+			});
+			if (startAnimIt != candidates.end())
+			{
+				const auto* groupInfo = GetGroupInfo(baseGroupId);
+				auto* anim = animData->animSequence[groupInfo->sequenceType];
+				auto* startAnim = *startAnimIt;
+				if (!anim)
+					return startAnim;
+				if (anim && anim->animGroup && anim->animGroup->GetBaseGroupID() != baseGroupId)
+				{
+					return startAnim;
+				}
+				candidates.erase(startAnimIt);
+			}
+		}
+		if (IsAnimGroupReload(baseGroupId) && ctx.hasPartialReload)
+		{
+			if (auto* path = GetPartialReload(candidates, ctx, actor, groupId))
+				return path;
+		}
+		
+		if (!ctx.hasOrder)
+		{
+			// Make sure that Aim, AimUp and AimDown all use the same index
+			if (auto* path = HandleAimUpDownRandomness(groupId, candidates))
+				return path;
 			// pick random variant
-			savedAnimPath = ctx.anims.at(GetRandomUInt(ctx.anims.size())).get();
-	}
-	else
-	{
+			return candidates.at(GetRandomUInt(candidates.size()));
+		}
 		// ordered
-		savedAnimPath = ctx.anims.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % ctx.anims.size()).get();
-	}
-	iter->second = savedAnimPath;
-	return savedAnimPath;
+		return candidates.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % candidates.size());
+	};
+
+	auto* result = getAnimPath();
+	std::unique_lock lock(g_animPathFrameCacheMutex);
+	g_animPathFrameCache.emplace(cacheKey, result);
+	return result;
 }
 
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId)
@@ -661,6 +700,8 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 	// wait for file loading to finish
 	if (g_animFileThread.joinable())
 		g_animFileThread.join();
+
+	std::shared_lock lock(g_animMapMutex);
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
 	auto [cache, isNew] = g_animationResultCache.emplace(std::make_pair(animGroupId, animData), std::nullopt);
@@ -701,7 +742,7 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon && (result = getFormAnimation(weaponInfo->weapon)))
 			return result;
 		// base form ID
-		if (auto* baseForm = actor->baseForm; baseForm && ((result = GetAnimationFromMap(map, baseForm->refID, animGroupId, animData))))
+		if (auto* baseForm = actor->baseForm; baseForm && ((result = getFormAnimation(baseForm))))
 			return result;
 		// race form ID
 		auto* race = actor->GetRace();
@@ -867,6 +908,7 @@ bool RegisterCustomAnimGroupAnim(std::string_view path)
 
 bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 {
+	std::unique_lock lock(g_animMapMutex);
 	const auto path = data.path;
 	const auto groupId = GetAnimGroupId(path);
 	if (groupId == INVALID_FULL_GROUP_ID)
@@ -1131,7 +1173,7 @@ void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)
 		LOG("\tGLOBALLY on any form");
 }
 
-ScopedList<char> GetDirectoryAnimPaths(char* path)
+ScopedList<char> GetDirectoryAnimPaths(const char* path)
 {
 	const std::string searchPath = FormatString(R"(Data\Meshes\%s\*.kf)", path);
 	const std::string renamePath = FormatString("%s\\", path);
@@ -1143,14 +1185,14 @@ bool OverrideAnimsFromScript(char* path, const F& overrideAnim)
 {
 	if (g_animFileThread.joinable())
 		g_animFileThread.join();
-
+	const std::string_view pathStr(path); // this is required as it might get passed into the synchronized execution queue and path is allocated on the stack
 	auto overrideAnims = [=]
 	{
-		if (!sv::get_file_extension(path).empty()) // single file
-			return overrideAnim(path);
+		if (!sv::get_file_extension(pathStr).empty()) // single file
+			return overrideAnim(pathStr.data());
 	
 		// directory
-		const auto animPaths = GetDirectoryAnimPaths(path);
+		const auto animPaths = GetDirectoryAnimPaths(pathStr.data());
 
 		if (animPaths.Empty())
 			return false;
@@ -1162,11 +1204,7 @@ bool OverrideAnimsFromScript(char* path, const F& overrideAnim)
 		}
 		return numAnims != 0;
 	};
-	if (GetCurrentThreadId() == OSGlobals::GetSingleton()->mainThreadID)
-		return overrideAnims();
-	ScopedLock lock(g_executionQueueCS);
-	g_synchronizedExecutionQueue.emplace_back(std::move(overrideAnims));
-	return true; // assume success
+	return overrideAnims();
 }
 
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
@@ -1791,7 +1829,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	}, Cmd_Expression_Plugin_Parse);
 
-	builder.Create("AllowAttack", kRetnType_Default, {}, true, [](COMMAND_ARGS)
+	builder.Create("EraseCurrentAnimAction", kRetnType_Default, {}, true, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		const auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
@@ -1950,6 +1988,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 			// Deactivate sequence
 			GameFuncs::DeactivateSequence(manager, anim, 0.0);
 
+		auto* animData = GetAnimData(actor, firstPerson);
+		HandleExtraOperations(animData, anim);
+
 		GameFuncs::ActivateSequence(manager, anim, priority, startOver, weight, easeInTime, timeSyncSeq);
 		return true;
 	});
@@ -1979,7 +2020,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim)
 			return true;
 		auto* manager = anim->m_pkOwner;
-		*result = GameFuncs::DeactivateSequence(manager, anim, easeOutTime);
+		*result = manager->DeactivateSequence(anim, easeOutTime);
 		return true;
 	});
 
@@ -2040,8 +2081,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (destAnim->m_eState != kAnimState_Inactive)
 			GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
 
-		*result = GameFuncs::CrossFade(
-			manager,
+		*result = manager->CrossFade(
 			sourceAnim,
 			destAnim,
 			easeInTime,
@@ -2095,6 +2135,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* manager = anim->m_pkOwner;
 		if (anim->m_eState != kAnimState_Inactive)
 			GameFuncs::DeactivateSequence(manager, anim, 0.0f);
+		auto* animData = GetAnimData(actor, firstPerson);
+		HandleExtraOperations(animData, anim);
 		*result = GameFuncs::BlendFromPose(
 			manager,
 			anim,
@@ -2160,6 +2202,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 			destWeight = destAnim->m_fSeqWeight;
 		if (destAnim->m_eState != kAnimState_Inactive)
 			GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
+		auto* animData = GetAnimData(actor, firstPerson);
+		HandleExtraOperations(animData, destAnim);
 		*result = GameFuncs::StartBlend(sourceAnim, destAnim, duration, destFrame, priority, sourceWeight, destWeight, timeSyncAnim);
 		return true;
 	});

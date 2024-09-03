@@ -777,6 +777,9 @@ void NiControllerSequence::SetTimePassed(float fTime, bool bUpdateInterpolators)
 bool NiControllerManager::BlendFromPose(NiControllerSequence* pkSequence, float fDestFrame, float fDuration,
                                         int iPriority, NiControllerSequence* pkSequenceToSynchronize)
 {
+#ifndef _DEBUG
+    return GameFuncs::BlendFromPose(this, pkSequence, fDestFrame, fDuration, iPriority, pkSequenceToSynchronize);
+#else
     NIASSERT(pkSequence && pkSequence->GetOwner() == this &&
         (!pkSequenceToSynchronize || pkSequenceToSynchronize->GetOwner() ==
             this));
@@ -785,11 +788,15 @@ bool NiControllerManager::BlendFromPose(NiControllerSequence* pkSequence, float 
         pkSequenceToSynchronize);
     return pkTempSequence->StartBlend(pkSequence, fDuration, fDestFrame,
         iPriority, 1.0f, 1.0f, nullptr);
+#endif
 }
 
 bool NiControllerManager::CrossFade(NiControllerSequence* pkSourceSequence, NiControllerSequence* pkDestSequence,
     float fDuration, int iPriority, bool bStartOver, float fWeight, NiControllerSequence* pkTimeSyncSeq)
 {
+#ifndef _DEBUG
+    return GameFuncs::CrossFade(this, pkSourceSequence, pkDestSequence, fDuration, iPriority, bStartOver, fWeight, pkTimeSyncSeq);
+#else
     NIASSERT(pkSourceSequence && pkSourceSequence->GetOwner() == this);
     NIASSERT(pkDestSequence && pkDestSequence->GetOwner() == this);
 
@@ -802,6 +809,7 @@ bool NiControllerManager::CrossFade(NiControllerSequence* pkSourceSequence, NiCo
     pkSourceSequence->Deactivate(fDuration, false);
     return pkDestSequence->Activate(iPriority, bStartOver, fWeight, fDuration,
         pkTimeSyncSeq, false);
+#endif
 }
 
 NiControllerSequence* NiControllerManager::CreateTempBlendSequence(NiControllerSequence* pkSequence,
@@ -813,22 +821,34 @@ NiControllerSequence* NiControllerManager::CreateTempBlendSequence(NiControllerS
 bool NiControllerManager::Morph(NiControllerSequence* pkSourceSequence, NiControllerSequence* pkDestSequence,
     float fDuration, int iPriority, float fSourceWeight, float fDestWeight)
 {
+#ifndef _DEBUG
+    return ThisStdCall<bool>(0xA2E1B0, this, pkSourceSequence, pkDestSequence, fDuration, iPriority, fSourceWeight, fDestWeight);
+#else
     NIASSERT(pkSourceSequence && pkSourceSequence->GetOwner() == this &&
         pkDestSequence && pkDestSequence->GetOwner() == this);
 
     return pkSourceSequence->StartMorph(pkDestSequence, fDuration, iPriority,
         fSourceWeight, fDestWeight);
+#endif
 }
 
 bool NiControllerManager::ActivateSequence(NiControllerSequence* pkSequence, int iPriority, bool bStartOver,
     float fWeight, float fEaseInTime, NiControllerSequence* pkTimeSyncSeq)
 {
+#ifndef _DEBUG
+    return GameFuncs::ActivateSequence(this, pkSequence, iPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq);
+#else
     return pkSequence->Activate(iPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, false);
+#endif
 }
 
 bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, float fEaseOutTime)
 {
+#ifndef _DEBUG
+    return GameFuncs::DeactivateSequence(this, pkSequence, fEaseOutTime);
+#else
     return pkSequence->Deactivate(fEaseOutTime, false);
+#endif
 }
 
 namespace NiHooks

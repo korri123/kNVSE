@@ -51,7 +51,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 #endif
 	if (animData && animData->actor)
 	{
-		if (IsAnimGroupReload(animGroupId) && !IsLoopingReload(animGroupId))
+		if (IsAnimGroupReload(static_cast<AnimGroupID>(animGroupId)) && !IsLoopingReload(animGroupId))
 			g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 		std::optional<AnimationResult> animResult;
 
@@ -189,7 +189,7 @@ bool __fastcall IsCustomAnimKey(const char* key)
 {
 	const static auto customKeys = {
 		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:",
-		"blendToReloadLoop", "scriptLine:", "replaceWithGroup:", "allowAttack", "noFix", "allowClampInLocomotion"
+		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion"
 	};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }
@@ -434,6 +434,65 @@ BSAnimGroupSequence* Find1stPersonRespectEndKeyAnim(AnimData* animData, BSAnimGr
 			return anim;
 	}
 	return nullptr;
+}
+
+bool IsReadyForAnim()
+{
+	UInt8 opcode = *reinterpret_cast<UInt8*>(0x9420E4);
+	if (opcode == 0xE8)
+	{
+		// tweaks hooks here
+		const auto addr = *reinterpret_cast<UInt32*>(0x9420E4 + 1);
+		return ThisStdCall<bool>(addr, g_thePlayer->baseProcess);
+	}
+	return g_thePlayer->baseProcess->IsReadyForAnim();
+}
+
+namespace AllowAttackKey
+{
+	UInt32 hookedAddr = 0;
+
+	bool __fastcall AllowAttackHook(Decoding::HighProcess* process)
+	{
+		const auto defaultResult = [&]
+		{
+			if (hookedAddr)
+				return ThisStdCall<bool>(hookedAddr, process);
+			return process->IsReadyForAnim();
+		};
+		if (process != g_thePlayer->baseProcess)
+			return defaultResult();
+
+		const auto isFirstPerson = !g_thePlayer->IsThirdPerson();
+		const auto iter = ra::find_if(g_timeTrackedAnims, [&](const auto& p)
+		{
+			return p.second->allowAttack && p.second->actorId == g_thePlayer->refID && p.second->firstPerson == isFirstPerson;
+		});
+
+		if (iter == g_timeTrackedAnims.end())
+			return defaultResult();
+
+		const auto* anim = iter->first;
+		const auto allowAttackTime = iter->second->allowAttackTime;
+		if (!anim || allowAttackTime == INVALID_TIME || anim->m_eState != NiControllerSequence::ANIMATING)
+			return defaultResult();
+		if (anim->m_fLastScaledTime < allowAttackTime)
+			return defaultResult();
+		return true;
+	}
+	
+	void ApplyHooks()
+	{
+		UInt8 opcode = *reinterpret_cast<UInt8*>(0x9420E4);
+		if (opcode == 0xE8) // tweaks also hooks here
+			hookedAddr = GetRelJumpAddr(0x9420E4);
+		for (UInt32 patchAddr : {0x9420E4, 0x893E86, 0x941FE1})
+		{
+			WriteRelCall(patchAddr, AllowAttackHook);
+			SafeWrite16(patchAddr + 5, 0xC084); // test al, al
+		}
+	}
+	
 }
 
 PluginINISettings g_pluginSettings;
@@ -727,3 +786,8 @@ void ApplyHooks()
 
 }
 
+void WriteDelayedHooks()
+{
+	NiHooks::WriteDelayedHooks();
+	AllowAttackKey::ApplyHooks();
+}

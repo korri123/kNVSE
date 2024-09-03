@@ -2,6 +2,7 @@
 #include <functional>
 #include <deque>
 #include <PluginAPI.h>
+#include <shared_mutex>
 #include <thread>
 
 #include "commands_animation.h"
@@ -36,6 +37,7 @@ extern AnimGroupPathsMap g_customAnimGroupPaths;
 extern std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
 extern std::vector<std::string> g_eachFrameScriptLines;
 extern std::thread g_animFileThread;
+extern std::recursive_mutex g_pollConditionMutex;
 
 void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);
 void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);

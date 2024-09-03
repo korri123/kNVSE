@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include <set>
+#include <shared_mutex>
 #include <span>
 #include <unordered_set>
 
@@ -185,6 +186,7 @@ struct AnimTime
 	std::optional<TimedExecution<Sounds>> soundPathsBase;
 	TimedExecution<Sounds>::Context soundPaths;
 	bool allowAttack = false;
+	float allowAttackTime = INVALID_TIME;
 
 	using TimedCallbacks = TimedExecution<std::function<void()>>;
 	std::optional<TimedCallbacks> callbacksBase;
@@ -235,6 +237,7 @@ struct AnimPath
 {
 	std::string_view path;
 	bool partialReload = false;
+	bool isStartAnim = false;
 };
 
 enum class FolderConditionType
@@ -272,6 +275,8 @@ struct SavedAnims
 	std::string_view conditionScriptText;
 	bool pollCondition = false;
 	bool matchBaseGroupId = false;
+	bool hasStartAnim = false;
+	bool hasPartialReload = false;
 	bool disabled = false;
 	SavedAnims() = default;
 
@@ -289,11 +294,19 @@ struct SavedAnims
 
 		for (const auto& anim : anims)
 		{
-			const auto fileName = sv::get_file_name(anim->path);
-			if (!hasOrder && sv::contains_ci(fileName, "_order_"))
+			const auto fileStem = sv::get_file_stem(anim->path);
+			if (!hasOrder && sv::contains_ci(fileStem, "_order_"))
 				hasOrder = true;
-			if (!anim->partialReload && sv::contains_ci(fileName, "_partial"))
+			if (!hasPartialReload && !anim->partialReload && sv::contains_ci(fileStem, "_partial"))
+			{
 				anim->partialReload = true;
+				hasPartialReload = true;
+			}
+			if (!hasStartAnim && !anim->isStartAnim && sv::ends_with_ci(fileStem, "_start"))
+			{
+				anim->isStartAnim = true;
+				hasStartAnim = true;
+			}
 		}
 		if (hasOrder)
 			std::ranges::sort(anims, [&](const auto& a, const auto& b) {return a->path < b->path; });
@@ -345,7 +358,9 @@ struct JSONAnimContext
 using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::unique_ptr<AnimTime>>;
 extern TimeTrackedAnimsMap g_timeTrackedAnims;
 
-using TimeTrackedGroupsMap = std::unordered_map<std::pair<SavedAnims*, AnimData*>, std::unique_ptr<SavedAnimsTime>, pair_hash, pair_equal>;
+using TimeTrackedGroupsKey = std::pair<SavedAnims*, AnimData*>;
+using TimeTrackedGroupsPair = std::pair<const TimeTrackedGroupsKey, std::unique_ptr<SavedAnimsTime>>;
+using TimeTrackedGroupsMap = std::unordered_map<TimeTrackedGroupsKey, std::unique_ptr<SavedAnimsTime>, pair_hash, pair_equal>;
 extern TimeTrackedGroupsMap g_timeTrackedGroups;
 
 #define THISCALL(address, returnType, ...) reinterpret_cast<returnType(__thiscall*)(__VA_ARGS__)>(address)
@@ -578,3 +593,6 @@ using AnimPathCache = std::unordered_map<AnimPathKey, AnimPathValue, pair_hash, 
 extern AnimPathCache g_animPathFrameCache;
 
 std::string_view GetBaseAnimGroupName(std::string_view name);
+
+extern std::shared_mutex g_animMapMutex;
+extern std::shared_mutex g_animPathFrameCacheMutex;

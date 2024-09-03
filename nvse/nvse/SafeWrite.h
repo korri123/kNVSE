@@ -81,3 +81,5 @@ void WriteRelJnz(UInt32 jumpSrc, UInt32 jumpTgt);
 void WriteRelJle(UInt32 jumpSrc, UInt32 jumpTgt);
 
 void PatchMemoryNop(ULONG_PTR Address, SIZE_T Size);
+
+UInt32 GetRelJumpAddr(UInt32 jumpSrc);

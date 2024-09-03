@@ -47,6 +47,19 @@ namespace sv
         return FindStringCI(left, right);
     }
 
+    inline bool ends_with_ci(std::string_view left, std::string_view right)
+    {
+        if (right.size() > left.size())
+            return false;
+
+        std::string_view left_substr = left.substr(left.size() - right.size(), right.size());
+
+        return std::ranges::equal(left_substr, right, [](char a, char b)
+        {
+            return std::tolower(a) == std::tolower(b);
+        });
+    }
+
     template <size_t N>
     class stack_string
     {
