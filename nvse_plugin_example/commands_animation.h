@@ -47,12 +47,12 @@ enum class POVSwitchState
 
 struct Sounds
 {
-	std::vector<BSSoundHandle> sounds;
+	BSSoundHandle sound;
 	bool failed = false;
 
 	Sounds() = default;
 
-	static bool IsSoundFile(const std::string_view& fileName)
+	static bool IsSoundFile(const std::string_view fileName)
 	{
 		const auto fileExt = sv::get_file_extension(fileName);
 		return fileExt == ".wav" || fileExt == ".mp3" || fileExt == ".ogg";
@@ -60,44 +60,33 @@ struct Sounds
 	
 	Sounds(std::string_view path, bool is3D)
 	{
+		sv::stack_string<0x400> newPath = sv::stack_string<0x400>(R"(sound\%s)", path.data());
 		const auto flags = is3D ? BSSoundHandle::kAudioFlags_3D : BSSoundHandle::kAudioFlags_2D;
 		if (sv::get_file_extension(path).empty())
 		{
-			const std::string searchPath = FormatString(R"(data\sound\%s\*)", path.data());
-			const auto result = FileFinder::FindFiles(searchPath.c_str(), searchPath.c_str(), ARCHIVE_TYPE_SOUNDS);
-			for (const auto* file : result)
+			if (newPath.back() != '\\')
+				newPath += '\\';
+			const auto* audioManager = BSWin32Audio::GetSingleton();
+			if (!audioManager->PickSoundFileFromFolder(newPath.data()))
 			{
-				auto fileName = sv::get_file_name(file);
-				if (!IsSoundFile(fileName))
-					continue; // for some reason we get . and .. files
-				auto sound = BSSoundHandle::InitByFilename(file, flags);
-				if (!sound.soundID)
-					continue;
-				sounds.emplace_back(sound);
-			}
-			if (sounds.empty())
 				failed = true;
-			return;
+				return;
+			}
+			newPath.calculate_size();
 		}
-		if (!IsSoundFile(path))
+		if (!IsSoundFile(newPath.str()))
 		{
 			failed = true;
 			return;
 		}
-		const std::string realPath = FormatString(R"(data\sound\%s)", path.data());
-		auto sound = BSSoundHandle::InitByFilename(realPath.c_str(), flags);
+		this->sound = BSSoundHandle::InitByFilename(newPath.c_str(), flags);
 		if (!sound.soundID)
 			failed = true;
-		else
-			sounds = { sound };
 	}
 
 	void Play(Actor* actor, bool is3D)
 	{
-		if (sounds.empty())
-			return;
 		// pick random sound
-		auto& sound = sounds.at(GetRandomUInt(sounds.size()));
 		if (is3D)
 			sound.Set3D(actor);
 		sound.Play();

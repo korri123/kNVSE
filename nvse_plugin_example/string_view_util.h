@@ -1,4 +1,6 @@
 ﻿#pragma once
+#include <cassert>
+
 #include "utility.h"
 
 namespace sv
@@ -74,7 +76,7 @@ namespace sv
 
         stack_string(const char* str)
         {
-            strncpy_s(data, str, N);
+            strncpy_s(data_, str, N);
             size_ = strlen(data_);
         }
 
@@ -82,7 +84,7 @@ namespace sv
         {
             va_list args;
             va_start(args, format);
-            auto numCopied = vsprintf_s(data_, N, N, format, args);
+            auto numCopied = vsprintf_s<N>(data_, format, args);
             va_end(args);
             if (numCopied > 0)
             {
@@ -153,6 +155,54 @@ namespace sv
         void calculate_size()
         {
             size_ = strlen(data_);
+        }
+
+        char back()
+        {
+            return data_[size_ - 1];
+        }
+
+        void pop_back()
+        {
+            if (size_ > 0)
+            {
+                size_--;
+                data_[size_] = '\0';
+            }
+        }
+
+        stack_string& operator+=(char c)
+        {
+            if (size_ < N - 1)
+            {
+                data_[size_] = c;
+                size_++;
+                data_[size_] = '\0';
+            }
+            return *this;
+        }
+
+        stack_string& operator+=(const char* str)
+        {
+            size_t len = strlen(str);
+            if (size_ + len < N)
+            {
+                strncpy_s(data_ + size_, N - size_, str, len);
+                size_ += len;
+                data_[size_] = '\0';
+            }
+            return *this;
+        }
+
+        stack_string& operator+=(const std::string_view& sv)
+        {
+            if (size_ + sv.size() < N)
+            {
+                memcpy(data_ + size_, sv.data(), sv.size());
+                size_ += sv.size();
+                data_[size_] = '\0';
+            }
+            return *this;
         }
     };
 }

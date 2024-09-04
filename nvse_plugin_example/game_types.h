@@ -1037,6 +1037,38 @@ namespace FileFinder
 	}
 }
 
+class BSWin32Audio
+{
+public:
+	virtual ~BSWin32Audio();
+	
+	UInt8					byte04;			// 04
+	UInt8					byte05;			// 05
+	UInt8					byte06;			// 06
+	UInt8					pad07;			// 07
+	UInt32					unk08;			// 08
+	UInt8					byte0C;			// 0C
+	UInt8					pad0D[3];		// 0D
+	void	*listener;		// 10
+	UInt32					unk14[3];		// 14
+	bool					(*GetSoundDataFromRefID)(UInt32 refID, char *outFilePath, UInt32 *outFlags, TESSound **outSound);	// 20	0x82D150
+	bool					(*GetSoundDataFromEDID)(const char *EDIDstr, char *outFilePath, UInt32 *outFlags, TESSound **outSound);	// 24	0x82D280
+	bool					(*PickSoundFileFromFolder)(char *outFilePath);	// 28	0x5E3630
+	UInt32					(*FillGameSoundProps)(UInt32 *mapKey, TESSound *soundForm, UInt32 *outFlags0C);	// 2C	0x82D400
+	void					(*sub_832C40)(void);	// 30
+	void					(*sub_832C80)(void);	// 34
+	void 			**ptr38;				// 38
+	void		*ptr3C;					// 3C
+	UInt32					unk40[24];				// 40
+	HWND					window;					// A0
+
+	
+	static BSWin32Audio* GetSingleton()
+	{
+		return *reinterpret_cast<BSWin32Audio**>(0x11F6D98);
+	}
+};
+
 enum QueuedIdleFlags
 {
 	kIdleFlag_FireWeapon = 0x1,

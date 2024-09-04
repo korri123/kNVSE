@@ -14,11 +14,6 @@
 
 #define BETHESDA_MODIFICATIONS 1
 
-void assert(bool bCondition)
-{
-    NIASSERT(bCondition);
-}
-
 void NiOutputDebugString(const char* text)
 {
     ERROR_LOG(text);
