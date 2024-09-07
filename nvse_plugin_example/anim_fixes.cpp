@@ -310,7 +310,7 @@ void AnimFixes::ApplyFixes(AnimData* animData, BSAnimGroupSequence* anim)
 	EraseNullTextKeys(anim);
 	FixInconsistentEndTime(anim);
 	FixWrongAKeyInRespectEndKey(animData, anim);
-	EraseNegativeAnimKeys(anim);
+	// EraseNegativeAnimKeys(anim);
 }
 
 void AnimFixes::FixWrongKFName(BSAnimGroupSequence* anim, const char* filePath)

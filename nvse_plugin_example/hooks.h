@@ -25,6 +25,13 @@ struct PluginINISettings
     bool fixMissingPrnKey = false;
 };
 
+struct PluginGlobalData
+{
+    bool isInLoopingReloadPlayAnim = false;
+    bool isInConditionFunction = false;
+};
+extern PluginGlobalData g_globals;
+
 extern PluginINISettings g_pluginSettings;
 
 namespace LoopingReloadPauseFix

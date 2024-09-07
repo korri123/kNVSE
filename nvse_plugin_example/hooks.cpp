@@ -312,7 +312,7 @@ bool __fastcall OverrideWithCustomAnimHook(NiTPointerMap<AnimSequenceBase>* anim
 	return false;
 }
 
-void __fastcall HandleOnReload(Actor* actor)
+void HandleOnReload(Actor* actor)
 {
 	if (!actor)
 		return;
@@ -351,8 +351,6 @@ bool __cdecl RemoveDuplicateAnimsHook(void* aTypeBSAnimGroupSequence, BSAnimGrou
 	}
 	return CdeclCall<bool>(0x43B300, aTypeBSAnimGroupSequence, arg1);
 }
-
-
 
 namespace LoopingReloadPauseFix
 {
@@ -496,6 +494,7 @@ namespace AllowAttackKey
 }
 
 PluginINISettings g_pluginSettings;
+PluginGlobalData g_globals;
 
 void ApplyHooks()
 {
@@ -731,7 +730,7 @@ void ApplyHooks()
 		{
 			AnimFixes::EraseNullTextKeys(anim);
 			AnimFixes::FixInconsistentEndTime(anim);
-			AnimFixes::EraseNegativeAnimKeys(anim);
+			// AnimFixes::EraseNegativeAnimKeys(anim);
 			AnimFixes::FixWrongKFName(anim, fileName);
 			AnimFixes::FixMissingPrnKey(anim, fileName);
 		}
@@ -786,10 +785,28 @@ void ApplyHooks()
 #endif
 	//AnimFixes::ApplyHooks();
 
+	WriteRelCall(0x8BAD2C, INLINE_HOOK(void, __fastcall, AnimData *animData, void*, UInt16 groupID, int flags, int queuedState, eAnimSequence sequenceID)
+	{
+		g_globals.isInLoopingReloadPlayAnim = true;
+		ThisStdCall(0x494740, animData, groupID, flags, queuedState, sequenceID);
+		g_globals.isInLoopingReloadPlayAnim = false;
+	}));
 }
 
 void WriteDelayedHooks()
 {
 	NiHooks::WriteDelayedHooks();
 	AllowAttackKey::ApplyHooks();
+
+	if (auto* cmdGetCurrentAmmoRounds = const_cast<CommandInfo*>(g_cmdTable->GetByName("GetCurrentAmmoRounds")))
+	{
+		static auto* defaultExec = cmdGetCurrentAmmoRounds->execute;
+		cmdGetCurrentAmmoRounds->execute = [](COMMAND_ARGS) -> bool
+		{
+			defaultExec(PASS_COMMAND_ARGS);
+			if (g_globals.isInLoopingReloadPlayAnim && g_globals.isInConditionFunction)
+				*result = *result + 1;
+			return true;
+		};
+	}
 }

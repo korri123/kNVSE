@@ -566,8 +566,6 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				animTime->groupId = groupId;
 				animTime->actorId = animData->actor->refID;
 				animTime->animData = animData;
-				if (const auto animCtx = LoadCustomAnimation(*savedAnims, groupId, animData))
-					animTime->anim = animCtx->anim;
 			};
 			if (!ctx->loaded)
 				ctx->Load();

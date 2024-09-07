@@ -1082,7 +1082,7 @@ enum QueuedIdleFlags
 	kIdleFlag_EquipOrUnequip = 0x4000,
 	kIdleFlag_AimWeapon = 0x10000,
 	kIdleFlag_AttackEjectEaseInFollowThrough = 0x20000,
-	kIdleFlag_SomethingAnimatingReloadLoop = 0x40000,
+	kIdleFlag_ReloadLoop = 0x40000,
 };
 
 enum AnimHandTypes

@@ -20,6 +20,17 @@ bool AnimSequenceBase::Contains(BSAnimGroupSequence* anim)
 	return std::any_of(multi->anims->begin(), multi->anims->end(), [&](auto* mAnim) { return mAnim == anim; });		
 }
 
+bool AnimSequenceBase::Contains(const char* path)
+{
+	if (this->IsSingle())
+	{
+		auto* single = static_cast<AnimSequenceSingle*>(this);
+		return single->anim->m_kName.CStr() == path;
+	}
+	const auto* multi = static_cast<AnimSequenceMultiple*>(this);
+	return std::any_of(multi->anims->begin(), multi->anims->end(), [&](auto* mAnim) { return mAnim->m_kName.CStr() == path; });
+}
+
 AnimGroupID AnimData::GetNextAttackGroupID() const
 {
 	const auto type = ThisStdCall<char>(0x495E40, this, 0);

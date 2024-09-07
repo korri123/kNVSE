@@ -89,6 +89,7 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 			return true;
 		}
 	}
+	g_globals.isInConditionFunction = true;
 	const auto success = g_script->CallFunction(
 		funcScript,
 		callingObj,
@@ -96,6 +97,7 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 		result,
 		0
 	);
+	g_globals.isInConditionFunction = false;
 	std::unique_lock lock(g_scriptCacheMutex);
 	g_scriptCache.emplace(std::make_pair(callingObj, funcScript), *result);
 	return success;
@@ -160,16 +162,23 @@ void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence*
 	}
 }
 
-bool IsAnimNextInSelection(AnimData* animData, UInt16 nearestGroupId, const std::optional<AnimationResult>& ctx, BSAnimGroupSequence* anim)
+bool IsSequenceInAnimBundle(AnimData* animData, UInt16 nearestGroupId, const std::optional<AnimationResult>& animResult, BSAnimGroupSequence* anim)
 {
-	if (!ctx)
+	if (!animResult)
 	{
 		auto* animBase = animData->mapAnimSequenceBase->Lookup(nearestGroupId);
 		if (!animBase)
 			return false;
 		return animBase->Contains(anim);
 	}
-	return ctx->animBundle->linkedSequences.contains(anim);
+	return animResult->animBundle->linkedSequences.contains(anim);
+}
+
+bool IsAnimBundleEqual(const std::optional<AnimationResult>& animResult, const SavedAnims& savedAnims)
+{
+	if (!animResult)
+		return false;
+	return animResult->animBundle == &savedAnims;
 }
 
 bool IsActorInvalid(Actor* actor)
@@ -193,13 +202,14 @@ void HandlePollConditionAnims()
 	std::vector<DebugInfo> anims;
 	for (const auto& [pair, animTimePtr] : g_timeTrackedGroups)
 	{
+		const auto& ctx = *pair.first;
 		if (pair.first->conditionScriptText.empty())
 		{
 			pair.first->conditionScriptText = AddStringToPool(DecompileScript(*pair.first->conditionScript));
 		}
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTimePtr->actorId), TESForm, Actor);
 		std::string_view actorName = actor ? actor->GetFullName()->name.CStr() : "NULL";
-		anims.emplace_back(animTimePtr->anim->m_kName.Str(), animTimePtr->groupId, pair.first->conditionScriptText, actorName);
+		anims.emplace_back(ctx.anims.front()->path, animTimePtr->groupId, pair.first->conditionScriptText, actorName);
 	}
 #endif
 
@@ -208,9 +218,7 @@ void HandlePollConditionAnims()
 	
 	for (auto& [pair, animTimePtr] : g_timeTrackedGroups)
 	{
-		auto& ctx = *pair.first;
-		if (!ctx.disabled)
-			trackedGroups.emplace_back(pair, animTimePtr.get());
+		trackedGroups.emplace_back(pair, animTimePtr.get());
 	}
 
 	const auto playAnimGroup = [](AnimData* animData, const UInt16 groupId)
@@ -225,13 +233,11 @@ void HandlePollConditionAnims()
 			g_timeTrackedGroups.erase(key);
 		};
 		auto& animTime = *animTimePtr;
-		auto& [conditionScript, groupId, anim, actorId, animData] = animTime;
+		auto& [conditionScript, groupId, actorId, animData] = animTime;
 		const auto& ctx = *key.first;
 		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
 		
-		if (IsActorInvalid(actor) || !animData || !anim ||
-			anim->m_eState == NiControllerSequence::INACTIVE && anim->m_eCycleType != NiControllerSequence::LOOP ||
-			!conditionScript || ctx.disabled)
+		if (IsActorInvalid(actor) || !animData || !conditionScript || ctx.disabled)
 		{
 			erase();
 			continue;
@@ -268,29 +274,31 @@ void HandlePollConditionAnims()
 				const auto result = static_cast<bool>(arrResult.GetNumber());
 				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
 				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
-				if (curAnim == anim)
+
+				if (ctx.ContainsAnim(curAnim))
 				{
-					// optimizations
 					if (result)
 					{
+						// result is true and an anim in the group is being played so we don't need to do anything
 						continue;
 					}
-					// if the current anim is the tracked anim, and the condition is now false, it probably won't be selected again
+					// if the current anim is the tracked anim, and the condition is now false, it's not going to be selected again
+					// so let's stop it
 					playAnimGroup(animData, nextGroupId);
 					erase();
 					continue;
 				}
 				
-				const auto customAnimResult = GetActorAnimation(nextGroupId, animData);
-				const auto isAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, customAnimResult, anim);
-				const auto isCurAnimNextAnim = IsAnimNextInSelection(animData, nextGroupId, customAnimResult, curAnim);
-				
-				const auto shouldPlayAnim = _L(, result && isAnimNextAnim && !isCurAnimNextAnim);
-				const auto shouldStopAnim = _L(, !result && !isAnimNextAnim && curAnim == anim);
-				if (shouldPlayAnim() || shouldStopAnim())
+				// this group does not contain the current anim, so now we need to check if we should play it
+				if (!result)
 				{
-					playAnimGroup(animData, nextGroupId);
+					// result is false so we don't need to do anything
+					// it might be true in the future so let's keep storing it and evaluating it
+					continue;
 				}
+
+				// result is true, group is not the one being played, so let's play it
+				playAnimGroup(animData, nextGroupId);
 			}
 		}
 	}
@@ -727,6 +735,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	g_arrayVarInterface = (NVSEArrayVarInterface*)nvse->QueryInterface(kInterface_ArrayVar);
 	g_stringVarInterface = (NVSEStringVarInterface*)nvse->QueryInterface(kInterface_StringVar);
 	g_consoleInterface = (NVSEConsoleInterface*)nvse->QueryInterface(kInterface_Console);
+	g_cmdTable = (NVSECommandTableInterface*)nvse->QueryInterface(kInterface_CommandTable);
 
 	nvse->InitExpressionEvaluatorUtils(&s_expEvalUtils);
 

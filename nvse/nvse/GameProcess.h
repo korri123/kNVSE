@@ -71,6 +71,7 @@ public:
 	virtual BSAnimGroupSequence* GetSequenceByAnimGroup(TESAnimGroup* group);
 	virtual signed int GetIndexOfSequenceName(const char* name);
 	bool Contains(BSAnimGroupSequence* anim);
+	bool Contains(const char* path);
 };
 
 class AnimSequenceSingle : public AnimSequenceBase

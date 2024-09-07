@@ -183,19 +183,6 @@ __declspec(naked) void Hook_#name() \
 	} \
 }
 
-#define JMP_HOOK(address, name, retnAddress, ...) \
-static constexpr auto kAddr_##name = address; \
-__declspec(naked) void Hook_##name() \
-{ \
-	const static auto retnAddr = retnAddress; \
-	__asm \
-		__VA_ARGS__ \
-} \
-
-#define APPLY_JMP(name) WriteRelJump(kAddr_##name, Hook_##name)
-
-#define _A __asm
-
 #define INLINE_HOOK(retnType, callingConv, ...) static_cast<retnType(callingConv*)(__VA_ARGS__)>([](__VA_ARGS__) [[msvc::forceinline]] -> retnType
 
 class NVSEStringMapBuilder

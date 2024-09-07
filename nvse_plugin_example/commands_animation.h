@@ -215,7 +215,6 @@ struct SavedAnimsTime
 {
 	Script* conditionScript = nullptr;
 	UInt16 groupId = 0;
-	NiPointer<BSAnimGroupSequence> anim = nullptr;
 	UInt32 actorId = 0;
 	AnimData* animData = nullptr;
 
@@ -268,6 +267,11 @@ struct SavedAnims
 	bool hasPartialReload = false;
 	bool disabled = false;
 	SavedAnims() = default;
+
+	bool ContainsAnim(const BSAnimGroupSequence* anim) const
+	{
+		return ra::find_if(anims, _L(auto& a, a->path.data() == anim->m_kName.CStr())) != anims.end();
+	}
 
 	bool MatchesConditions(const Actor* actor) const
 	{
