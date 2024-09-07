@@ -198,6 +198,7 @@ void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
 
 void AnimFixes::EraseNegativeAnimKeys(const BSAnimGroupSequence* anim)
 {
+	// disabled as if transform data is freed it will crash the game since heap pointer is incremented
 	if (HasNoFixTextKey(anim))
 		return;
 	for (const auto& block : anim->GetControlledBlocks())

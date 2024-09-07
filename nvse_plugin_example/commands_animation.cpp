@@ -293,6 +293,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	const auto textKeys = anim->m_spTextKeys->GetKeys();
 	auto* actor = animData->actor;
 	AnimTime* animTimePtr = nullptr;
+	BSAnimGroupSequence* baseAnim = nullptr;
 	const auto getAnimTimeStruct = [&]() -> AnimTime&
 	{
 		if (!animTimePtr)
@@ -304,7 +305,17 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	};
 	const auto createTimedExecution = [&]<typename T>(std::unordered_map<BSAnimGroupSequence*, T>& map)
 	{
-		const auto iter = map.emplace(anim, T());
+		if (!baseAnim)
+		{
+			// idle anims are destroyed after they are done playing, so we can't rely on their pointers being the same in the map
+			auto* kfModel = ModelLoader::LoadKFModel(anim->m_kName.CStr());
+			if (kfModel)
+				baseAnim = kfModel->controllerSequence;
+			else
+				ERROR_LOG("Failed to load kf model in HandleExtraOperations for " + std::string(anim->m_kName.CStr()));
+		}
+		auto* key = baseAnim ? baseAnim : anim;
+		const auto iter = map.emplace(key, T());
 		auto* timedExecution = &iter.first->second;
 		const bool uninitialized = iter.second;
 		return std::make_pair(timedExecution, uninitialized);
