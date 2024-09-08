@@ -489,7 +489,7 @@ void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimG
 	}
 	if (HasNoFixTextKey(pkDest))
 		return;
-	if (pkSource->m_eState == kAnimState_EaseOut && pkDest->m_eState == kAnimState_EaseIn)
+	if (pkSource->m_eState == NiControllerSequence::EASEOUT && pkDest->m_eState == NiControllerSequence::EASEIN)
 		::FixConflictingPriorities(pkSource, pkDest);
 }
 

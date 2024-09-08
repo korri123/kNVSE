@@ -208,7 +208,7 @@ public:
 
 		bool HasWeaponMod(WeaponModFlags mod) const;
 
-		float GetShotSpeed() const
+		float GetShotTime() const
 		{
 			auto hasIncreasedRateOfFire = ThisStdCall<bool>(0x4BDA70, this, TESObjectWEAP::kWeaponModEffect_IncreaseRateOfFire);
 			return weapon->GetShotSpeed(hasIncreasedRateOfFire);

@@ -481,7 +481,7 @@ namespace AllowAttackKey
 		const auto weaponInfo = g_thePlayer->baseProcess->GetWeaponInfo();
 		if (!weaponInfo || !weaponInfo->weapon || !weaponInfo->weapon->IsAutomatic())
 			return false;
-		const auto attackSpeed = weaponInfo->GetShotSpeed();
+		const auto attackSpeed = weaponInfo->GetShotTime();
 		return attackSequence->m_fLastScaledTime >= attackSpeed;
 	}
 
@@ -510,6 +510,77 @@ namespace AllowAttackKey
 		}
 	}
 	
+}
+
+void ApplyFixHolsterUnholsterLocomotionHooks()
+{
+	
+#if 0
+	// AnimData::GetNthSequenceGroupID(animData, sequenceType_1);
+	// Fix issue where new movement anim is played during equip or unequip
+	WriteRelCall(0x897237, INLINE_HOOK(UInt16, __fastcall, AnimData* animData, void*, eAnimSequence sequenceType)
+	{
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr();
+		auto* _ebp = GetParentBasePtr(addrOfRetn);
+		const auto groupId = animData->groupIDs[sequenceType];
+		const auto nextGroupId = *reinterpret_cast<UInt16*>(_ebp - 0x24);
+		if (sequenceType == kSequence_Movement && groupId != nextGroupId && (groupId & 0xFF) == (nextGroupId & 0xFF))
+		{
+			if (auto* weaponAnim = animData->animSequence[kSequence_Weapon]; weaponAnim && weaponAnim->animGroup)
+			{
+				const auto baseWeaponGroupId = weaponAnim->animGroup->GetBaseGroupID();
+				if (baseWeaponGroupId == kAnimGroup_Equip || baseWeaponGroupId == kAnimGroup_Unequip)
+				{
+					*addrOfRetn = 0x897682;
+					return 0;
+				}
+			}
+		}
+		return groupId;
+	}));
+
+	// BSAnimGroupSequence::GetState
+	// Also need to hook here to prevent game from trying to end movement sequence during equip/unequip
+	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
+	{
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		auto* _ebp = GetParentBasePtr(addrOfRetn);
+		const auto nextGroupId = *reinterpret_cast<AnimGroupID*>(_ebp - 0x40);
+		if (nextGroupId == kAnimGroup_Equip || nextGroupId == kAnimGroup_Unequip)
+		{
+			*addrOfRetn = 0x897760;
+			return static_cast<NiControllerSequence::AnimState>(-1);
+		}
+		return anim->m_eState;
+	}));
+
+#if 0
+	
+#endif
+#endif
+
+}
+
+void ApplyFixLoopingReloadStartHooks()
+{
+#if 0 // obsidian fucked up looping reload priorities so the flicker bug appears with this enabled
+	if (g_fixLoopingReloadStart)
+	{
+		// fix reloadloopstart blending into aim before reloadloop
+		WriteRelCall(0x492CF6, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, eAnimSequence sequenceId, bool bChar)
+		{
+			const auto* anim = GET_CALLER_VAR_LAMBDA(BSAnimGroupSequence*, -0xA0);
+			if (anim && anim->animGroup)
+			{
+				const auto groupId = anim->animGroup->GetBaseGroupID();
+				if (groupId >= kAnimGroup_ReloadWStart && groupId <= kAnimGroup_ReloadZStart)
+					return; // do nothing
+			}
+			// original call; blends to aim anim
+			ThisStdCall(0x4994F0, animData, sequenceId, bChar);
+		}));
+	}
+#endif
 }
 
 PluginINISettings g_pluginSettings;
@@ -579,26 +650,6 @@ void ApplyHooks()
 	}
 
 	ApplyNiHooks();
-	
-
-#if 0 // obsidian fucked up looping reload priorities so the flicker bug appears with this enabled
-	if (g_fixLoopingReloadStart)
-	{
-		// fix reloadloopstart blending into aim before reloadloop
-		WriteRelCall(0x492CF6, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, eAnimSequence sequenceId, bool bChar)
-		{
-			const auto* anim = GET_CALLER_VAR_LAMBDA(BSAnimGroupSequence*, -0xA0);
-			if (anim && anim->animGroup)
-			{
-				const auto groupId = anim->animGroup->GetBaseGroupID();
-				if (groupId >= kAnimGroup_ReloadWStart && groupId <= kAnimGroup_ReloadZStart)
-					return; // do nothing
-			}
-			// original call; blends to aim anim
-			ThisStdCall(0x4994F0, animData, sequenceId, bChar);
-		}));
-	}
-#endif
 
 #if 1
 	// attempt to fix anims that don't get loaded since they aren't in the game to begin with
@@ -614,7 +665,10 @@ void ApplyHooks()
 	WriteRelCall(0x4956CE, NonExistingAnimHook<-0x14>);
 
 	// AnimData::GetPlayingAnimGroupMovementVectorMagnitude (not sure this is needed)
-	WriteRelCall(0x49431B, NonExistingAnimHook<-0xC>);
+	WriteRelCall(0x49431B, OverrideWithCustomAnimHook<-0xC>);
+	// determines the velocity of jumploopforward, do not remove since enhanced movement relies on it
+	WriteRelCall(0x493115, OverrideWithCustomAnimHook<-0x18C>);
+
 
 	/* experimental */
 	// WriteRelCall(0x9D0E80, NonExistingAnimHook<-0x1C>);
@@ -622,11 +676,9 @@ void ApplyHooks()
 	// WriteRelCall(0x97FE09, NonExistingAnimHook<-0xC>);
 	// WriteRelCall(0x97F36D, NonExistingAnimHook<-0xC>);
 	// WriteRelCall(0x8B7985, NonExistingAnimHook<-0x14>);
-	
 	// WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
 	// WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>); no go - causes stack overflow in PickAnimations since it calls LoadCustomAnimation that calls this
 	// WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
-
 	//WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
 	//WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
 	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
@@ -736,7 +788,6 @@ void ApplyHooks()
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
 	}));
 	PatchMemoryNop(0x4994F9 + 2, 1);
-
 	
 	// KFModel::LoadAnimGroup dereference
 	// apply text key fixes before AnimGroup is init
@@ -755,54 +806,6 @@ void ApplyHooks()
 		}
 		return anim;
 	}));
-
-#if 0
-	// AnimData::GetNthSequenceGroupID(animData, sequenceType_1);
-	// Fix issue where new movement anim is played during equip or unequip
-	WriteRelCall(0x897237, INLINE_HOOK(UInt16, __fastcall, AnimData* animData, void*, eAnimSequence sequenceType)
-	{
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr();
-		auto* _ebp = GetParentBasePtr(addrOfRetn);
-		const auto groupId = animData->groupIDs[sequenceType];
-		const auto nextGroupId = *reinterpret_cast<UInt16*>(_ebp - 0x24);
-		if (sequenceType == kSequence_Movement && groupId != nextGroupId && (groupId & 0xFF) == (nextGroupId & 0xFF))
-		{
-			if (auto* weaponAnim = animData->animSequence[kSequence_Weapon]; weaponAnim && weaponAnim->animGroup)
-			{
-				const auto baseWeaponGroupId = weaponAnim->animGroup->GetBaseGroupID();
-				if (baseWeaponGroupId == kAnimGroup_Equip || baseWeaponGroupId == kAnimGroup_Unequip)
-				{
-					*addrOfRetn = 0x897682;
-					return 0;
-				}
-			}
-		}
-		return groupId;
-	}));
-
-	// BSAnimGroupSequence::GetState
-	// Also need to hook here to prevent game from trying to end movement sequence during equip/unequip
-	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
-	{
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		auto* _ebp = GetParentBasePtr(addrOfRetn);
-		const auto nextGroupId = *reinterpret_cast<AnimGroupID*>(_ebp - 0x40);
-		if (nextGroupId == kAnimGroup_Equip || nextGroupId == kAnimGroup_Unequip)
-		{
-			*addrOfRetn = 0x897760;
-			return static_cast<NiControllerSequence::AnimState>(-1);
-		}
-		return anim->m_eState;
-	}));
-
-#if 0
-	
-#endif
-#endif
-#if _DEBUG
-	//BlendFixes::ApplyHooks();
-#endif
-	//AnimFixes::ApplyHooks();
 
 	// AnimData::PlayAnimGroup
 	// used to rig GetCurrentAmmoRounds command to add 1 to the result if we are about to play a looping reload anim
@@ -867,9 +870,14 @@ void ApplyHooks()
 			if (animData3rd->actor != g_thePlayer)
 				return defaultResult;
 			const auto* animData = g_thePlayer->GetAnimData();
+			const auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
 			const auto* attackSequence = animData->animSequence[kSequence_Weapon];
 			if (!attackSequence || !attackSequence->m_spTextKeys->FindFirstByName("interruptLoop")
-				|| attackSequence->m_eState != NiControllerSequence::ANIMATING)
+				|| attackSequence->m_eState != NiControllerSequence::ANIMATING
+				|| !weaponInfo || !weaponInfo->weapon)
+				return defaultResult;
+			const auto attackTime = weaponInfo->GetShotTime();
+			if (attackSequence->m_fLastScaledTime < attackTime)
 				return defaultResult;
 			return kSeqState_Unk3;
 		}));

@@ -34,7 +34,7 @@ bool AnimData::IsAnimSequenceQueued(const BSAnimGroupSequence* apSequence) const
 // Function
 BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDestSequence, UInt16 usAnimGroup, eAnimSequence aSequenceType)
 {
-#ifndef _DEBUG
+#if 1
   return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, this, apDestSequence, usAnimGroup, aSequenceType);
 #else
   
