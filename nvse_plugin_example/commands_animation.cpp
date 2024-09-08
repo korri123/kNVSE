@@ -978,17 +978,17 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 	if (sv::contains_ci(path, R"(\mod1\)"))
 	{
 		folderConditionType = FolderConditionType::Mod1;
-		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(1); };
+		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(kWeaponMod_Flag1); };
 	}
 	else if (sv::contains_ci(path, R"(\mod2\)"))
 	{
 		folderConditionType = FolderConditionType::Mod2;
-		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(2); };
+		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(kWeaponMod_Flag2); };
 	}
 	else if (sv::contains_ci(path, R"(\mod3\)"))
 	{
 		folderConditionType = FolderConditionType::Mod3;
-		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(3); };
+		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(kWeaponMod_Flag3); };
 	}
 	else if (sv::contains_ci(path, R"(\hurt\)"))
 	{

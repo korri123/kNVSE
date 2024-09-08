@@ -1186,3 +1186,10 @@ namespace AnimGroup
 
 	bool FallbacksTo(AnimData* animData, FullAnimGroupID sourceGroupId, FullAnimGroupID destGroupId);
 }
+
+enum WeaponModFlags: UInt32
+{
+	kWeaponMod_Flag1 = 0x1,
+	kWeaponMod_Flag2 = 0x2,
+	kWeaponMod_Flag3 = 0x4,
+};

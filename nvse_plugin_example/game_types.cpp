@@ -515,7 +515,7 @@ const char* MoveFlagToString(UInt32 flag)
 	return "";
 }
 
-bool BaseProcess::WeaponInfo::HasWeaponMod(UInt32 mod) const
+bool BaseProcess::WeaponInfo::HasWeaponMod(WeaponModFlags mod) const
 {
 	if (auto* xData = GetExtraData(); xData)
 	{
@@ -527,7 +527,7 @@ bool BaseProcess::WeaponInfo::HasWeaponMod(UInt32 mod) const
 }
 
 
-bool Actor::HasWeaponWithMod(UInt32 mod) const
+bool Actor::HasWeaponWithMod(WeaponModFlags mod) const
 {
 	if (auto* weaponInfo = this->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon)
 		return weaponInfo->HasWeaponMod(mod);

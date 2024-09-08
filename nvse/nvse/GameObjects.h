@@ -713,7 +713,7 @@ public:
 		return IS_ID(baseForm, TESNPC) && static_cast<TESNPC*>(baseForm)->baseData.IsFemale();
 	}
 
-	bool HasWeaponWithMod(UInt32 mod) const;
+	bool HasWeaponWithMod(WeaponModFlags mod) const;
 };
 STATIC_ASSERT(offsetof(Actor, magicCaster) == 0x088);
 

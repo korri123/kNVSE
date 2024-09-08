@@ -166,6 +166,7 @@ struct AnimData
 	}
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);
+enum WeaponModFlags: UInt32;
 
 class BaseProcess
 {
@@ -205,7 +206,7 @@ public:
 			return xData ? *xData : NULL;
 		}
 
-		bool HasWeaponMod(UInt32 mod) const;
+		bool HasWeaponMod(WeaponModFlags mod) const;
 	};
 
 	struct Data004 {

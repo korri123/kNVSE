@@ -789,14 +789,14 @@ void ApplyHooks()
 
 	const auto writeAttackLoopToAimHooks = []
 	{
-		const static auto shouldApplyAttackLoopToAim = [&]
+		const static auto shouldApplyAttackLoopToAim = []
 		{
 			auto* animData = g_thePlayer->GetAnimData();
 			const auto* baseProcess = g_thePlayer->baseProcess;
 			const auto* attackSequence = animData->animSequence[kSequence_Weapon];
 			const auto* ammoInfo = baseProcess->GetAmmoInfo();
 			const auto hasInterrupt = [&]  { return attackSequence && attackSequence->m_spTextKeys->FindFirstByName("interruptLoop"); };
-			return attackSequence && ammoInfo && ammoInfo->count == 0 && hasInterrupt();
+			return ammoInfo && ammoInfo->count == 0 && hasInterrupt();
 		};
 		
 		// bananasuicide wants no interrupt when depressing aim key on last shot
