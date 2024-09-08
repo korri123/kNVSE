@@ -4,20 +4,6 @@
 #include "utility.h"
 #include "SafeWrite.h"
 
-std::string GetCurPath()
-{
-	char buffer[MAX_PATH] = { 0 };
-	GetModuleFileName(NULL, buffer, MAX_PATH);
-	std::string::size_type pos = std::string(buffer).find_last_of("\\/");
-	return std::string(buffer).substr(0, pos);
-}
-
-bool ends_with(std::string const& value, std::string const& ending)
-{
-	if (ending.size() > value.size()) return false;
-	return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
-}
-
 std::string ReplaceAll(std::string str, const std::string& from, const std::string& to) {
 	size_t start_pos = 0;
 	while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
@@ -58,18 +44,6 @@ bool IsPlayersOtherAnimData(AnimData* animData)
 	if (!g_thePlayer->IsThirdPerson() && animData == g_thePlayer->baseProcess->GetAnimData())
 		return true;
 	return false;
-}
-
-AnimData* GetThirdPersonAnimData(AnimData* animData)
-{
-	if (animData == g_thePlayer->firstPersonAnimData)
-		return g_thePlayer->baseProcess->GetAnimData();
-	return animData;
-}
-
-void PatchPause(UInt32 ptr)
-{
-	SafeWriteBuf(ptr, "\xEB\xFE", 2);
 }
 
 std::string ToLower(std::string data)

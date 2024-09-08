@@ -588,10 +588,10 @@ PluginGlobalData g_globals;
 
 void ApplyHooks()
 {
-	const auto iniPath = GetCurPath() + R"(\Data\NVSE\Plugins\kNVSE.ini)";
+	const auto iniPath = R"(Data\NVSE\Plugins\kNVSE.ini)";
 	CSimpleIniA ini;
 	ini.SetUnicode();
-	if (ini.LoadFile(iniPath.c_str()) < 0)
+	if (ini.LoadFile(iniPath) < 0)
 	{
 		ERROR_LOG("Failed to load ini file");
 		return;
@@ -644,7 +644,7 @@ void ApplyHooks()
 	if (ini.GetOrCreate("General", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
 		WriteRelCall(0x4951D2, FixBlendMult);
 
-	if (ini.SaveFile(iniPath.c_str(), false) < 0)
+	if (ini.SaveFile(iniPath, false) < 0)
 	{
 		ERROR_LOG("Failed to save ini file");
 	}

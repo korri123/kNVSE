@@ -227,7 +227,7 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 						auto* form = LookupFormByID(formId);
 						if (!form)
 						{
-							//ERROR_LOG(FormatString("Form %X was not found", formId));
+							LOG(FormatString("Form %X was not found", formId));
 							continue;
 						}
 						//LOG(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
