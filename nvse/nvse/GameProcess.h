@@ -207,6 +207,12 @@ public:
 		}
 
 		bool HasWeaponMod(WeaponModFlags mod) const;
+
+		float GetShotSpeed() const
+		{
+			auto hasIncreasedRateOfFire = ThisStdCall<bool>(0x4BDA70, this, TESObjectWEAP::kWeaponModEffect_IncreaseRateOfFire);
+			return weapon->GetShotSpeed(hasIncreasedRateOfFire);
+		}
 	};
 
 	struct Data004 {

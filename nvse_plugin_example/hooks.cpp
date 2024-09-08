@@ -443,17 +443,16 @@ namespace AllowAttackKey
 {
 	UInt32 hookedAddr = 0;
 
-	bool __fastcall AllowAttackHook(Decoding::HighProcess* process)
+	const auto defaultResult = [](BaseProcess* process)
 	{
-		const auto defaultResult = [&]
-		{
-			if (hookedAddr)
-				return ThisStdCall<bool>(hookedAddr, process);
-			return process->IsReadyForAnim();
-		};
-		if (process != g_thePlayer->baseProcess)
-			return defaultResult();
+		if (hookedAddr)
+			return ThisStdCall<bool>(hookedAddr, process);
+		return process->IsReadyForAnim();
+	};
 
+	bool HasAllowAttackKeyPassed()
+	{
+		
 		const auto isFirstPerson = !g_thePlayer->IsThirdPerson();
 		const auto iter = ra::find_if(g_timeTrackedAnims, [&](const auto& p)
 		{
@@ -461,15 +460,42 @@ namespace AllowAttackKey
 		});
 
 		if (iter == g_timeTrackedAnims.end())
-			return defaultResult();
+			return false;
 
 		const auto* anim = iter->first;
 		const auto allowAttackTime = iter->second->allowAttackTime;
 		if (!anim || allowAttackTime == INVALID_TIME || anim->m_eState != NiControllerSequence::ANIMATING)
-			return defaultResult();
+			return false;
 		if (anim->m_fLastScaledTime < allowAttackTime)
-			return defaultResult();
+			return false;
 		return true;
+	}
+
+	bool HasInterruptLoopPassed()
+	{
+		const auto* animData = g_thePlayer->GetAnimData();
+		const auto* attackSequence = animData->animSequence[kSequence_Weapon];
+		if (!attackSequence || !attackSequence->m_spTextKeys->FindFirstByName("interruptLoop")
+			|| attackSequence->m_eState != NiControllerSequence::ANIMATING)
+			return false;
+		const auto weaponInfo = g_thePlayer->baseProcess->GetWeaponInfo();
+		if (!weaponInfo || !weaponInfo->weapon || !weaponInfo->weapon->IsAutomatic())
+			return false;
+		const auto attackSpeed = weaponInfo->GetShotSpeed();
+		return attackSequence->m_fLastScaledTime >= attackSpeed;
+	}
+
+	bool __fastcall AllowAttackHook(Decoding::HighProcess* process)
+	{
+		if (process == g_thePlayer->baseProcess)
+		{
+			if (HasAllowAttackKeyPassed())
+				return true;
+			if (HasInterruptLoopPassed())
+				return true;
+		}
+		
+		return defaultResult(process);
 	}
 	
 	void ApplyHooks()
@@ -831,6 +857,24 @@ void ApplyHooks()
 		}));
 	};
 	writeAttackLoopToAimHooks();
+
+	const auto writeInterruptLoopAllowReloadHooks = []
+	{
+		// AnimData::GetSequenceState1(animData, kSequence_Weapon)
+		WriteRelCall(0x949720, INLINE_HOOK(UInt32, __fastcall, AnimData* animData3rd, void*, eAnimSequence sequenceId)
+		{
+			const auto defaultResult = animData3rd->sequenceState1[sequenceId];
+			if (animData3rd->actor != g_thePlayer)
+				return defaultResult;
+			const auto* animData = g_thePlayer->GetAnimData();
+			const auto* attackSequence = animData->animSequence[kSequence_Weapon];
+			if (!attackSequence || !attackSequence->m_spTextKeys->FindFirstByName("interruptLoop")
+				|| attackSequence->m_eState != NiControllerSequence::ANIMATING)
+				return defaultResult;
+			return kSeqState_Unk3;
+		}));
+	};
+	writeInterruptLoopAllowReloadHooks();
 }
 
 void WriteDelayedHooks()

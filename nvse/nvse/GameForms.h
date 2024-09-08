@@ -2857,6 +2857,12 @@ public:
 	float GetItemModValue1(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value1Mod[which]; }
 	float GetItemModValue2(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value2Mod[which]; }
 
+	float GetShotSpeed(bool hasIncreasedRateOfFire) const
+	{
+		float attackMultipler = ThisStdCall<float>(0x646020, this, hasIncreasedRateOfFire);
+		return 1.0f / (attackMultipler * fireRate);
+	}
+
 };
 STATIC_ASSERT(offsetof(TESObjectWEAP, fullName) == 0x030);
 STATIC_ASSERT(offsetof(TESObjectWEAP, icon) == 0x5C);
