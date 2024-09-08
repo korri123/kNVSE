@@ -778,12 +778,59 @@ void ApplyHooks()
 #endif
 	//AnimFixes::ApplyHooks();
 
+	// AnimData::PlayAnimGroup
+	// used to rig GetCurrentAmmoRounds command to add 1 to the result if we are about to play a looping reload anim
 	WriteRelCall(0x8BAD2C, INLINE_HOOK(void, __fastcall, AnimData *animData, void*, UInt16 groupID, int flags, int queuedState, eAnimSequence sequenceID)
 	{
 		g_globals.isInLoopingReloadPlayAnim = true;
 		ThisStdCall(0x494740, animData, groupID, flags, queuedState, sequenceID);
 		g_globals.isInLoopingReloadPlayAnim = false;
 	}));
+
+	const auto writeAttackLoopToAimHooks = []
+	{
+		const static auto shouldApplyAttackLoopToAim = [&]
+		{
+			auto* animData = g_thePlayer->GetAnimData();
+			const auto* baseProcess = g_thePlayer->baseProcess;
+			const auto* attackSequence = animData->animSequence[kSequence_Weapon];
+			const auto* ammoInfo = baseProcess->GetAmmoInfo();
+			const auto hasInterrupt = [&]  { return attackSequence && attackSequence->m_spTextKeys->FindFirstByName("interruptLoop"); };
+			return attackSequence && ammoInfo && ammoInfo->count == 0 && hasInterrupt();
+		};
+		
+		// bananasuicide wants no interrupt when depressing aim key on last shot
+		// Plays Aim directly instead of AttackLoop when ammo is depleted
+		// Actor::AimWeapon
+		WriteRelCall(0x9420BD, INLINE_HOOK(void, __fastcall, PlayerCharacter* player, void*, bool isAiming, bool a2, bool a3)
+		{
+			ThisStdCall(0x8BB650, player, isAiming, a2, a3);
+
+			auto* animData = g_thePlayer->GetAnimData();
+
+			if (!shouldApplyAttackLoopToAim())
+				return;
+
+			const auto groupId = GetNearestGroupID(animData, kAnimGroup_Aim);
+			GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
+		}));
+
+		// Plays AimIS directly instead of AttackLoopIS when ammo is depleted and aim is pressed
+		// Actor::AimWeapon
+		WriteRelCall(0x94202C, INLINE_HOOK(void, __fastcall, PlayerCharacter* player, void*, bool isAiming, bool a2, bool a3)
+		{
+			ThisStdCall(0x8BB650, player, isAiming, a2, a3);
+
+			auto* animData = g_thePlayer->GetAnimData();
+
+			if (!shouldApplyAttackLoopToAim())
+				return;
+
+			const auto groupId = GetNearestGroupID(animData, kAnimGroup_AimIS);
+			GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
+		}));
+	};
+	writeAttackLoopToAimHooks();
 }
 
 void WriteDelayedHooks()

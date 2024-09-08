@@ -916,6 +916,7 @@ public:
 	AnimData* Get3rdPersonAnimData();
 	void SetWeaponOut(bool bOut);
 	AnimData* GetAnimData(bool bFirstPerson) const;
+	AnimData* GetAnimData() const;
 	NiNode* GetNode(bool bFirstPerson) const;
 };
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);

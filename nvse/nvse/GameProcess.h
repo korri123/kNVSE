@@ -322,7 +322,7 @@ public:
 	virtual void	Unk_50(void);
 	virtual void	Unk_51(void);
 	virtual WeaponInfo	*GetWeaponInfo();	// unk0114
-	virtual AmmoInfo*	GetAmmoInfo();	// unk0118
+	virtual AmmoInfo*	GetAmmoInfo() const;	// unk0118
 	virtual void	Unk_54(void);
 	virtual void	Unk_55(void);
 	virtual void	Unk_56(void);

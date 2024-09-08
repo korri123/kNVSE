@@ -75,6 +75,12 @@ AnimData* PlayerCharacter::GetAnimData(bool bFirstPerson) const
 	return bFirstPerson ? this->firstPersonAnimData : this->baseProcess->animData;
 }
 
+AnimData* PlayerCharacter::GetAnimData() const
+{
+	const auto isFirstPerson = !g_thePlayer->IsThirdPerson();
+	return GetAnimData(isFirstPerson);
+}
+
 NiNode* PlayerCharacter::GetNode(bool bFirstPerson) const
 {
 	return ThisStdCall<NiNode*>(0x950BB0, this, bFirstPerson);
