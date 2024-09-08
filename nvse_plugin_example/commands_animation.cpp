@@ -41,6 +41,7 @@ AnimOverrideMap g_animGroupModIdxFirstPersonMap;
 
 std::shared_mutex g_animMapMutex;
 
+
 AnimData* GetAnimDataForPov(UInt32 playerPov, Actor* actor)
 {
 	if (actor == g_thePlayer && playerPov)
@@ -267,11 +268,11 @@ enum class KeyCheckType
 	KeyEquals, KeyStartsWith
 };
 
-std::string GetTextAfterColon(std::string in)
+std::string_view GetTextAfterColon(std::string_view in)
 {
 	auto str = in.substr(in.find_first_of(':') + 1);
 	while (!str.empty() && isspace(*str.begin()))
-		str.erase(str.begin());
+		str = str.substr(1);
 	return str;
 }
 
@@ -414,10 +415,10 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 				const auto edid = GetTextAfterColon(key);
 				if (edid.empty())
 					return false;
-				auto* form = GetFormByID(edid.c_str());
+				auto* form = GetFormByID(edid.data());
 				if (!form || !IS_ID(form, Script))
 				{
-					ERROR_LOG(FormatString("Text key contains invalid script %s", edid.c_str()));
+					ERROR_LOG(FormatString("Text key contains invalid script %s", edid.data()));
 					return false;
 				}
 				result = static_cast<Script*>(form);
@@ -467,7 +468,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 					result = cached;
 					return true;
 				}
-				const auto line = GetTextAfterColon(key);
+				const auto line = std::string(GetTextAfterColon(key));
 				if (line.empty())
 					return false;
 				auto formattedLine = ReplaceAll(line, "%R", "\r\n");

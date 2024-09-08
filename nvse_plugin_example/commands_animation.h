@@ -49,17 +49,17 @@ struct Sounds
 {
 	BSSoundHandle sound;
 	bool failed = false;
-
 	Sounds() = default;
 
 	static bool IsSoundFile(const std::string_view fileName)
 	{
 		const auto fileExt = sv::get_file_extension(fileName);
-		return fileExt == ".wav" || fileExt == ".mp3" || fileExt == ".ogg";
+		return fileExt == ".wav" || fileExt == ".ogg";
 	}
 	
 	Sounds(std::string_view path, bool is3D)
 	{
+		// Game has a garbage collector for sounds
 		sv::stack_string<0x400> newPath = sv::stack_string<0x400>(R"(sound\%s)", path.data());
 		const auto flags = is3D ? BSSoundHandle::kAudioFlags_3D : BSSoundHandle::kAudioFlags_2D;
 		if (sv::get_file_extension(path).empty())
@@ -80,8 +80,11 @@ struct Sounds
 			return;
 		}
 		this->sound = BSSoundHandle::InitByFilename(newPath.c_str(), flags);
-		if (!sound.soundID)
+		if (sound.soundID == -1)
+		{
 			failed = true;
+			return;
+		}
 	}
 
 	void Play(Actor* actor, bool is3D)

@@ -129,8 +129,11 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 
 void DecreaseAttackTimer()
 {
+	*static_cast<UInt32*>(_AddressOfReturnAddress()) = 0x941E64;
 	auto* baseProcess = g_thePlayer->baseProcess;
-	if (!g_lastLoopSequence)
+	const bool isFirstPerson = !g_thePlayer->IsThirdPerson();
+	const auto* animData = g_thePlayer->GetAnimData(isFirstPerson);
+	if (!g_lastLoopSequence || g_lastLoopSequence->m_pkOwner != animData->controllerManager)
 		return baseProcess->ResetAttackLoopTimer(false);
 	if (g_startedAnimation)
 	{
@@ -144,16 +147,6 @@ void DecreaseAttackTimer()
 	{
 		baseProcess->time1D4 = 0;
 		g_lastLoopSequence = nullptr;
-	}
-}
-
-__declspec(naked) void EndAttackLoopHook()
-{
-	const static auto retnAddr = 0x941E64;
-	__asm
-	{
-		call DecreaseAttackTimer
-		jmp retnAddr
 	}
 }
 
@@ -532,7 +525,7 @@ void ApplyHooks()
 
 
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
-	WriteRelJump(0x941E4C, EndAttackLoopHook);
+	WriteRelCall(0x941E4C, DecreaseAttackTimer);
 
 	WriteRelCall(0x492CF6, LoopingReloadPauseFix::NoAimInReloadLoopHook);
 

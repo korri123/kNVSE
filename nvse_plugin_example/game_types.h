@@ -577,6 +577,11 @@ public:
 	{
 		ThisStdCall(0xAD7550, sound, path, flags);
 	}
+
+	bool IsSoundPlaying(BSSoundHandle* sound)
+	{
+		return ThisStdCall<bool>(0xAD8830, sound);
+	}
 };
 
 // 0C
