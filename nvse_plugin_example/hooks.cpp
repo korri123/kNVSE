@@ -789,11 +789,10 @@ void ApplyHooks()
 	}));
 	PatchMemoryNop(0x4994F9 + 2, 1);
 	
-	// KFModel::LoadAnimGroup dereference
+	// BSAnimGroupSequence::GetName
 	// apply text key fixes before AnimGroup is init
-	WriteRelCall(0x43B831, INLINE_HOOK(BSAnimGroupSequence*, __fastcall, BSAnimGroupSequence** animPtr)
+	WriteRelCall(0x43B838, INLINE_HOOK(NiFixedString*, __fastcall, BSAnimGroupSequence* anim)
 	{
-		auto* anim = *animPtr;
 		auto* fileName = GET_CALLER_VAR_LAMBDA(const char*, 0x8);
 		
 		if (anim->m_spTextKeys) [[msvc::noinline_calls]]
@@ -804,7 +803,7 @@ void ApplyHooks()
 			AnimFixes::FixWrongKFName(anim, fileName);
 			AnimFixes::FixMissingPrnKey(anim, fileName);
 		}
-		return anim;
+		return &anim->m_kName;
 	}));
 
 	// AnimData::PlayAnimGroup
