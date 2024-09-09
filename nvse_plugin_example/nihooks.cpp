@@ -982,7 +982,7 @@ NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager
 void ApplyNiHooks()
 {
 #if _DEBUG
-    NiHooks::WriteHooks();
+    // NiHooks::WriteHooks();
 #endif
 #if EXPERIMENTAL_HOOKS
 

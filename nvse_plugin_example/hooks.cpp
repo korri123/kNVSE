@@ -614,6 +614,7 @@ void ApplyHooks()
 	conf.fixWrongPrnKey = ini.GetOrCreate("Anim Fixes", "bFixWrongPrnKey", 1, "; try to fix animations where animator messed up the prn text key value in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
 	conf.fixWrongAnimName = ini.GetOrCreate("Anim Fixes", "bFixWrongAnimName", 1, "; try to fix animations where the name of the animation file does not match anim group name. This can happen when the animator is not careful.");
 	conf.fixMissingPrnKey = ini.GetOrCreate("Anim Fixes", "bFixMissingPrnKey", 1, "; try to fix animations where the prn key is missing in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
+	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest");
 	//WriteRelJump(0x4949D0, AnimationHook);
 	WriteRelCall(0x494989, HandleAnimationChange);
 	WriteRelCall(0x495E2A, HandleAnimationChange);
@@ -882,6 +883,14 @@ void ApplyHooks()
 		}));
 	};
 	writeInterruptLoopAllowReloadHooks();
+
+	// fix looping reloads in stewie tweak allow reload when attacking when attack is done when Aim is EaseIn and ReloadXStart is TransDest
+	WriteRelCall(0x8956BE, INLINE_HOOK(float, __fastcall, AnimData* animData, void*, BSAnimGroupSequence* anim)
+	{
+		if (g_pluginSettings.fixReloadStartAllowReloadTweak && anim->m_eState == NiControllerSequence::TRANSDEST)
+			return anim->m_fLastScaledTime;
+		return ThisStdCall<float>(0x493800, animData, anim);
+	}));
 }
 
 void WriteDelayedHooks()

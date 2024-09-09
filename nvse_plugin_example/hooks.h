@@ -23,6 +23,7 @@ struct PluginINISettings
     bool fixWrongPrnKey = false;
     bool fixWrongAnimName = false;
     bool fixMissingPrnKey = false;
+    bool fixReloadStartAllowReloadTweak = false;
 };
 
 struct PluginGlobalData
