@@ -269,6 +269,8 @@ struct SavedAnims
 	bool hasStartAnim = false;
 	bool hasPartialReload = false;
 	bool disabled = false;
+	std::string_view additiveAnimPath;
+	
 	SavedAnims() = default;
 
 	bool ContainsAnim(const BSAnimGroupSequence* anim) const
@@ -437,6 +439,7 @@ struct BSAnimationContext
 std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData);
 std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UInt16 groupId, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
+float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence);
 
 std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData);
 
@@ -570,7 +573,6 @@ extern std::unordered_set<BaseProcess*> g_allowedNextAnims;
 std::string_view GetAnimBasePath(std::string_view path);
 std::string_view ExtractCustomAnimGroupName(std::string_view path);
 
-float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence = nullptr);
 UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);
 float GetIniFloat(UInt32 addr);
 NiControllerSequence::InterpArrayItem* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);

@@ -104,6 +104,8 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (destAnim && currentAnim)
 	{
 		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
+		const auto easeTime = GetDefaultBlendTime(destAnim, currentAnim);
+		AdditiveSequences::Get().StopAdditiveSequenceFromParent(currentAnim, easeTime);
 	}
 	return result;
 }
@@ -585,6 +587,7 @@ void ApplyFixLoopingReloadStartHooks()
 
 PluginINISettings g_pluginSettings;
 PluginGlobalData g_globals;
+AdditiveSequences g_additiveSequences;
 
 void ApplyHooks()
 {
@@ -715,7 +718,7 @@ void ApplyHooks()
 	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
 	{
 		auto* defaultData = sequence->m_spTextKeys;
-		auto* anim1st = Find1stPersonRespectEndKeyAnim(g_thePlayer->firstPersonAnimData, sequence);
+		const auto* anim1st = Find1stPersonRespectEndKeyAnim(g_thePlayer->firstPersonAnimData, sequence);
 		if (anim1st)
 			return anim1st->m_spTextKeys;
 		return defaultData;
@@ -785,6 +788,10 @@ void ApplyHooks()
 			*addressOfReturn = 0x49979C;
 			return static_cast<eAnimSequence>(0);
 		}
+		if (auto* sequence = animData->animSequence[sequenceId])
+		{
+			AdditiveSequences::Get().StopAdditiveSequenceFromParent(sequence);
+		}
 		*addressOfReturn = 0x4994FC;
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
 	}));
@@ -820,7 +827,7 @@ void ApplyHooks()
 	{
 		const static auto shouldApplyAttackLoopToAim = []
 		{
-			auto* animData = g_thePlayer->GetAnimData();
+			const auto* animData = g_thePlayer->GetAnimData();
 			const auto* baseProcess = g_thePlayer->baseProcess;
 			const auto* attackSequence = animData->animSequence[kSequence_Weapon];
 			const auto* ammoInfo = baseProcess->GetAmmoInfo();

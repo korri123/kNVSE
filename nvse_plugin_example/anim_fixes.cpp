@@ -43,7 +43,7 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 #ifdef _DEBUG
 		auto& tag = tags[idx++];
 #endif
-		auto* interpolator = block.interpolator;
+		auto* interpolator = block.m_spInterpolator;
 		if (interpolator && IS_TYPE(interpolator, NiTransformInterpolator))
 		{
 			unsigned int numKeys;
@@ -203,7 +203,7 @@ void AnimFixes::EraseNegativeAnimKeys(const BSAnimGroupSequence* anim)
 		return;
 	for (const auto& block : anim->GetControlledBlocks())
 	{
-		auto* interp = block.interpolator;
+		auto* interp = block.m_spInterpolator;
 		if (!interp || NOT_TYPE(interp, NiTransformInterpolator))
 			continue;
 		unsigned int numKeys;

@@ -181,8 +181,8 @@ float CalculateTransitionBlendTime(AnimData* animData, BSAnimGroupSequence* src,
 	auto* destInterpItem = dst->GetControlledBlock(blockName);
 	if (!srcInterpItem || !destInterpItem)
 		return blend;
-	auto* srcInterp = srcInterpItem->interpolator;
-	auto* destInterp = destInterpItem->interpolator;
+	auto* srcInterp = srcInterpItem->m_spInterpolator;
+	auto* destInterp = destInterpItem->m_spInterpolator;
 	if (!srcInterp || !destInterp)
 		return blend;
 	NiQuatTransform destTransform;
@@ -425,9 +425,9 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
     std::unordered_map<NiBlendInterpolator*, NiControllerSequence::InterpArrayItem*> sourceInterpMap;
     for (auto& interp : sourceControlledBlocks)
     {
-        if (!interp.interpolator || !interp.blendInterpolator || interp.priority == 0xFF)
+        if (!interp.m_spInterpolator || !interp.m_pkBlendInterp || interp.m_ucPriority == 0xFF)
             continue;
-        sourceInterpMap.emplace(interp.blendInterpolator, &interp);
+        sourceInterpMap.emplace(interp.m_pkBlendInterp, &interp);
     }
     const auto destControlledBlocks = pkDest->GetControlledBlocks();
     const auto tags = pkDest->GetIDTags();
@@ -439,20 +439,20 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
     for (auto& destBlock : destControlledBlocks)
     {
         const auto& tag = tags[index++];
-        auto blendInterpolator = destBlock.blendInterpolator;
-        if (!destBlock.interpolator || !blendInterpolator || destBlock.priority == 0xFF)
+        auto blendInterpolator = destBlock.m_pkBlendInterp;
+        if (!destBlock.m_spInterpolator || !blendInterpolator || destBlock.m_ucPriority == 0xFF)
             continue;
         if (s_ignoredInterps.contains(tag.m_kAVObjectName.CStr()))
             continue;
         if (auto it = sourceInterpMap.find(blendInterpolator); it != sourceInterpMap.end())
         {
             const auto& sourceInterp = *it->second;
-            if (destBlock.priority != sourceInterp.priority)
+            if (destBlock.m_ucPriority != sourceInterp.m_ucPriority)
                 continue;
             std::span blendInterpItems(blendInterpolator->m_pkInterpArray, blendInterpolator->m_ucArraySize);
             auto destInterpItem = std::ranges::find_if(blendInterpItems, [&](const NiBlendInterpolator::InterpArrayItem& item)
             {
-                return item.m_spInterpolator == destBlock.interpolator;
+                return item.m_spInterpolator == destBlock.m_spInterpolator;
             });
             if (destInterpItem == blendInterpItems.end())
                 continue;
@@ -460,7 +460,7 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
             if (newPriority > blendInterpolator->m_cHighPriority)
             {
                 blendInterpolator->m_cHighPriority = newPriority;
-                blendInterpolator->m_cNextHighPriority = destBlock.priority;
+                blendInterpolator->m_cNextHighPriority = destBlock.m_ucPriority;
             }
         }
     }
@@ -506,7 +506,7 @@ void BlendFixes::ApplyHooks()
 		auto* block = anim->GetControlledBlock("Weapon");
 		if (!block)
 			return result;
-		auto* interp = block->interpolator;
+		auto* interp = block->m_spInterpolator;
 		if (NOT_TYPE(interp, NiTransformInterpolator))
 			return result;
 		interp->Pause();

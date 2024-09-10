@@ -236,6 +236,7 @@ void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
     }
 }
 
+#define ADDITIVE_ANIMS 1
 
 bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInterpTarget,
                                                NiQuatTransform& kValue)
@@ -252,18 +253,29 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
     bool bScaleChanged = false;
 
     bool bFirstRotation = true;
+    
     for (unsigned char uc = 0; uc < this->m_ucArraySize; uc++)
     {
         InterpArrayItem& kItem = this->m_pkInterpArray[uc];
-        if (kItem.m_spInterpolator && kItem.m_fNormalizedWeight > 0.0f)
+        float fNormalizedWeight = kItem.m_fNormalizedWeight;
+        if (kItem.m_spInterpolator && fNormalizedWeight > 0.0f)
         {
             float fUpdateTime = fTime;
             if (!this->GetUpdateTimeForItem(fUpdateTime, kItem))
             {
-                fTotalTransWeight -= kItem.m_fNormalizedWeight;
-                fTotalScaleWeight -= kItem.m_fNormalizedWeight;
+                fTotalTransWeight -= fNormalizedWeight;
+                fTotalScaleWeight -= fNormalizedWeight;
                 continue;
             }
+
+#if ADDITIVE_ANIMS
+            auto& kAdditiveMgr = AdditiveSequences::Get();
+            const BSAnimGroupSequence* pkSequence = kAdditiveMgr.GetSequenceByInterpolator(kItem.m_spInterpolator);
+            if (pkSequence && kAdditiveMgr.IsAdditiveSequence(pkSequence))
+            {
+                fNormalizedWeight = pkSequence->m_fSeqWeight * kItem.m_fEaseSpinner;
+            }
+#endif
 
             NiQuatTransform kTransform;
             bool bSuccess = kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kTransform);
@@ -275,7 +287,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
                 if (kTransform.IsTranslateValid())
                 {
                     kFinalTranslate += kTransform.GetTranslate() *
-                        kItem.m_fNormalizedWeight;
+                        fNormalizedWeight;
                     bTransChanged = true;
                 }
                 else
@@ -319,7 +331,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
 
                     // Multiply in the weights to the quaternions.
                     // Note that this makes them non-rotations.
-                    kRotValue = kRotValue * kItem.m_fNormalizedWeight;
+                    kRotValue = kRotValue * fNormalizedWeight;
 
                     // Accumulate the total weighted values into the 
                     // rotation
@@ -341,7 +353,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
                 if (kTransform.IsScaleValid())
                 {
                     fFinalScale += kTransform.GetScale() *
-                        kItem.m_fNormalizedWeight;
+                        fNormalizedWeight;
                     bScaleChanged = true;
                     NIASSERT(fFinalScale < 1000.0f && fFinalScale > -1000.0f);
                 }
@@ -357,8 +369,8 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
             {
                 // If the update failed, we should 
                 // remove the weights of the interpolator
-                fTotalTransWeight -= kItem.m_fNormalizedWeight;
-                fTotalScaleWeight -= kItem.m_fNormalizedWeight;
+                fTotalTransWeight -= fNormalizedWeight;
+                fTotalScaleWeight -= fNormalizedWeight;
             }
         }
     }
@@ -637,7 +649,26 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
 
 void NiControllerSequence::AttachInterpolators(char cPriority)
 {
+#ifndef _DEBUG
     ThisStdCall(0xA30900, this, cPriority);
+#else
+    for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
+    {
+        InterpArrayItem &kItem = m_pkInterpArray[ui];
+        if (kItem.m_spInterpolator != NULL)
+        {
+            // kItem.m_pkBlendInterp may be NULL if the interpolator was
+            // not successfully attached.
+            if (kItem.m_pkBlendInterp != NULL)
+            {
+                const unsigned int cInterpPriority = kItem.m_ucPriority != 0xFF ? kItem.m_ucPriority : cPriority;
+                kItem.m_ucBlendIdx = kItem.m_pkBlendInterp->AddInterpInfo(
+                    kItem.m_spInterpolator, 0.0f, cInterpPriority);
+                assert(kItem.m_ucBlendIdx != INVALID_INDEX);
+            }
+        }
+    }
+#endif
 }
 
 bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
@@ -769,6 +800,11 @@ void NiControllerSequence::SetTimePassed(float fTime, bool bUpdateInterpolators)
     ThisStdCall(0xA328B0, this, fTime, bUpdateInterpolators);
 }
 
+float BSAnimGroupSequence::GetEasingTime() const
+{
+    return GetDefaultBlendTime(this, nullptr);
+}
+
 bool NiControllerManager::BlendFromPose(NiControllerSequence* pkSequence, float fDestFrame, float fDuration,
                                         int iPriority, NiControllerSequence* pkSequenceToSynchronize)
 {
@@ -879,7 +915,7 @@ void __fastcall NiControllerSequence_AttachInterpolatorsHook(NiControllerSequenc
     std::span interpItems(_this->m_pkInterpArray, _this->m_uiArraySize);
     for (auto& interp : interpItems)
     {
-        g_interpsToSequenceMap[interp.interpolator] = _this;
+        g_interpsToSequenceMap[interp.m_spInterpolator] = _this;
     }
     ThisStdCall(0xA30900, _this, cPriority);
 }
@@ -890,7 +926,7 @@ void __fastcall NiControllerSequence_DetachInterpolatorsHook(NiControllerSequenc
     std::span interpItems(_this->m_pkInterpArray, _this->m_uiArraySize);
     for (auto& interp : interpItems)
     {
-        g_interpsToSequenceMap.erase(interp.interpolator);
+        g_interpsToSequenceMap.erase(interp.m_spInterpolator);
     }
 }
 
@@ -982,7 +1018,7 @@ NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager
 void ApplyNiHooks()
 {
 #if _DEBUG
-    // NiHooks::WriteHooks();
+    NiHooks::WriteHooks();
 #endif
 #if EXPERIMENTAL_HOOKS
 

@@ -195,6 +195,11 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
 						std::unique_lock lock(g_loadCustomAnimationMutex);
 						auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
+						const auto stem = sv::get_file_stem(path);
+						if (sv::ends_with_ci(stem, "_additive"))
+						{
+							AdditiveSequences::Get().AddAdditiveSequence(anim);
+						}
 						return iter.first->second;
 					}
 					ERROR_LOG("Map returned null anim " + std::string(path));
@@ -689,13 +694,18 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId)
 {
-	if (const auto animCtx = LoadCustomAnimation(*result.animBundle, groupId, animData))
+	auto& animBundle = *result.animBundle;
+	if (const auto animCtx = LoadCustomAnimation(animBundle, groupId, animData))
 	{
 		BSAnimGroupSequence* anim = animCtx->anim;
 		if (!anim)
 			return nullptr;
 		SubscribeOnActorReload(animData->actor, ReloadSubscriber::Partial);
 		HandleExtraOperations(animData, anim);
+		if (!animBundle.additiveAnimPath.empty())
+		{
+			AdditiveSequences::Get().PlayAdditiveAnim(animData, anim, animBundle.additiveAnimPath);
+		}
 		return anim;
 	}
 	ERROR_LOG(FormatString("Failed to load animation for group %X", groupId));
@@ -1017,6 +1027,13 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		stack.emplace_back(std::make_unique<SavedAnims>());
 	
 	auto& anims = *stack.back();
+
+	if (const auto stem = sv::get_file_stem(path); sv::ends_with_ci(stem, "_additive"))
+	{
+		anims.additiveAnimPath = path;
+		return true;
+	}
+	
 	anims.anims.emplace_back(std::make_unique<AnimPath>(path));
 	anims.matchBaseGroupId = data.matchBaseGroupId;
 	anims.conditionScript = data.conditionScript;
@@ -1608,6 +1625,9 @@ float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimG
 	const auto defaultBlend = GetIniFloat(0x11C56FC);
 	const auto blendMult = GetIniFloat(0x11C5724);
 
+	if (!destSequence->animGroup)
+		return defaultBlend;
+
 	const float sourceBlendOut = sourceSequence ? max(destSequence->animGroup->blend, destSequence->animGroup->blendOut) : 0;
 	const float destBlendIn = max(destSequence->animGroup->blend, destSequence->animGroup->blendIn);
 
@@ -2148,7 +2168,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 				return true;
 		}
 		if (duration == FLT_MIN)
-			duration = GetDefaultBlendTime(anim);
+			duration = GetDefaultBlendTime(anim, nullptr);
 		auto* manager = anim->m_pkOwner;
 		if (anim->m_eState != kAnimState_Inactive)
 			GameFuncs::DeactivateSequence(manager, anim, 0.0f);
@@ -2392,7 +2412,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* interp = FindAnimInterp(thisObj, animPath, interpName);
 		if (!interp)
 			return true;
-		*result = interp->priority;
+		*result = interp->m_ucPriority;
 		return true;
 	});
 
@@ -2408,7 +2428,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* interp = FindAnimInterp(thisObj, animPath, interpName);
 		if (!interp)
 			return true;
-		interp->priority = static_cast<UInt8>(priority);
+		interp->m_ucPriority = static_cast<UInt8>(priority);
 		*result = 1;
 		return true;
 	});
@@ -2472,7 +2492,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			auto* dstControlledBlock = destAnim->GetControlledBlock(tag.m_kAVObjectName.CStr());
 			if (dstControlledBlock)
 			{
-				dstControlledBlock->priority = srcControlledBlock.priority;
+				dstControlledBlock->m_ucPriority = srcControlledBlock.m_ucPriority;
 				*result = *result + 1;
 			}
 			++idx;

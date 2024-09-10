@@ -1232,16 +1232,16 @@ struct NiTCBFloatKey : NiFloatKey
 class NiTransformData : public NiObject
 {
 public:
-	unsigned __int16 m_uiNumRotKeys;
-	unsigned __int16 m_uiNumPosKeys;
-	unsigned __int16 m_uiNumScaleKeys;
+	UInt16 m_uiNumRotKeys;
+	UInt16 m_uiNumPosKeys;
+	UInt16 m_uiNumScaleKeys;
 	NiAnimationKey::KeyType m_eRotType;
 	NiAnimationKey::KeyType m_ePosType;
 	NiAnimationKey::KeyType m_eScaleType;
 
-	unsigned __int8 m_ucRotSize;
-	unsigned __int8 m_ucPosSize;
-	unsigned __int8 m_ucScaleSize;
+	UInt8 m_ucRotSize;
+	UInt8 m_ucPosSize;
+	UInt8 m_ucScaleSize;
 	NiRotKey* m_pkRotKeys;
 	NiPosKey* m_pkPosKeys;
 	NiFloatKey* m_pkScaleKeys;
@@ -1424,9 +1424,7 @@ public:
 	UInt16				m_usLastTransIdx;
 	UInt16				m_usLastRotIdx;
 	UInt16				m_usLastScaleIdx;
-	UInt32				unk38;
-	UInt32				unk3C;
-	UInt32				unk40;
+	NiPoint3			m_kDefaultTranslate;
 	bool				bPose;
 	
 	NiFloatKey* GetScaleData(unsigned int& uiNumKeys, NiFloatKey::KeyType& eType, unsigned char& ucSize) const
@@ -1529,6 +1527,11 @@ class NiInterpController : public NiTimeController
 class NiBlendInterpolator : public NiInterpolator
 {
 public:
+	virtual UInt8 AddInterpInfo(NiInterpolator *pkInterpolator, float fWeight, char cPriority, float fEaseSpinner = 1.0f);
+	virtual void *Unk_38();
+	virtual void *Unk_39();
+	virtual void *Unk_3A();
+	
 	enum
 	{
 		MANAGER_CONTROLLED_MASK = 0X0001,
@@ -1826,52 +1829,18 @@ public:
 
 	enum
 	{
-		kState_Inactive = 0,
-		kState_Animating,
-		kState_EaseIn,
-		kState_EaseOut,
-		kState_TransSource,
-		kState_TransDest,
-		kState_MorphSource
-	};
-
-	enum
-	{
 		kCycle_Loop = 0,
 		kCycle_Reverse,
 		kCycle_Clamp,
 	};
 
-	// 10
-	struct Unk014
-	{
-		NiRefObject	* unk00;	// 00
-		NiRefObject	* unk04;	// 04
-		UInt32		unk08;		// 08
-		UInt8		unk0C;		// 0C
-		UInt8		unk0D;		// 0D
-		UInt8		pad0E[2];	// 0E
-	};
-
-	// 10
-	struct Unk018
-	{
-		NiRefObject	* unk00;	// 00
-		UInt16		unk04;		// 04
-		UInt16		unk06;		// 06
-		UInt16		unk08;		// 08
-		UInt16		unk0A;		// 0A
-		UInt16		unk0C;		// 0C
-		UInt8		pad0E[2];	// 0E
-	};
-
 	struct InterpArrayItem
 	{
-		NiTransformInterpolator* interpolator;
-		NiMultiTargetTransformController* multiTargetCtrl;
-		NiBlendInterpolator* blendInterpolator;
-		UInt8 blendIdx;
-		UInt8 priority;
+		NiTransformInterpolator* m_spInterpolator;
+		NiMultiTargetTransformController* m_spInterpCtlr;
+		NiBlendInterpolator* m_pkBlendInterp;
+		UInt8 m_ucBlendIdx;
+		UInt8 m_ucPriority;
 		UInt8 gap0E[2];
 	};
 
@@ -1989,6 +1958,7 @@ public:
 	NiPointer<TESAnimGroup> animGroup;	//068
 
 	BSAnimGroupSequence* Get3rdPersonCounterpart() const;
+	float GetEasingTime() const;
 };
 STATIC_ASSERT(sizeof(BSAnimGroupSequence) == 0x78);
 
