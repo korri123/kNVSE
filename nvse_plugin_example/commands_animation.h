@@ -196,6 +196,8 @@ struct AnimTime
 
 	AnimData* GetAnimData(Actor* actor) const
 	{
+		if (!actor || !actor->baseProcess)
+			return nullptr;
 		if (firstPerson)
 			return g_thePlayer->firstPersonAnimData;
 		return actor->baseProcess->GetAnimData();

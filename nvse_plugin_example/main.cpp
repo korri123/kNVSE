@@ -333,7 +333,7 @@ void HandleCustomTextKeys()
 #if _DEBUG
 		auto animTimeDupl = TempObject(animTime); // see vals in debugger after erase
 #endif
-		if (!actor)
+		if (!actor || !actor->baseProcess)
 		{
 			erase();
 			continue;
