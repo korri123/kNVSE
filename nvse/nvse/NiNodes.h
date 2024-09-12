@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <ranges>
 #include <span>
 
@@ -1415,6 +1416,38 @@ struct NiQuatTransform
 
 		return kDest;
 	}
+
+	NiQuatTransform operator*(float fValue) const
+	{
+		NiQuatTransform kDest = *this;
+		if (kDest.IsTranslateValid())
+			kDest.SetTranslate(kDest.GetTranslate() * fValue);
+		if (kDest.IsRotateValid())
+			kDest.SetRotate(kDest.GetRotate() * fValue);
+		if (kDest.IsScaleValid())
+			kDest.SetScale(kDest.GetScale() * fValue);
+		return kDest;
+	}
+
+	NiQuatTransform operator-(const NiQuatTransform& kTransform) const
+	{
+		NiQuatTransform kDest{};
+		if (kTransform.IsTranslateValid() && IsTranslateValid())
+			kDest.SetTranslate(m_kTranslate - kTransform.GetTranslate());
+		else
+			kDest.SetTranslateValid(false);
+
+		if (kTransform.IsRotateValid() && IsRotateValid())
+			kDest.SetRotate(m_kRotate * kTransform.GetRotate().Inverse());
+		else
+			kDest.SetRotateValid(false);
+		
+		if (kTransform.IsScaleValid() && IsScaleValid())
+			kDest.SetScale(m_fScale - kTransform.GetScale());
+		else
+			kDest.SetScaleValid(false);
+		return kDest;
+	}
 };
 
 class NiTransformInterpolator : public NiKeyBasedInterpolator {
@@ -1467,6 +1500,36 @@ public:
 		return nullptr;
 	}
 
+	std::optional<NiQuatTransform> GetTransformAt(unsigned int uiIndex) const
+	{
+		unsigned int numKeys;
+		NiAnimationKey::KeyType keyType;
+		unsigned char keySize;
+		
+		auto* posData = GetPosData(numKeys, keyType, keySize);
+		NiPoint3 pos;
+		if (uiIndex >= numKeys)
+			pos = NiPoint3::INVALID_POINT;
+		else
+			pos = posData->GetKeyAt(uiIndex, keySize)->m_Pos;
+		
+		auto* rotData = GetRotData(numKeys, keyType, keySize);
+		NiQuaternion rot;
+		if (uiIndex >= numKeys)
+			rot = NiQuaternion::INVALID_QUATERNION;
+		else
+			rot = rotData->GetKeyAt(uiIndex, keySize)->GetQuaternion();
+
+		float scale;
+		auto* scaleData = GetScaleData(numKeys, keyType, keySize);
+		if (uiIndex >= numKeys)
+			scale = -NI_INFINITY;
+		else
+			scale = scaleData->GetKeyAt(uiIndex, keySize)->m_fValue;
+		
+		return NiQuatTransform(pos, rot, scale);
+	}
+
 	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
 
 	void Pause()
@@ -1476,10 +1539,24 @@ public:
 };
 static_assert(sizeof(NiTransformInterpolator) == 0x48);
 
+struct NiUpdateData;
+
 /* 12659 */
 class NiTimeController : public NiObject
 {
 public:
+
+	virtual void *Unk_23();
+	virtual void *Unk_24();
+	virtual void *Update(NiUpdateData *);
+	virtual void *SetTarget(NiNode *);
+	virtual void *Unk_27();
+	virtual void *Unk_28();
+	virtual void *Unk_29();
+	virtual void *OnPreDisplay();
+	virtual void *Unk_2B();
+	virtual void *Unk_2C();
+	
 	enum
 	{
 		ANIMTYPE_MASK           = 0x0001,
@@ -1519,169 +1596,6 @@ public:
 	}
 };
 static_assert(sizeof(NiTimeController) == 0x34);
-
-class NiInterpController : public NiTimeController
-{
-};
-
-class NiBlendInterpolator : public NiInterpolator
-{
-public:
-	virtual UInt8 AddInterpInfo(NiInterpolator *pkInterpolator, float fWeight, char cPriority, float fEaseSpinner = 1.0f);
-	virtual void *Unk_38();
-	virtual void *Unk_39();
-	virtual void *Unk_3A();
-	
-	enum
-	{
-		MANAGER_CONTROLLED_MASK = 0X0001,
-		ONLY_USE_HIGHEST_WEIGHT_MASK = 0X0002,
-		COMPUTE_NORMALIZED_WEIGHTS_MASK = 0x0004
-	};
-	
-	struct InterpArrayItem
-	{
-		NiPointer<NiTransformInterpolator> m_spInterpolator;
-		float m_fWeight;
-		float m_fNormalizedWeight;
-		char m_cPriority;
-		float m_fEaseSpinner;
-		float m_fUpdateTime;
-	};
-	unsigned char m_uFlags;
-	unsigned char m_ucArraySize;
-	unsigned char m_ucInterpCount;
-	unsigned char m_ucSingleIdx;
-	unsigned char m_cHighPriority;
-	unsigned char m_cNextHighPriority;
-	InterpArrayItem* m_pkInterpArray;
-	NiInterpolator* m_pkSingleInterpolator;
-	float m_fWeightThreshold;
-	float m_fSingleTime;
-	float m_fHighSumOfWeights;
-	float m_fNextHighSumOfWeights;
-	float m_fHighEaseSpinner;
-
-	bool GetComputeNormalizedWeights() const
-	{
-		return GetBit(COMPUTE_NORMALIZED_WEIGHTS_MASK);
-	}
-
-	void SetComputeNormalizedWeights(bool bComputeNormalizedWeights)
-	{
-		SetBit(bComputeNormalizedWeights, COMPUTE_NORMALIZED_WEIGHTS_MASK);
-	}
-
-	bool GetOnlyUseHighestWeight() const
-	{
-		return GetBit(ONLY_USE_HIGHEST_WEIGHT_MASK);
-	}
-
-	bool GetManagerControlled() const
-	{
-		return GetBit(MANAGER_CONTROLLED_MASK);
-	}
-
-	bool GetUpdateTimeForItem(float& fTime, InterpArrayItem& kItem)
-	{
-		NiInterpolator* pkInterpolator = kItem.m_spInterpolator.data;
-		if (pkInterpolator && kItem.m_fNormalizedWeight != 0.0f)
-		{
-			if (GetManagerControlled())
-			{
-				fTime = kItem.m_fUpdateTime;
-			}
-
-			if (fTime == INVALID_TIME)
-			{
-				return false;
-			}
-			return true;
-		}
-		return false;
-	}
-
-	void ComputeNormalizedWeights();
-
-};
-static_assert(sizeof(NiBlendInterpolator) == 0x30);
-
-class NiBlendAccumTransformInterpolator : public NiBlendInterpolator
-{
-public:
-	struct AccumArrayItem
-	{
-		float m_fLastTime;
-		NiQuatTransform m_kLastValue;
-		NiQuatTransform m_kDeltaValue;
-		NiMatrix33 m_kRefFrame;
-	};
-	
-	NiQuatTransform m_kAccumulatedTransformValue;
-	AccumArrayItem *m_pkAccumArray;
-	bool m_bReset;
-
-	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
-};
-
-class NiBlendTransformInterpolator : public NiBlendInterpolator
-{
-	bool GetSingleUpdateTime(float& fTime)
-	{
-		NIASSERT(m_ucSingleIdx != INVALID_INDEX && 
-			m_pkSingleInterpolator != NULL);
-    
-		if (GetManagerControlled())
-		{
-			fTime = m_fSingleTime;
-		}
-
-		if (fTime == INVALID_TIME)
-		{
-			// The time for this interpolator has not been set. Do
-			// not update the interpolator.
-			return false;
-		}
-
-		return true;
-	}
-public:
-	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
-					 NiQuatTransform& kValue);
-
-	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
-
-	bool StoreSingleValue(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
-	{
-		if (!GetSingleUpdateTime(fTime))
-		{
-			kValue.MakeInvalid();
-			return false;
-		}
-
-		NIASSERT(m_pkSingleInterpolator != NULL);
-		if (m_pkSingleInterpolator->Update(fTime, pkInterpTarget, kValue))
-		{
-			return true;
-		}
-		else
-		{
-			kValue.MakeInvalid();
-			return false;
-		}
-	}
-};
-
-/* 44137 */
-class NiMultiTargetTransformController : NiInterpController
-{
-public:
-	NiBlendTransformInterpolator* m_pkBlendInterps;
-	NiAVObject** m_ppkTargets;
-	unsigned __int16 m_usNumInterps;
-
-	void _Update(float fTime, bool bSelective);
-};
 
 class NiGlobalStringTable : public NiMemObject {
 public:
@@ -1819,6 +1733,8 @@ struct NiFixedString
 
 };
 
+class NiInterpController;
+class NiBlendInterpolator;
 
 // 068
 class NiControllerSequence : public NiObject
@@ -1836,8 +1752,8 @@ public:
 
 	struct InterpArrayItem
 	{
-		NiTransformInterpolator* m_spInterpolator;
-		NiMultiTargetTransformController* m_spInterpCtlr;
+		NiInterpolator* m_spInterpolator;
+		NiInterpController* m_spInterpCtlr;
 		NiBlendInterpolator* m_pkBlendInterp;
 		UInt8 m_ucBlendIdx;
 		UInt8 m_ucPriority;
@@ -1905,6 +1821,7 @@ public:
 	bool bRemovableObjects;
 
 	InterpArrayItem* GetControlledBlock(const char* name) const;
+	InterpArrayItem* GetControlledBlock(const NiFixedString& name) const;
 
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
 	
@@ -1944,7 +1861,6 @@ public:
 	bool VerifyMatchingMorphKeys(NiControllerSequence *pkTimeSyncSeq) const;
 	bool CanSyncTo(NiControllerSequence *pkTargetSequence) const;
 	void SetTimePassed(float fTime, bool bUpdateInterpolators);
-	
 };
 ASSERT_SIZE(NiControllerSequence, 0x74);
 
@@ -1961,6 +1877,190 @@ public:
 	float GetEasingTime() const;
 };
 STATIC_ASSERT(sizeof(BSAnimGroupSequence) == 0x78);
+
+class NiInterpController : public NiTimeController
+{
+public:
+	virtual UInt16 GetInterpolatorCount();
+	virtual void *Unk_2E();
+	virtual void *Unk_2F();
+	virtual UInt16 GetInterpolatorIndexByIDTag(const NiControllerSequence::IDTag*) const;
+	virtual NiInterpolator* CreatePoseInterpolator(UInt16 index) const;
+	virtual void *SetInterpolator(NiInterpolator *, unsigned int);
+	virtual void *Unk_33();
+	virtual void *Unk_34();
+	virtual void *GetInterpolator();
+	virtual void *Unk_36();
+	virtual void *Unk_37();
+	virtual void *Unk_38(float, float);
+	virtual void *Unk_39();
+
+	NiAVObject* GetTargetNode(const NiControllerSequence::IDTag& idTag) const;
+};
+
+class NiBlendInterpolator : public NiInterpolator
+{
+public:
+	virtual UInt8 AddInterpInfo(NiInterpolator *pkInterpolator, float fWeight, char cPriority, float fEaseSpinner = 1.0f);
+	virtual void *Unk_38();
+	virtual void *Unk_39();
+	virtual void *Unk_3A();
+	
+	enum
+	{
+		MANAGER_CONTROLLED_MASK = 0X0001,
+		ONLY_USE_HIGHEST_WEIGHT_MASK = 0X0002,
+		COMPUTE_NORMALIZED_WEIGHTS_MASK = 0x0004
+	};
+	
+	struct InterpArrayItem
+	{
+		NiPointer<NiInterpolator> m_spInterpolator;
+		float m_fWeight;
+		float m_fNormalizedWeight;
+		char m_cPriority;
+		float m_fEaseSpinner;
+		float m_fUpdateTime;
+	};
+	unsigned char m_uFlags;
+	unsigned char m_ucArraySize;
+	unsigned char m_ucInterpCount;
+	unsigned char m_ucSingleIdx;
+	unsigned char m_cHighPriority;
+	unsigned char m_cNextHighPriority;
+	InterpArrayItem* m_pkInterpArray;
+	NiInterpolator* m_pkSingleInterpolator;
+	float m_fWeightThreshold;
+	float m_fSingleTime;
+	float m_fHighSumOfWeights;
+	float m_fNextHighSumOfWeights;
+	float m_fHighEaseSpinner;
+
+	bool GetComputeNormalizedWeights() const
+	{
+		return GetBit(COMPUTE_NORMALIZED_WEIGHTS_MASK);
+	}
+
+	void SetComputeNormalizedWeights(bool bComputeNormalizedWeights)
+	{
+		SetBit(bComputeNormalizedWeights, COMPUTE_NORMALIZED_WEIGHTS_MASK);
+	}
+
+	bool GetOnlyUseHighestWeight() const
+	{
+		return GetBit(ONLY_USE_HIGHEST_WEIGHT_MASK);
+	}
+
+	bool GetManagerControlled() const
+	{
+		return GetBit(MANAGER_CONTROLLED_MASK);
+	}
+
+	bool GetUpdateTimeForItem(float& fTime, InterpArrayItem& kItem, bool bAdditive)
+	{
+		NiInterpolator* pkInterpolator = kItem.m_spInterpolator.data;
+		if (pkInterpolator && (kItem.m_fNormalizedWeight != 0.0f || bAdditive))
+		{
+			if (GetManagerControlled())
+			{
+				fTime = kItem.m_fUpdateTime;
+			}
+
+			if (fTime == INVALID_TIME)
+			{
+				return false;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	void ComputeNormalizedWeights();
+
+};
+static_assert(sizeof(NiBlendInterpolator) == 0x30);
+
+class NiBlendAccumTransformInterpolator : public NiBlendInterpolator
+{
+public:
+	struct AccumArrayItem
+	{
+		float m_fLastTime;
+		NiQuatTransform m_kLastValue;
+		NiQuatTransform m_kDeltaValue;
+		NiMatrix33 m_kRefFrame;
+	};
+	
+	NiQuatTransform m_kAccumulatedTransformValue;
+	AccumArrayItem *m_pkAccumArray;
+	bool m_bReset;
+
+	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+};
+
+class NiBlendTransformInterpolator : public NiBlendInterpolator
+{
+	bool GetSingleUpdateTime(float& fTime)
+	{
+		NIASSERT(m_ucSingleIdx != INVALID_INDEX && 
+			m_pkSingleInterpolator != NULL);
+    
+		if (GetManagerControlled())
+		{
+			fTime = m_fSingleTime;
+		}
+
+		if (fTime == INVALID_TIME)
+		{
+			// The time for this interpolator has not been set. Do
+			// not update the interpolator.
+			return false;
+		}
+
+		return true;
+	}
+public:
+	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
+					 NiQuatTransform& kValue);
+
+	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+
+	bool StoreSingleValue(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
+	{
+		if (!GetSingleUpdateTime(fTime))
+		{
+			kValue.MakeInvalid();
+			return false;
+		}
+
+		NIASSERT(m_pkSingleInterpolator != NULL);
+		if (m_pkSingleInterpolator->Update(fTime, pkInterpTarget, kValue))
+		{
+			return true;
+		}
+		else
+		{
+			kValue.MakeInvalid();
+			return false;
+		}
+	}
+};
+
+/* 44137 */
+class NiMultiTargetTransformController : public NiInterpController
+{
+public:
+	NiBlendTransformInterpolator* m_pkBlendInterps;
+	NiAVObject** m_ppkTargets;
+	UInt16 m_usNumInterps;
+
+	void _Update(float fTime, bool bSelective);
+
+	std::span<NiAVObject*> GetTargets() const
+	{
+		return std::span(m_ppkTargets, m_usNumInterps);
+	}
+};
 
 const auto s = sizeof(BSAnimGroupSequence);
 

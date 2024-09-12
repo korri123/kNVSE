@@ -253,31 +253,74 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
     bool bScaleChanged = false;
 
     bool bFirstRotation = true;
+
+    auto& kAdditiveMgr = AdditiveSequences::Get();
     
     for (unsigned char uc = 0; uc < this->m_ucArraySize; uc++)
     {
         InterpArrayItem& kItem = this->m_pkInterpArray[uc];
         float fNormalizedWeight = kItem.m_fNormalizedWeight;
-        if (kItem.m_spInterpolator && fNormalizedWeight > 0.0f)
+        const bool bIsAdditiveInterp =  kAdditiveMgr.IsAdditiveInterpolator(kItem.m_spInterpolator);
+        if (kItem.m_spInterpolator && (fNormalizedWeight > 0.0f || bIsAdditiveInterp))
         {
             float fUpdateTime = fTime;
-            if (!this->GetUpdateTimeForItem(fUpdateTime, kItem))
+            if (!this->GetUpdateTimeForItem(fUpdateTime, kItem, bIsAdditiveInterp))
             {
                 fTotalTransWeight -= fNormalizedWeight;
                 fTotalScaleWeight -= fNormalizedWeight;
                 continue;
             }
-
+            NiQuatTransform kTransform;
+            
 #if ADDITIVE_ANIMS
-            auto& kAdditiveMgr = AdditiveSequences::Get();
-            const BSAnimGroupSequence* pkSequence = kAdditiveMgr.GetSequenceByInterpolator(kItem.m_spInterpolator);
-            if (pkSequence && kAdditiveMgr.IsAdditiveSequence(pkSequence))
+            if (bIsAdditiveInterp)
             {
-                fNormalizedWeight = pkSequence->m_fSeqWeight * kItem.m_fEaseSpinner;
+#if _DEBUG
+                const char* targetNodeName = kAdditiveMgr.GetTargetNodeName(kItem.m_spInterpolator.data);
+#endif
+                if (auto kBaseTransformResult = kAdditiveMgr.GetBaseTransform(kItem.m_spInterpolator.data))
+                {
+                    const NiQuatTransform& kBaseTransform = *kBaseTransformResult;
+                    const bool bSuccess = kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kTransform);
+                    if (bSuccess)
+                    {
+                        NiQuatTransform kSubtractedTransform = kTransform - kBaseTransform;
+                        kSubtractedTransform = kSubtractedTransform * kItem.m_fEaseSpinner;
+                        if (kSubtractedTransform.IsTranslateValid())
+                            kFinalTranslate += kSubtractedTransform.GetTranslate();
+                        if (kSubtractedTransform.IsRotateValid())
+                        {
+                            auto kRotValue = kSubtractedTransform.GetRotate();
+                            if (!bFirstRotation)
+                            {
+                                float fCos = NiQuaternion::Dot(kFinalRotate,
+                                                       kRotValue);
+
+                                // If the angle is negative, we need to invert the
+                                // quat to get the best path.
+                                if (fCos < 0.0f)
+                                {
+                                    kRotValue = -kRotValue;
+                                }
+                            }
+                            else
+                                bFirstRotation = false;
+                            kFinalRotate = kRotValue * kFinalRotate;
+                            bRotChanged = true;
+                        }
+                        if (kSubtractedTransform.IsScaleValid())
+                            fFinalScale += kSubtractedTransform.GetScale();
+                    }
+                }
+                else
+                {
+                    DebugBreak();
+                }
+                continue;
             }
 #endif
 
-            NiQuatTransform kTransform;
+           
             bool bSuccess = kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kTransform);
 
             if (bSuccess)
@@ -519,8 +562,19 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
         m_pkInterpArray[m_ucSingleIdx].m_fNormalizedWeight = 1.0f;
         return;
     }
+    const auto& kAdditiveManager = AdditiveSequences::Get();
     if (m_ucInterpCount == 2)
     {
+#if ADDITIVE_ANIMS
+        const bool bIsFirstAdditive = kAdditiveManager.IsAdditiveInterpolator(m_pkInterpArray[0].m_spInterpolator);
+        const bool bIsSecondAdditive = kAdditiveManager.IsAdditiveInterpolator(m_pkInterpArray[1].m_spInterpolator);
+        if (bIsFirstAdditive && !bIsSecondAdditive)
+            m_pkInterpArray[1].m_fNormalizedWeight = 1.0f;
+        if (bIsSecondAdditive && !bIsFirstAdditive)
+            m_pkInterpArray[0].m_fNormalizedWeight = 1.0f;
+        if (bIsFirstAdditive || bIsSecondAdditive)
+            return;
+#endif
         ThisStdCall(0xA36BD0, this); // NiBlendInterpolator::ComputeNormalizedWeightsFor2
         return;
     }
@@ -539,6 +593,10 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
             auto& kItem = m_pkInterpArray[uc];
             if (kItem.m_spInterpolator != NULL)
             {
+#if ADDITIVE_ANIMS
+                if (kAdditiveManager.IsAdditiveInterpolator(kItem.m_spInterpolator))
+                    continue;
+#endif
                 float fRealWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
                 if (kItem.m_cPriority == m_cHighPriority)
                 {
@@ -570,6 +628,10 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
         auto& kItem = m_pkInterpArray[uc];
         if (kItem.m_spInterpolator != NULL)
         {
+#if ADDITIVE_ANIMS
+            if (kAdditiveManager.IsAdditiveInterpolator(kItem.m_spInterpolator))
+                continue;
+#endif
             if (kItem.m_cPriority == m_cHighPriority)
             {
                 kItem.m_fNormalizedWeight = m_fHighEaseSpinner *
@@ -600,6 +662,10 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
             if (kItem.m_spInterpolator != NULL &&
                 kItem.m_fNormalizedWeight != 0.0f)
             {
+#if ADDITIVE_ANIMS
+                if (kAdditiveManager.IsAdditiveInterpolator(kItem.m_spInterpolator))
+                    continue;
+#endif
                 if (kItem.m_fNormalizedWeight < m_fWeightThreshold)
                 {
                     kItem.m_fNormalizedWeight = 0.0f;
@@ -619,6 +685,10 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
         for (uc = 0; uc < m_ucArraySize; uc++)
         {
             auto& kItem = m_pkInterpArray[uc];
+#if ADDITIVE_ANIMS
+            if (kAdditiveManager.IsAdditiveInterpolator(kItem.m_spInterpolator))
+                continue;
+#endif
             if (kItem.m_fNormalizedWeight != 0.0f)
             {
                 kItem.m_fNormalizedWeight = kItem.m_fNormalizedWeight *
@@ -634,6 +704,10 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
         unsigned char ucHighIndex = INVALID_INDEX;
         for (uc = 0; uc < m_ucArraySize; uc++)
         {
+#if ADDITIVE_ANIMS
+            if (kAdditiveManager.IsAdditiveInterpolator(m_pkInterpArray[uc].m_spInterpolator))
+                continue;
+#endif
             if (m_pkInterpArray[uc].m_fNormalizedWeight > fHighest)
             {
                 ucHighIndex = uc;
@@ -803,6 +877,28 @@ void NiControllerSequence::SetTimePassed(float fTime, bool bUpdateInterpolators)
 float BSAnimGroupSequence::GetEasingTime() const
 {
     return GetDefaultBlendTime(this, nullptr);
+}
+
+NiAVObject* NiInterpController::GetTargetNode(const NiControllerSequence::IDTag& idTag) const
+{
+    const auto index = GetInterpolatorIndexByIDTag(&idTag);
+    if (IS_TYPE(this, NiMultiTargetTransformController))
+    {
+        auto* multiTargetTransformController = static_cast<const NiMultiTargetTransformController*>(this);
+        if (index == 0xFFFF)
+            return nullptr;
+        return multiTargetTransformController->GetTargets()[index];
+    }
+    if (index != 0)
+    {
+#ifdef _DEBUG
+        if (IsDebuggerPresent())
+            DebugBreak();
+        ERROR_LOG("GetTargetNode: index is not 0");
+#endif
+        return nullptr;
+    }
+    return DYNAMIC_CAST(this->m_pkTarget, NiObjectNET, NiAVObject);
 }
 
 bool NiControllerManager::BlendFromPose(NiControllerSequence* pkSequence, float fDestFrame, float fDuration,

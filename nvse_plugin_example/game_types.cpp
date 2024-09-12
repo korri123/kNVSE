@@ -116,6 +116,17 @@ NiControllerSequence::InterpArrayItem* NiControllerSequence::GetControlledBlock(
 	return nullptr;
 }
 
+NiControllerSequence::InterpArrayItem* NiControllerSequence::GetControlledBlock(const NiFixedString& name) const
+{
+	std::span idTags(m_pkIDTagArray, m_uiArraySize);
+	const auto it = std::ranges::find_if(idTags, [&](const IDTag& tag) { return name.data == tag.m_kAVObjectName.data; });
+	if (it != idTags.end())
+	{
+		return m_pkInterpArray + std::distance(idTags.begin(), it);
+	}
+	return nullptr;
+}
+
 BSAnimGroupSequence* BSAnimGroupSequence::Get3rdPersonCounterpart() const
 {
 	auto* animData = g_thePlayer->baseProcess->GetAnimData();

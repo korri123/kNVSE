@@ -54,6 +54,7 @@ struct NiPoint3
 	}
 
 	const static NiPoint3 ZERO;
+	const static NiPoint3 INVALID_POINT;
 
 	bool operator== (const NiPoint3& pt) const
 	{
@@ -168,6 +169,7 @@ struct NiQuaternion
 	NiQuaternion(float w, float x, float y, float z) : m_fW(w), m_fX(x), m_fY(y), m_fZ(z) { }
 
 	const static NiQuaternion IDENTITY;
+	const static NiQuaternion INVALID_QUATERNION;
 
 	static float Dot(const NiQuaternion& p, const NiQuaternion& q)
 	{
@@ -236,6 +238,17 @@ struct NiQuaternion
 	float GetZ() const
 	{
 		return m_fZ;
+	}
+
+	NiQuaternion Inverse() const
+	{
+		float fNorm = m_fW * m_fW + m_fX * m_fX + m_fY * m_fY + m_fZ * m_fZ;
+		if (fNorm > 0.0f)
+		{
+			float fInvNorm = 1.0f / fNorm;
+			return NiQuaternion(m_fW * fInvNorm, -m_fX * fInvNorm, -m_fY * fInvNorm, -m_fZ * fInvNorm);
+		}
+		return IDENTITY;
 	}
 	
 	NiQuaternion operator+ (const NiQuaternion& q) const
