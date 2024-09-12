@@ -132,12 +132,18 @@ public:
 				else
 					return;
 			}
-			auto& [item, nextTime] = execution->items.at(index);
-			if (time >= nextTime)
+			while (index < execution->items.size())
 			{
-				//if (!IsPlayersOtherAnimData(animData))
+				auto& [item, nextTime] = execution->items.at(index);
+				if (time >= nextTime)
+				{
 					f(item);
-				++index;
+					++index;
+				}
+				else
+				{
+					break;
+				}
 			}
 		}
 	};

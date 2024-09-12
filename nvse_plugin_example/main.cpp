@@ -342,15 +342,13 @@ void HandleCustomTextKeys()
 
 		const auto isAnimPlaying = _L(, anim->m_eState != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim);
 		
-		if (IsActorInvalid(actor) || !animData
-			// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
-			|| (!animTime.respectEndKey && !isAnimPlaying()))
+		if (IsActorInvalid(actor) || !animData)
 		{
 			erase();
 			continue;
 		}
 
-		const auto time = GetAnimTime(animData, anim);
+		const auto time = anim->m_fLastScaledTime;
 	
 		if (animTime.respectEndKey)
 		{
@@ -396,7 +394,7 @@ void HandleCustomTextKeys()
 				respectEndKeyData.povState = POVSwitchState::POV1st;
 			}
 		}
-		if (!isAnimPlaying())
+		if (!isAnimPlaying() && animTime.respectEndKey)
 		{
 			++it;
 			continue; // we don't want text keys to apply on the pollCondition anim here but we need to track it until 3rd person has changed anim
@@ -457,6 +455,13 @@ void HandleCustomTextKeys()
 				}
 			}
 		}
+		// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
+		// moved below so that keys on end frame are handled correctly (functional backpack by mrshersh)
+		if (!animTime.respectEndKey && !isAnimPlaying())
+		{
+			erase();
+			continue;
+		}
 		++it;
 	}
 }
@@ -504,7 +509,7 @@ void HandleBurstFire()
 			continue;
 		}
 		//timePassed += GetTimePassed(animData, anim->animGroup->groupID);
-		const auto timePassed = GetAnimTime(animData, anim);
+		const auto timePassed = anim->m_fLastScaledTime;
 		if (timePassed <= anim->animGroup->keyTimes[kSeqState_HitOrDetach])
 		{
 			// first hit handled by engine
