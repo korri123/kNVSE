@@ -159,7 +159,11 @@ private:
                 if (const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
                            bSuccess && additiveBlock && additiveBlock->m_spInterpolator)
                 {
-                    additiveInterpBaseTransforms[additiveBlock->m_spInterpolator] = baseTransform;
+                    if (NiBlendInterpolator* blendInterpolator = baseBlock.m_pkBlendInterp)
+                    {
+                        additiveInterpBaseTransforms[additiveBlock->m_spInterpolator] = baseTransform;
+                        blendInterpolator->SetHasAdditiveTransforms(true);
+                    }
                 }
             }
         }

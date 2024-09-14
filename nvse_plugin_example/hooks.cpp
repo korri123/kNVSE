@@ -4,6 +4,7 @@
 #include <span>
 #include <unordered_set>
 
+#include "additive_anims.h"
 #include "anim_fixes.h"
 #include "GameProcess.h"
 #include "GameObjects.h"
@@ -898,6 +899,8 @@ void ApplyHooks()
 			return anim->m_fLastScaledTime;
 		return ThisStdCall<float>(0x493800, animData, anim);
 	}));
+
+	AdditiveAnimations::WriteHooks();
 }
 
 void WriteDelayedHooks()

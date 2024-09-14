@@ -389,6 +389,7 @@
     <ClCompile Include="..\nvse\nvse\SafeWrite.cpp" />
     <ClCompile Include="..\nvse\nvse\Utilities.cpp" />
     <ClCompile Include="..\nvse\nvse\utility.cpp" />
+    <ClCompile Include="additive_anims.cpp" />
     <ClCompile Include="anim_fixes.cpp" />
     <ClCompile Include="bethesda\archive.cpp" />
     <ClCompile Include="bethesda\bsfile.cpp" />
@@ -446,6 +447,7 @@
     <ClInclude Include="..\nvse\nvse\SafeWrite.h" />
     <ClInclude Include="..\nvse\nvse\Utilities.h" />
     <ClInclude Include="..\nvse\nvse\utility.h" />
+    <ClInclude Include="additive_anims.h" />
     <ClInclude Include="anim_fixes.h" />
     <ClInclude Include="bethesda\bethesda_types.h" />
     <ClInclude Include="class_vtbls.h" />

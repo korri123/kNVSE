@@ -236,7 +236,7 @@ void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
     }
 }
 
-#define ADDITIVE_ANIMS 1
+#define ADDITIVE_ANIMS 0
 
 bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInterpTarget,
                                                NiQuatTransform& kValue)
@@ -254,13 +254,19 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
 
     bool bFirstRotation = true;
 
+#if ADDITIVE_ANIMS
     auto& kAdditiveMgr = AdditiveSequences::Get();
+#endif
     
     for (unsigned char uc = 0; uc < this->m_ucArraySize; uc++)
     {
         InterpArrayItem& kItem = this->m_pkInterpArray[uc];
         float fNormalizedWeight = kItem.m_fNormalizedWeight;
+#if ADDITIVE_ANIMS
         const bool bIsAdditiveInterp =  kAdditiveMgr.IsAdditiveInterpolator(kItem.m_spInterpolator);
+#else
+        const bool bIsAdditiveInterp = false;
+#endif
         if (kItem.m_spInterpolator && (fNormalizedWeight > 0.0f || bIsAdditiveInterp))
         {
             float fUpdateTime = fTime;
@@ -562,7 +568,9 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
         m_pkInterpArray[m_ucSingleIdx].m_fNormalizedWeight = 1.0f;
         return;
     }
+#if ADDITIVE_ANIMS
     const auto& kAdditiveManager = AdditiveSequences::Get();
+#endif
     if (m_ucInterpCount == 2)
     {
 #if ADDITIVE_ANIMS
@@ -1113,7 +1121,7 @@ NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager
 
 void ApplyNiHooks()
 {
-#if _DEBUG
+#if _DEBUG && 0
     NiHooks::WriteHooks();
 #endif
 #if EXPERIMENTAL_HOOKS

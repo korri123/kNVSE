@@ -1910,7 +1910,8 @@ public:
 	{
 		MANAGER_CONTROLLED_MASK = 0X0001,
 		ONLY_USE_HIGHEST_WEIGHT_MASK = 0X0002,
-		COMPUTE_NORMALIZED_WEIGHTS_MASK = 0x0004
+		COMPUTE_NORMALIZED_WEIGHTS_MASK = 0x0004,
+		HAS_ADDITIVE_TRANSFORMS_MASK = 0x0008 // custom kNVSE
 	};
 	
 	struct InterpArrayItem
@@ -1923,11 +1924,11 @@ public:
 		float m_fUpdateTime;
 	};
 	unsigned char m_uFlags;
-	unsigned char m_ucArraySize;
-	unsigned char m_ucInterpCount;
-	unsigned char m_ucSingleIdx;
-	unsigned char m_cHighPriority;
-	unsigned char m_cNextHighPriority;
+	char m_ucArraySize;
+	char m_ucInterpCount;
+	char m_ucSingleIdx;
+	char m_cHighPriority;
+	char m_cNextHighPriority;
 	InterpArrayItem* m_pkInterpArray;
 	NiInterpolator* m_pkSingleInterpolator;
 	float m_fWeightThreshold;
@@ -1935,6 +1936,11 @@ public:
 	float m_fHighSumOfWeights;
 	float m_fNextHighSumOfWeights;
 	float m_fHighEaseSpinner;
+
+	std::span<InterpArrayItem> GetItems() const
+	{
+		return std::span(m_pkInterpArray, m_ucArraySize);
+	}
 
 	bool GetComputeNormalizedWeights() const
 	{
@@ -1954,6 +1960,16 @@ public:
 	bool GetManagerControlled() const
 	{
 		return GetBit(MANAGER_CONTROLLED_MASK);
+	}
+
+	bool GetHasAdditiveTransforms() const
+	{
+		return GetBit(HAS_ADDITIVE_TRANSFORMS_MASK);
+	}
+
+	void SetHasAdditiveTransforms(bool bAdditive)
+	{
+		SetBit(bAdditive, HAS_ADDITIVE_TRANSFORMS_MASK);
 	}
 
 	bool GetUpdateTimeForItem(float& fTime, InterpArrayItem& kItem, bool bAdditive)
@@ -1976,6 +1992,60 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
+
+	void ClearWeightSums()
+	{
+		m_fHighSumOfWeights = -NI_INFINITY;
+		m_fNextHighSumOfWeights = -NI_INFINITY;
+		m_fHighEaseSpinner = -NI_INFINITY;
+	}
+
+	void SetPriority(char cPriority, unsigned char ucIndex)
+	{
+#ifdef _DEBUG
+		NIASSERT(ucIndex < m_ucArraySize);
+#endif
+		// Only set priority if it differs from the current priority.
+		if (m_pkInterpArray[ucIndex].m_cPriority == cPriority)
+		{
+			return;
+		}
+
+		m_pkInterpArray[ucIndex].m_cPriority = cPriority;
+
+		if (cPriority > m_cHighPriority)
+		{
+			m_cNextHighPriority = m_cHighPriority;
+			m_cHighPriority = cPriority;
+		}
+		else
+		{
+			// Determine highest priority.
+			m_cHighPriority = m_cNextHighPriority = SCHAR_MIN;
+			for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
+			{
+				InterpArrayItem& kTempItem = m_pkInterpArray[uc];
+				if (kTempItem.m_spInterpolator != NULL)
+				{
+					if (kTempItem.m_cPriority > m_cNextHighPriority)
+					{
+						if (kTempItem.m_cPriority > m_cHighPriority)
+						{
+							m_cNextHighPriority = m_cHighPriority;
+							m_cHighPriority = kTempItem.m_cPriority;
+						}
+						else if (kTempItem.m_cPriority < m_cHighPriority)
+						{
+							m_cNextHighPriority = kTempItem.m_cPriority;
+						}
+					}
+				}
+			}
+		}
+
+		ClearWeightSums();
+		SetComputeNormalizedWeights(true);
+	}
 
 };
 static_assert(sizeof(NiBlendInterpolator) == 0x30);
