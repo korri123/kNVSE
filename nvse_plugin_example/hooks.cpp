@@ -106,7 +106,8 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	{
 		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
 		const auto easeTime = GetDefaultBlendTime(destAnim, currentAnim);
-		AdditiveManager::StopAdditiveSequenceFromParent(currentAnim, easeTime);
+		if (destAnim != currentAnim)
+			AdditiveManager::StopAdditiveSequenceFromParent(currentAnim, easeTime);
 	}
 	return result;
 }

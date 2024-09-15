@@ -93,11 +93,16 @@ namespace AdditiveManager
             return;
         if (!additiveSequences.contains(additiveAnim))
             return;
+        if (additiveAnim->m_eState != NiControllerSequence::INACTIVE)
+        {
+            if (anim->animGroup->GetBaseGroupID() == kAnimGroup_AttackLoop || anim->animGroup->GetBaseGroupID() == kAnimGroup_AttackLoopIS)
+                return;
+            additiveAnim->Deactivate(0.0f, false);
+        }
         animToAdditiveSequenceMap[anim] = additiveAnim;
         playingAdditiveSequences.insert(additiveAnim);
         CreateBaseTransforms(anim, additiveAnim);
-        if (additiveAnim->m_eState != NiControllerSequence::INACTIVE)
-            additiveAnim->Deactivate(0.0f, false);
+        
         const auto* currentAnim = animData->animSequence[anim->animGroup->GetSequenceType()];
         float easeInTime = 0.0f;
         if (!additiveAnim->m_spTextKeys->FindFirstByName("noBlend"))
