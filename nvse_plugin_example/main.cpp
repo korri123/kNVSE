@@ -669,11 +669,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
 	{
 		// HandleGarbageCollection();
-		g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
-		g_reloadTracker.clear();
-		g_timeTrackedAnims.clear();
-		std::unique_lock lock(g_pollConditionMutex);
-		g_timeTrackedGroups.clear();
 	}
 }
 

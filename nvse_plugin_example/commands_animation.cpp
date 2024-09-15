@@ -186,8 +186,12 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 					return BSAnimationContext(anim, base);
 				GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, groupId);
 			}
+			const auto oldMovementQueuedGroupId = animData->queuedGroupIDs[kSequence_Movement];
 			if (GameFuncs::LoadAnimation(animData, kfModel, false))
 			{
+				if (animData->queuedGroupIDs[kSequence_Movement] != oldMovementQueuedGroupId)
+					// hack fix for hack fix at 0x4946D2
+					animData->queuedGroupIDs[kSequence_Movement] = oldMovementQueuedGroupId;
 				if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 				{
 					BSAnimGroupSequence* anim;
@@ -1220,7 +1224,7 @@ bool OverrideAnimsFromScript(char* path, const F& overrideAnim)
 {
 	if (g_animFileThread.joinable())
 		g_animFileThread.join();
-	const std::string_view pathStr(path); // this is required as it might get passed into the synchronized execution queue and path is allocated on the stack
+	const std::string_view pathStr(path);
 	auto overrideAnims = [=]
 	{
 		if (!sv::get_file_extension(pathStr).empty()) // single file
@@ -1722,6 +1726,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char path[0x400];
+		path[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return true;
 		SetLowercase(path);
@@ -1883,6 +1888,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char path[0x400];
+		path[0] = 0;
 		float time;
 		if (!ExtractArgs(EXTRACT_ARGS, &path, &time))
 			return true;
@@ -1964,6 +1970,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char path[0x400];
+		path[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return true;
 		SetLowercase(path);
@@ -1989,14 +1996,20 @@ void CreateCommands(NVSECommandBuilder& builder)
 	};
 	builder.Create("ActivateAnim", kRetnType_Default, activateAnimParams, true, [](COMMAND_ARGS)
 	{
+#if _DEBUG
+		auto* sprintAnim = FindOrLoadAnim(g_thePlayer->baseProcess->animData, "horsey\\rider\\sprint.kf");
+		auto sequenceType = sprintAnim->animGroup->GetSequenceType();
+#endif
 		*result = 0;
 		char sequencePath[0x400];
+		sequencePath[0] = 0;
 		int firstPerson = -1;
 		int priority = 0;
 		int startOver = 1;
 		float weight = FLT_MIN;
 		float easeInTime = 0.0f;
 		char timeSyncSequence[0x400];
+		timeSyncSequence[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &firstPerson, &priority, &startOver, &weight, &easeInTime, &timeSyncSequence))
 			return true;
 		SetLowercase(sequencePath);
@@ -2025,7 +2038,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (anim->m_eState != kAnimState_Inactive)
 			// Deactivate sequence
 			GameFuncs::DeactivateSequence(manager, anim, 0.0);
-
+		
 		auto* animData = GetAnimData(actor, firstPerson);
 		HandleExtraOperations(animData, anim);
 
@@ -2047,6 +2060,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char sequencePath[0x400];
+		sequencePath[0] = 0;
 		float easeOutTime = 0.0f;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &easeOutTime))
 			return true;
@@ -2080,6 +2094,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char sourceSequence[0x400];
 		char destSequence[0x400];
 		char timeSyncSequence[0x400];
+		sourceSequence[0] = 0;
+		destSequence[0] = 0;
+		timeSyncSequence[0] = 0;
 		float easeInTime = FLT_MIN;
 		int priority = 0;
 		float weight = FLT_MIN;
@@ -2146,6 +2163,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		int firstPerson = -1;
 		char sequencePath[0x400];
 		char timeSyncSequence[0x400];
+		sequencePath[0] = 0;
+		timeSyncSequence[0] = 0;
 		float destFrame = 0.0f;
 		float duration = FLT_MIN;
 		int priority = 0;
@@ -2204,6 +2223,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char sourceSequence[0x400];
 		char destSequence[0x400];
 		char timeSyncSequence[0x400];
+		sourceSequence[0] = 0;
+		destSequence[0] = 0;
+		timeSyncSequence[0] = 0;
 		int firstPerson = -1;
 		float duration = FLT_MIN;
 		float destFrame = 0.0f;
@@ -2250,6 +2272,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char sequencePath[0x400];
+		sequencePath[0] = 0;
 		float weight = 0.0f;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &weight) || !thisObj)
 			return true;
@@ -2313,6 +2336,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char path[0x400];
+		path[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return true;
 		SetLowercase(path);
@@ -2334,6 +2358,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char name[0x400];
+		name[0] = 0;
 		Script* script;
 		Script* cleanupScript = nullptr;
 		if (!ExtractArgs(EXTRACT_ARGS, &name, &script, &cleanupScript) || NOT_TYPE(script, Script) || (cleanupScript && NOT_TYPE(cleanupScript, Script)))
@@ -2351,6 +2376,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char animPath[0x400];
+		animPath[0] = 0;
 		int firstPerson = -1;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &firstPerson))
 			return true;
@@ -2376,6 +2402,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char animPath[0x400];
+		animPath[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
 			return true;
 		SetLowercase(animPath);
@@ -2407,6 +2434,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = -1;
 		char animPath[0x400];
 		char interpName[0x400];
+		animPath[0] = 0;
+		interpName[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &interpName))
 			return true;
 		SetLowercase(animPath);
@@ -2422,6 +2451,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = 0;
 		char animPath[0x400];
 		char interpName[0x400];
+		animPath[0] = 0;
+		interpName[0] = 0;
 		UInt32 priority = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &interpName, &priority) || priority > 255)
 			return true;
@@ -2440,6 +2471,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		char animPath[0x400];
 		float time;
 		char textKey[0x400];
+		animPath[0] = 0;
+		textKey[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &time, &textKey))
 			return true;
 		SetLowercase(animPath);
@@ -2458,6 +2491,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char animPath[0x400];
+		animPath[0] = 0;
 		UInt32 index;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &index))
 			return true;
@@ -2477,6 +2511,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = 0;
 		char sourceAnimPath[0x400];
 		char destAnimPath[0x400];
+		sourceAnimPath[0] = 0;
+		destAnimPath[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &sourceAnimPath, &destAnimPath) || !thisObj)
 			return true;
 		SetLowercase(sourceAnimPath);
@@ -2533,6 +2569,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = 0;
 		char animPath[0x400];
+		animPath[0] = 0;
 		float destFrame;
 		int firstPerson = false;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &destFrame, &firstPerson) || !thisObj)
@@ -2575,6 +2612,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 	{
 		*result = -1;
 		char animPath[0x400];
+		animPath[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
 			return true;
 		SetLowercase(animPath);
@@ -2593,6 +2631,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = -1;
 		char animPath[0x400];
 		char textKey[0x400];
+		animPath[0] = 0;
+		textKey[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &textKey))
 			return true;
 		SetLowercase(animPath);
@@ -2623,6 +2663,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 		*result = 0;
 		char text[0x400];
+		text[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &text) )
 			return true;
 		g_eachFrameScriptLines.push_back(text);
