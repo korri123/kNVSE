@@ -36,6 +36,12 @@ struct PluginGlobalData
 };
 extern PluginGlobalData g_globals;
 
+enum class AdditiveTransformType
+{
+    BaseTransform,
+    EachFrame
+};
+
 struct AdditiveSequences
 {
     std::unordered_map<const NiInterpolator*, BSAnimGroupSequence*> interpolatorToSequenceMap;
@@ -93,6 +99,11 @@ struct AdditiveSequences
     bool IsAdditiveInterpolator(const NiInterpolator* interpolator) const
     {
         return additiveInterpBaseTransforms.contains(interpolator);
+    }
+
+    AdditiveTransformType GetAdditiveTransformType(const NiInterpolator* interpolator) const
+    {
+        return AdditiveTransformType::EachFrame;
     }
 
     bool StopAdditiveSequenceFromParent(const BSAnimGroupSequence* parentSequence, float afEaseOutTime = INVALID_TIME)

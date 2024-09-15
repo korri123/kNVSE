@@ -4,7 +4,6 @@
 #include "SafeWrite.h"
 #include "utility.h"
 
-
 void ApplyAdditiveTransforms(
     NiBlendTransformInterpolator& interpolator,
     float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
@@ -21,74 +20,77 @@ void ApplyAdditiveTransforms(
     const auto& kAdditiveMgr = AdditiveSequences::Get();
     for (auto& kItem : interpolator.GetItems())
     {
-        if (const auto kBaseTransformResult = kAdditiveMgr.GetBaseTransform(kItem.m_spInterpolator.data))
+        if (!kAdditiveMgr.IsAdditiveInterpolator(kItem.m_spInterpolator.data))
+            continue;
+        if (kItem.m_fNormalizedWeight != 0.0f)
         {
-            if (kItem.m_fNormalizedWeight != 0.0f)
-            {
 #ifdef _DEBUG
-                // 
-                if (IsDebuggerPresent())
-                    DebugBreak();
-#endif
-                continue;
-            }
-            
-            const float fUpdateTime = interpolator.GetManagerControlled() ? kItem.m_fUpdateTime : fTime;
-            if (fUpdateTime == INVALID_TIME)
-                continue;
-            NiQuatTransform kInterpTransform;
-            const NiQuatTransform& kBaseTransform = *kBaseTransformResult;
-            if (kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kInterpTransform))
-            {
-                NiQuatTransform kSubtractedTransform = kInterpTransform - kBaseTransform;
-                const float fWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
-                if (kSubtractedTransform.IsTranslateValid())
-                {
-                    kFinalTranslate += kSubtractedTransform.GetTranslate() * fWeight;
-                    bTransChanged = true;
-                }
-                if (kSubtractedTransform.IsRotateValid())
-                {
-                    NiQuaternion kSubtractedRotate = kSubtractedTransform.GetRotate();
-
-                    if (!bFirstRotation)
-                    {
-                        const float fCos = NiQuaternion::Dot(kFinalRotate,kSubtractedRotate);
-
-                        // If the angle is negative, we need to invert the
-                        // quat to get the best path.
-                        if (fCos < 0.0f)
-                            kSubtractedRotate = -kSubtractedRotate;
-                    }
-                    else
-                        bFirstRotation = false;
-
-                    kSubtractedRotate = kSubtractedRotate * fWeight;
-                    
-                    kFinalRotate.SetValues(
-                        kSubtractedRotate.GetW() + kFinalRotate.GetW(),
-                        kSubtractedRotate.GetX() + kFinalRotate.GetX(),
-                        kSubtractedRotate.GetY() + kFinalRotate.GetY(),
-                        kSubtractedRotate.GetZ() + kFinalRotate.GetZ()
-                    );
-                    bRotChanged = true;
-
-                }
-                if (kSubtractedTransform.IsScaleValid())
-                {
-                    fFinalScale += kSubtractedTransform.GetScale() * fWeight;
-                    bScaleChanged = true;
-                }
-            }
-        }
-#ifdef _DEBUG
-        else if (kAdditiveMgr.IsAdditiveInterpolator(kItem.m_spInterpolator.data))
-        {
-            // 
+            // this interpolator should not be factored into the normalized weight since that is reserved for the weighted blend animations
+            // if normalized weight is not 0, then this interpolator is part of the weighted blend
             if (IsDebuggerPresent())
                 DebugBreak();
-        }
 #endif
+            continue;
+        }
+
+        const float fUpdateTime = interpolator.GetManagerControlled() ? kItem.m_fUpdateTime : fTime;
+        if (fUpdateTime == INVALID_TIME)
+            continue;
+        NiQuatTransform kInterpTransform;
+        NiQuatTransform kBaseTransform;
+        const auto eType = kAdditiveMgr.GetAdditiveTransformType(kItem.m_spInterpolator.data);
+        if (eType == AdditiveTransformType::BaseTransform)
+        {
+            const auto& kBaseTransformResult = kAdditiveMgr.GetBaseTransform(kItem.m_spInterpolator.data);
+            if (!kBaseTransformResult)
+                continue;
+            kBaseTransform = *kBaseTransformResult;
+        }
+        else if (eType == AdditiveTransformType::EachFrame)
+        {
+            kBaseTransform = kValue;
+        }
+        if (kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kInterpTransform))
+        {
+            NiQuatTransform kSubtractedTransform = kInterpTransform - kBaseTransform;
+            const float fWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
+            if (kSubtractedTransform.IsTranslateValid())
+            {
+                kFinalTranslate += kSubtractedTransform.GetTranslate() * fWeight;
+                bTransChanged = true;
+            }
+            if (kSubtractedTransform.IsRotateValid())
+            {
+                NiQuaternion kSubtractedRotate = kSubtractedTransform.GetRotate();
+
+                if (!bFirstRotation)
+                {
+                    const float fCos = NiQuaternion::Dot(kFinalRotate, kSubtractedRotate);
+
+                    // If the angle is negative, we need to invert the
+                    // quat to get the best path.
+                    if (fCos < 0.0f)
+                        kSubtractedRotate = -kSubtractedRotate;
+                }
+                else
+                    bFirstRotation = false;
+
+                kSubtractedRotate = kSubtractedRotate * fWeight;
+
+                kFinalRotate.SetValues(
+                    kSubtractedRotate.GetW() + kFinalRotate.GetW(),
+                    kSubtractedRotate.GetX() + kFinalRotate.GetX(),
+                    kSubtractedRotate.GetY() + kFinalRotate.GetY(),
+                    kSubtractedRotate.GetZ() + kFinalRotate.GetZ()
+                );
+                bRotChanged = true;
+            }
+            if (kSubtractedTransform.IsScaleValid())
+            {
+                fFinalScale += kSubtractedTransform.GetScale() * fWeight;
+                bScaleChanged = true;
+            }
+        }
     }
     
     if (bTransChanged)
