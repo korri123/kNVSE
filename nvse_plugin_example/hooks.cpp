@@ -106,7 +106,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	{
 		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
 		const auto easeTime = GetDefaultBlendTime(destAnim, currentAnim);
-		AdditiveSequences::Get().StopAdditiveSequenceFromParent(currentAnim, easeTime);
+		AdditiveManager::StopAdditiveSequenceFromParent(currentAnim, easeTime);
 	}
 	return result;
 }
@@ -588,7 +588,6 @@ void ApplyFixLoopingReloadStartHooks()
 
 PluginINISettings g_pluginSettings;
 PluginGlobalData g_globals;
-AdditiveSequences g_additiveSequences;
 
 void ApplyHooks()
 {
@@ -791,7 +790,7 @@ void ApplyHooks()
 		}
 		if (auto* sequence = animData->animSequence[sequenceId])
 		{
-			AdditiveSequences::Get().StopAdditiveSequenceFromParent(sequence);
+			AdditiveManager::StopAdditiveSequenceFromParent(sequence);
 		}
 		*addressOfReturn = 0x4994FC;
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
@@ -900,7 +899,7 @@ void ApplyHooks()
 		return ThisStdCall<float>(0x493800, animData, anim);
 	}));
 
-	AdditiveAnimations::WriteHooks();
+	AdditiveManager::WriteHooks();
 }
 
 void WriteDelayedHooks()

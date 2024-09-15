@@ -351,3 +351,11 @@ struct CaseInsensitiveEqual
 };
 
 void SetLowercase(char* data);
+
+#ifdef _DEBUG
+inline void DebugBreakIfDebuggerPresent()
+{
+	if (IsDebuggerPresent())
+		DebugBreak();
+}
+#endif

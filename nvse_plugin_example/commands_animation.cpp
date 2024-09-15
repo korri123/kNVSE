@@ -21,6 +21,7 @@
 #include <cassert>
 #include <shared_mutex>
 
+#include "additive_anims.h"
 #include "anim_fixes.h"
 #include "nihooks.h"
 #include "NiNodes.h"
@@ -198,7 +199,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 						const auto stem = sv::get_file_stem(path);
 						if (sv::ends_with_ci(stem, "_additive"))
 						{
-							AdditiveSequences::Get().AddAdditiveSequence(anim);
+							AdditiveManager::AddAdditiveSequence(anim);
 						}
 						return iter.first->second;
 					}
@@ -704,7 +705,7 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 		HandleExtraOperations(animData, anim);
 		if (!animBundle.additiveAnimPath.empty())
 		{
-			AdditiveSequences::Get().PlayAdditiveAnim(animData, anim, animBundle.additiveAnimPath);
+			AdditiveManager::PlayAdditiveAnim(animData, anim, animBundle.additiveAnimPath);
 		}
 		return anim;
 	}
