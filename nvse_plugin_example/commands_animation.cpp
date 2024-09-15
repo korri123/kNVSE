@@ -298,7 +298,7 @@ std::unordered_map<BSAnimGroupSequence*, TimedExecution<BSSoundHandle>> g_script
 
 bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 {
-	if (!anim || !anim->animGroup)
+	if (!anim)
 		return false;
 	auto applied = false;
 	const auto textKeys = anim->m_spTextKeys->GetKeys();
@@ -359,7 +359,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		return false;
 	};
 
-	if (anim->animGroup->IsAttack() && hasKey({"burstFire"}))
+	if (anim->animGroup && anim->animGroup->IsAttack() && hasKey({"burstFire"}))
 	{
 		std::vector<NiTextKey*> hitKeys;
 		std::vector<NiTextKey*> ejectKeys;
@@ -396,7 +396,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		respectEndKeyData.povState = POVSwitchState::NotSet;
 		animTime.respectEndKey = true;
 	}
-	const auto baseGroupID = anim->animGroup->GetBaseGroupID();
+	const auto baseGroupID = anim->animGroup ? anim->animGroup->GetBaseGroupID() : kAnimGroup_Invalid;
 
 	if (hasKey({"interruptLoop"}) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS))
 	{

@@ -232,8 +232,8 @@ void HandlePollConditionAnims()
 		{
 			g_timeTrackedGroups.erase(key);
 		};
-		auto& animTime = *animTimePtr;
-		auto& [conditionScript, groupId, actorId, animData] = animTime;
+		auto animTime = *animTimePtr;
+		auto [conditionScript, groupId, actorId, animData] = animTime;
 		const auto& ctx = *key.first;
 		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
 		
@@ -284,8 +284,8 @@ void HandlePollConditionAnims()
 					}
 					// if the current anim is the tracked anim, and the condition is now false, it's not going to be selected again
 					// so let's stop it
+					erase(); // erase must be called first so that playAnimGroup can add back to g_timeTrackedGroups
 					playAnimGroup(animData, nextGroupId);
-					erase();
 					continue;
 				}
 				
@@ -324,12 +324,12 @@ void HandleCustomTextKeys()
 			it = g_timeTrackedAnims.erase(it);
 		};
 
-		if (!anim || !anim->animGroup)
+		if (!anim)
 		{
 			erase();
 			continue;
 		}
-		auto* groupInfo = GetGroupInfo(static_cast<AnimGroupID>(anim->animGroup->groupID));
+		auto* groupInfo = anim->animGroup ? GetGroupInfo(static_cast<AnimGroupID>(anim->animGroup->groupID)) : nullptr;
 #if _DEBUG
 		auto animTimeDupl = TempObject(animTime); // see vals in debugger after erase
 #endif
@@ -340,7 +340,12 @@ void HandleCustomTextKeys()
 		}
 		auto* animData = animTime.GetAnimData(actor);
 
-		const auto isAnimPlaying = _L(, anim->m_eState != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim);
+		const auto isAnimPlaying = [&]
+		{
+			if (!groupInfo)
+				return anim->m_eState != kAnimState_Inactive;
+			return anim->m_eState != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim;
+		};
 		
 		if (IsActorInvalid(actor) || !animData)
 		{
@@ -350,7 +355,7 @@ void HandleCustomTextKeys()
 
 		const auto time = anim->m_fLastScaledTime;
 	
-		if (animTime.respectEndKey)
+		if (animTime.respectEndKey && anim->animGroup)
 		{
 			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
 
