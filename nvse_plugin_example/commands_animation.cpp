@@ -384,7 +384,7 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		}
 	}
 	const auto hasRespectEndKey = hasKey({"respectEndKey", "respectTextKeys"});
-	if (animData == g_thePlayer->firstPersonAnimData && hasRespectEndKey)
+	if (animData == g_thePlayer->firstPersonAnimData && anim->animGroup && hasRespectEndKey)
 	{
 		auto& animTime = getAnimTimeStruct();
 		auto& respectEndKeyData = animTime.respectEndKeyData;
@@ -1808,12 +1808,12 @@ void CreateCommands(NVSECommandBuilder& builder)
 				
 		if (!anim)
 		{
-			ERROR_LOG("SetAnimationTextKeys: animation not found");
+			ERROR_LOG("SetAnimTextKeys: animation not found");
 			return true;
 		}
 		if (anim->m_eState != NiControllerSequence::INACTIVE)
 		{
-			ERROR_LOG("SetAnimationKeys: you can not call this function while the animation is playing.");
+			ERROR_LOG("SetAnimTextKeys: you can not call this function while the animation is playing.");
 			return true;
 		}
 
@@ -1822,7 +1822,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 
 		if (textKeyTimesVector.size() != textKeyValuesVector.size())
 		{
-			ERROR_LOG("SetAnimationTextKeys: text key times and values arrays must be the same size");
+			ERROR_LOG("SetAnimTextKeys: text key times and values arrays must be the same size");
 			return true;
 		}
 
