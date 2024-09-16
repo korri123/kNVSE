@@ -65,9 +65,9 @@ namespace sv
     template <size_t N>
     class stack_string
     {
+    public:
         char data_[N];
         size_t size_ = 0;
-    public:
         stack_string()
         {
             data_[0] = '\0';

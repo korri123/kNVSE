@@ -107,7 +107,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
 		const auto easeTime = GetDefaultBlendTime(destAnim, currentAnim);
 		if (destAnim != currentAnim)
-			AdditiveManager::StopAdditiveSequenceFromParent(currentAnim, easeTime);
+			AdditiveManager::StopManagedAdditiveSequenceFromParent(currentAnim, easeTime);
 	}
 	return result;
 }
@@ -791,7 +791,7 @@ void ApplyHooks()
 		}
 		if (auto* sequence = animData->animSequence[sequenceId])
 		{
-			AdditiveManager::StopAdditiveSequenceFromParent(sequence);
+			AdditiveManager::StopManagedAdditiveSequenceFromParent(sequence);
 		}
 		*addressOfReturn = 0x4994FC;
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId

@@ -200,11 +200,6 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
 						std::unique_lock lock(g_loadCustomAnimationMutex);
 						auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
-						const auto stem = sv::get_file_stem(path);
-						if (sv::ends_with_ci(stem, "_additive"))
-						{
-							AdditiveManager::AddAdditiveSequence(anim);
-						}
 						return iter.first->second;
 					}
 					ERROR_LOG("Map returned null anim " + std::string(path));
@@ -709,7 +704,8 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 		HandleExtraOperations(animData, anim);
 		if (!animBundle.additiveAnimPath.empty())
 		{
-			AdditiveManager::PlayAdditiveAnim(animData, anim, animBundle.additiveAnimPath);
+			if (auto* additiveAnim = FindOrLoadAnim(animData, animBundle.additiveAnimPath.data()))
+				AdditiveManager::PlayManagedAdditiveAnim(animData, anim, additiveAnim);
 		}
 		return anim;
 	}
@@ -1222,28 +1218,22 @@ ScopedList<char> GetDirectoryAnimPaths(const char* path)
 template <typename F>
 bool OverrideAnimsFromScript(char* path, const F& overrideAnim)
 {
-	if (g_animFileThread.joinable())
-		g_animFileThread.join();
 	const std::string_view pathStr(path);
-	auto overrideAnims = [=]
-	{
-		if (!sv::get_file_extension(pathStr).empty()) // single file
-			return overrideAnim(pathStr.data());
+	if (!sv::get_file_extension(pathStr).empty()) // single file
+		return overrideAnim(pathStr.data());
 	
-		// directory
-		const auto animPaths = GetDirectoryAnimPaths(pathStr.data());
+	// directory
+	const auto animPaths = GetDirectoryAnimPaths(pathStr.data());
 
-		if (animPaths.Empty())
-			return false;
+	if (animPaths.Empty())
+		return false;
 
-		size_t numAnims = 0;
-		for (const auto* animPath : animPaths)
-		{
-			numAnims += overrideAnim(animPath);
-		}
-		return numAnims != 0;
-	};
-	return overrideAnims();
+	size_t numAnims = 0;
+	for (const auto* animPath : animPaths)
+	{
+		numAnims += overrideAnim(animPath);
+	}
+	return numAnims != 0;
 }
 
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
@@ -1996,10 +1986,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 	};
 	builder.Create("ActivateAnim", kRetnType_Default, activateAnimParams, true, [](COMMAND_ARGS)
 	{
-#if _DEBUG
-		auto* sprintAnim = FindOrLoadAnim(g_thePlayer->baseProcess->animData, "horsey\\rider\\sprint.kf");
-		auto sequenceType = sprintAnim->animGroup->GetSequenceType();
-#endif
 		*result = 0;
 		char sequencePath[0x400];
 		sequencePath[0] = 0;
@@ -2649,6 +2635,49 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!key)
 			return true;
 		*result = key->m_fTime;
+		return true;
+	});
+
+	const auto setAdditiveParams = {ParamInfo{"additive anim path", kParamType_String, false},
+		ParamInfo{"first person", kParamType_Integer, true},
+		ParamInfo{"reference pose anim path", kParamType_String, true},
+		ParamInfo{"reference pose time point", kParamType_Float, true},
+	};
+	builder.Create("SetAnimAdditive", kRetnType_Default, setAdditiveParams, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> animPath;
+		sv::stack_string<0x400> refPoseAnimPath;
+		int firstPerson = -1;
+		float refPoseTimePoint = 0.0f;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath.data_, &firstPerson, &refPoseAnimPath.data_, &refPoseTimePoint))
+			return true;
+		for (auto* path : {&animPath, &refPoseAnimPath})
+		{
+			path->calculate_size();
+			SetLowercase(path->data());
+		}
+		if (animPath.empty())
+			return true;
+		
+		if (auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor))
+		{
+			if (firstPerson == -1)
+				firstPerson = IsPlayerInFirstPerson(actor);
+			auto* animData = GetAnimData(actor, firstPerson);
+			auto* additiveAnim = FindOrLoadAnim(animData, animPath.c_str());
+			if (!additiveAnim)
+				return true;
+			BSAnimGroupSequence* refPoseAnim;
+			if (!refPoseAnimPath.empty())
+				refPoseAnim = FindOrLoadAnim(animData, refPoseAnimPath.c_str());
+			else
+				refPoseAnim = GetAnimByGroupID(animData, kAnimGroup_Idle);
+			if (!refPoseAnim)
+				return true;
+			AdditiveManager::SetAdditiveReferencePose(refPoseAnim, additiveAnim, refPoseTimePoint);
+			*result = 1;
+		}
 		return true;
 	});
 

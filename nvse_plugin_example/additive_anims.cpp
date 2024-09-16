@@ -4,159 +4,132 @@
 #include "SafeWrite.h"
 #include "utility.h"
 
-namespace AdditiveManager
+
+std::unordered_map<NiInterpolator*, NiQuatTransform> additiveInterpReferenceTransformsMap;
+std::unordered_map<NiControllerSequence*, AdditiveAnimMetadata> additiveSequenceMap;
+std::unordered_map<BSAnimGroupSequence*, BSAnimGroupSequence*> referenceToAdditiveMap;
+#if _DEBUG
+std::unordered_map<NiInterpolator*, const char*> interpsToTargetsMap;
+#endif
+
+void AdditiveManager::SetAdditiveReferencePose(BSAnimGroupSequence* referenceSequence,
+                                               BSAnimGroupSequence* additiveSequence, float timePoint)
 {
-    std::unordered_map<const NiInterpolator*, BSAnimGroupSequence*> interpolatorToSequenceMap;
-    std::unordered_set<const BSAnimGroupSequence*> additiveSequences;
-    std::unordered_map<const BSAnimGroupSequence*, BSAnimGroupSequence*> animToAdditiveSequenceMap;
-    std::unordered_set<const BSAnimGroupSequence*> playingAdditiveSequences;
-    std::unordered_map<const NiInterpolator*, NiQuatTransform> additiveInterpBaseTransforms;
-    std::unordered_set<const NiControllerSequence*> hasAdditiveTransforms;
-#if _DEBUG
-    std::unordered_map<const NiInterpolator*, const char*> interpsToTargets;
-#endif
-
-    BSAnimGroupSequence* GetSequenceByInterpolator(const NiInterpolator* interpolator)
+    if (const auto iter = additiveSequenceMap.find(additiveSequence); iter != additiveSequenceMap.end())
     {
-        if (const auto iter = interpolatorToSequenceMap.find(interpolator); iter != interpolatorToSequenceMap.end())
-            return iter->second;
-        return nullptr;
-    }
-
-    void AddAdditiveSequence(BSAnimGroupSequence* sequence)
-    {
-        additiveSequences.insert(sequence);
-        for (const auto& block : sequence->GetControlledBlocks())
-        {
-            if (const auto* interpolator = block.m_spInterpolator)
-            {
-                interpolatorToSequenceMap[interpolator] = sequence;
-            }
-        }
-    }
-
-    void CreateBaseTransforms(const NiControllerSequence* baseSequence, const NiControllerSequence* additiveSequence)
-    {
-        if (hasAdditiveTransforms.contains(additiveSequence))
+        const auto& metadata = iter->second;
+        if (metadata.referencePoseSequence == referenceSequence && metadata.referenceTimePoint == timePoint)
             return;
-        const auto baseIdTags = baseSequence->GetIDTags();
-        const auto baseBlocks = baseSequence->GetControlledBlocks();
-        for (size_t i = 0; i < baseBlocks.size(); i++)
+        additiveSequenceMap.erase(iter);
+    }
+    const auto baseIdTags = referenceSequence->GetIDTags();
+    const auto baseBlocks = referenceSequence->GetControlledBlocks();
+    for (size_t i = 0; i < baseBlocks.size(); i++)
+    {
+        const auto& baseBlock = baseBlocks[i];
+        NiInterpolator* interpolator = baseBlock.m_spInterpolator;
+        const NiInterpController* interpController = baseBlock.m_spInterpCtlr;
+        if (interpolator && interpController)
         {
-            const auto& baseBlock = baseBlocks[i];
-            NiInterpolator* interpolator = baseBlock.m_spInterpolator;
-            const NiInterpController* interpController = baseBlock.m_spInterpCtlr;
-            if (interpolator && interpController)
+            const auto& idTag = baseIdTags[i];
+            NiAVObject* targetNode = interpController->GetTargetNode(idTag);
+            if (!targetNode)
             {
-                const auto& idTag = baseIdTags[i];
-                NiAVObject* targetNode = interpController->GetTargetNode(idTag);
-                if (!targetNode)
-                {
 #ifdef _DEBUG
-                    if (IsDebuggerPresent())
-                        DebugBreak();
-                    ERROR_LOG("target is null for " + std::string(idTag.m_kAVObjectName.CStr()));
+                if (IsDebuggerPresent())
+                    DebugBreak();
+                ERROR_LOG("target is null for " + std::string(idTag.m_kAVObjectName.CStr()));
 #endif
-                    continue;
-                }
+                continue;
+            }
 
-                const float fOldTime = interpolator->m_fLastTime;
-                NiQuatTransform baseTransform;
-                const bool bSuccess = interpolator->Update(0.0f, targetNode, baseTransform);
-                interpolator->m_fLastTime = fOldTime;
-                if (const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
-                           bSuccess && additiveBlock && additiveBlock->m_spInterpolator)
+            const float fOldTime = interpolator->m_fLastTime;
+            NiQuatTransform baseTransform;
+            const bool bSuccess = interpolator->Update(timePoint, targetNode, baseTransform);
+            interpolator->m_fLastTime = fOldTime;
+            if (const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
+                bSuccess && additiveBlock && additiveBlock->m_spInterpolator)
+            {
+                if (NiBlendInterpolator* blendInterpolator = baseBlock.m_pkBlendInterp)
                 {
-                    if (NiBlendInterpolator* blendInterpolator = baseBlock.m_pkBlendInterp)
-                    {
-                        additiveInterpBaseTransforms[additiveBlock->m_spInterpolator] = baseTransform;
-                        blendInterpolator->SetHasAdditiveTransforms(true);
-                    }
+                    additiveInterpReferenceTransformsMap[additiveBlock->m_spInterpolator] = baseTransform;
+                    blendInterpolator->SetHasAdditiveTransforms(true);
                 }
             }
         }
+    }
 #if _DEBUG
-        const auto controlledBlocks = additiveSequence->GetControlledBlocks();
-        for (unsigned int i = 0; i < controlledBlocks.size(); i++)
-        {
-            auto& idTag = additiveSequence->GetIDTags()[i];
-            interpsToTargets[controlledBlocks[i].m_spInterpolator] = idTag.m_kAVObjectName.CStr();
-        }
-#endif
-        hasAdditiveTransforms.insert(additiveSequence);
-    }
-
-    void PlayAdditiveAnim(AnimData* animData, const BSAnimGroupSequence* anim, std::string_view additiveAnimPath)
+    const auto controlledBlocks = additiveSequence->GetControlledBlocks();
+    for (unsigned int i = 0; i < controlledBlocks.size(); i++)
     {
-        auto* additiveAnim = FindOrLoadAnim(animData, additiveAnimPath.data());
-        if (!additiveAnim)
-            return;
-        if (!additiveSequences.contains(additiveAnim))
-            return;
-        if (additiveAnim->m_eState != NiControllerSequence::INACTIVE)
-        {
-            if (anim->animGroup->GetBaseGroupID() == kAnimGroup_AttackLoop || anim->animGroup->GetBaseGroupID() == kAnimGroup_AttackLoopIS)
-                return;
-            additiveAnim->Deactivate(0.0f, false);
-        }
-        animToAdditiveSequenceMap[anim] = additiveAnim;
-        playingAdditiveSequences.insert(additiveAnim);
-        CreateBaseTransforms(anim, additiveAnim);
-        
-        const auto* currentAnim = animData->animSequence[anim->animGroup->GetSequenceType()];
-        float easeInTime = 0.0f;
-        if (!additiveAnim->m_spTextKeys->FindFirstByName("noBlend"))
-            easeInTime = GetDefaultBlendTime(additiveAnim, currentAnim);
-        additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false);
-    }
-
-    bool IsAdditiveSequence(const BSAnimGroupSequence* sequence)
-    {
-        return additiveSequences.contains(sequence);
-    }
-
-    bool IsAdditiveInterpolator(const NiInterpolator* interpolator)
-    {
-        return additiveInterpBaseTransforms.contains(interpolator);
-    }
-
-    AdditiveTransformType GetAdditiveTransformType(const NiInterpolator* interpolator)
-    {
-        return AdditiveTransformType::ReferenceFrame;
-    }
-
-    bool StopAdditiveSequenceFromParent(const BSAnimGroupSequence* parentSequence, float afEaseOutTime)
-    {
-        if (const auto iter = animToAdditiveSequenceMap.find(parentSequence); iter != animToAdditiveSequenceMap.end())
-        {
-            auto* additiveSequence = iter->second;
-            playingAdditiveSequences.erase(additiveSequence);
-
-            float easeOutTime = 0.0f;
-            if (!additiveSequence->m_spTextKeys->FindFirstByName("noBlend"))
-                easeOutTime = afEaseOutTime == INVALID_TIME ? additiveSequence->GetEasingTime() : afEaseOutTime;
-            additiveSequence->Deactivate(easeOutTime, false);
-            return true;
-        }
-        return false;
-    }
-
-    std::optional<NiQuatTransform> GetRefFrameTransform(const NiInterpolator* interpolator)
-    {
-        if (const auto iter = additiveInterpBaseTransforms.find(interpolator); iter != additiveInterpBaseTransforms.end())
-            return iter->second;
-        return std::nullopt;
-    }
-
-#if _DEBUG
-    const char* GetTargetNodeName(const NiInterpolator* interpolator)
-    {
-        if (const auto iter = interpsToTargets.find(interpolator); iter != interpsToTargets.end())
-            return iter->second;
-        return nullptr;
+        auto& idTag = additiveSequence->GetIDTags()[i];
+        interpsToTargetsMap[controlledBlocks[i].m_spInterpolator] = idTag.m_kAVObjectName.CStr();
     }
 #endif
+    additiveSequenceMap[additiveSequence] = AdditiveAnimMetadata{referenceSequence, timePoint};
 }
+
+void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim)
+{
+    if (additiveAnim->m_eState != NiControllerSequence::INACTIVE)
+    {
+        if (referenceAnim->animGroup->GetBaseGroupID() == kAnimGroup_AttackLoop || referenceAnim->animGroup->GetBaseGroupID() ==
+            kAnimGroup_AttackLoopIS)
+            return;
+        additiveAnim->Deactivate(0.0f, false);
+    }
+    SetAdditiveReferencePose(referenceAnim, additiveAnim);
+    referenceToAdditiveMap[referenceAnim] = additiveAnim;
+
+    BSAnimGroupSequence* currentAnim = nullptr;
+    if (referenceAnim->animGroup)
+        currentAnim = animData->animSequence[referenceAnim->animGroup->GetSequenceType()];
+    float easeInTime = 0.0f;
+    if (!additiveAnim->m_spTextKeys->FindFirstByName("noBlend"))
+        easeInTime = GetDefaultBlendTime(additiveAnim, currentAnim);
+    additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false);
+}
+
+bool AdditiveManager::IsAdditiveSequence(BSAnimGroupSequence* sequence)
+{
+    return additiveSequenceMap.contains(sequence);
+}
+
+bool AdditiveManager::IsAdditiveInterpolator(NiInterpolator* interpolator)
+{
+    return additiveInterpReferenceTransformsMap.contains(interpolator);
+}
+
+bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseOutTime)
+{
+    if (const auto iter = referenceToAdditiveMap.find(parentSequence); iter != referenceToAdditiveMap.end())
+    {
+        auto* additiveSequence = iter->second;
+        float easeOutTime = 0.0f;
+        if (!additiveSequence->m_spTextKeys->FindFirstByName("noBlend"))
+            easeOutTime = afEaseOutTime == INVALID_TIME ? additiveSequence->GetEasingTime() : afEaseOutTime;
+        additiveSequence->Deactivate(easeOutTime, false);
+        return true;
+    }
+    return false;
+}
+
+NiQuatTransform* AdditiveManager::GetRefFrameTransform(NiInterpolator* interpolator)
+{
+    if (const auto iter = additiveInterpReferenceTransformsMap.find(interpolator); iter != additiveInterpReferenceTransformsMap.end())
+        return &iter->second;
+    return nullptr;
+}
+
+#if _DEBUG
+const char* AdditiveManager::GetTargetNodeName(NiInterpolator* interpolator)
+{
+    if (const auto iter = interpsToTargetsMap.find(interpolator); iter != interpsToTargetsMap.end())
+        return iter->second;
+    return nullptr;
+}
+#endif
+
 
 void ApplyAdditiveTransforms(
     NiBlendTransformInterpolator& interpolator,
@@ -170,11 +143,11 @@ void ApplyAdditiveTransforms(
     bool bRotChanged = false;
     bool bScaleChanged = false;
     
-    bool bFirstRotation = true;
     for (auto& kItem : interpolator.GetItems())
     {
-        if (!AdditiveManager::IsAdditiveInterpolator(kItem.m_spInterpolator.data))
-            continue;
+        const auto* kRefFrameTransformPtr = AdditiveManager::GetRefFrameTransform(kItem.m_spInterpolator.data);
+        if (!kRefFrameTransformPtr)
+            continue; // not an additive interpolator
         if (kItem.m_fNormalizedWeight != 0.0f)
         {
 #ifdef _DEBUG
@@ -188,27 +161,9 @@ void ApplyAdditiveTransforms(
         const float fUpdateTime = interpolator.GetManagerControlled() ? kItem.m_fUpdateTime : fTime;
         if (fUpdateTime == INVALID_TIME)
             continue;
+        const auto& kRefTransform = *kRefFrameTransformPtr;
+        
         NiQuatTransform kInterpTransform;
-        NiQuatTransform kRefTransform;
-        const auto eType = AdditiveManager::GetAdditiveTransformType(kItem.m_spInterpolator.data);
-        if (eType == AdditiveTransformType::ReferenceFrame)
-        {
-            const auto& kRefFrameTransformResult = AdditiveManager::GetRefFrameTransform(kItem.m_spInterpolator.data);
-            if (!kRefFrameTransformResult)
-                continue;
-            kRefTransform = *kRefFrameTransformResult;
-        }
-        else if (eType == AdditiveTransformType::EachFrame)
-        {
-            kRefTransform = kValue;
-        }
-        else
-        {
-#ifdef _DEBUG
-            DebugBreakIfDebuggerPresent();
-#endif
-            continue;
-        }
         if (kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kInterpTransform))
         {
             const float fWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;

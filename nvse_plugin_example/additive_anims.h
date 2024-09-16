@@ -8,16 +8,22 @@ enum class AdditiveTransformType
     EachFrame
 };
 
+struct AdditiveAnimMetadata
+{
+    BSAnimGroupSequence* referencePoseSequence;
+    float referenceTimePoint;
+};
+
 namespace AdditiveManager
 {
-    BSAnimGroupSequence* GetSequenceByInterpolator(const NiInterpolator* interpolator);
-    void AddAdditiveSequence(BSAnimGroupSequence* sequence);
-    void PlayAdditiveAnim(AnimData* animData, const BSAnimGroupSequence* anim, std::string_view additiveAnimPath);
-    bool IsAdditiveSequence(const BSAnimGroupSequence* sequence);
-    bool IsAdditiveInterpolator(const NiInterpolator* interpolator);
-    AdditiveTransformType GetAdditiveTransformType(const NiInterpolator* interpolator);
-    bool StopAdditiveSequenceFromParent(const BSAnimGroupSequence* parentSequence, float afEaseOutTime = INVALID_TIME);
-    std::optional<NiQuatTransform> GetRefFrameTransform(const NiInterpolator* interpolator);
-    
+    bool IsAdditiveSequence(BSAnimGroupSequence* sequence);
+    bool IsAdditiveInterpolator(NiInterpolator* interpolator);
+    bool StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseOutTime = INVALID_TIME);
+    NiQuatTransform* GetRefFrameTransform(NiInterpolator* interpolator);
+    void SetAdditiveReferencePose(BSAnimGroupSequence* baseSequence, BSAnimGroupSequence* additiveSequence, float timePoint = 0.0f);
+    void PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim);
+#if _DEBUG
+    const char* GetTargetNodeName(NiInterpolator* interpolator);
+#endif
     void WriteHooks();
 }
