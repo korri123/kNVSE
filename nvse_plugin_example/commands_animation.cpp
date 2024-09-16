@@ -2665,6 +2665,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (firstPerson == -1)
 				firstPerson = IsPlayerInFirstPerson(actor);
 			auto* animData = GetAnimData(actor, firstPerson);
+			if (!animData)
+				return true;
 			auto* additiveAnim = FindOrLoadAnim(animData, animPath.c_str());
 			if (!additiveAnim)
 				return true;

@@ -2047,6 +2047,16 @@ public:
 		SetComputeNormalizedWeights(true);
 	}
 
+	char GetFirstValidIndex() const
+	{
+		for (char uc = 0; uc < m_ucArraySize; uc++)
+		{
+			if (m_pkInterpArray[uc].m_spInterpolator != nullptr)
+				return uc;
+		}
+		return INVALID_INDEX;
+	}
+
 };
 static_assert(sizeof(NiBlendInterpolator) == 0x30);
 

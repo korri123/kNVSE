@@ -132,7 +132,7 @@ const char* AdditiveManager::GetTargetNodeName(NiInterpolator* interpolator)
 
 
 void ApplyAdditiveTransforms(
-    NiBlendTransformInterpolator& interpolator,
+    NiBlendTransformInterpolator& kBlendInterp,
     float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 {
     NiPoint3 kFinalTranslate = NiPoint3::ZERO;
@@ -142,8 +142,8 @@ void ApplyAdditiveTransforms(
     bool bTransChanged = false;
     bool bRotChanged = false;
     bool bScaleChanged = false;
-    
-    for (auto& kItem : interpolator.GetItems())
+
+    for (auto& kItem : kBlendInterp.GetItems())
     {
         const auto* kRefFrameTransformPtr = AdditiveManager::GetRefFrameTransform(kItem.m_spInterpolator.data);
         if (!kRefFrameTransformPtr)
@@ -158,7 +158,10 @@ void ApplyAdditiveTransforms(
             continue;
         }
 
-        const float fUpdateTime = interpolator.GetManagerControlled() ? kItem.m_fUpdateTime : fTime;
+        if (kItem.m_cPriority < kBlendInterp.m_cNextHighPriority)
+            continue;
+
+        const float fUpdateTime = kBlendInterp.GetManagerControlled() ? kItem.m_fUpdateTime : fTime;
         if (fUpdateTime == INVALID_TIME)
             continue;
         const auto& kRefTransform = *kRefFrameTransformPtr;
@@ -224,18 +227,37 @@ void AdditiveManager::WriteHooks()
     // NiBlendInterpolator::ComputeNormalizedWeights
     WriteRelCall(0xA41147, INLINE_HOOK(void, __fastcall, NiBlendInterpolator* pBlendInterpolator)
     {
+        thread_local std::vector<std::pair<unsigned char, NiInterpolator*>> additiveInterpolators;
         // make sure that no additive interpolator gets factored into the normalized weight
         if (pBlendInterpolator->GetHasAdditiveTransforms())
         {
             unsigned char ucIndex = 0;
             for (auto& item : pBlendInterpolator->GetItems())
             {
-                if (item.m_spInterpolator != nullptr && item.m_cPriority != SCHAR_MIN && IsAdditiveInterpolator(item.m_spInterpolator))
-                    pBlendInterpolator->SetPriority(SCHAR_MIN, ucIndex);
+                if (item.m_spInterpolator != nullptr && IsAdditiveInterpolator(item.m_spInterpolator))
+                {
+                    additiveInterpolators.emplace_back(ucIndex, item.m_spInterpolator.data);
+                    item.m_spInterpolator.data = nullptr;
+                    pBlendInterpolator->m_ucInterpCount--;
+                    if (pBlendInterpolator->m_ucInterpCount == 1)
+                        pBlendInterpolator->m_ucSingleIdx = pBlendInterpolator->GetFirstValidIndex();
+                }
                 ++ucIndex;
             }
         }
-        ThisStdCall(uiComputeNormalizedWeightsAddr, pBlendInterpolator);
+        if (pBlendInterpolator->m_ucInterpCount != 0)
+            ThisStdCall(uiComputeNormalizedWeightsAddr, pBlendInterpolator);
+        if (!additiveInterpolators.empty())
+        {
+            if (pBlendInterpolator->m_ucInterpCount == 1)
+                pBlendInterpolator->m_ucSingleIdx = INVALID_INDEX;
+            for (auto& [index, interpolator] : additiveInterpolators)
+            {
+                pBlendInterpolator->m_pkInterpArray[index].m_spInterpolator.data = interpolator;
+                pBlendInterpolator->m_ucInterpCount++;
+            }
+            additiveInterpolators.clear();
+        }
     }), &uiComputeNormalizedWeightsAddr);
 
     static UInt32 uiBlendValuesAddr;
