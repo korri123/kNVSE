@@ -734,6 +734,17 @@ void ApplyHooks()
 		return anim->m_eCycleType;
 	}));
 
+	// BSAnimGroupSequence* destructor
+	WriteRelCall(0x4EEB4B, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim)
+	{
+		if (AdditiveManager::IsAdditiveSequence(anim))
+			AdditiveManager::EraseAdditiveSequence(anim);
+
+		// hooked call
+		ThisStdCall(0xA35640, anim);
+	}));
+
+
 
 #if 0
 	// AnimData::GetSequenceOffsetPlusTimePassed

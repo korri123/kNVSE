@@ -95,6 +95,19 @@ bool AdditiveManager::IsAdditiveSequence(BSAnimGroupSequence* sequence)
     return additiveSequenceMap.contains(sequence);
 }
 
+void AdditiveManager::EraseAdditiveSequence(BSAnimGroupSequence* sequence)
+{
+    additiveSequenceMap.erase(sequence);
+    for (auto& block: sequence->GetControlledBlocks())
+    {
+        additiveInterpReferenceTransformsMap.erase(block.m_spInterpolator);
+#if _DEBUG
+        interpsToTargetsMap.erase(block.m_spInterpolator);
+#endif
+    }
+    std::erase_if(referenceToAdditiveMap, _L(auto& p, p.second == sequence));
+}
+
 bool AdditiveManager::IsAdditiveInterpolator(NiInterpolator* interpolator)
 {
     return additiveInterpReferenceTransformsMap.contains(interpolator);

@@ -17,6 +17,7 @@ struct AdditiveAnimMetadata
 namespace AdditiveManager
 {
     bool IsAdditiveSequence(BSAnimGroupSequence* sequence);
+    void EraseAdditiveSequence(BSAnimGroupSequence* sequence);
     bool IsAdditiveInterpolator(NiInterpolator* interpolator);
     bool StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseOutTime = INVALID_TIME);
     NiQuatTransform* GetRefFrameTransform(NiInterpolator* interpolator);
