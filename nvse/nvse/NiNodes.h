@@ -1972,6 +1972,30 @@ public:
 		SetBit(bAdditive, HAS_ADDITIVE_TRANSFORMS_MASK);
 	}
 
+	void RecalculateHighPriorities()
+	{
+		m_cNextHighPriority = INVALID_INDEX;
+		m_cHighPriority = INVALID_INDEX;
+		for (auto& item : GetItems())
+		{
+			if (item.m_spInterpolator != nullptr)
+			{
+				if (item.m_cPriority > m_cNextHighPriority)
+				{
+					if (item.m_cPriority > m_cHighPriority)
+					{
+						m_cNextHighPriority = m_cHighPriority;
+						m_cHighPriority = item.m_cPriority;
+					}
+					else if (item.m_cPriority < m_cHighPriority)
+					{
+						m_cNextHighPriority = item.m_cPriority;
+					}
+				}
+			}
+		}
+	}
+
 	bool GetUpdateTimeForItem(float& fTime, InterpArrayItem& kItem, bool bAdditive)
 	{
 		NiInterpolator* pkInterpolator = kItem.m_spInterpolator.data;
