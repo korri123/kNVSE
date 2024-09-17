@@ -240,14 +240,17 @@ void AdditiveManager::WriteHooks()
                     additiveInterpolators.emplace_back(ucIndex, item.m_spInterpolator.data);
                     item.m_spInterpolator.data = nullptr;
                     pBlendInterpolator->m_ucInterpCount--;
-                    if (pBlendInterpolator->m_ucInterpCount == 1)
-                        pBlendInterpolator->m_ucSingleIdx = pBlendInterpolator->GetFirstValidIndex();
                     bChanged = true;
                 }
                 ++ucIndex;
             }
             if (bChanged)
-                pBlendInterpolator->RecalculateHighPriorities();
+            {
+                if (pBlendInterpolator->m_ucInterpCount == 1)
+                    pBlendInterpolator->m_ucSingleIdx = pBlendInterpolator->GetFirstValidIndex();
+                else
+                    pBlendInterpolator->RecalculateHighPriorities();
+            }
         }
         if (pBlendInterpolator->m_ucInterpCount != 0)
             ThisStdCall(uiComputeNormalizedWeightsAddr, pBlendInterpolator);
@@ -257,7 +260,8 @@ void AdditiveManager::WriteHooks()
                 pBlendInterpolator->m_ucSingleIdx = INVALID_INDEX;
             for (auto& [index, interpolator] : additiveInterpolators)
             {
-                pBlendInterpolator->m_pkInterpArray[index].m_spInterpolator.data = interpolator;
+                auto& kInterpItem = pBlendInterpolator->m_pkInterpArray[index];
+                kInterpItem.m_spInterpolator.data = interpolator;
                 pBlendInterpolator->m_ucInterpCount++;
             }
             pBlendInterpolator->RecalculateHighPriorities();
