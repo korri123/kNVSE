@@ -2857,6 +2857,11 @@ public:
 	float GetItemModValue1(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value1Mod[which]; }
 	float GetItemModValue2(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value2Mod[which]; }
 
+	bool HasLoopingReloadAnim() const
+	{
+		return reloadAnim >= eReload_W && reloadAnim <= eReload_Z;
+	}
+
 	float GetShotSpeed(bool hasIncreasedRateOfFire) const
 	{
 		float attackMultipler = ThisStdCall<float>(0x646020, this, hasIncreasedRateOfFire);

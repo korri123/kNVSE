@@ -531,7 +531,7 @@ void HandleBurstFire()
 				if (!IsGodMode())
 				{
 					//const auto clipSize = GetWeaponInfoClipSize(actor);
-					if (DidActorReload(actor, ReloadSubscriber::BurstFire) || ammoInfo->count == 0 || actor->IsAnimActionReload())
+					if (NonPartialReloadTracker::DidReload(actor) || ammoInfo->count == 0 || actor->IsAnimActionReload())
 					{
 						// reloaded
 						reloading = true;
@@ -614,6 +614,11 @@ void ClearScriptCallExecutions()
 	g_scriptCache.clear();
 }
 
+void ResetReloadHandler()
+{
+	NonPartialReloadTracker::Update();
+}
+
 void HandleMisc()
 {
 	if (g_fixHolster && g_thePlayer->IsThirdPerson())
@@ -638,6 +643,8 @@ void HandleMisc()
 	ClearAnimationResultCache();
 	ClearAnimPathFrameCache();
 	ClearScriptCallExecutions();
+
+	ResetReloadHandler();
 }
 
 std::thread g_animFileThread;
@@ -656,7 +663,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		const auto isMenuMode = CdeclCall<bool>(0x702360);
 		if (!isMenuMode)
 		{
-			HandleOnActorReload();
 			HandleBurstFire();
 			HandleAnimTimes();
 			HandleMisc();

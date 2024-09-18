@@ -303,12 +303,12 @@ struct SavedAnims
 			const auto fileStem = sv::get_file_stem(anim->path);
 			if (!hasOrder && sv::contains_ci(fileStem, "_order_"))
 				hasOrder = true;
-			if (!hasPartialReload && !anim->partialReload && sv::contains_ci(fileStem, "_partial"))
+			if (!anim->partialReload && sv::contains_ci(fileStem, "_partial"))
 			{
 				anim->partialReload = true;
 				hasPartialReload = true;
 			}
-			if (!hasStartAnim && !anim->isStartAnim && sv::ends_with_ci(fileStem, "_start"))
+			if (!anim->isStartAnim && sv::contains_ci(fileStem, "_start"))
 			{
 				anim->isStartAnim = true;
 				hasStartAnim = true;
@@ -527,7 +527,6 @@ struct AnimOverrideData
 bool OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson);
 bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson);
 
-void HandleOnActorReload();
 
 float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 
@@ -545,32 +544,25 @@ BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path);
 
 int GetWeaponInfoClipSize(Actor* actor);
 
-enum class ReloadSubscriber
+struct ReloadKey
 {
-	Partial, BurstFire, AimTransition
+	FormID actorId;
+	auto operator<=>(const ReloadKey& other) const = default;
 };
 
 struct ReloadHandler
 {
-	std::unordered_map<ReloadSubscriber, bool> subscribers;
+	bool isLoopingReload = false;
 };
 
-void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber);
-
-bool DidActorReload(Actor* actor, ReloadSubscriber subscriber);
+namespace NonPartialReloadTracker
+{
+	bool DidReload(Actor* actor);
+	void SetDidReload(Actor* actor);
+	void Update();
+}
 
 AnimPath* GetAnimPath(SavedAnims& animResult, UInt16 groupId, AnimData* animData);
-
-extern std::unordered_map<UInt32, ReloadHandler> g_reloadTracker;
-
-bool IsLoopingReload(UInt8 groupId);
-
-enum class PartialLoopingReloadState
-{
-	NotSet, NotPartial, Partial
-};
-
-extern PartialLoopingReloadState g_partialLoopReloadState;
 
 void HandleGarbageCollection();
 

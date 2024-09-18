@@ -154,11 +154,11 @@ void HandleOnAnimDataDelete(AnimData* animData)
 	
 	{
 		std::unique_lock lock(g_loadCustomAnimationMutex);
-		std::erase_if(g_cachedAnimMap, _L(auto & p, p.first.second == animData));
+		std::erase_if(g_cachedAnimMap, _L(auto& p, p.first.second == animData));
 	}
 }
 
-GameAnimMap* s_customMap = nullptr;
+thread_local GameAnimMap* s_customMap = nullptr;
 
 std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData)
 {
@@ -379,7 +379,6 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		parseForKeys("eject", ejectKeys);
 		if (!hitKeys.empty() || !ejectKeys.empty())
 		{
-			SubscribeOnActorReload(actor, ReloadSubscriber::BurstFire);
 			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, anim, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false);
 		}
 	}
@@ -516,49 +515,24 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 	return applied;
 }
 
-bool IsLoopingReload(UInt8 groupId)
-{
-	return groupId >= kAnimGroup_ReloadW && groupId <= kAnimGroup_ReloadZ;
-}
-
 std::map<std::pair<FormID, SavedAnims*>, int> g_actorAnimOrderMap;
 
-PartialLoopingReloadState g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
-
-AnimPath* GetPartialReload(std::vector<AnimPath*>& candidates, SavedAnims& ctx, Actor* actor, UInt16 groupId)
+void FilterPartialReloads(std::vector<AnimPath*>& candidates, Actor* actor, UInt16 groupId)
 {
+	const std::vector<AnimPath*> partials = candidates | std::views::filter([](const auto& animPath) { return animPath->partialReload; })
+				| std::ranges::to<std::vector>();
+	// remove partials from candidates
+	std::erase_if(candidates, [&](const auto& animPath) { return animPath->partialReload; });
 	const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
 	const auto* weapon = actor->GetWeaponForm();
 	if (!weapon || !ammoInfo)
-		return nullptr;
+		return;
 	
-	if (ammoInfo->count != 0 && !DidActorReload(actor, ReloadSubscriber::Partial) &&
-		g_partialLoopReloadState != PartialLoopingReloadState::NotPartial || g_partialLoopReloadState == PartialLoopingReloadState::Partial)
-	{
-		if (IsLoopingReload(groupId) && g_partialLoopReloadState == PartialLoopingReloadState::NotSet)
-			g_partialLoopReloadState = PartialLoopingReloadState::Partial;
-	}
-	else
-	{
-		g_partialLoopReloadState = PartialLoopingReloadState::NotPartial;
-		for (auto iter = candidates.begin(); iter != candidates.end();)
-		{
-			if ((*iter)->partialReload)
-				iter = candidates.erase(iter);
-			else
-				++iter;
-		}
-		return nullptr;
-	}
-	std::vector<AnimPath*> reloads = candidates | std::views::filter([](const auto& animPath) { return animPath->partialReload; })
-			| std::ranges::to<std::vector>();
-	if (reloads.empty())
-		return nullptr;
-	if (reloads.size() == 1)
-		return *reloads.begin();
-	if (!ctx.hasOrder)
-		return reloads.at(GetRandomUInt(reloads.size()));
-	return reloads.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % reloads.size());
+	if (NonPartialReloadTracker::DidReload(actor))
+		// the actor just did a full reload
+		return;
+	
+	candidates = partials;
 }
 
 std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData)
@@ -662,17 +636,20 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 				if (!anim)
 					return startAnim;
 				if (anim && anim->animGroup && anim->animGroup->GetBaseGroupID() != baseGroupId)
-				{
 					return startAnim;
-				}
 				candidates.erase(startAnimIt);
 			}
 		}
 		if (IsAnimGroupReload(baseGroupId) && ctx.hasPartialReload)
 		{
-			if (auto* path = GetPartialReload(candidates, ctx, actor, groupId))
-				return path;
+			FilterPartialReloads(candidates, actor, groupId);
 		}
+
+		if (candidates.empty())
+			return nullptr;
+		
+		if (candidates.size() == 1)
+			return candidates.front();
 		
 		if (!ctx.hasOrder)
 		{
@@ -682,6 +659,7 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 			// pick random variant
 			return candidates.at(GetRandomUInt(candidates.size()));
 		}
+		
 		// ordered
 		return candidates.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % candidates.size());
 	};
@@ -700,7 +678,6 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 		BSAnimGroupSequence* anim = animCtx->anim;
 		if (!anim)
 			return nullptr;
-		SubscribeOnActorReload(animData->actor, ReloadSubscriber::Partial);
 		HandleExtraOperations(animData, anim);
 		if (!animBundle.additiveAnimPath.empty())
 		{
@@ -1137,52 +1114,80 @@ int GetWeaponInfoClipSize(Actor* actor)
 	return maxRounds;
 }
 
-std::unordered_map<UInt32, ReloadHandler> g_reloadTracker;
+std::map<ReloadKey, ReloadHandler> g_nonPartialReloadMap;
 
-void SubscribeOnActorReload(Actor* actor, ReloadSubscriber subscriber)
+std::optional<ReloadKey> GetReloadKey(Actor* actor)
 {
-	auto& handler = g_reloadTracker[actor->refID];
-	handler.subscribers.emplace(subscriber, false);
-	// auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+	if (!actor || !actor->baseProcess)
+		return std::nullopt;
+	const auto* weapon = actor->GetWeaponForm();
+	if (!weapon)
+		return std::nullopt;
+	const auto* ammo = actor->baseProcess->GetAmmoInfo();
+	if (!ammo || !ammo->ammo)
+		return std::nullopt;
+	return ReloadKey{ .actorId = actor->refID };
 }
 
-bool DidActorReload(Actor* actor, ReloadSubscriber subscriber)
+bool NonPartialReloadTracker::DidReload(Actor* actor)
 {
-	if (IsGodMode())
+	if (actor == g_thePlayer && IsGodMode())
 		return false;
-	const auto iter = g_reloadTracker.find(actor->refID);
-	if (iter == g_reloadTracker.end())
+	const auto key = GetReloadKey(actor);
+	if (!key)
 		return false;
-	auto* didReload = &iter->second.subscribers[subscriber];
-	const auto result = *didReload;
-	g_executionQueue.emplace_back([=]()
-	{
-		*didReload = false;
+	return g_nonPartialReloadMap.contains(*key);
+}
+
+void NonPartialReloadTracker::SetDidReload(Actor* actor)
+{
+	const auto key = GetReloadKey(actor);
+	if (!key)
+		return;
+	auto* weapon = actor->GetWeaponForm();
+	if (!weapon)
+		return;
+	g_nonPartialReloadMap.emplace(*key, ReloadHandler {
+		.isLoopingReload = weapon->HasLoopingReloadAnim()
 	});
-	return result;
 }
 
-void HandleOnActorReload()
+void NonPartialReloadTracker::Update()
 {
-	for (auto iter = g_reloadTracker.begin(); iter != g_reloadTracker.end();)
+	for (auto iter = g_nonPartialReloadMap.begin(); iter != g_nonPartialReloadMap.end();)
 	{
-		auto& [actorId, handler] = *iter;
-		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
-		if (!actor || !actor->IsTypeActor() || actor->IsDeleted() || actor->IsDying(true) || !actor->baseProcess)
+		auto* actor = static_cast<Actor*>(LookupFormByRefID(iter->first.actorId));
+		if (!actor || !actor->IsActor() || !actor->baseProcess)
 		{
-			iter = g_reloadTracker.erase(iter);
+			iter = g_nonPartialReloadMap.erase(iter);
 			continue;
 		}
-		auto* curAmmoInfo = actor->baseProcess->GetAmmoInfo();
-		if (!curAmmoInfo)
+		const auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : actor->baseProcess->GetAnimData();
+		if (!animData)
 		{
-			++iter;
+			iter = g_nonPartialReloadMap.erase(iter);
 			continue;
 		}
-		const bool isAnimActionReload = actor->IsAnimActionReload();
-		if (isAnimActionReload)
+		auto* weaponAnim = animData->animSequence[kSequence_Weapon];
+		if (!weaponAnim || !weaponAnim->animGroup)
 		{
-			ra::for_each(handler.subscribers, _L(auto &p, p.second = false));
+			iter = g_nonPartialReloadMap.erase(iter);
+			continue;
+		}
+		if (weaponAnim->animGroup->IsReload() && !iter->second.isLoopingReload)
+		{
+			// if the weapon anim is reload, it has already played
+			iter = g_nonPartialReloadMap.erase(iter);
+			continue;
+		}
+		if (iter->second.isLoopingReload)
+		{
+			const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+			if (ammoInfo->count != 0 && !weaponAnim->animGroup->IsReload()) // reload finished
+			{
+				iter = g_nonPartialReloadMap.erase(iter);
+				continue;
+			}
 		}
 		++iter;
 	}

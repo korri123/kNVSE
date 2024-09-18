@@ -52,8 +52,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 #endif
 	if (animData && animData->actor)
 	{
-		if (IsAnimGroupReload(static_cast<AnimGroupID>(animGroupId)) && !IsLoopingReload(animGroupId))
-			g_partialLoopReloadState = PartialLoopingReloadState::NotSet;
 		std::optional<AnimationResult> animResult;
 
 		if (auto* queuedAnim = GetQueuedAnim(animData, animGroupId))
@@ -307,18 +305,6 @@ bool __fastcall OverrideWithCustomAnimHook(NiTPointerMap<AnimSequenceBase>* anim
 		return true;
 	
 	return false;
-}
-
-void HandleOnReload(Actor* actor)
-{
-	if (!actor)
-		return;
-	if (auto iter = g_reloadTracker.find(actor->refID); iter != g_reloadTracker.end())
-	{
-		auto& handler = iter->second;
-		ra::for_each(handler.subscribers, _L(auto& p, p.second = true));
-	}
-	//std::erase_if(g_burstFireQueue, _L(BurstFireData & b, b.actorId == g_thePlayer->refID));
 }
 
 [[msvc::noinline]]
@@ -705,11 +691,21 @@ void ApplyHooks()
 	}));
 
 	// hooking TESForm::GetFlags
+	// Runs on empty clip when reloading
 	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
 	{
 		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x1C);
-		[[msvc::noinline_calls]] { HandleOnReload(actor); }
+		[[msvc::noinline_calls]] { NonPartialReloadTracker::SetDidReload(actor); }
 		return form->flags;
+	}));
+
+	// BSTasklet::SetData
+	// Runs when actor switches ammo type
+	using BSTasklet = void;
+	WriteRelCall(0x9465FF, INLINE_HOOK(void, __fastcall, BSTasklet* tasklet, void*, BaseProcess::AmmoInfo* ammoInfo)
+	{
+		NonPartialReloadTracker::SetDidReload(g_thePlayer);
+		ThisStdCall(0x6ECD40, tasklet, ammoInfo);
 	}));
 
 	WriteRelCall(0x490A45, RemoveDuplicateAnimsHook);
