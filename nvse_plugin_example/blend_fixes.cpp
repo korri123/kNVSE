@@ -457,7 +457,7 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
             blendInterpolator->m_cNextHighPriority = newNextHighPriority;
         	for (auto& item : blendInterpItems)
         	{
-        		if (item.m_cPriority == destInterpItem->m_cPriority)
+        		if (item.m_cPriority == destInterpItem->m_cPriority && item.m_spInterpolator.data != sourceInterp->m_spInterpolator)
         			item.m_cPriority = newHighPriority;
         	}
         }

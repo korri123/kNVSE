@@ -517,22 +517,23 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 
 std::map<std::pair<FormID, SavedAnims*>, int> g_actorAnimOrderMap;
 
-void FilterPartialReloads(std::vector<AnimPath*>& candidates, Actor* actor, UInt16 groupId)
+void FilterPartialReloads(std::vector<AnimPath*>& candidates, Actor* actor)
 {
-	const std::vector<AnimPath*> partials = candidates | std::views::filter([](const auto& animPath) { return animPath->partialReload; })
-				| std::ranges::to<std::vector>();
-	// remove partials from candidates
-	std::erase_if(candidates, [&](const auto& animPath) { return animPath->partialReload; });
-	const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
-	const auto* weapon = actor->GetWeaponForm();
-	if (!weapon || !ammoInfo)
-		return;
+	const auto didNonPartialReload = NonPartialReloadTracker::DidReload(actor);
 	
-	if (NonPartialReloadTracker::DidReload(actor))
-		// the actor just did a full reload
-		return;
+	candidates = candidates | std::views::filter([=](const auto& animPath) {
+		return animPath->partialReload != didNonPartialReload;
+	}) | std::ranges::to<std::vector>();
+}
+
+void FilterAmmoSwaps(std::vector<AnimPath*>& candidates, Actor* actor)
+{
+	const auto didAmmoSwap = NonPartialReloadTracker::DidAmmoSwap(actor);
 	
-	candidates = partials;
+	candidates = candidates | std::views::filter([=](const auto& animPath)
+	{
+		return animPath->isAmmoSwap == didAmmoSwap;
+	}) | std::ranges::to<std::vector<AnimPath*>>();
 }
 
 std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData)
@@ -613,7 +614,7 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 		ctx.Load();
 		
 	Actor* actor = animData->actor;
-
+	
 	const auto getAnimPath = [&]() -> AnimPath*
 	{
 		if (ctx.anims.size() == 1) [[likely]]
@@ -624,25 +625,20 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 		const auto baseGroupId = static_cast<AnimGroupID>(groupId);
 		if (ctx.hasStartAnim)
 		{
-			const auto startAnimIt = ra::find_if(candidates, [&](const auto& animPath)
+			const auto* groupInfo = GetGroupInfo(baseGroupId);
+			auto* anim = animData->animSequence[groupInfo->sequenceType];
+			const auto useStartAnim = !anim || !anim->animGroup || anim->animGroup->GetBaseGroupID() != baseGroupId;
+			candidates = candidates | std::views::filter([=](const auto& animPath)
 			{
-				return animPath->isStartAnim;
-			});
-			if (startAnimIt != candidates.end())
-			{
-				const auto* groupInfo = GetGroupInfo(baseGroupId);
-				auto* anim = animData->animSequence[groupInfo->sequenceType];
-				auto* startAnim = *startAnimIt;
-				if (!anim)
-					return startAnim;
-				if (anim && anim->animGroup && anim->animGroup->GetBaseGroupID() != baseGroupId)
-					return startAnim;
-				candidates.erase(startAnimIt);
-			}
+				return animPath->isStartAnim == useStartAnim;
+			}) | std::ranges::to<std::vector<AnimPath*>>();
 		}
-		if (IsAnimGroupReload(baseGroupId) && ctx.hasPartialReload)
+		if (IsAnimGroupReload(baseGroupId))
 		{
-			FilterPartialReloads(candidates, actor, groupId);
+			if (ctx.hasAmmoSwap)
+				FilterAmmoSwaps(candidates, actor);
+			if (ctx.hasPartialReload)
+				FilterPartialReloads(candidates, actor);
 		}
 
 		if (candidates.empty())
@@ -1129,6 +1125,17 @@ std::optional<ReloadKey> GetReloadKey(Actor* actor)
 	return ReloadKey{ .actorId = actor->refID };
 }
 
+bool NonPartialReloadTracker::DidAmmoSwap(Actor* actor)
+{
+	const auto key = GetReloadKey(actor);
+	if (!key)
+		return false;
+	const auto iter = g_nonPartialReloadMap.find(*key);
+	if (iter == g_nonPartialReloadMap.end())
+		return false;
+	return iter->second.didAmmoSwap;
+}
+
 bool NonPartialReloadTracker::DidReload(Actor* actor)
 {
 	if (actor == g_thePlayer && IsGodMode())
@@ -1139,7 +1146,7 @@ bool NonPartialReloadTracker::DidReload(Actor* actor)
 	return g_nonPartialReloadMap.contains(*key);
 }
 
-void NonPartialReloadTracker::SetDidReload(Actor* actor)
+void NonPartialReloadTracker::SetDidReload(Actor* actor, bool didAmmoSwap)
 {
 	const auto key = GetReloadKey(actor);
 	if (!key)
@@ -1148,7 +1155,8 @@ void NonPartialReloadTracker::SetDidReload(Actor* actor)
 	if (!weapon)
 		return;
 	g_nonPartialReloadMap.emplace(*key, ReloadHandler {
-		.isLoopingReload = weapon->HasLoopingReloadAnim()
+		.isLoopingReload = weapon->HasLoopingReloadAnim(),
+		.didAmmoSwap = didAmmoSwap
 	});
 }
 
@@ -2537,7 +2545,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
-		const auto* animData = actor->GetAnimData();
+		const auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : actor->GetAnimData();
 		if (!animData)
 			return true;
 		if (groupId >= g_animGroupInfos.size())

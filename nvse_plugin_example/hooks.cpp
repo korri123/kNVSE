@@ -694,21 +694,32 @@ void ApplyHooks()
 
 	// hooking TESForm::GetFlags
 	// Runs on empty clip when reloading
+	static UInt32 uiTESFormGetFlagsAddr;
 	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
 	{
 		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x1C);
 		[[msvc::noinline_calls]] { NonPartialReloadTracker::SetDidReload(actor); }
-		return form->flags;
-	}));
+		return ThisStdCall<UInt32>(uiTESFormGetFlagsAddr, form);
+	}), &uiTESFormGetFlagsAddr);
 
 	// BSTasklet::SetData
-	// Runs when actor switches ammo type
+	// Runs when actor switches ammo type in Stewie Tweaks
 	using BSTasklet = void;
+	static UInt32 uiBSTaskletSetDataAddr1;
 	WriteRelCall(0x9465FF, INLINE_HOOK(void, __fastcall, BSTasklet* tasklet, void*, BaseProcess::AmmoInfo* ammoInfo)
 	{
-		NonPartialReloadTracker::SetDidReload(g_thePlayer);
-		ThisStdCall(0x6ECD40, tasklet, ammoInfo);
-	}));
+		NonPartialReloadTracker::SetDidReload(g_thePlayer, true);
+		ThisStdCall(uiBSTaskletSetDataAddr1, tasklet, ammoInfo);
+	}), &uiBSTaskletSetDataAddr1);
+
+	// BSTasklet::SetData
+	// Runs when actor switches ammo type in pip-boy
+	static UInt32 uiBSTaskletSetDataAddr2;
+	WriteRelCall(0x780723, INLINE_HOOK(void, __fastcall, BSTasklet* tasklet, void*, BaseProcess::AmmoInfo* ammoInfo)
+	{
+		NonPartialReloadTracker::SetDidReload(g_thePlayer, true);
+		ThisStdCall(uiBSTaskletSetDataAddr2, tasklet, ammoInfo);
+	}), &uiBSTaskletSetDataAddr2);
 
 	WriteRelCall(0x490A45, RemoveDuplicateAnimsHook);
 

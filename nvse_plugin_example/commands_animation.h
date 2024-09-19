@@ -237,6 +237,7 @@ struct AnimPath
 	std::string_view path;
 	bool partialReload = false;
 	bool isStartAnim = false;
+	bool isAmmoSwap = false;
 };
 
 enum class FolderConditionType
@@ -276,6 +277,7 @@ struct SavedAnims
 	bool matchBaseGroupId = false;
 	bool hasStartAnim = false;
 	bool hasPartialReload = false;
+	bool hasAmmoSwap = false;
 	bool disabled = false;
 	std::string_view additiveAnimPath;
 	
@@ -312,6 +314,11 @@ struct SavedAnims
 			{
 				anim->isStartAnim = true;
 				hasStartAnim = true;
+			}
+			if (!anim->isAmmoSwap && sv::contains_ci(fileStem, "_ammo_swap"))
+			{
+				anim->isAmmoSwap = true;
+				hasAmmoSwap = true;
 			}
 		}
 		if (hasOrder)
@@ -553,12 +560,14 @@ struct ReloadKey
 struct ReloadHandler
 {
 	bool isLoopingReload = false;
+	bool didAmmoSwap = false;
 };
 
 namespace NonPartialReloadTracker
 {
+	bool DidAmmoSwap(Actor* actor);
 	bool DidReload(Actor* actor);
-	void SetDidReload(Actor* actor);
+	void SetDidReload(Actor* actor, bool didAmmoSwap = false);
 	void Update();
 }
 
