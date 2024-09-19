@@ -1730,6 +1730,10 @@ struct NiFixedString
 		return *this;
 	}
 
+	bool operator==(const NiFixedString& other) const
+	{
+		return data == other.data;
+	}
 
 };
 
@@ -1755,8 +1759,8 @@ public:
 		NiInterpolator* m_spInterpolator;
 		NiInterpController* m_spInterpCtlr;
 		NiBlendInterpolator* m_pkBlendInterp;
-		UInt8 m_ucBlendIdx;
-		UInt8 m_ucPriority;
+		char m_ucBlendIdx;
+		char m_ucPriority;
 		UInt8 gap0E[2];
 	};
 

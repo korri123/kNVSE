@@ -102,7 +102,9 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	auto* result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
 	if (destAnim && currentAnim)
 	{
-		BlendFixes::FixConflictingPriorities(currentAnim, destAnim);
+		auto* idle = animData->animSequence[kSequence_Idle];
+		if (idle && idle->m_eState == NiControllerSequence::ANIMATING)
+			BlendFixes::FixConflictingPriorities(currentAnim, destAnim, idle);
 		const auto easeTime = GetDefaultBlendTime(destAnim, currentAnim);
 		if (destAnim != currentAnim)
 			AdditiveManager::StopManagedAdditiveSequenceFromParent(currentAnim, easeTime);

@@ -13,7 +13,7 @@ namespace BlendFixes
 	void ApplyAttackISToAttackFix();
 	void ApplyAttackToAttackISFix();
 	void ApplyAimBlendHooks();
-	void FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimGroupSequence* pkDest);
+	void FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimGroupSequence* pkDest, BSAnimGroupSequence* pkIdle);
 	void ApplyHooks();
 }
 
