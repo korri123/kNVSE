@@ -622,6 +622,22 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 		auto candidates = ctx.anims 
             | std::views::transform([](const auto& anim) { return anim.get(); }) 
             | std::ranges::to<std::vector<AnimPath*>>();
+
+		if (groupId == kAnimGroup_DynamicIdle)
+		{
+			auto* dynamicIdle = animData->mapAnimSequenceBase->Lookup(kAnimGroup_DynamicIdle);
+			BSAnimGroupSequence* idleAnimQueued;
+			if (dynamicIdle && ((idleAnimQueued = dynamicIdle->GetSequenceByIndex(-1))))
+			{
+				// handle pip boy dynamic idles
+				const auto queuedFileStem = sv::get_file_stem(idleAnimQueued->m_kName.CStr());
+				candidates = candidates | std::views::filter([=](const auto& animPath)
+				{
+					const auto candidateFileStem = sv::get_file_stem(animPath->path);
+					return sv::equals_ci(candidateFileStem, queuedFileStem);
+				}) | std::ranges::to<std::vector<AnimPath*>>();
+			}
+		}
 		const auto baseGroupId = static_cast<AnimGroupID>(groupId);
 		if (ctx.hasStartAnim)
 		{

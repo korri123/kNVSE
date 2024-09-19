@@ -49,6 +49,19 @@ namespace sv
         return FindStringCI(left, right);
     }
 
+    inline bool starts_with_ci(std::string_view left, std::string_view right)
+    {
+        if (right.size() > left.size())
+            return false;
+
+        std::string_view left_substr = left.substr(0, right.size());
+
+        return std::ranges::equal(left_substr, right, [](char a, char b)
+        {
+            return std::tolower(a) == std::tolower(b);
+        });
+    }
+
     inline bool ends_with_ci(std::string_view left, std::string_view right)
     {
         if (right.size() > left.size())
