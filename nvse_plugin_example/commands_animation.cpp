@@ -623,9 +623,9 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
             | std::views::transform([](const auto& anim) { return anim.get(); }) 
             | std::ranges::to<std::vector<AnimPath*>>();
 
-		if (groupId == kAnimGroup_DynamicIdle)
+		if (groupId == kAnimGroup_DynamicIdle || groupId == kAnimGroup_SpecialIdle)
 		{
-			auto* dynamicIdle = animData->mapAnimSequenceBase->Lookup(kAnimGroup_DynamicIdle);
+			auto* dynamicIdle = animData->mapAnimSequenceBase->Lookup(groupId);
 			BSAnimGroupSequence* idleAnimQueued;
 			if (dynamicIdle && ((idleAnimQueued = dynamicIdle->GetSequenceByIndex(-1))))
 			{
@@ -698,7 +698,6 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 		}
 		return anim;
 	}
-	ERROR_LOG(FormatString("Failed to load animation for group %X", groupId));
 	return nullptr;
 }
 
