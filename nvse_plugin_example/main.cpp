@@ -628,13 +628,9 @@ void ClearScriptCallExecutions()
 	g_scriptCache.clear();
 }
 
-void ResetReloadHandler()
+void ApplyHolsterFix()
 {
-	OnReloadHandler::Update();
-}
-
-void HandleMisc()
-{
+	// i have no idea if there is a better way to do this
 	if (g_fixHolster && g_thePlayer->IsThirdPerson())
 	{
 		auto* anim = g_thePlayer->GetHighProcess()->animData->animSequence[kSequence_Weapon];
@@ -649,16 +645,15 @@ void HandleMisc()
 		else if (anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
 			g_fixHolster = false;
 	}
-	//g_animationResultCache.clear();
-	//g_animPathFrameCache.clear();
-	//g_scriptCache.clear();
-	// Console_Print("Cache hits: %d misses: %d", g_cacheHits, g_cacheMisses);
-	//Console_Print("Calls: %d Cache hits: %d misses: %d", g_totalCalls, g_cacheHits, g_cacheMisses);
+}
+
+void HandleMisc()
+{
+	ApplyHolsterFix();
+	OnReloadHandler::Update();
 	ClearAnimationResultCache();
 	ClearAnimPathFrameCache();
 	ClearScriptCallExecutions();
-
-	ResetReloadHandler();
 }
 
 std::thread g_animFileThread;
