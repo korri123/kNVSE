@@ -531,7 +531,7 @@ void HandleBurstFire()
 				if (!IsGodMode())
 				{
 					//const auto clipSize = GetWeaponInfoClipSize(actor);
-					if (NonPartialReloadTracker::DidReload(actor) || ammoInfo->count == 0 || actor->IsAnimActionReload())
+					if (ammoInfo->count == 0 || actor->IsAnimActionReload())
 					{
 						// reloaded
 						reloading = true;
@@ -616,7 +616,7 @@ void ClearScriptCallExecutions()
 
 void ResetReloadHandler()
 {
-	NonPartialReloadTracker::Update();
+	OnReloadHandler::Update();
 }
 
 void HandleMisc()

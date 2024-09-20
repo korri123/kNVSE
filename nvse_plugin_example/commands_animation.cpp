@@ -519,16 +519,16 @@ std::map<std::pair<FormID, SavedAnims*>, int> g_actorAnimOrderMap;
 
 void FilterPartialReloads(std::vector<AnimPath*>& candidates, Actor* actor)
 {
-	const auto didNonPartialReload = NonPartialReloadTracker::DidReload(actor);
+	const auto didPartialReload = OnReloadHandler::GetLastReloadForActor(actor) == ReloadType::Partial;
 	
 	candidates = candidates | std::views::filter([=](const auto& animPath) {
-		return animPath->partialReload != didNonPartialReload;
+		return animPath->partialReload == didPartialReload;
 	}) | std::ranges::to<std::vector>();
 }
 
 void FilterAmmoSwaps(std::vector<AnimPath*>& candidates, Actor* actor)
 {
-	const auto didAmmoSwap = NonPartialReloadTracker::DidAmmoSwap(actor);
+	const auto didAmmoSwap = OnReloadHandler::GetLastReloadForActor(actor) == ReloadType::AmmoSwap;
 	
 	candidates = candidates | std::views::filter([=](const auto& animPath)
 	{
@@ -1126,7 +1126,7 @@ int GetWeaponInfoClipSize(Actor* actor)
 	return maxRounds;
 }
 
-std::map<ReloadKey, ReloadHandler> g_nonPartialReloadMap;
+std::map<ReloadKey, ReloadHandler> g_reloadMap;
 
 std::optional<ReloadKey> GetReloadKey(Actor* actor)
 {
@@ -1141,28 +1141,18 @@ std::optional<ReloadKey> GetReloadKey(Actor* actor)
 	return ReloadKey{ .actorId = actor->refID };
 }
 
-bool NonPartialReloadTracker::DidAmmoSwap(Actor* actor)
+ReloadType OnReloadHandler::GetLastReloadForActor(Actor* actor)
 {
 	const auto key = GetReloadKey(actor);
 	if (!key)
-		return false;
-	const auto iter = g_nonPartialReloadMap.find(*key);
-	if (iter == g_nonPartialReloadMap.end())
-		return false;
-	return iter->second.didAmmoSwap;
+		return ReloadType::NonPartial;
+	const auto iter = g_reloadMap.find(*key);
+	if (iter == g_reloadMap.end())
+		return ReloadType::NonPartial;
+	return iter->second.reloadType;
 }
 
-bool NonPartialReloadTracker::DidReload(Actor* actor)
-{
-	if (actor == g_thePlayer && IsGodMode())
-		return false;
-	const auto key = GetReloadKey(actor);
-	if (!key)
-		return false;
-	return g_nonPartialReloadMap.contains(*key);
-}
-
-void NonPartialReloadTracker::SetDidReload(Actor* actor, bool didAmmoSwap)
+void OnReloadHandler::SetDidReload(Actor* actor, ReloadType reloadType)
 {
 	const auto key = GetReloadKey(actor);
 	if (!key)
@@ -1170,38 +1160,38 @@ void NonPartialReloadTracker::SetDidReload(Actor* actor, bool didAmmoSwap)
 	auto* weapon = actor->GetWeaponForm();
 	if (!weapon)
 		return;
-	g_nonPartialReloadMap.emplace(*key, ReloadHandler {
+	g_reloadMap.insert_or_assign(*key, ReloadHandler {
 		.isLoopingReload = weapon->HasLoopingReloadAnim(),
-		.didAmmoSwap = didAmmoSwap
+		.reloadType = reloadType
 	});
 }
 
-void NonPartialReloadTracker::Update()
+void OnReloadHandler::Update()
 {
-	for (auto iter = g_nonPartialReloadMap.begin(); iter != g_nonPartialReloadMap.end();)
+	for (auto iter = g_reloadMap.begin(); iter != g_reloadMap.end();)
 	{
 		auto* actor = static_cast<Actor*>(LookupFormByRefID(iter->first.actorId));
 		if (!actor || !actor->IsActor() || !actor->baseProcess)
 		{
-			iter = g_nonPartialReloadMap.erase(iter);
+			iter = g_reloadMap.erase(iter);
 			continue;
 		}
 		const auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : actor->baseProcess->GetAnimData();
 		if (!animData)
 		{
-			iter = g_nonPartialReloadMap.erase(iter);
+			iter = g_reloadMap.erase(iter);
 			continue;
 		}
 		auto* weaponAnim = animData->animSequence[kSequence_Weapon];
 		if (!weaponAnim || !weaponAnim->animGroup)
 		{
-			iter = g_nonPartialReloadMap.erase(iter);
+			iter = g_reloadMap.erase(iter);
 			continue;
 		}
 		if (weaponAnim->animGroup->IsReload() && !iter->second.isLoopingReload)
 		{
 			// if the weapon anim is reload, it has already played
-			iter = g_nonPartialReloadMap.erase(iter);
+			iter = g_reloadMap.erase(iter);
 			continue;
 		}
 		if (iter->second.isLoopingReload)
@@ -1209,7 +1199,7 @@ void NonPartialReloadTracker::Update()
 			const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
 			if (ammoInfo->count != 0 && !weaponAnim->animGroup->IsReload()) // reload finished
 			{
-				iter = g_nonPartialReloadMap.erase(iter);
+				iter = g_reloadMap.erase(iter);
 				continue;
 			}
 		}

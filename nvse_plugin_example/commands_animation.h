@@ -557,17 +557,21 @@ struct ReloadKey
 	auto operator<=>(const ReloadKey& other) const = default;
 };
 
+enum class ReloadType
+{
+	NonPartial, Partial, AmmoSwap
+};
+
 struct ReloadHandler
 {
 	bool isLoopingReload = false;
-	bool didAmmoSwap = false;
+	ReloadType reloadType = ReloadType::NonPartial;
 };
 
-namespace NonPartialReloadTracker
+namespace OnReloadHandler
 {
-	bool DidAmmoSwap(Actor* actor);
-	bool DidReload(Actor* actor);
-	void SetDidReload(Actor* actor, bool didAmmoSwap = false);
+	ReloadType GetLastReloadForActor(Actor* actor);
+	void SetDidReload(Actor* actor, ReloadType reloadType = ReloadType::NonPartial);
 	void Update();
 }
 
