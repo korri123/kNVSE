@@ -1412,7 +1412,14 @@ bool Cmd_PlayGroupAlt_Execute(COMMAND_ARGS)
 
 bool Cmd_kNVSETest_Execute(COMMAND_ARGS)
 {
-	ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
+	auto* anim = GetAnimByGroupID(g_thePlayer->firstPersonAnimData, kAnimGroup_ReloadI);
+	if (!anim)
+	{
+		Console_Print("Failed to get reload animation");
+		return true;
+	}
+	Console_Print("Reload anim %s", anim->m_kName.CStr());
+	anim->Update(anim->m_fEndKeyTime - anim->m_fOffset, true);
 	return true;
 }
 
@@ -2698,6 +2705,21 @@ void CreateCommands(NVSECommandBuilder& builder)
 			AdditiveManager::SetAdditiveReferencePose(refPoseAnim, additiveAnim, refPoseTimePoint);
 			*result = 1;
 		}
+		return true;
+	});
+
+	builder.Create("ThisAnim", kRetnType_String, {}, false, [](COMMAND_ARGS)
+	{
+		const auto path = !g_globals.thisAnimScriptPath.empty() ? g_globals.thisAnimScriptPath : "";
+		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, path.data());
+		return true;
+	});
+
+	builder.Create("ThisAnimDir", kRetnType_String, {}, false, [](COMMAND_ARGS)
+	{
+		const auto path = !g_globals.thisAnimScriptPath.empty() ? sv::get_file_directory(g_globals.thisAnimScriptPath.data()) : "";
+		const sv::stack_string<0x400> resultPath = path;
+		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, resultPath.c_str());
 		return true;
 	});
 

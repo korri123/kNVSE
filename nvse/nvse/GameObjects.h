@@ -904,6 +904,7 @@ public:
 		// D74: 96 bytes that are cleared when the 3D is cleared.
 
 	bool IsThirdPerson() { return thirdPersonConsistent; }
+	bool IsFirstPerson() { return !thirdPersonConsistent; }
 	UInt32 GetMovementFlags() { return actorMover->GetMovementFlags(); }	// 11: IsSwimming, 9: IsSneaking, 8: IsRunning, 7: IsWalking, 0: keep moving
 	bool IsPlayerSwimming() { return (GetMovementFlags()  >> 11) & 1; }
 

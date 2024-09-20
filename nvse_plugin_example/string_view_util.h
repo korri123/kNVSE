@@ -75,6 +75,14 @@ namespace sv
         });
     }
 
+    inline std::string_view get_file_directory(std::string_view path)
+    {
+        const auto pos = path.find_last_of("\\/");
+        if (pos == std::string::npos)
+            return "";
+        return path.substr(0, pos);
+    }
+
     template <size_t N>
     class stack_string
     {
@@ -107,6 +115,13 @@ namespace sv
             assert(size_ <= N);
             assert(numCopied >= 0);
 #endif
+        }
+
+        stack_string(const std::string_view str)
+        {
+            strncpy_s(data_, str.data(), str.size());
+            data_[str.size()] = '\0';
+            size_ = str.size();
         }
 
         operator const char* () const

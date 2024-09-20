@@ -33,8 +33,9 @@ struct PluginGlobalData
 {
     bool isInLoopingReloadPlayAnim = false;
     bool isInConditionFunction = false;
+    std::string_view thisAnimScriptPath;
 };
-extern PluginGlobalData g_globals;
+extern thread_local PluginGlobalData g_globals;
 
 namespace LoopingReloadPauseFix
 {

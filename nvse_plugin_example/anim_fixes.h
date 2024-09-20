@@ -3,6 +3,7 @@
 #include "NiNodes.h"
 
 bool HasNoFixTextKey(const BSAnimGroupSequence* anim);
+bool HasRespectEndKey(BSAnimGroupSequence* anim);
 
 namespace AnimFixes
 {

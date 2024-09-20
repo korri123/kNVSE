@@ -1539,7 +1539,16 @@ public:
 };
 static_assert(sizeof(NiTransformInterpolator) == 0x48);
 
-struct NiUpdateData;
+struct NiUpdateData
+{
+	float fTime;
+	unsigned int RenderUseDepth;
+	bool bParentsChecked;
+	NiCamera *pCamera;
+	unsigned int Flags;
+	unsigned int RenderObjects;
+	unsigned int FadeNodeDepth;
+};
 
 /* 12659 */
 class NiTimeController : public NiObject
@@ -1865,6 +1874,11 @@ public:
 	bool VerifyMatchingMorphKeys(NiControllerSequence *pkTimeSyncSeq) const;
 	bool CanSyncTo(NiControllerSequence *pkTargetSequence) const;
 	void SetTimePassed(float fTime, bool bUpdateInterpolators);
+	
+	void Update(float fTime, bool bUpdateInterpolators)
+	{
+		ThisStdCall(0xA34BA0, this, fTime, bUpdateInterpolators);
+	}
 };
 ASSERT_SIZE(NiControllerSequence, 0x74);
 

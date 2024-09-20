@@ -501,3 +501,14 @@ void BlendFixes::ApplyHooks()
 	}));
 #endif
 }
+
+void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim)
+{
+	if (animData->actor != g_thePlayer
+		|| animData != g_thePlayer->firstPersonAnimData
+		|| g_thePlayer->IsFirstPerson()
+		|| anim->m_fLastScaledTime >= anim->m_fEndKeyTime)
+		return;
+	// set the time of the anim to end
+	anim->m_fOffset = anim->m_fEndKeyTime - animData->timePassed;
+}

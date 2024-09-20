@@ -98,6 +98,8 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (destAnim && destAnim->animGroup)
 		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
 			currentAnim = animData->animSequence[groupInfo->sequenceType];
+	if (currentAnim)
+		BlendFixes::FixPrematureFirstPersonEnd(animData, currentAnim);
 	Apply3rdPersonRespectEndKeyEaseInFix(animData, destAnim);
 	auto* result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
 	if (destAnim && currentAnim)
@@ -576,7 +578,7 @@ void ApplyFixLoopingReloadStartHooks()
 }
 
 PluginINISettings g_pluginSettings;
-PluginGlobalData g_globals;
+thread_local PluginGlobalData g_globals;
 
 void ApplyHooks()
 {

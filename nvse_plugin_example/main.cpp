@@ -304,6 +304,19 @@ void HandlePollConditionAnims()
 	}
 }
 
+struct SetThisAnimScriptPath
+{
+	SetThisAnimScriptPath(BSAnimGroupSequence* anim)
+	{
+		g_globals.thisAnimScriptPath = anim->m_kName.Str();
+	}
+
+	~SetThisAnimScriptPath()
+	{
+		g_globals.thisAnimScriptPath = {};
+	}
+};
+
 void HandleCustomTextKeys()
 {
 	for (auto it = g_timeTrackedAnims.begin(); it != g_timeTrackedAnims.end();)
@@ -329,6 +342,7 @@ void HandleCustomTextKeys()
 			erase();
 			continue;
 		}
+		SetThisAnimScriptPath setThisAnimScriptPath(anim);
 		auto* groupInfo = anim->animGroup ? GetGroupInfo(static_cast<AnimGroupID>(anim->animGroup->groupID)) : nullptr;
 #if _DEBUG
 		auto animTimeDupl = TempObject(animTime); // see vals in debugger after erase

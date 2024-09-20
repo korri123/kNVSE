@@ -112,7 +112,7 @@ struct AnimData
 	NiNode* nSceneRoot;		// 008
 	NiNode* nBip01;			// 00C
 	NiPoint3						pt010;				// 010
-	NiPoint3						pt01C;				// 01C
+	NiPoint3						sunLight;				// 01C
 	NiNode* nPelvis;			// 028
 	NiNode* nBip01Copy;		// 02C
 	NiNode* nLForearm;			// 030
