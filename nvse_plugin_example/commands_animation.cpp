@@ -1226,10 +1226,14 @@ void LogScript(Script* scriptObj, TESForm* form, const std::string& funcName)
 		LOG("\tGLOBALLY on any form");
 }
 
-ScopedList<char> GetDirectoryAnimPaths(const char* path)
+ScopedList<char> GetDirectoryAnimPaths(std::string_view path)
 {
-	const std::string searchPath = FormatString(R"(Data\Meshes\%s\*.kf)", path);
-	const std::string renamePath = FormatString("%s\\", path);
+	sv::stack_string<0x400> resultPath = path;
+	if (resultPath.ends_with('\\'))
+		resultPath.pop_back();
+	
+	const sv::stack_string<0x400> searchPath = { R"(data\meshes\%s\*.kf)", resultPath.c_str() };
+	const sv::stack_string<0x400> renamePath = { R"(%s\*.kf)", resultPath.c_str() };
 	return FileFinder::FindFiles(searchPath.c_str(), renamePath.c_str(), ARCHIVE_TYPE_MESHES);
 }
 

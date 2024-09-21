@@ -209,6 +209,14 @@ bool TESAnimGroup::IsAttackNonIS()
 	return true;
 }
 
+ScopedList<char> FileFinder::FindFiles(const char* path, const char* renameDirectory, ARCHIVE_TYPE archiveType)
+{
+	const auto result = MakeUnique(CdeclCall<ScopedList<char>*>(0xAFE420, path, renameDirectory, archiveType, nullptr));
+	if (!result)
+		return {};
+	return std::move(*result);
+}
+
 AnimGroupInfo* GetGroupInfo(AnimGroupID groupId)
 {
 	return &g_animGroupInfos[groupId];

@@ -1,6 +1,7 @@
 #pragma once
 #include "GameObjects.h"
 #include "GameOSDepend.h"
+#include "utility.h"
 
 enum ARCHIVE_TYPE : int;
 
@@ -1030,16 +1031,32 @@ public:
 		}
 		this->RemoveAll();
 	}
+
+	ScopedList() = default;
+
+	ScopedList(const ScopedList& other) = delete;
+
+	ScopedList(ScopedList&& other) noexcept
+		: BSSimpleList<char>(other.m_listHead)
+	{
+		other.m_listHead = {};
+	}
+
+	ScopedList& operator=(const ScopedList& other) = delete;
+
+	ScopedList& operator=(ScopedList&& other) noexcept
+	{
+		if (this == &other)
+			return *this;
+		this->m_listHead = other.m_listHead;
+		other.m_listHead = {};
+		return *this;
+	}
 };
 
 namespace FileFinder
 {
-	inline ScopedList<char> FindFiles(const char* path, const char* renameDirectory, ARCHIVE_TYPE archiveType)
-	{
-		ScopedList<char> result;
-		CdeclCall<ScopedList<char>*>(0xAFE420, path, renameDirectory, archiveType, &result);
-		return result;
-	}
+	ScopedList<char> FindFiles(const char* path, const char* renameDirectory, ARCHIVE_TYPE archiveType);
 }
 
 class BSWin32Audio

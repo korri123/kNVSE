@@ -936,6 +936,15 @@ void ApplyHooks()
 		return ThisStdCall<float>(0x493800, animData, anim);
 	}));
 
+#if _DEBUG
+	// BSSimpleList<void *>::IsEmpty(ListMasters)
+	// stop game from not loading bsa files for mods with empty master list
+	WriteRelCall(0x46375C, INLINE_HOOK(bool, __fastcall, BSSimpleList<ModInfo>* modList)
+	{
+		return false;
+	}));
+#endif
+
 	AdditiveManager::WriteHooks();
 }
 

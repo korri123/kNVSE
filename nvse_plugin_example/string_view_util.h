@@ -199,6 +199,11 @@ namespace sv
             }
         }
 
+        bool ends_with(char c) const
+        {
+            return size_ > 0 && data_[size_ - 1] == c;
+        }
+
         stack_string& operator+=(char c)
         {
             if (size_ < N - 1)
