@@ -1,4 +1,4 @@
-﻿#pragma once
+﻿    #pragma once
 #include <optional>
 
 #include "commands_animation.h"

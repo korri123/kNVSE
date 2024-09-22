@@ -12,14 +12,24 @@ std::unordered_map<BSAnimGroupSequence*, BSAnimGroupSequence*> referenceToAdditi
 std::unordered_map<NiInterpolator*, const char*> interpsToTargetsMap;
 #endif
 
-void AdditiveManager::SetAdditiveReferencePose(BSAnimGroupSequence* referenceSequence,
+void AdditiveManager::SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence* referenceSequence,
                                                BSAnimGroupSequence* additiveSequence, float timePoint)
 {
+    NiNode* node = actor->GetNiNode();
+    if (!node)
+        return;
     if (const auto iter = additiveSequenceMap.find(additiveSequence); iter != additiveSequenceMap.end())
     {
         const auto& metadata = iter->second;
         if (metadata.referencePoseSequence == referenceSequence && metadata.referenceTimePoint == timePoint)
+        {
+            for (const auto& block : additiveSequence->GetControlledBlocks())
+            {
+                if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms())
+                    block.m_pkBlendInterp->SetHasAdditiveTransforms(true);
+            }
             return;
+        }
         additiveSequenceMap.erase(iter);
     }
     const auto baseIdTags = referenceSequence->GetIDTags();
@@ -32,16 +42,9 @@ void AdditiveManager::SetAdditiveReferencePose(BSAnimGroupSequence* referenceSeq
         if (interpolator && interpController)
         {
             const auto& idTag = baseIdTags[i];
-            NiAVObject* targetNode = interpController->GetTargetNode(idTag);
+            NiAVObject* targetNode = node->GetObjectByName(idTag.m_kAVObjectName);
             if (!targetNode)
-            {
-#ifdef _DEBUG
-                if (IsDebuggerPresent())
-                    DebugBreak();
-                ERROR_LOG("target is null for " + std::string(idTag.m_kAVObjectName.CStr()));
-#endif
                 continue;
-            }
 
             const float fOldTime = interpolator->m_fLastTime;
             NiQuatTransform baseTransform;
@@ -78,7 +81,7 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
             return;
         additiveAnim->Deactivate(0.0f, false);
     }
-    SetAdditiveReferencePose(referenceAnim, additiveAnim);
+    SetAdditiveReferencePose(animData->actor, referenceAnim, additiveAnim);
     referenceToAdditiveMap[referenceAnim] = additiveAnim;
 
     BSAnimGroupSequence* currentAnim = nullptr;
@@ -120,7 +123,7 @@ bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence*
         auto* additiveSequence = iter->second;
         float easeOutTime = 0.0f;
         if (!additiveSequence->m_spTextKeys->FindFirstByName("noBlend"))
-            easeOutTime = afEaseOutTime == INVALID_TIME ? additiveSequence->GetEasingTime() : afEaseOutTime;
+            easeOutTime = afEaseOutTime == INVALID_TIME ? additiveSequence->GetEaseInTime() : afEaseOutTime;
         additiveSequence->Deactivate(easeOutTime, false);
         return true;
     }

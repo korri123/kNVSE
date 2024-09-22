@@ -244,6 +244,11 @@ std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UI
 AnimTime::~AnimTime()
 {
 	Revert3rdPersonAnimTimes(this->respectEndKeyData.anim3rdCounterpart, this->anim);
+	if (this->trackEndTime)
+	{
+		const auto easeOutTime = this->anim->GetEaseOutTime();
+		this->anim->Deactivate(easeOutTime, false);
+	}
 }
 
 // Make sure that Aim, AimUp and AimDown all use the same index
@@ -291,10 +296,10 @@ std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptLineEx
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptCallExecutions;
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<BSSoundHandle>> g_scriptSoundExecutions;
 
-bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
+AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, bool createIfNoKeys)
 {
 	if (!anim)
-		return false;
+		return nullptr;
 	auto applied = false;
 	const auto textKeys = anim->m_spTextKeys->GetKeys();
 	auto* actor = animData->actor;
@@ -505,14 +510,15 @@ bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim)
 		applied = true;
 	}
 		
-	if (applied)
+	if (applied || createIfNoKeys)
 	{
 		auto& animTime = getAnimTimeStruct();
 		animTime.actorId = actor->refID;
 		animTime.lastNiTime = -FLT_MAX;
 		animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
+		return &animTime;
 	}
-	return applied;
+	return nullptr;
 }
 
 std::map<std::pair<FormID, SavedAnims*>, int> g_actorAnimOrderMap;
@@ -710,13 +716,13 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 	if (g_animFileThread.joinable())
 		g_animFileThread.join();
 
-	std::shared_lock lock(g_animMapMutex);
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
-	auto [cache, isNew] = g_animationResultCache.emplace(std::make_pair(animGroupId, animData), std::nullopt);
-	if (!isNew)
+	const auto cacheKey = std::make_pair(animGroupId, animData);
 	{
-		return cache->second;
+		std::shared_lock lock(g_animMapMutex);
+		if (const auto iter = g_animationResultCache.find(cacheKey); iter != g_animationResultCache.end())
+			return iter->second;
 	}
 #if _DEBUG
 	int _debug = 0;
@@ -772,7 +778,10 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 	};
 	// first try base group id based anim
 	auto result = getActorAnimation(animGroupId);
-	cache->second = result;
+	{
+		std::unique_lock lock(g_animMapMutex);
+		g_animationResultCache.emplace(cacheKey, result);
+	}
 	return result;
 }
 
@@ -1354,11 +1363,13 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
-	char path[0x400];
+	sv::stack_string<0x400> path;
 	auto playerPov = 0;
 	
-	if (!ExtractArgs(EXTRACT_ARGS, &path, &playerPov))
+	if (!ExtractArgs(EXTRACT_ARGS, &path.data_, &playerPov))
 		return true;
+	path.calculate_size();
+	SetLowercase(path.data());
 
 	auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
 	if (!actor)
@@ -1366,10 +1377,18 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 
 	auto* animData = GetAnimDataForPov(playerPov, actor);
 
-	if (const auto anim = FindOrLoadAnim(animData, path))
-	//if (const auto anim = GetAnimationByPath(path))
+	if (const auto anim = FindOrLoadAnim(animData, path); anim)
 	{
-		GameFuncs::TransitionToSequence(animData, anim, anim->animGroup->groupID, -1);
+		if (anim->m_eState != NiControllerSequence::INACTIVE)
+			animData->controllerManager->DeactivateSequence(anim, 0.0f);
+		if (auto* animTime = HandleExtraOperations(animData, anim, true); animTime && anim->m_eCycleType != NiControllerSequence::LOOP)
+		{
+			animTime->trackEndTime = true;
+			animTime->endIfSequenceTypeChanges = false;
+		}
+		const auto easeInTime = anim->GetEaseInTime();
+		animData->controllerManager->ActivateSequence(anim, 0, true, anim->m_fSeqWeight, easeInTime, nullptr);
+		anim->m_fLastScaledTime = 0.0f;
 		*result = 1;
 	}
 	return true;
@@ -1644,8 +1663,22 @@ float GetIniFloat(UInt32 addr)
 	return ThisStdCall<SettingT::Info*>(0x403E20, reinterpret_cast<void*>(addr))->f;
 }
 
+float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence)
+{
+	if (destSequence->m_spTextKeys->FindFirstByName("noBlend"))
+		return 0.0f;
+	const auto defaultBlend = GetIniFloat(0x11C56FC);
+	const auto blendMult = GetIniFloat(0x11C5724);
+	if (!destSequence->animGroup)
+		return defaultBlend;
+	const auto blendOut = max(destSequence->animGroup->blendOut, destSequence->animGroup->blend);
+	return static_cast<float>(blendOut) / 30.0f / blendMult;
+}
+
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence)
 {
+	if (destSequence->m_spTextKeys->FindFirstByName("noBlend"))
+		return 0.0f;
 	const auto defaultBlend = GetIniFloat(0x11C56FC);
 	const auto blendMult = GetIniFloat(0x11C5724);
 
@@ -2021,8 +2054,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		int firstPerson = -1;
 		int priority = 0;
 		int startOver = 1;
-		float weight = FLT_MIN;
-		float easeInTime = 0.0f;
+		float weight = INVALID_TIME;
+		float easeInTime = INVALID_TIME;
 		char timeSyncSequence[0x400];
 		timeSyncSequence[0] = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &firstPerson, &priority, &startOver, &weight, &easeInTime, &timeSyncSequence))
@@ -2038,8 +2071,15 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindOrLoadAnim(actor, sequencePath, firstPerson);
 		if (!anim)
 			return true;
-		if (weight == FLT_MIN)
+		if (weight == INVALID_TIME)
 			weight = anim->m_fSeqWeight;
+		if (easeInTime == INVALID_TIME)
+		{
+			if (anim->animGroup && (anim->animGroup->blendIn || anim->animGroup->blend))
+				easeInTime = anim->GetEaseInTime();
+			else
+				easeInTime = 0.0f;
+		}
 		BSAnimGroupSequence* timeSyncSeq = nullptr;
 		if (timeSyncSequence[0])
 		{
@@ -2055,9 +2095,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 			GameFuncs::DeactivateSequence(manager, anim, 0.0);
 		
 		auto* animData = GetAnimData(actor, firstPerson);
-		HandleExtraOperations(animData, anim);
+		if (auto* animTime = HandleExtraOperations(animData, anim, true))
+			animTime->endIfSequenceTypeChanges = false;
 
 		GameFuncs::ActivateSequence(manager, anim, priority, startOver, weight, easeInTime, timeSyncSeq);
+		anim->m_fLastScaledTime = 0.0f;
 		return true;
 	});
 
@@ -2076,7 +2118,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = 0;
 		char sequencePath[0x400];
 		sequencePath[0] = 0;
-		float easeOutTime = 0.0f;
+		float easeOutTime = INVALID_TIME;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &easeOutTime))
 			return true;
 		SetLowercase(sequencePath);
@@ -2086,6 +2128,13 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindActiveAnimationForActor(actor, sequencePath);
 		if (!anim)
 			return true;
+		if (easeOutTime == INVALID_TIME)
+		{
+			if (anim->animGroup && (anim->animGroup->blendOut || anim->animGroup->blend))
+				easeOutTime = anim->GetEaseOutTime();
+			else
+				easeOutTime = 0.0f;
+		}
 		auto* manager = anim->m_pkOwner;
 		*result = manager->DeactivateSequence(anim, easeOutTime);
 		return true;
@@ -2706,7 +2755,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 				refPoseAnim = GetAnimByGroupID(animData, kAnimGroup_Idle);
 			if (!refPoseAnim)
 				return true;
-			AdditiveManager::SetAdditiveReferencePose(refPoseAnim, additiveAnim, refPoseTimePoint);
+			AdditiveManager::SetAdditiveReferencePose(actor, refPoseAnim, additiveAnim, refPoseTimePoint);
 			*result = 1;
 		}
 		return true;

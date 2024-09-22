@@ -1210,3 +1210,15 @@ enum WeaponModFlags: UInt32
 	kWeaponMod_Flag2 = 0x2,
 	kWeaponMod_Flag3 = 0x4,
 };
+
+struct IdleAnimDirectoryMap
+{
+	NiTStringPointerMap<NiTArray<TESIdleForm*>> animRootMap;
+	bool bLoaded;
+	NiTArray<TESIdleForm*> formArray;
+
+	static IdleAnimDirectoryMap* Get()
+	{
+		return reinterpret_cast<IdleAnimDirectoryMap*>(0x11CB6A0);
+	}
+};

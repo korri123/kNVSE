@@ -192,6 +192,8 @@ struct AnimTime
 
 	bool hasCustomAnimGroups = false;
 	std::set<std::pair<Script*, std::string>> cleanUpScripts;
+	bool trackEndTime = false;
+	bool endIfSequenceTypeChanges = true;
 
 	struct RespectEndKeyData
 	{
@@ -455,6 +457,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UInt16 groupId, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence);
+float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence);
 
 std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData);
 
@@ -538,7 +541,7 @@ bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson);
 float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
-bool HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim);
+AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, bool createIfNoKeys = false);
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID);
 bool IsAnimGroupReload(AnimGroupID animGroupId);
 bool IsAnimGroupReload(UInt8 animGroupId);

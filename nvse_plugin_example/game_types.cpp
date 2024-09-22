@@ -657,3 +657,12 @@ bool AnimGroup::FallbacksTo(AnimData* animData, FullAnimGroupID sourceGroupId, F
 	// Final fallback check
 	return destGroupId == (sourceGroupId & 0x7F00);
 }
+
+NiTextKey* NiTextKeyExtraData::FindFirstThatStartsWith(const char* name) const
+{
+	const auto keys = GetKeys();
+	auto it = std::ranges::find_if(keys, [name](const NiTextKey& key) {
+		return std::string_view(key.m_kText.CStr()).starts_with(name);
+	});
+	return it != keys.end() ? &*it : nullptr;
+}

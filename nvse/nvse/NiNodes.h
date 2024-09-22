@@ -1892,7 +1892,8 @@ public:
 	NiPointer<TESAnimGroup> animGroup;	//068
 
 	BSAnimGroupSequence* Get3rdPersonCounterpart() const;
-	float GetEasingTime() const;
+	float GetEaseInTime() const;
+	float GetEaseOutTime() const;
 };
 STATIC_ASSERT(sizeof(BSAnimGroupSequence) == 0x78);
 
@@ -2958,6 +2959,8 @@ public:
 		});
 		return it != keys.end() ? &*it : nullptr;
 	}
+
+	NiTextKey* FindFirstThatStartsWith(const char* name) const;
 
 	std::span<NiTextKey> GetKeys() const
 	{

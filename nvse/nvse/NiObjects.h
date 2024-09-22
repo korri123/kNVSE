@@ -67,7 +67,7 @@ public:
 	/*090*/virtual void		Unk_24(NiMatrix33* arg1, NiPoint3* arg2, bool arg3);
 	/*094*/virtual void		Unk_25(UInt32 arg1);
 	/*098*/virtual void		Unk_26(UInt32 arg1);
-	/*09C*/virtual NiAVObject* GetObjectByName(void* objName);
+	/*09C*/virtual NiAVObject* GetObjectByName(const NiFixedString& objName);
 	/*0A0*/virtual void		Unk_28(UInt32 arg1, UInt32 arg2, UInt32 arg3);
 	/*0A4*/virtual void		Unk_29(void* updParams, UInt32 arg2);
 	/*0A8*/virtual void		Unk_2A(UInt32 arg1, UInt32 arg2);

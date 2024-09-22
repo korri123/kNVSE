@@ -81,9 +81,10 @@ std::shared_mutex g_scriptCacheMutex;
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 	NVSEArrayVarInterface::Element* result)
 {
+	const auto cacheKey = std::make_pair(callingObj, funcScript);
 	{
 		std::shared_lock lock(g_scriptCacheMutex);
-		if (auto iter = g_scriptCache.find(std::make_pair(callingObj, funcScript)); iter != g_scriptCache.end())
+		if (auto iter = g_scriptCache.find(cacheKey); iter != g_scriptCache.end())
 		{
 			*result = iter->second;
 			return true;
@@ -98,8 +99,10 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 		0
 	);
 	g_globals.isInConditionFunction = false;
-	std::unique_lock lock(g_scriptCacheMutex);
-	g_scriptCache.emplace(std::make_pair(callingObj, funcScript), *result);
+	{
+		std::unique_lock lock(g_scriptCacheMutex);
+		g_scriptCache.emplace(cacheKey, *result);
+	}
 	return success;
 }
 
@@ -356,9 +359,9 @@ void HandleCustomTextKeys()
 
 		const auto isAnimPlaying = [&]
 		{
-			if (!groupInfo)
-				return anim->m_eState != kAnimState_Inactive;
-			return anim->m_eState != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim;
+			if (groupInfo && animTime.endIfSequenceTypeChanges)
+				return anim->m_eState != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim;
+			return anim->m_eState != kAnimState_Inactive;
 		};
 		
 		if (IsActorInvalid(actor) || !animData)
@@ -477,6 +480,11 @@ void HandleCustomTextKeys()
 		// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
 		// moved below so that keys on end frame are handled correctly (functional backpack by mrshersh)
 		if (!animTime.respectEndKey && !isAnimPlaying())
+		{
+			erase();
+			continue;
+		}
+		if (animTime.trackEndTime && animTime.anim->m_fLastScaledTime >= animTime.anim->m_fEndKeyTime)
 		{
 			erase();
 			continue;

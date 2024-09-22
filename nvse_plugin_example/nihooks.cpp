@@ -882,9 +882,14 @@ void NiControllerSequence::SetTimePassed(float fTime, bool bUpdateInterpolators)
     ThisStdCall(0xA328B0, this, fTime, bUpdateInterpolators);
 }
 
-float BSAnimGroupSequence::GetEasingTime() const
+float BSAnimGroupSequence::GetEaseInTime() const
 {
     return GetDefaultBlendTime(this, nullptr);
+}
+
+float BSAnimGroupSequence::GetEaseOutTime() const
+{
+    return GetDefaultBlendOutTime(this);
 }
 
 NiAVObject* NiInterpController::GetTargetNode(const NiControllerSequence::IDTag& idTag) const
