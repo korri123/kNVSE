@@ -7,10 +7,12 @@
 
 std::unordered_map<NiInterpolator*, NiQuatTransform> additiveInterpReferenceTransformsMap;
 std::unordered_map<NiControllerSequence*, AdditiveAnimMetadata> additiveSequenceMap;
-std::unordered_map<BSAnimGroupSequence*, BSAnimGroupSequence*> referenceToAdditiveMap;
+std::unordered_map<BSAnimGroupSequence*, std::vector<BSAnimGroupSequence*>> referenceToAdditiveMap;
 #if _DEBUG
 std::unordered_map<NiInterpolator*, const char*> interpsToTargetsMap;
 #endif
+
+std::shared_mutex g_additiveManagerMutex;
 
 void AdditiveManager::SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence* referenceSequence,
                                                BSAnimGroupSequence* additiveSequence, float timePoint)
@@ -18,18 +20,12 @@ void AdditiveManager::SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence
     NiNode* node = actor->GetNiNode();
     if (!node)
         return;
+    std::unique_lock lock(g_additiveManagerMutex);
     if (const auto iter = additiveSequenceMap.find(additiveSequence); iter != additiveSequenceMap.end())
     {
         const auto& metadata = iter->second;
         if (metadata.referencePoseSequence == referenceSequence && metadata.referenceTimePoint == timePoint)
-        {
-            for (const auto& block : additiveSequence->GetControlledBlocks())
-            {
-                if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms())
-                    block.m_pkBlendInterp->SetHasAdditiveTransforms(true);
-            }
             return;
-        }
         additiveSequenceMap.erase(iter);
     }
     const auto baseIdTags = referenceSequence->GetIDTags();
@@ -53,11 +49,7 @@ void AdditiveManager::SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence
             if (const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
                 bSuccess && additiveBlock && additiveBlock->m_spInterpolator)
             {
-                if (NiBlendInterpolator* blendInterpolator = baseBlock.m_pkBlendInterp)
-                {
-                    additiveInterpReferenceTransformsMap[additiveBlock->m_spInterpolator] = baseTransform;
-                    blendInterpolator->SetHasAdditiveTransforms(true);
-                }
+                additiveInterpReferenceTransformsMap[additiveBlock->m_spInterpolator] = baseTransform;
             }
         }
     }
@@ -70,6 +62,7 @@ void AdditiveManager::SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence
     }
 #endif
     additiveSequenceMap[additiveSequence] = AdditiveAnimMetadata{referenceSequence, timePoint};
+    MarkInterpolatorsAsAdditive(additiveSequence);
 }
 
 void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim)
@@ -82,7 +75,11 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
         additiveAnim->Deactivate(0.0f, false);
     }
     SetAdditiveReferencePose(animData->actor, referenceAnim, additiveAnim);
-    referenceToAdditiveMap[referenceAnim] = additiveAnim;
+
+    {
+        std::unique_lock lock(g_additiveManagerMutex);
+        referenceToAdditiveMap[referenceAnim].push_back(additiveAnim);
+    }
 
     BSAnimGroupSequence* currentAnim = nullptr;
     if (referenceAnim->animGroup)
@@ -93,13 +90,24 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
     additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false);
 }
 
+void AdditiveManager::MarkInterpolatorsAsAdditive(BSAnimGroupSequence* additiveSequence)
+{
+    for (const auto& block : additiveSequence->GetControlledBlocks())
+    {
+        if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms())
+            block.m_pkBlendInterp->SetHasAdditiveTransforms(true);
+    }
+}
+
 bool AdditiveManager::IsAdditiveSequence(BSAnimGroupSequence* sequence)
 {
+    std::shared_lock lock(g_additiveManagerMutex);
     return additiveSequenceMap.contains(sequence);
 }
 
 void AdditiveManager::EraseAdditiveSequence(BSAnimGroupSequence* sequence)
 {
+    std::unique_lock lock(g_additiveManagerMutex);
     additiveSequenceMap.erase(sequence);
     for (auto& block: sequence->GetControlledBlocks())
     {
@@ -108,23 +116,30 @@ void AdditiveManager::EraseAdditiveSequence(BSAnimGroupSequence* sequence)
         interpsToTargetsMap.erase(block.m_spInterpolator);
 #endif
     }
-    std::erase_if(referenceToAdditiveMap, _L(auto& p, p.second == sequence));
+    for (auto& additiveSequences : referenceToAdditiveMap | std::views::values)
+    {
+        std::erase_if(additiveSequences, _L(auto& p, p == sequence));
+    }
 }
 
 bool AdditiveManager::IsAdditiveInterpolator(NiInterpolator* interpolator)
 {
+    std::shared_lock lock(g_additiveManagerMutex);
     return additiveInterpReferenceTransformsMap.contains(interpolator);
 }
 
 bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseOutTime)
 {
+    std::shared_lock lock(g_additiveManagerMutex);
     if (const auto iter = referenceToAdditiveMap.find(parentSequence); iter != referenceToAdditiveMap.end())
     {
-        auto* additiveSequence = iter->second;
-        float easeOutTime = 0.0f;
-        if (!additiveSequence->m_spTextKeys->FindFirstByName("noBlend"))
-            easeOutTime = afEaseOutTime == INVALID_TIME ? additiveSequence->GetEaseInTime() : afEaseOutTime;
-        additiveSequence->Deactivate(easeOutTime, false);
+        for (const auto& additiveSequences = iter->second; auto* additiveSequence : additiveSequences)
+        {
+            float easeOutTime = 0.0f;
+            if (!additiveSequence->m_spTextKeys->FindFirstByName("noBlend"))
+                easeOutTime = afEaseOutTime == INVALID_TIME ? additiveSequence->GetEaseInTime() : afEaseOutTime;
+            additiveSequence->Deactivate(easeOutTime, false);
+        }
         return true;
     }
     return false;
@@ -158,7 +173,8 @@ void ApplyAdditiveTransforms(
     bool bTransChanged = false;
     bool bRotChanged = false;
     bool bScaleChanged = false;
-
+    
+    std::shared_lock lock(g_additiveManagerMutex);
     for (auto& kItem : kBlendInterp.GetItems())
     {
         const auto* kRefFrameTransformPtr = AdditiveManager::GetRefFrameTransform(kItem.m_spInterpolator.data);
@@ -220,6 +236,7 @@ void ApplyAdditiveTransforms(
             }
         }
     }
+    lock.unlock();
     
     if (bTransChanged)
     {

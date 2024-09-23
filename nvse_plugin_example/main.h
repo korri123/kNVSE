@@ -87,9 +87,7 @@ struct ScriptPairEqual {
 
 using ScriptCacheKey = std::pair<TESObjectREFR*, Script*>;
 using ScriptCacheValue = NVSEArrayVarInterface::Element;
-using ScriptCachePair = std::pair<const ScriptCacheKey, ScriptCacheValue>;
-using ScriptCache = std::unordered_map<ScriptCacheKey, ScriptCacheValue, ScriptPairHash, ScriptPairEqual>;
-extern ScriptCache g_scriptCache;
+using ScriptCache = ResultCache<const ScriptCacheKey, ScriptCacheValue, ScriptPairHash, ScriptPairEqual>;
 
 struct MapHitCounter
 {
@@ -168,3 +166,5 @@ struct AverageTimers
 };
 
 extern AverageTimers g_averageTimers;
+
+void ClearResultCaches();

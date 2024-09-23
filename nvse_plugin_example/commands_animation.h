@@ -593,22 +593,21 @@ UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);
 float GetIniFloat(UInt32 addr);
 NiControllerSequence::InterpArrayItem* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);
 
+extern thread_local bool g_isThreadCacheEnabled;
+
+template <typename Key, typename Value, typename Hash = pair_hash, typename Equal = pair_equal>
+using ResultCache = std::unordered_map<Key, Value, Hash, Equal>;
+
 using AnimationResultKey = std::pair<UInt32, AnimData*>;
 using AnimationResultValue = std::optional<AnimationResult>;
-using AnimationResultPair = std::pair<const AnimationResultKey, AnimationResultValue>;
-using AnimationResultCache = std::unordered_map<AnimationResultKey, AnimationResultValue, pair_hash, pair_equal>;
-extern AnimationResultCache g_animationResultCache;
+using AnimationResultCache = ResultCache<const AnimationResultKey, AnimationResultValue>;
+extern thread_local AnimationResultCache g_animationResultCache;
 
 using AnimPathKey = std::pair<SavedAnims*, AnimData*>;
-using AnimPathValue = AnimPath*;
-using AnimPathPair = std::pair<const AnimPathKey, AnimPathValue>;
-using AnimPathCache = std::unordered_map<AnimPathKey, AnimPathValue, pair_hash, pair_equal>;
+using AnimPathCache = ResultCache<const AnimPathKey, AnimPath*>;
 
-extern AnimPathCache g_animPathFrameCache;
+extern thread_local AnimPathCache g_animPathFrameCache;
 
 std::string_view GetBaseAnimGroupName(std::string_view name);
-
-extern std::shared_mutex g_animMapMutex;
-extern std::shared_mutex g_animPathFrameCacheMutex;
 
 AnimGroupID GroupNameToId(std::string_view name);

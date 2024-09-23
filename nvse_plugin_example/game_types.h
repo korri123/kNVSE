@@ -1222,3 +1222,68 @@ struct IdleAnimDirectoryMap
 		return reinterpret_cast<IdleAnimDirectoryMap*>(0x11CB6A0);
 	}
 };
+
+class BSThread
+{
+public:
+	virtual ~BSThread();
+
+	CRITICAL_SECTION criticalsection;
+	HANDLE createdThread;
+	HANDLE creatorThread;
+	UInt32 threadID;
+	UInt32 creatorThreadID;
+	bool bIsInitialized;
+	UInt8 gap2D[3];
+};
+
+struct BSSemaphore
+{
+	UInt32 uiCount;
+	HANDLE hSemaphore;
+	UInt32 uiMaxCount;
+};
+
+class BSLinearTaskThread : public BSThread
+{
+public:
+	BSSemaphore StartProcessing;
+	BSSemaphore FinishedProcessing;
+	UInt8 bKillThread;
+};
+
+class AILinearTaskThread : public BSLinearTaskThread
+{
+public:
+	void (__cdecl *function)();
+	UInt32 unk50;
+	UInt32 unk54;
+	UInt32 unk58;
+	UInt32 unk5C;
+	UInt32 unk60;
+	UInt32 unk64;
+	UInt32 unk68;
+	UInt32 unk6C;
+	UInt32 unk70;
+	UInt32 unk74;
+};
+
+class AILinearTaskManager
+{
+public:
+	AILinearTaskThread *pThreads[3];
+	UInt32 unkC[3];
+	BSSemaphore semaphores[3];
+	HANDLE *eventsArray3C[12];
+	HANDLE *eventsArray6C[8];
+	UInt32 unk8C;
+	UInt32 unk90;
+
+	static AILinearTaskManager* GetSingleton()
+	{
+		return reinterpret_cast<AILinearTaskManager*>(0x11DFA50);
+	}
+};
+
+
+

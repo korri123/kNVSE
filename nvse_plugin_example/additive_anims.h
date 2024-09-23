@@ -23,6 +23,7 @@ namespace AdditiveManager
     NiQuatTransform* GetRefFrameTransform(NiInterpolator* interpolator);
     void SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence* referenceSequence, BSAnimGroupSequence* additiveSequence, float timePoint = 0.0f);
     void PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim);
+    void MarkInterpolatorsAsAdditive(BSAnimGroupSequence* additiveSequence);
 #if _DEBUG
     const char* GetTargetNodeName(NiInterpolator* interpolator);
 #endif

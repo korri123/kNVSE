@@ -75,20 +75,23 @@ float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 	return anim->m_fOffset + animData->timePassed;
 }
 
-ScriptCache g_scriptCache;
-std::shared_mutex g_scriptCacheMutex;
+thread_local ScriptCache g_scriptCache;
 
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 	NVSEArrayVarInterface::Element* result)
 {
 	const auto cacheKey = std::make_pair(callingObj, funcScript);
+	ScriptCacheValue* cachePtr = nullptr;
+	const auto useCache = g_isThreadCacheEnabled;
+	if (useCache)
 	{
-		std::shared_lock lock(g_scriptCacheMutex);
-		if (auto iter = g_scriptCache.find(cacheKey); iter != g_scriptCache.end())
+		const auto [mapIter, isNew] = g_scriptCache.emplace(cacheKey, NVSEArrayVarInterface::Element{});
+		if (!isNew)
 		{
-			*result = iter->second;
+			*result = mapIter->second;
 			return true;
 		}
+		cachePtr = &mapIter->second;
 	}
 	g_globals.isInConditionFunction = true;
 	const auto success = g_script->CallFunction(
@@ -99,10 +102,8 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 		0
 	);
 	g_globals.isInConditionFunction = false;
-	{
-		std::unique_lock lock(g_scriptCacheMutex);
-		g_scriptCache.emplace(cacheKey, *result);
-	}
+	if (useCache)
+		*cachePtr = *result;
 	return success;
 }
 
@@ -618,24 +619,6 @@ void HandleExecutionQueue()
 	}
 }
 
-void ClearAnimationResultCache() 
-{
-	std::unique_lock lock(g_animMapMutex);
-	g_animationResultCache.clear();
-}
-
-void ClearAnimPathFrameCache() 
-{
-	std::unique_lock lock(g_animPathFrameCacheMutex);
-	g_animPathFrameCache.clear();
-}
-
-void ClearScriptCallExecutions() 
-{
-	std::unique_lock lock(g_scriptCacheMutex);
-	g_scriptCache.clear();
-}
-
 void ApplyHolsterFix()
 {
 	// i have no idea if there is a better way to do this
@@ -655,13 +638,18 @@ void ApplyHolsterFix()
 	}
 }
 
+void ClearResultCaches()
+{
+	g_animationResultCache.clear();
+	g_animPathFrameCache.clear();
+	g_scriptCache.clear();
+}
+
 void HandleMisc()
 {
 	ApplyHolsterFix();
 	OnReloadHandler::Update();
-	ClearAnimationResultCache();
-	ClearAnimPathFrameCache();
-	ClearScriptCallExecutions();
+	ClearResultCaches();
 }
 
 std::thread g_animFileThread;
@@ -670,6 +658,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
 	{
+		g_isThreadCacheEnabled = true;
 		Console_Print("kNVSE version %d", VERSION_MAJOR);
 		WriteDelayedHooks();
 		g_thePlayer = *reinterpret_cast<PlayerCharacter**>(0x011DEA3C);

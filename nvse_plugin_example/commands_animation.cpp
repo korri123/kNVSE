@@ -23,6 +23,7 @@
 
 #include "additive_anims.h"
 #include "anim_fixes.h"
+#include "blend_fixes.h"
 #include "nihooks.h"
 #include "NiNodes.h"
 #include "NiObjects.h"
@@ -39,9 +40,6 @@ AnimOverrideMap g_animGroupFirstPersonMap;
 // mod index map
 AnimOverrideMap g_animGroupModIdxThirdPersonMap;
 AnimOverrideMap g_animGroupModIdxFirstPersonMap;
-
-std::shared_mutex g_animMapMutex;
-
 
 AnimData* GetAnimDataForPov(UInt32 playerPov, Actor* actor)
 {
@@ -584,7 +582,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 	return std::nullopt;
 }
 
-std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, UInt32 animGroupId, AnimData* animData)
+std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, FullAnimGroupID animGroupId, AnimData* animData)
 {
 	if (const auto mapIter = map.find(id); mapIter != map.end())
 	{
@@ -604,16 +602,19 @@ AnimOverrideMap& GetModIndexMap(bool firstPerson)
 }
 
 // preserve randomization of variants
-AnimPathCache g_animPathFrameCache;
-std::shared_mutex g_animPathFrameCacheMutex;
+thread_local AnimPathCache g_animPathFrameCache;
 
 AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 {
-	auto cacheKey = std::make_pair(&ctx, animData);
+	const auto cacheKey = std::make_pair(&ctx, animData);
+	AnimPath** cachePtr = nullptr;
+	const auto useCache = g_isThreadCacheEnabled;
+	if (useCache)
 	{
-		std::shared_lock lock(g_animPathFrameCacheMutex);
-		if (auto iter = g_animPathFrameCache.find(cacheKey); iter != g_animPathFrameCache.end())
-			return iter->second;
+		const auto [result, isNew] = g_animPathFrameCache.emplace(cacheKey, nullptr);
+		if (!isNew)
+			return result->second;
+		cachePtr = &result->second;
 	}
 
 	if (!ctx.loaded)
@@ -682,9 +683,9 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 		return candidates.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % candidates.size());
 	};
 
-	auto* result = getAnimPath();
-	std::unique_lock lock(g_animPathFrameCacheMutex);
-	g_animPathFrameCache.emplace(cacheKey, result);
+	const auto result = getAnimPath();
+	if (useCache)
+		*cachePtr = result;
 	return result;
 }
 
@@ -708,7 +709,9 @@ BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* 
 }
 
 // clear this cache every frame
-AnimationResultCache g_animationResultCache;
+thread_local AnimationResultCache g_animationResultCache;
+
+std::shared_mutex g_overrideMapMutex;
 
 std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData)
 {
@@ -719,17 +722,23 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
 	const auto cacheKey = std::make_pair(animGroupId, animData);
+	std::optional<AnimationResult>* cachePtr = nullptr;
+	const auto useCache = g_isThreadCacheEnabled;
+	if (useCache)
 	{
-		std::shared_lock lock(g_animMapMutex);
-		if (const auto iter = g_animationResultCache.find(cacheKey); iter != g_animationResultCache.end())
-			return iter->second;
+		const auto [result, isNew] = g_animationResultCache.emplace(cacheKey, std::nullopt);
+		if (!isNew)
+			return result->second;
+		cachePtr = &result->second;
 	}
 #if _DEBUG
 	int _debug = 0;
 #endif
-
+	
 	const auto getActorAnimation = [&](FullAnimGroupID animGroupId) -> std::optional<AnimationResult>
 	{
+		std::shared_lock lock(g_overrideMapMutex);
+		
 		std::optional<AnimationResult> result;
 		std::optional<AnimationResult> modIndexResult;
 		StackVector<UInt8, 8> visitedModIndices;
@@ -776,12 +785,9 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 			return result;
 		return std::nullopt;
 	};
-	// first try base group id based anim
-	auto result = getActorAnimation(animGroupId);
-	{
-		std::unique_lock lock(g_animMapMutex);
-		g_animationResultCache.emplace(cacheKey, result);
-	}
+	const auto result = getActorAnimation(animGroupId);
+	if (useCache)
+		*cachePtr = result;
 	return result;
 }
 
@@ -933,7 +939,7 @@ bool RegisterCustomAnimGroupAnim(std::string_view path)
 
 bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 {
-	std::unique_lock lock(g_animMapMutex);
+	std::unique_lock lock(g_overrideMapMutex);
 	const auto path = data.path;
 	const auto groupId = GetAnimGroupId(path);
 	if (groupId == INVALID_FULL_GROUP_ID)
@@ -1387,6 +1393,8 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 			animTime->endIfSequenceTypeChanges = false;
 		}
 		const auto easeInTime = anim->GetEaseInTime();
+		if (AdditiveManager::IsAdditiveSequence(anim))
+			AdditiveManager::MarkInterpolatorsAsAdditive(anim);
 		animData->controllerManager->ActivateSequence(anim, 0, true, anim->m_fSeqWeight, easeInTime, nullptr);
 		anim->m_fLastScaledTime = 0.0f;
 		*result = 1;
@@ -2097,7 +2105,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* animData = GetAnimData(actor, firstPerson);
 		if (auto* animTime = HandleExtraOperations(animData, anim, true))
 			animTime->endIfSequenceTypeChanges = false;
-
+		if (AdditiveManager::IsAdditiveSequence(anim))
+			AdditiveManager::MarkInterpolatorsAsAdditive(anim);
 		GameFuncs::ActivateSequence(manager, anim, priority, startOver, weight, easeInTime, timeSyncSeq);
 		anim->m_fLastScaledTime = 0.0f;
 		return true;

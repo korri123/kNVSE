@@ -580,6 +580,8 @@ void ApplyFixLoopingReloadStartHooks()
 PluginINISettings g_pluginSettings;
 thread_local PluginGlobalData g_globals;
 
+thread_local bool g_isThreadCacheEnabled = false;
+
 void ApplyHooks()
 {
 	const auto iniPath = R"(Data\NVSE\Plugins\kNVSE.ini)";
@@ -944,6 +946,14 @@ void ApplyHooks()
 		return false;
 	}));
 #endif
+
+	static UInt32 uiScriptLocalsClearOptimizationsAddr;
+	WriteRelCall(0x8C7F36, INLINE_HOOK(void, __cdecl)
+	{
+		g_isThreadCacheEnabled = true;
+		ClearResultCaches();
+		CdeclCall<void>(uiScriptLocalsClearOptimizationsAddr);
+	}), &uiScriptLocalsClearOptimizationsAddr);
 
 	AdditiveManager::WriteHooks();
 }
