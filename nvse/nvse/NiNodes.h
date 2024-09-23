@@ -1755,6 +1755,8 @@ class NiControllerSequence : public NiObject
 public:
 	NiControllerSequence();
 	~NiControllerSequence();
+	void AttachInterpolatorsAdditive(char cPriority) const;
+	void DetachInterpolatorsAdditive() const;
 
 	enum
 	{
@@ -1765,8 +1767,8 @@ public:
 
 	struct InterpArrayItem
 	{
-		NiInterpolator* m_spInterpolator;
-		NiInterpController* m_spInterpCtlr;
+		NiPointer<NiInterpolator> m_spInterpolator;
+		NiPointer<NiInterpController> m_spInterpCtlr;
 		NiBlendInterpolator* m_pkBlendInterp;
 		char m_ucBlendIdx;
 		char m_ucPriority;
@@ -1921,10 +1923,13 @@ class NiBlendInterpolator : public NiInterpolator
 {
 public:
 	virtual UInt8 AddInterpInfo(NiInterpolator *pkInterpolator, float fWeight, char cPriority, float fEaseSpinner = 1.0f);
-	virtual void *Unk_38();
+	virtual NiInterpolator* RemoveInterpInfo(unsigned char ucIndex);
 	virtual void *Unk_39();
 	virtual void *Unk_3A();
-	
+
+	void ComputeNormalizedWeightsAdditive();
+	void CalculatePrioritiesAdditive();
+
 	enum
 	{
 		MANAGER_CONTROLLED_MASK = 0X0001,

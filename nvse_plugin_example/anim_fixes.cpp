@@ -43,7 +43,8 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 #ifdef _DEBUG
 		auto& tag = tags[idx++];
 #endif
-		auto* interpolator = static_cast<NiTransformInterpolator*>(block.m_spInterpolator);
+		const NiPointer<NiInterpolator> ref = block.m_spInterpolator;
+		NiTransformInterpolator* interpolator = static_cast<NiTransformInterpolator*>(ref.data);
 		if (interpolator && IS_TYPE(interpolator, NiTransformInterpolator))
 		{
 			unsigned int numKeys;
@@ -198,6 +199,7 @@ void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
 
 void AnimFixes::EraseNegativeAnimKeys(const BSAnimGroupSequence* anim)
 {
+#if 0
 	// disabled as if transform data is freed it will crash the game since heap pointer is incremented
 	if (HasNoFixTextKey(anim))
 		return;
@@ -247,6 +249,7 @@ void AnimFixes::EraseNegativeAnimKeys(const BSAnimGroupSequence* anim)
 			else break;
 		}
 	}
+#endif
 }
 
 void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)

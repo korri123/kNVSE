@@ -181,8 +181,8 @@ float CalculateTransitionBlendTime(AnimData* animData, BSAnimGroupSequence* src,
 	auto* destInterpItem = dst->GetControlledBlock(blockName);
 	if (!srcInterpItem || !destInterpItem)
 		return blend;
-	auto* srcInterp = srcInterpItem->m_spInterpolator;
-	auto* destInterp = destInterpItem->m_spInterpolator;
+	auto srcInterp = srcInterpItem->m_spInterpolator;
+	auto destInterp = destInterpItem->m_spInterpolator;
 	if (!srcInterp || !destInterp)
 		return blend;
 	NiQuatTransform destTransform;

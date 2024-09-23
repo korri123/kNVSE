@@ -756,6 +756,9 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
                                     NiControllerSequence* pkTimeSyncSeq, bool bTransition)
 {
+#ifndef _DEBUG
+    return ThisStdCall<bool>(0xA34F20, this, cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
+#else
     // return ThisStdCall(0xA34F20, this, cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
     assert(m_pkOwner);
 
@@ -828,6 +831,7 @@ bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeig
 
     m_fLastTime = -NI_INFINITY;
     return true;
+#endif
 }
 
 bool NiControllerSequence::StartBlend(NiControllerSequence* pkDestSequence, float fDuration, float fDestFrame,

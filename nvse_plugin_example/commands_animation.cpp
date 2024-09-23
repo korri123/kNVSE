@@ -1141,6 +1141,7 @@ int GetWeaponInfoClipSize(Actor* actor)
 }
 
 std::map<ReloadKey, ReloadHandler> g_reloadMap;
+std::shared_mutex g_reloadMapMutex;
 
 std::optional<ReloadKey> GetReloadKey(Actor* actor)
 {
@@ -1160,6 +1161,7 @@ ReloadType OnReloadHandler::GetLastReloadForActor(Actor* actor)
 	const auto key = GetReloadKey(actor);
 	if (!key)
 		return ReloadType::NonPartial;
+	std::shared_lock lock(g_reloadMapMutex);
 	const auto iter = g_reloadMap.find(*key);
 	if (iter == g_reloadMap.end())
 		return ReloadType::NonPartial;
@@ -1174,6 +1176,7 @@ void OnReloadHandler::SetDidReload(Actor* actor, ReloadType reloadType)
 	auto* weapon = actor->GetWeaponForm();
 	if (!weapon)
 		return;
+	std::unique_lock lock(g_reloadMapMutex);
 	g_reloadMap.insert_or_assign(*key, ReloadHandler {
 		.isLoopingReload = weapon->HasLoopingReloadAnim(),
 		.reloadType = reloadType
@@ -1182,10 +1185,11 @@ void OnReloadHandler::SetDidReload(Actor* actor, ReloadType reloadType)
 
 void OnReloadHandler::Update()
 {
+	std::unique_lock lock(g_reloadMapMutex);
 	for (auto iter = g_reloadMap.begin(); iter != g_reloadMap.end();)
 	{
 		auto* actor = static_cast<Actor*>(LookupFormByRefID(iter->first.actorId));
-		if (!actor || !actor->IsActor() || !actor->baseProcess)
+		if (!actor || !DYNAMIC_CAST(actor, TESForm, Actor) || !actor->baseProcess)
 		{
 			iter = g_reloadMap.erase(iter);
 			continue;
@@ -1443,14 +1447,10 @@ bool Cmd_PlayGroupAlt_Execute(COMMAND_ARGS)
 
 bool Cmd_kNVSETest_Execute(COMMAND_ARGS)
 {
-	auto* anim = GetAnimByGroupID(g_thePlayer->firstPersonAnimData, kAnimGroup_ReloadI);
-	if (!anim)
-	{
-		Console_Print("Failed to get reload animation");
-		return true;
-	}
-	Console_Print("Reload anim %s", anim->m_kName.CStr());
-	anim->Update(anim->m_fEndKeyTime - anim->m_fOffset, true);
+	auto* animData = g_thePlayer->baseProcess->GetAnimData();
+	auto* anim = FindOrLoadAnim(animData, "characters\\_male\\sneak1hpattack8.kf");
+	auto controlledBlocks = anim->GetControlledBlocks();
+	auto idTagArray = anim->GetIDTags();
 	return true;
 }
 
