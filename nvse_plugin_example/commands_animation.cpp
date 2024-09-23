@@ -2729,6 +2729,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		ParamInfo{"first person", kParamType_Integer, true},
 		ParamInfo{"reference pose anim path", kParamType_String, true},
 		ParamInfo{"reference pose time point", kParamType_Float, true},
+		ParamInfo{"ignore priorities", kParamType_Integer, true},
 	};
 	builder.Create("SetAnimAdditive", kRetnType_Default, setAdditiveParams, true, [](COMMAND_ARGS)
 	{
@@ -2737,7 +2738,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		sv::stack_string<0x400> refPoseAnimPath;
 		int firstPerson = -1;
 		float refPoseTimePoint = 0.0f;
-		if (!ExtractArgs(EXTRACT_ARGS, &animPath.data_, &firstPerson, &refPoseAnimPath.data_, &refPoseTimePoint))
+		UInt32 ignorePriorities = 0;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath.data_, &firstPerson, &refPoseAnimPath.data_, &refPoseTimePoint, &ignorePriorities))
 			return true;
 		for (auto* path : {&animPath, &refPoseAnimPath})
 		{
@@ -2764,7 +2766,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 				refPoseAnim = GetAnimByGroupID(animData, kAnimGroup_Idle);
 			if (!refPoseAnim)
 				return true;
-			AdditiveManager::SetAdditiveReferencePose(actor, refPoseAnim, additiveAnim, refPoseTimePoint);
+			const auto bIgnorePriorities = static_cast<bool>(ignorePriorities);
+			AdditiveManager::InitAdditiveSequence(actor, refPoseAnim, AdditiveAnimMetadata{additiveAnim, refPoseTimePoint, bIgnorePriorities});
 			*result = 1;
 		}
 		return true;
@@ -2782,6 +2785,24 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto path = !g_globals.thisAnimScriptPath.empty() ? sv::get_file_directory(g_globals.thisAnimScriptPath.data()) : "";
 		const sv::stack_string<0x400> resultPath = path;
 		g_stringVarInterface->Assign(PASS_COMMAND_ARGS, resultPath.c_str());
+		return true;
+	});
+
+	builder.Create("GetAnimWeight", kRetnType_Default, { ParamInfo{"anim sequence path", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> animPath;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
+			return true;
+		SetLowercase(animPath.data_);
+		animPath.calculate_size();
+		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
+		if (!actor)
+			return true;
+		const auto* anim = FindActiveAnimationForActor(actor, animPath.c_str());
+		if (!anim)
+			return true;
+		*result = anim->m_fSeqWeight;
 		return true;
 	});
 

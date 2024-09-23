@@ -12,6 +12,9 @@ struct AdditiveAnimMetadata
 {
     BSAnimGroupSequence* referencePoseSequence;
     float referenceTimePoint;
+    bool ignorePriorities = false;
+
+    auto operator<=>(const AdditiveAnimMetadata&) const = default;
 };
 
 namespace AdditiveManager
@@ -20,8 +23,8 @@ namespace AdditiveManager
     void EraseAdditiveSequence(BSAnimGroupSequence* sequence);
     bool IsAdditiveInterpolator(NiInterpolator* interpolator);
     bool StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseOutTime = INVALID_TIME);
-    NiQuatTransform* GetRefFrameTransform(NiInterpolator* interpolator);
-    void SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence* referenceSequence, BSAnimGroupSequence* additiveSequence, float timePoint = 0.0f);
+    std::pair<BSAnimGroupSequence*, NiQuatTransform>* GetSequenceAndRefFrameTransform(NiInterpolator* interpolator);
+    void InitAdditiveSequence(Actor* actor, BSAnimGroupSequence* additiveSequence, AdditiveAnimMetadata metadata);
     void PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim);
     void MarkInterpolatorsAsAdditive(BSAnimGroupSequence* additiveSequence);
 #if _DEBUG

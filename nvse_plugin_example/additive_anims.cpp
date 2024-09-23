@@ -5,7 +5,7 @@
 #include "utility.h"
 
 
-std::unordered_map<NiInterpolator*, NiQuatTransform> additiveInterpReferenceTransformsMap;
+std::unordered_map<NiInterpolator*, std::pair<BSAnimGroupSequence*, NiQuatTransform>> additiveInterpReferenceTransformsMap;
 std::unordered_map<NiControllerSequence*, AdditiveAnimMetadata> additiveSequenceMap;
 std::unordered_map<BSAnimGroupSequence*, std::vector<BSAnimGroupSequence*>> referenceToAdditiveMap;
 #if _DEBUG
@@ -14,22 +14,22 @@ std::unordered_map<NiInterpolator*, const char*> interpsToTargetsMap;
 
 std::shared_mutex g_additiveManagerMutex;
 
-void AdditiveManager::SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence* referenceSequence,
-                                               BSAnimGroupSequence* additiveSequence, float timePoint)
+void AdditiveManager::InitAdditiveSequence(Actor* actor, BSAnimGroupSequence* additiveSequence, AdditiveAnimMetadata metadata)
 {
     NiNode* node = actor->GetNiNode();
     if (!node)
         return;
+    const auto [referencePoseSequence, timePoint, ignorePriorities] = metadata;
     std::unique_lock lock(g_additiveManagerMutex);
     if (const auto iter = additiveSequenceMap.find(additiveSequence); iter != additiveSequenceMap.end())
     {
-        const auto& metadata = iter->second;
-        if (metadata.referencePoseSequence == referenceSequence && metadata.referenceTimePoint == timePoint)
+        const auto& existingMetadata = iter->second;
+        if (metadata == existingMetadata)
             return;
         additiveSequenceMap.erase(iter);
     }
-    const auto baseIdTags = referenceSequence->GetIDTags();
-    const auto baseBlocks = referenceSequence->GetControlledBlocks();
+    const auto baseIdTags = referencePoseSequence->GetIDTags();
+    const auto baseBlocks = referencePoseSequence->GetControlledBlocks();
     for (size_t i = 0; i < baseBlocks.size(); i++)
     {
         const auto& baseBlock = baseBlocks[i];
@@ -49,7 +49,7 @@ void AdditiveManager::SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence
             if (const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
                 bSuccess && additiveBlock && additiveBlock->m_spInterpolator)
             {
-                additiveInterpReferenceTransformsMap[additiveBlock->m_spInterpolator] = baseTransform;
+                additiveInterpReferenceTransformsMap[additiveBlock->m_spInterpolator] = { additiveSequence, baseTransform };
             }
         }
     }
@@ -61,7 +61,7 @@ void AdditiveManager::SetAdditiveReferencePose(Actor* actor, BSAnimGroupSequence
         interpsToTargetsMap[controlledBlocks[i].m_spInterpolator] = idTag.m_kAVObjectName.CStr();
     }
 #endif
-    additiveSequenceMap[additiveSequence] = AdditiveAnimMetadata{referenceSequence, timePoint};
+    additiveSequenceMap[additiveSequence] = metadata;
     MarkInterpolatorsAsAdditive(additiveSequence);
 }
 
@@ -74,7 +74,7 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
             return;
         additiveAnim->Deactivate(0.0f, false);
     }
-    SetAdditiveReferencePose(animData->actor, referenceAnim, additiveAnim);
+    InitAdditiveSequence(animData->actor, referenceAnim, AdditiveAnimMetadata{additiveAnim, 0.0f});
 
     {
         std::unique_lock lock(g_additiveManagerMutex);
@@ -145,7 +145,14 @@ bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence*
     return false;
 }
 
-NiQuatTransform* AdditiveManager::GetRefFrameTransform(NiInterpolator* interpolator)
+bool DoesIgnorePriorities(BSAnimGroupSequence* sequence)
+{
+    if (const auto iter = additiveSequenceMap.find(sequence); iter != additiveSequenceMap.end())
+        return iter->second.ignorePriorities;
+    return false;
+}
+
+std::pair<BSAnimGroupSequence*, NiQuatTransform>* AdditiveManager::GetSequenceAndRefFrameTransform(NiInterpolator* interpolator)
 {
     if (const auto iter = additiveInterpReferenceTransformsMap.find(interpolator); iter != additiveInterpReferenceTransformsMap.end())
         return &iter->second;
@@ -177,8 +184,8 @@ void ApplyAdditiveTransforms(
     std::shared_lock lock(g_additiveManagerMutex);
     for (auto& kItem : kBlendInterp.GetItems())
     {
-        const auto* kRefFrameTransformPtr = AdditiveManager::GetRefFrameTransform(kItem.m_spInterpolator.data);
-        if (!kRefFrameTransformPtr)
+        const auto* kContext = AdditiveManager::GetSequenceAndRefFrameTransform(kItem.m_spInterpolator.data);
+        if (!kContext)
             continue; // not an additive interpolator
         if (kItem.m_fNormalizedWeight != 0.0f)
         {
@@ -190,13 +197,14 @@ void ApplyAdditiveTransforms(
             continue;
         }
 
-        if (kItem.m_cPriority < kBlendInterp.m_cNextHighPriority)
+        const auto& [sequence, kRefTransform] = *kContext;
+
+        if (kItem.m_cPriority < kBlendInterp.m_cNextHighPriority && !DoesIgnorePriorities(sequence))
             continue;
 
         const float fUpdateTime = kBlendInterp.GetManagerControlled() ? kItem.m_fUpdateTime : fTime;
         if (fUpdateTime == INVALID_TIME)
             continue;
-        const auto& kRefTransform = *kRefFrameTransformPtr;
         
         NiQuatTransform kInterpTransform;
         if (kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kInterpTransform))
