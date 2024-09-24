@@ -1206,6 +1206,12 @@ void OnReloadHandler::Update()
 			iter = g_reloadMap.erase(iter);
 			continue;
 		}
+		const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+		if (!ammoInfo)
+		{
+			iter = g_reloadMap.erase(iter);
+			continue;
+		}
 		if (weaponAnim->animGroup->IsReload() && !iter->second.isLoopingReload)
 		{
 			// if the weapon anim is reload, it has already played
@@ -1214,7 +1220,6 @@ void OnReloadHandler::Update()
 		}
 		if (iter->second.isLoopingReload)
 		{
-			const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
 			if (ammoInfo->count != 0 && !weaponAnim->animGroup->IsReload()) // reload finished
 			{
 				iter = g_reloadMap.erase(iter);
@@ -1397,8 +1402,6 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 			animTime->endIfSequenceTypeChanges = false;
 		}
 		const auto easeInTime = anim->GetEaseInTime();
-		if (AdditiveManager::IsAdditiveSequence(anim))
-			AdditiveManager::MarkInterpolatorsAsAdditive(anim);
 		animData->controllerManager->ActivateSequence(anim, 0, true, anim->m_fSeqWeight, easeInTime, nullptr);
 		anim->m_fLastScaledTime = 0.0f;
 		*result = 1;
@@ -2105,8 +2108,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* animData = GetAnimData(actor, firstPerson);
 		if (auto* animTime = HandleExtraOperations(animData, anim, true))
 			animTime->endIfSequenceTypeChanges = false;
-		if (AdditiveManager::IsAdditiveSequence(anim))
-			AdditiveManager::MarkInterpolatorsAsAdditive(anim);
 		GameFuncs::ActivateSequence(manager, anim, priority, startOver, weight, easeInTime, timeSyncSeq);
 		anim->m_fLastScaledTime = 0.0f;
 		return true;
