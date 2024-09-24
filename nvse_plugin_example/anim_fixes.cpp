@@ -43,8 +43,7 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 #ifdef _DEBUG
 		auto& tag = tags[idx++];
 #endif
-		const NiPointer<NiInterpolator> ref = block.m_spInterpolator;
-		NiTransformInterpolator* interpolator = static_cast<NiTransformInterpolator*>(ref.data);
+		NiTransformInterpolator* interpolator = static_cast<NiTransformInterpolator*>(block.m_spInterpolator.data);
 		if (interpolator && IS_TYPE(interpolator, NiTransformInterpolator))
 		{
 			unsigned int numKeys;

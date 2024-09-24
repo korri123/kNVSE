@@ -5,8 +5,8 @@
 #include "utility.h"
 
 
-std::unordered_map<NiPointer<NiInterpolator>, std::pair<BSAnimGroupSequence*, NiQuatTransform>> additiveInterpReferenceTransformsMap;
-std::unordered_map<NiControllerSequence*, AdditiveAnimMetadata> additiveSequenceMap;
+std::unordered_map<NiInterpolator*, std::pair<BSAnimGroupSequence*, NiQuatTransform>> additiveInterpReferenceTransformsMap;
+std::unordered_map<BSAnimGroupSequence*, AdditiveAnimMetadata> additiveSequenceMap;
 std::unordered_map<BSAnimGroupSequence*, std::vector<BSAnimGroupSequence*>> referenceToAdditiveMap;
 #if _DEBUG
 std::unordered_map<NiInterpolator*, const char*> interpsToTargetsMap;
@@ -49,7 +49,7 @@ void AdditiveManager::InitAdditiveSequence(Actor* actor, BSAnimGroupSequence* ad
             if (const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
                 bSuccess && additiveBlock && additiveBlock->m_spInterpolator)
             {
-                additiveInterpReferenceTransformsMap[additiveBlock->m_spInterpolator] = { additiveSequence, baseTransform };
+                additiveInterpReferenceTransformsMap[additiveBlock->m_spInterpolator.data] = { additiveSequence, baseTransform };
             }
         }
     }
@@ -94,7 +94,7 @@ void AdditiveManager::MarkInterpolatorsAsAdditive(BSAnimGroupSequence* additiveS
 {
     for (const auto& block : additiveSequence->GetControlledBlocks())
     {
-        if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms())
+        if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms() && IS_TYPE(block.m_pkBlendInterp, NiBlendTransformInterpolator))
             block.m_pkBlendInterp->SetHasAdditiveTransforms(true);
     }
 }
@@ -147,6 +147,7 @@ bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence*
 
 bool DoesIgnorePriorities(BSAnimGroupSequence* sequence)
 {
+    std::shared_lock lock(g_additiveManagerMutex);
     if (const auto iter = additiveSequenceMap.find(sequence); iter != additiveSequenceMap.end())
         return iter->second.ignorePriorities;
     return false;
@@ -154,6 +155,7 @@ bool DoesIgnorePriorities(BSAnimGroupSequence* sequence)
 
 std::pair<BSAnimGroupSequence*, NiQuatTransform>* AdditiveManager::GetSequenceAndRefFrameTransform(NiInterpolator* interpolator)
 {
+    std::shared_lock lock(g_additiveManagerMutex);
     if (const auto iter = additiveInterpReferenceTransformsMap.find(interpolator); iter != additiveInterpReferenceTransformsMap.end())
         return &iter->second;
     return nullptr;
@@ -169,8 +171,7 @@ const char* AdditiveManager::GetTargetNodeName(NiInterpolator* interpolator)
 #endif
 
 
-void ApplyAdditiveTransforms(
-    NiBlendTransformInterpolator& kBlendInterp,
+void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
     float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 {
     NiPoint3 kFinalTranslate = NiPoint3::ZERO;
@@ -181,9 +182,10 @@ void ApplyAdditiveTransforms(
     bool bRotChanged = false;
     bool bScaleChanged = false;
     
-    std::shared_lock lock(g_additiveManagerMutex);
-    for (auto& kItem : kBlendInterp.GetItems())
+    for (auto& kItem : GetItems())
     {
+        if (!kItem.m_spInterpolator)
+            continue;
         const auto* kContext = AdditiveManager::GetSequenceAndRefFrameTransform(kItem.m_spInterpolator.data);
         if (!kContext)
             continue; // not an additive interpolator
@@ -199,15 +201,15 @@ void ApplyAdditiveTransforms(
 
         const auto& [sequence, kRefTransform] = *kContext;
 
-        if (kItem.m_cPriority < kBlendInterp.m_cNextHighPriority && !DoesIgnorePriorities(sequence))
+        if (kItem.m_cPriority < m_cNextHighPriority && !DoesIgnorePriorities(sequence))
             continue;
 
-        const float fUpdateTime = kBlendInterp.GetManagerControlled() ? kItem.m_fUpdateTime : fTime;
+        const float fUpdateTime = GetManagerControlled() ? kItem.m_fUpdateTime : fTime;
         if (fUpdateTime == INVALID_TIME)
             continue;
         
         NiQuatTransform kInterpTransform;
-        if (kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kInterpTransform))
+        if (kItem.m_spInterpolator->Update(fUpdateTime, pkInterpTarget, kInterpTransform))
         {
             const float fWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
             if (kInterpTransform.IsTranslateValid() && kRefTransform.IsTranslateValid())
@@ -244,7 +246,6 @@ void ApplyAdditiveTransforms(
             }
         }
     }
-    lock.unlock();
     
     if (bTransChanged)
     {
@@ -261,6 +262,110 @@ void ApplyAdditiveTransforms(
     }
 }
 
+void NiBlendInterpolator::ComputeNormalizedWeightsFor2Additive(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const
+{
+    // Calculate the real weight of each item.
+    float fRealWeight1 = pkItem1->m_fWeight * pkItem1->m_fEaseSpinner;
+    float fRealWeight2 = pkItem2->m_fWeight * pkItem2->m_fEaseSpinner;
+    if (fRealWeight1 == 0.0f && fRealWeight2 == 0.0f)
+    {
+        pkItem1->m_fNormalizedWeight = 0.0f;
+        pkItem2->m_fNormalizedWeight = 0.0f;
+        return;
+    }
+
+    // Compute normalized weights.
+    if (pkItem1->m_cPriority > pkItem2->m_cPriority)
+    {
+        if (pkItem1->m_fEaseSpinner == 1.0f)
+        {
+            pkItem1->m_fNormalizedWeight = 1.0f;
+            pkItem2->m_fNormalizedWeight = 0.0f;
+            return;
+        }
+
+        float fOneMinusEaseSpinner = 1.0f - pkItem1->m_fEaseSpinner;
+        float fOneOverSumOfWeights = 1.0f / (pkItem1->m_fEaseSpinner *
+            fRealWeight1 + fOneMinusEaseSpinner * fRealWeight2);
+        pkItem1->m_fNormalizedWeight = pkItem1->m_fEaseSpinner * fRealWeight1
+            * fOneOverSumOfWeights;
+        pkItem2->m_fNormalizedWeight = fOneMinusEaseSpinner * fRealWeight2 *
+            fOneOverSumOfWeights;
+    }
+    else if (pkItem1->m_cPriority < pkItem2->m_cPriority)
+    {
+        if (pkItem2->m_fEaseSpinner == 1.0f)
+        {
+            pkItem1->m_fNormalizedWeight = 0.0f;
+            pkItem2->m_fNormalizedWeight = 1.0f;
+            return;
+        }
+
+        float fOneMinusEaseSpinner = 1.0f - pkItem2->m_fEaseSpinner;
+        float fOneOverSumOfWeights = 1.0f / (pkItem2->m_fEaseSpinner *
+            fRealWeight2 + fOneMinusEaseSpinner * fRealWeight1);
+        pkItem1->m_fNormalizedWeight = fOneMinusEaseSpinner * fRealWeight1 *
+            fOneOverSumOfWeights;
+        pkItem2->m_fNormalizedWeight = pkItem2->m_fEaseSpinner * fRealWeight2
+            * fOneOverSumOfWeights;
+    }
+    else
+    {
+        float fOneOverSumOfWeights = 1.0f / (fRealWeight1 + fRealWeight2);
+        pkItem1->m_fNormalizedWeight = fRealWeight1 * fOneOverSumOfWeights;
+        pkItem2->m_fNormalizedWeight = fRealWeight2 * fOneOverSumOfWeights;
+    }
+
+    // Only use the highest weight, if so desired.
+    if (GetOnlyUseHighestWeight())
+    {
+        if (pkItem1->m_fNormalizedWeight >= pkItem2->m_fNormalizedWeight)
+        {
+            pkItem1->m_fNormalizedWeight = 1.0f;
+            pkItem2->m_fNormalizedWeight = 0.0f;
+        }
+        else
+        {
+            pkItem1->m_fNormalizedWeight = 0.0f;
+            pkItem2->m_fNormalizedWeight = 1.0f;
+        }
+        return;
+    }
+
+    // Exclude weights below threshold.
+    if (m_fWeightThreshold > 0.0f)
+    {
+        bool bReduced1 = false;
+        if (pkItem1->m_fNormalizedWeight < m_fWeightThreshold)
+        {
+            pkItem1->m_fNormalizedWeight = 0.0f;
+            bReduced1 = true;
+        }
+
+        bool bReduced2 = false;
+        if (pkItem2->m_fNormalizedWeight < m_fWeightThreshold)
+        {
+            pkItem2->m_fNormalizedWeight = 0.0f;
+            bReduced1 = true;
+        }
+
+        if (bReduced1 && bReduced2)
+        {
+            return;
+        }
+        else if (bReduced1)
+        {
+            pkItem2->m_fNormalizedWeight = 1.0f;
+            return;
+        }
+        else if (bReduced2)
+        {
+            pkItem1->m_fNormalizedWeight = 1.0f;
+            return;
+        }
+    }
+}
+
 void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
 {
     if (!GetComputeNormalizedWeights())
@@ -269,42 +374,6 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
     }
 
     SetComputeNormalizedWeights(false);
-    
-    if (m_ucInterpCount == 1)
-    {
-        if (AdditiveManager::IsAdditiveInterpolator(m_pkInterpArray[m_ucSingleIdx].m_spInterpolator))
-            m_pkInterpArray[m_ucSingleIdx].m_fNormalizedWeight = 0.0f;
-        else
-            m_pkInterpArray[m_ucSingleIdx].m_fNormalizedWeight = 1.0f;
-        return;
-    }
-#if 0
-    if (m_ucInterpCount == 2)
-    {
-        const bool bIsFirstAdditive = AdditiveManager::IsAdditiveInterpolator(m_pkInterpArray[0].m_spInterpolator);
-        const bool bIsSecondAdditive = AdditiveManager::IsAdditiveInterpolator(m_pkInterpArray[1].m_spInterpolator);
-        if (bIsFirstAdditive && !bIsSecondAdditive)
-        {
-            m_pkInterpArray[0].m_fNormalizedWeight = 0.0f;
-            m_pkInterpArray[1].m_fNormalizedWeight = 1.0f;
-            return;
-        }
-        if (bIsSecondAdditive && !bIsFirstAdditive)
-        {
-            m_pkInterpArray[0].m_fNormalizedWeight = 1.0f;
-            m_pkInterpArray[1].m_fNormalizedWeight = 0.0f;
-            return;
-        }
-        if (bIsFirstAdditive && bIsSecondAdditive)
-        {
-            m_pkInterpArray[0].m_fNormalizedWeight = 0.0f;
-            m_pkInterpArray[1].m_fNormalizedWeight = 0.0f;
-            return;
-        }
-        ThisStdCall(0xA36BD0, this); // NiBlendInterpolator::ComputeNormalizedWeightsFor2
-        return;
-    }
-#endif
 
     thread_local std::vector<InterpArrayItem*> kItems;
     thread_local std::vector<unsigned int> kIndices;
@@ -327,6 +396,21 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
                 item.m_fNormalizedWeight = 0.0f;
             }
         }
+    }
+
+    if (kItems.empty())
+        return;
+
+    if (kIndices.size() == 1)
+    {
+        m_pkInterpArray[m_ucSingleIdx].m_fNormalizedWeight = 1.0f;
+        return;
+    }
+
+    if (kItems.size() == 2)
+    {
+        ComputeNormalizedWeightsFor2Additive(kItems[0], kItems[1]);
+        return;
     }
     
     if (m_fHighSumOfWeights == -NI_INFINITY)
@@ -460,6 +544,7 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority) const
             {
                 // make sure that only blend transform interpolators are attached
                 kItem.m_ucBlendIdx = INVALID_INDEX;
+                kItem.m_pkBlendInterp = nullptr;
                 continue;
             }
             kItem.m_ucBlendIdx = kItem.m_pkBlendInterp->AddInterpInfo(
@@ -476,7 +561,7 @@ void NiControllerSequence::DetachInterpolatorsAdditive() const
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
-        if (kItem.m_pkBlendInterp && IS_TYPE(kItem.m_pkBlendInterp, NiBlendTransformInterpolator))
+        if (kItem.m_pkBlendInterp && kItem.m_ucBlendIdx != INVALID_INDEX)
         {
             kItem.m_pkBlendInterp->RemoveInterpInfo(kItem.m_ucBlendIdx);
         }
@@ -487,6 +572,12 @@ void NiBlendInterpolator::CalculatePrioritiesAdditive()
 {
     m_cNextHighPriority = INVALID_INDEX;
     m_cHighPriority = INVALID_INDEX;
+
+    if (m_ucInterpCount == 1 && m_ucSingleIdx != INVALID_INDEX)
+    {
+        m_cHighPriority = m_pkInterpArray[m_ucSingleIdx].m_cPriority;
+        return;
+    }
     for (auto& item : GetItems())
     {
         if (item.m_spInterpolator != nullptr && !AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
@@ -533,7 +624,7 @@ void AdditiveManager::WriteHooks()
         if (!result)
             return false;
         if (pBlendInterpolator->GetHasAdditiveTransforms())
-            ApplyAdditiveTransforms(*pBlendInterpolator, fTime, pkInterpTarget, *kValue);
+            pBlendInterpolator->ApplyAdditiveTransforms(fTime, pkInterpTarget, *kValue);
         return true;
     }), &uiBlendValuesAddr);
 
@@ -543,6 +634,7 @@ void AdditiveManager::WriteHooks()
     {
         if (IsAdditiveSequence(static_cast<BSAnimGroupSequence*>(pkSequence)))
         {
+            MarkInterpolatorsAsAdditive(static_cast<BSAnimGroupSequence*>(pkSequence));
             pkSequence->AttachInterpolatorsAdditive(cPriority);
             return;
         }
@@ -550,16 +642,5 @@ void AdditiveManager::WriteHooks()
         
     }), &uiAttachInterpolatorsAddr);
 
-    // NiControllerSequence::DetachInterpolators
-    static UInt32 uiDetachInterpolatorsAddr;
-    WriteRelCall(0xA350C5, INLINE_HOOK(void, __fastcall, NiControllerSequence* pkSequence)
-    {
-        if (IsAdditiveSequence(static_cast<BSAnimGroupSequence*>(pkSequence)))
-        {
-            pkSequence->DetachInterpolatorsAdditive();
-            return;
-        }
-        ThisStdCall(uiDetachInterpolatorsAddr, pkSequence);
-        
-    }), &uiDetachInterpolatorsAddr);
+    
 }

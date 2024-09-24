@@ -1770,7 +1770,7 @@ public:
 		NiPointer<NiInterpolator> m_spInterpolator;
 		NiPointer<NiInterpController> m_spInterpCtlr;
 		NiBlendInterpolator* m_pkBlendInterp;
-		char m_ucBlendIdx;
+		unsigned char m_ucBlendIdx;
 		char m_ucPriority;
 		UInt8 gap0E[2];
 	};
@@ -1932,8 +1932,8 @@ public:
 
 	enum
 	{
-		MANAGER_CONTROLLED_MASK = 0X0001,
-		ONLY_USE_HIGHEST_WEIGHT_MASK = 0X0002,
+		MANAGER_CONTROLLED_MASK = 0x0001,
+		ONLY_USE_HIGHEST_WEIGHT_MASK = 0x0002,
 		COMPUTE_NORMALIZED_WEIGHTS_MASK = 0x0004,
 		HAS_ADDITIVE_TRANSFORMS_MASK = 0x0008 // custom kNVSE
 	};
@@ -1948,9 +1948,9 @@ public:
 		float m_fUpdateTime;
 	};
 	unsigned char m_uFlags;
-	char m_ucArraySize;
-	char m_ucInterpCount;
-	char m_ucSingleIdx;
+	unsigned char m_ucArraySize;
+	unsigned char m_ucInterpCount;
+	unsigned char m_ucSingleIdx;
 	char m_cHighPriority;
 	char m_cNextHighPriority;
 	InterpArrayItem* m_pkInterpArray;
@@ -1961,6 +1961,8 @@ public:
 	float m_fNextHighSumOfWeights;
 	float m_fHighEaseSpinner;
 
+	void ComputeNormalizedWeightsFor2Additive(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const;
+	
 	std::span<InterpArrayItem> GetItems() const
 	{
 		return std::span(m_pkInterpArray, m_ucArraySize);
@@ -2147,7 +2149,11 @@ class NiBlendTransformInterpolator : public NiBlendInterpolator
 
 		return true;
 	}
+
+
 public:
+	void ApplyAdditiveTransforms(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
 					 NiQuatTransform& kValue);
 

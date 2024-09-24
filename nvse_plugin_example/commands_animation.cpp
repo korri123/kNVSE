@@ -2767,7 +2767,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (!refPoseAnim)
 				return true;
 			const auto bIgnorePriorities = static_cast<bool>(ignorePriorities);
-			AdditiveManager::InitAdditiveSequence(actor, refPoseAnim, AdditiveAnimMetadata{additiveAnim, refPoseTimePoint, bIgnorePriorities});
+			AdditiveManager::InitAdditiveSequence(actor, additiveAnim, AdditiveAnimMetadata{refPoseAnim, refPoseTimePoint, bIgnorePriorities});
 			*result = 1;
 		}
 		return true;
@@ -2803,6 +2803,12 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim)
 			return true;
 		*result = anim->m_fSeqWeight;
+		return true;
+	});
+
+	builder.Create("CloneAnim", kRetnType_String, { ParamInfo{"anim sequence path", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
 		return true;
 	});
 
