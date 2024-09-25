@@ -28,7 +28,6 @@ extern NVSEScriptInterface* g_script;
 extern NVSECommandTableInterface* g_cmdTable;
 
 extern std::deque<std::function<void()>> g_synchronizedExecutionQueue;
-extern std::deque<std::function<void()>> g_executionQueue;
 extern ICriticalSection g_executionQueueCS;
 extern NVSEArrayVarInterface* g_arrayVarInterface;
 extern NVSEStringVarInterface* g_stringVarInterface;
@@ -168,3 +167,14 @@ struct AverageTimers
 extern AverageTimers g_averageTimers;
 
 void ClearResultCaches();
+
+class SynchronizedQueue
+{
+	std::deque<std::function<void()>> queue;
+	std::mutex mutex;
+public:
+	void Add(std::function<void()>&& func);
+	void RunAllAndClear();
+};
+extern SynchronizedQueue g_mainThreadQueue;
+extern SynchronizedQueue g_aiLinearTask1Queue;

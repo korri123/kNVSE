@@ -41,7 +41,6 @@ const CommandInfo* g_TFC;
 PlayerCharacter* g_player;
 ICriticalSection g_executionQueueCS;
 std::deque<std::function<void()>> g_synchronizedExecutionQueue;
-std::deque<std::function<void()>> g_executionQueue;
 ExpressionEvaluatorUtils s_expEvalUtils;
 
 std::unordered_map<std::string, std::vector<CustomAnimGroupScript>> g_customAnimGroups;
@@ -323,6 +322,7 @@ struct SetThisAnimScriptPath
 
 void HandleCustomTextKeys()
 {
+	std::unique_lock lock(g_animTimeMutex);
 	for (auto it = g_timeTrackedAnims.begin(); it != g_timeTrackedAnims.end();)
 	{
 		auto& animTime = *it->second;
@@ -371,7 +371,7 @@ void HandleCustomTextKeys()
 			continue;
 		}
 
-		const auto time = anim->m_fLastScaledTime;
+		const auto time = animData->timePassed + anim->m_fOffset;
 	
 		if (animTime.respectEndKey && anim->animGroup)
 		{
@@ -610,15 +610,6 @@ void HandleSynchronizedExecutionQueue()
 	}
 }
 
-void HandleExecutionQueue()
-{
-	while (!g_executionQueue.empty())
-	{
-		g_executionQueue.front()();
-		g_executionQueue.pop_front();
-	}
-}
-
 void ApplyHolsterFix()
 {
 	// i have no idea if there is a better way to do this
@@ -645,6 +636,22 @@ void ClearResultCaches()
 	g_scriptCache.clear();
 }
 
+void SynchronizedQueue::Add(std::function<void()>&& func)
+{
+	std::unique_lock lock(mutex);
+	queue.push_back(std::move(func));
+}
+
+void SynchronizedQueue::RunAllAndClear()
+{
+	std::unique_lock lock(mutex);
+	while (!queue.empty())
+	{
+		queue.front()();
+		queue.pop_front();
+	}
+}
+
 void HandleMisc()
 {
 	ApplyHolsterFix();
@@ -653,6 +660,7 @@ void HandleMisc()
 }
 
 std::thread g_animFileThread;
+SynchronizedQueue g_mainThreadQueue;
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
@@ -672,7 +680,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleBurstFire();
 			HandleAnimTimes();
 			HandleMisc();
-			HandleExecutionQueue();
 #if 0 // experimental fixes
 			if (g_fixAttackISTransition)
 			{

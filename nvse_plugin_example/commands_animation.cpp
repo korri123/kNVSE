@@ -141,6 +141,7 @@ void HandleOnAnimDataDelete(AnimData* animData)
 	const auto actorId = animData->actor ? animData->actor->refID : 0;
 	if (actorId)
 	{
+		std::unique_lock lock(g_animTimeMutex);
 		std::erase_if(g_timeTrackedAnims, _L(auto& p, p.second->actorId == actorId));
 		std::erase_if(g_burstFireQueue, _L(auto& p, p.actorId == actorId));
 	}
@@ -293,9 +294,11 @@ std::string_view GetTextAfterColon(std::string_view in)
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptLineExecutions;
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptCallExecutions;
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<BSSoundHandle>> g_scriptSoundExecutions;
+std::mutex g_animTimeMutex;
 
 AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, bool createIfNoKeys)
 {
+	std::unique_lock lock(g_animTimeMutex);
 	if (!anim)
 		return nullptr;
 	auto applied = false;
@@ -1375,6 +1378,44 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	return true;
 }
 
+template <typename Function>
+bool QueueScriptAnimOperation(Actor* actor, bool runImmediately, Function&& callback)
+{
+
+	if (runImmediately)
+	{
+		return callback();
+	}
+
+	const auto* pTaskManager = AILinearTaskManager::GetSingleton();
+
+	if (!pTaskManager->pThreads[1])
+	{
+		// iNumHWThreads is <= 1
+		return callback();
+	}
+		
+	const auto currentThreadId = GetCurrentThreadId();
+
+	if (actor == g_thePlayer)
+	{
+		if (currentThreadId == OSGlobals::GetSingleton()->mainThreadID)
+		{
+			return callback();
+		}
+		g_mainThreadQueue.Add(std::forward<Function>(callback));
+		return true;
+	}
+	const auto* aiLinearTaskThread = pTaskManager->pThreads[0];
+	// actor is not the player, so must be handled on AI Linear Task 1 thread
+	if (currentThreadId == aiLinearTaskThread->threadID)
+	{
+		return callback();
+	}
+	g_aiLinearTask1Queue.Add(std::forward<Function>(callback));
+	return true;
+}
+
 bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
@@ -1396,15 +1437,18 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 	{
 		if (anim->m_eState != NiControllerSequence::INACTIVE)
 			animData->controllerManager->DeactivateSequence(anim, 0.0f);
-		if (auto* animTime = HandleExtraOperations(animData, anim, true); animTime && anim->m_eCycleType != NiControllerSequence::LOOP)
-		{
-			animTime->trackEndTime = true;
-			animTime->endIfSequenceTypeChanges = false;
-		}
 		const auto easeInTime = anim->GetEaseInTime();
-		animData->controllerManager->ActivateSequence(anim, 0, true, anim->m_fSeqWeight, easeInTime, nullptr);
-		anim->m_fLastScaledTime = 0.0f;
-		*result = 1;
+		const auto activateResult = animData->controllerManager->ActivateSequence(anim, 0, true, anim->m_fSeqWeight, easeInTime, nullptr);
+		if (activateResult)
+		{
+			if (auto* animTime = HandleExtraOperations(animData, anim, true); animTime && anim->m_eCycleType != NiControllerSequence::LOOP)
+			{
+				animTime->trackEndTime = true;
+				animTime->endIfSequenceTypeChanges = false;
+			}
+		}
+		*result = activateResult;
+			
 	}
 	return true;
 }
@@ -1652,7 +1696,7 @@ BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path)
 
 BSAnimGroupSequence* FindOrLoadAnim(Actor* actor, const char* path, bool firstPerson)
 {
-	auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
+	auto* animData = firstPerson && actor == g_thePlayer ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
 	if (!animData)
 		return nullptr;
 	return FindOrLoadAnim(animData, path);
@@ -2099,17 +2143,17 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (!timeSyncSeq)
 				return true;
 		}
-		auto* manager = anim->m_pkOwner;
-
-		if (anim->m_eState != kAnimState_Inactive)
-			// Deactivate sequence
-			GameFuncs::DeactivateSequence(manager, anim, 0.0);
-		
 		auto* animData = GetAnimData(actor, firstPerson);
-		if (auto* animTime = HandleExtraOperations(animData, anim, true))
-			animTime->endIfSequenceTypeChanges = false;
-		GameFuncs::ActivateSequence(manager, anim, priority, startOver, weight, easeInTime, timeSyncSeq);
-		anim->m_fLastScaledTime = 0.0f;
+
+		auto* manager = anim->m_pkOwner;
+		if (anim->m_eState != NiControllerSequence::INACTIVE)
+			manager->DeactivateSequence(anim, 0.0);
+
+		const auto activateResult = manager->ActivateSequence(anim, priority, startOver, weight, easeInTime, timeSyncSeq);
+		if (activateResult)
+			if (auto* animTime = HandleExtraOperations(animData, anim, true))
+				animTime->endIfSequenceTypeChanges = false;
+		*result = activateResult;
 		return true;
 	});
 
@@ -2768,8 +2812,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (!refPoseAnim)
 				return true;
 			const auto bIgnorePriorities = static_cast<bool>(ignorePriorities);
-			AdditiveManager::InitAdditiveSequence(actor, additiveAnim, AdditiveAnimMetadata{refPoseAnim, refPoseTimePoint, bIgnorePriorities});
-			*result = 1;
+			AdditiveManager::InitAdditiveSequence(animData, additiveAnim, refPoseAnim, refPoseTimePoint, bIgnorePriorities);
+			return true;
 		}
 		return true;
 	});
@@ -2807,12 +2851,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	builder.Create("CloneAnim", kRetnType_String, { ParamInfo{"anim sequence path", kParamType_String, false} }, true, [](COMMAND_ARGS)
-	{
-		*result = 0;
-		return true;
-	});
-
 #if _DEBUG
 	
 	builder.Create("EachFrame", kRetnType_Default, {ParamInfo{"sScript", kParamType_String, false}}, false, [](COMMAND_ARGS)
@@ -2842,28 +2880,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 		g_eachFrameScriptLines.clear();
 		*result = 1;
-		return true;
-	});
-
-	builder.Create("ForceAttack", kRetnType_Default, { ParamInfo{"animGroup", kParamType_AnimationGroup, false} }, true, [](COMMAND_ARGS)
-	{
-		*result = 0;
-		UInt32 animGroupId = -1;
-		if (!ExtractArgs(EXTRACT_ARGS, &animGroupId) || !thisObj)
-			return true;
-		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
-		if (!actor || !actor->GetAnimData())
-			return true;
-		auto* baseProcess = actor->baseProcess;
-		if (!baseProcess || !baseProcess->animData)
-			return true;
-		g_allowedNextAnims.insert(baseProcess);
-		ScopedLock lock(g_executionQueueCS);
-		g_executionQueue.emplace_back([=]
-		{
-			g_allowedNextAnims.erase(baseProcess);
-		});
-		*result = GameFuncs::Actor_Attack(actor, animGroupId);
 		return true;
 	});
 

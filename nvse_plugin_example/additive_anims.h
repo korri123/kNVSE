@@ -2,33 +2,13 @@
 #include "GameProcess.h"
 #include "NiNodes.h"
 
-enum class AdditiveTransformType
-{
-    ReferenceFrame,
-    EachFrame
-};
-
-struct AdditiveAnimMetadata
-{
-    BSAnimGroupSequence* referencePoseSequence;
-    float referenceTimePoint;
-    bool ignorePriorities = false;
-
-    auto operator<=>(const AdditiveAnimMetadata&) const = default;
-};
-
 namespace AdditiveManager
 {
-    bool IsAdditiveSequence(BSAnimGroupSequence* sequence);
-    void EraseAdditiveSequence(BSAnimGroupSequence* sequence);
-    bool IsAdditiveInterpolator(NiInterpolator* interpolator);
+    bool IsAdditiveSequence(NiControllerSequence* sequence);
+    void EraseAdditiveSequence(NiControllerSequence* sequence);
     bool StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseOutTime = INVALID_TIME);
-    std::pair<BSAnimGroupSequence*, NiQuatTransform>* GetSequenceAndRefFrameTransform(NiInterpolator* interpolator);
-    void InitAdditiveSequence(Actor* actor, BSAnimGroupSequence* additiveSequence, AdditiveAnimMetadata metadata);
+    void InitAdditiveSequence(AnimData* animData, NiControllerSequence* additiveSequence, NiControllerSequence* referencePoseSequence, float
+                              timePoint, bool ignorePriorities);
     void PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim);
-    void MarkInterpolatorsAsAdditive(BSAnimGroupSequence* additiveSequence);
-#if _DEBUG
-    const char* GetTargetNodeName(NiInterpolator* interpolator);
-#endif
     void WriteHooks();
 }

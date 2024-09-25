@@ -505,8 +505,10 @@ void BlendFixes::ApplyHooks()
 void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim)
 {
 	if (animData->actor != g_thePlayer
+		|| anim->m_eCycleType == NiControllerSequence::LOOP
 		|| !IsPlayersOtherAnimData(animData)
-		|| anim->m_fLastScaledTime >= anim->m_fEndKeyTime)
+		|| anim->m_fLastScaledTime >= anim->m_fEndKeyTime
+		|| !HasRespectEndKey(anim))
 		return;
 	const auto* otherAnimData = g_thePlayer->GetAnimData(!g_thePlayer->IsThirdPerson());
 	const auto* anim3rd = otherAnimData ? otherAnimData->animSequence[kSequence_Weapon] : nullptr;

@@ -2152,7 +2152,7 @@ class NiBlendTransformInterpolator : public NiBlendInterpolator
 
 
 public:
-	void ApplyAdditiveTransforms(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+	void ApplyAdditiveTransforms(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue) const;
 
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
 					 NiQuatTransform& kValue);

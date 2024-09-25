@@ -335,6 +335,15 @@ struct NVSEArrayVarInterface
 
 	struct Element
 	{
+	public:
+		enum Type: UInt8
+		{
+			kType_Invalid,
+			kType_Numeric,
+			kType_Form,
+			kType_String,
+			kType_Array,
+		};
 	protected:
 		union
 		{
@@ -343,20 +352,12 @@ struct NVSEArrayVarInterface
 			TESForm* form;
 			double		num;
 		};
-		UInt8		type;
+		Type		type;
 
 		friend class PluginAPI::ArrayAPI;
 		friend class ArrayVar;
 	public:
-		enum
-		{
-			kType_Invalid,
-
-			kType_Numeric,
-			kType_Form,
-			kType_String,
-			kType_Array,
-		};
+		
 
 		void Reset() { if (type == kType_String) { FormHeap_Free(str); } type = kType_Invalid; str = NULL; }
 		~Element() { Reset(); }
@@ -367,6 +368,42 @@ struct NVSEArrayVarInterface
 		Element(TESForm* _form) : form(_form), type(kType_Form) { }
 		Element(Array* _array) : arr(_array), type(kType_Array) { }
 		Element(const Element& rhs) { if (rhs.type == kType_String) { str = CopyCString(rhs.str); } else { num = rhs.num; } type = rhs.type; }
+
+		Element(Element&& rhs)
+		{ 
+			if (rhs.type == kType_String)
+			{ 
+				str = rhs.str;
+				rhs.str = nullptr;
+				type = kType_String; 
+				rhs.type = kType_Invalid;
+				return;
+			} 
+			num = rhs.num;
+			type = rhs.type; 
+			rhs.Reset();
+		}
+
+		Element& operator=(Element&& rhs)
+		{
+			if (this != &rhs)
+			{
+				Reset();
+				if (rhs.type == kType_String)
+				{
+					str = rhs.str;
+					rhs.str = nullptr;
+					type = kType_String;
+					rhs.type = kType_Invalid;
+					return *this;
+				}
+				num = rhs.num;
+				type = rhs.type;
+				rhs.Reset();
+			}
+			return *this;
+		}
+		
 		Element& operator=(const Element& rhs) {
 			if (this != &rhs) {
 				Reset();
@@ -376,8 +413,9 @@ struct NVSEArrayVarInterface
 			}
 			return *this;
 		}
+		
 		bool IsValid() const { return type != kType_Invalid; }
-		UInt8 GetType() const { return type; }
+		Type GetType() const { return type; }
 
 		const char* GetString() const { return type == kType_String ? str : NULL; }
 		Array* GetArray() const { return type == kType_Array ? arr : NULL; }

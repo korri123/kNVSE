@@ -582,6 +582,8 @@ thread_local PluginGlobalData g_globals;
 
 thread_local bool g_isThreadCacheEnabled = false;
 
+SynchronizedQueue g_aiLinearTask1Queue;
+
 void ApplyHooks()
 {
 	const auto iniPath = R"(Data\NVSE\Plugins\kNVSE.ini)";
@@ -612,6 +614,7 @@ void ApplyHooks()
 	conf.fixMissingPrnKey = ini.GetOrCreate("Anim Fixes", "bFixMissingPrnKey", 1, "; try to fix animations where the prn key is missing in the first person animation. Previous versions of kNVSE did allow respectEndKey to affect this but newer versions will causing issues with people who update kNVSE but not animations.");
 	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest");
 	//WriteRelJump(0x4949D0, AnimationHook);
+	
 	WriteRelCall(0x494989, HandleAnimationChange);
 	WriteRelCall(0x495E2A, HandleAnimationChange);
 	WriteRelCall(0x4956FF, HandleAnimationChange);
@@ -955,6 +958,16 @@ void ApplyHooks()
 		CdeclCall<void>(uiScriptLocalsClearOptimizationsAddr);
 	}), &uiScriptLocalsClearOptimizationsAddr);
 
+#if 0
+	using ProcessManager = void;
+	static UInt32 uiUpdateHighProcessAnimationsAddr;
+	WriteRelCall(0x8C7DF3, INLINE_HOOK(void, __fastcall, ProcessManager* processManager)
+	{
+		g_isThreadCacheEnabled = true;
+		g_aiLinearTask1Queue.RunAllAndClear();
+		ThisStdCall(uiUpdateHighProcessAnimationsAddr, processManager);
+	}), &uiUpdateHighProcessAnimationsAddr);
+#endif
 	AdditiveManager::WriteHooks();
 }
 

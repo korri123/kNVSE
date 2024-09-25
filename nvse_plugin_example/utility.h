@@ -359,3 +359,4 @@ inline void DebugBreakIfDebuggerPresent()
 		DebugBreak();
 }
 #endif
+
