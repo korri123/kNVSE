@@ -150,7 +150,7 @@ struct AnimData
 	AnimIdle* idleAnimQueued; 		    // 128
 	AnimIdle* spIdle12C; 			    	// 12C
 	AnimIdle* spIdle130; 		    		// 130
-	tList<void> list134; 		    	// 134
+	tList<TESIdleForm*> list134; 		    	// 134
 
 	AnimGroupID GetNextAttackGroupID() const;
 

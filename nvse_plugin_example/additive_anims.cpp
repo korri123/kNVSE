@@ -20,12 +20,7 @@ struct AdditiveSequenceMetadata
     bool ignorePriorities;
     NiControllerManager* controllerManager;
     bool firstPerson;
-    bool operator==(const AdditiveSequenceMetadata& other) const
-    {
-        return referencePoseSequenceName == other.referencePoseSequenceName
-            && referenceTimePoint == other.referenceTimePoint && ignorePriorities == other.ignorePriorities
-            && controllerManager == other.controllerManager && firstPerson == other.firstPerson;
-    }
+    bool operator==(const AdditiveSequenceMetadata& other) const = default;
 };
 
 std::unordered_map<NiControllerSequence*, AdditiveSequenceMetadata> additiveSequenceMetadataMap;
@@ -164,7 +159,7 @@ bool IsAdditiveInterpolator(NiInterpolator* interpolator)
     return additiveInterpMetadataMap.contains(interpolator);
 }
 
-bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseOutTime)
+bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseTime)
 {
     std::shared_lock lock(g_additiveManagerMutex);
     if (const auto iter = referenceToAdditiveMap.find(parentSequence); iter != referenceToAdditiveMap.end())
@@ -174,9 +169,7 @@ bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence*
             auto* additiveAnimGroupSequence = static_cast<BSAnimGroupSequence*>(additiveSequence);
             if (NOT_TYPE(additiveAnimGroupSequence, BSAnimGroupSequence))
                 continue;
-            float easeOutTime = 0.0f;
-            if (!additiveSequence->m_spTextKeys->FindFirstByName("noBlend"))
-                easeOutTime = afEaseOutTime == INVALID_TIME ? additiveAnimGroupSequence->GetEaseInTime() : afEaseOutTime;
+            const float easeOutTime = afEaseTime == INVALID_TIME ? additiveAnimGroupSequence->GetEaseInTime() : afEaseTime;
             additiveSequence->Deactivate(easeOutTime, false);
         }
         return true;

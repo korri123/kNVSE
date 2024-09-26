@@ -176,6 +176,12 @@ public:
 	{
 		values.emplace_back(value);
 	}
+
+	void Add(NVSEArrayVarInterface::Element&& value)
+	{
+		values.emplace_back(std::move(value));
+	}
+	
 	NVSEArrayVarInterface::Array* Build(NVSEArrayVarInterface* arrayVarInterface, Script* callingScript)
 	{
 		return arrayVarInterface->CreateArray(values.data(), values.size(), callingScript);

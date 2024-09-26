@@ -272,6 +272,15 @@ std::list<BurstFireData> g_burstFireQueue;
 TimeTrackedAnimsMap g_timeTrackedAnims;
 TimeTrackedGroupsMap g_timeTrackedGroups;
 
+void EraseTimeTrackedAnim(BSAnimGroupSequence* anim)
+{
+	std::unique_lock lock(g_animTimeMutex);
+	std::erase_if(g_timeTrackedAnims, [anim](const auto& p)
+	{
+		return p.second->anim == anim;
+	});
+}
+
 enum class KeyCheckType
 {
 	KeyEquals, KeyStartsWith
@@ -1727,6 +1736,8 @@ float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence)
 	if (!destSequence->animGroup)
 		return defaultBlend;
 	const auto blendOut = max(destSequence->animGroup->blendOut, destSequence->animGroup->blend);
+	if (blendOut == 0)
+		return defaultBlend;
 	return static_cast<float>(blendOut) / 30.0f / blendMult;
 }
 
@@ -1752,6 +1763,8 @@ float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimG
 	else
 		return defaultBlend;
 
+	if (blendValue == 0)
+		return defaultBlend;
 	return blendValue / 30.0f / blendMult;
 }
 
@@ -2848,6 +2861,25 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim)
 			return true;
 		*result = anim->m_fSeqWeight;
+		return true;
+	});
+
+	const auto params = { ParamInfo{"sPath", kParamType_String, false}, { "archive type", kParamType_Integer, true } };
+	builder.Create("GetDirectoryFiles", kRetnType_Array, params, false, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> path;
+		auto archiveType = ARCHIVE_TYPE_ALL;
+		if (!ExtractArgs(EXTRACT_ARGS, &path, &archiveType))
+			return true;
+		path.calculate_size();
+		const auto list = FileFinder::FindFiles(path.data(), path.data(), archiveType);
+		NVSEArrayBuilder arr;
+		for (const auto* filePath : list)
+		{
+			arr.Add(filePath);
+		}
+		*result = reinterpret_cast<UInt32>(arr.Build(g_arrayVarInterface, scriptObj));
 		return true;
 	});
 

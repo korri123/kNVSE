@@ -620,7 +620,6 @@ void ApplyHooks()
 	WriteRelCall(0x4956FF, HandleAnimationChange);
 	WriteRelCall(0x4973B4, HandleAnimationChange);
 
-
 	WriteRelJump(0x5F444F, KeyStringCrashFixHook);
 	WriteRelCall(0x941E4C, DecreaseAttackTimer);
 
@@ -769,7 +768,7 @@ void ApplyHooks()
 	{
 		if (AdditiveManager::IsAdditiveSequence(anim))
 			AdditiveManager::EraseAdditiveSequence(anim);
-
+		// EraseTimeTrackedAnim(anim); we do store a smart pointer to the anim in g_timeTrackedAnims
 		// hooked call
 		ThisStdCall(0xA35640, anim);
 	}));

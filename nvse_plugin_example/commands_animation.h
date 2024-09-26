@@ -372,6 +372,7 @@ struct JSONAnimContext
 
 using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::unique_ptr<AnimTime>>;
 extern TimeTrackedAnimsMap g_timeTrackedAnims;
+void EraseTimeTrackedAnim(BSAnimGroupSequence* anim);
 
 using TimeTrackedGroupsKey = std::pair<SavedAnims*, AnimData*>;
 using TimeTrackedGroupsPair = std::pair<const TimeTrackedGroupsKey, std::unique_ptr<SavedAnimsTime>>;

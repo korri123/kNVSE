@@ -1,4 +1,6 @@
 #pragma once
+#include <span>
+
 #include "Utilities.h"
 
 #define ASSERT_SIZE(name, size) static_assert(sizeof(name) == size, "Size mismatch for " #name)
@@ -420,24 +422,24 @@ struct NiPlane
 template <typename T_Data>
 struct NiTArray
 {
-	virtual void* Destroy(UInt32 doFree);
+	virtual ~NiTArray();
 
-	T_Data*     data;			// 04
-	UInt16		capacity;		// 08 - init'd to size of preallocation
-	UInt16		firstFreeEntry;	// 0A - index of the first free entry in the block of free entries at the end of the array (or numObjs if full)
-	UInt16		numObjs;		// 0C - init'd to 0
-	UInt16		growSize;		// 0E - init'd to size of preallocation
+	T_Data*     m_pBase;			// 04
+	UInt16		m_usMaxSize;		// 08 - init'd to size of preallocation
+	UInt16		m_usSize;	// 0A - index of the first free entry in the block of free entries at the end of the array (or numObjs if full)
+	UInt16		m_usESize;		// 0C - init'd to 0
+	UInt16		m_usGrowBy;		// 0E - init'd to size of preallocation
 
 	T_Data operator[](UInt32 idx)
 	{
-		if (idx < firstFreeEntry)
-			return data[idx];
+		if (idx < m_usSize)
+			return m_pBase[idx];
 		return NULL;
 	}
 
-	T_Data Get(UInt32 idx) { return data[idx]; }
+	T_Data Get(UInt32 idx) { return m_pBase[idx]; }
 
-	UInt16 Length() { return firstFreeEntry; }
+	UInt16 Length() { return m_usSize; }
 	void AddAtIndex(UInt32 index, T_Data* item);	// no bounds checking
 	void SetCapacity(UInt16 newCapacity);	// grow and copy data if needed
 
@@ -449,7 +451,7 @@ struct NiTArray
 		UInt32		count;
 
 	public:
-		explicit operator bool() const { return count != 0; }
+		operator bool() const { return count != 0; }
 		void operator++()
 		{
 			pData++;
@@ -460,7 +462,7 @@ struct NiTArray
 		T_Data& operator->() const { return *pData; }
 		T_Data& Get() const { return *pData; }
 
-		Iterator(NiTArray& source) : pData(source.data), count(source.firstFreeEntry) {}
+		Iterator(NiTArray& source) : pData(source.m_pBase), count(source.m_usSize) {}
 	};
 
 	Iterator Begin() { return Iterator(*this); }
@@ -489,25 +491,28 @@ class NiTLargeArray
 {
 public:
 	NiTLargeArray();
-	~NiTLargeArray();
+	virtual ~NiTLargeArray();
 
-	void	** _vtbl;		// 00
 	T		* data;			// 04
-	UInt32	capacity;		// 08 - init'd to size of preallocation
-	UInt32	firstFreeEntry;	// 0C - index of the first free entry in the block of free entries at the end of the array (or numObjs if full)
-	UInt32	numObjs;		// 10 - init'd to 0
-	UInt32	growSize;		// 14 - init'd to size of preallocation
+	UInt32	m_uiMaxSize;		// 08 - init'd to size of preallocation
+	UInt32	m_uiSize;	// 0C - index of the first free entry in the block of free entries at the end of the array (or numObjs if full)
+	UInt32	m_uiESize;		// 10 - init'd to 0
+	UInt32	m_uiGrowBy;		// 14 - init'd to size of preallocation
 
 	T operator[](UInt32 idx) {
-		if (idx < firstFreeEntry)
+		if (idx < m_uiSize)
 			return data[idx];
 		return NULL;
 	}
 
 	T Get(UInt32 idx) { return (*this)[idx]; }
 
-	UInt32 Length(void) { return firstFreeEntry; }
+	UInt32 Length() { return m_uiSize; }
+
+	std::span<T> GetItems() { return std::span<T>(data, m_uiSize); }
 };
+
+using NiFormArray = NiTLargeArray<TESForm*>;
 
 // 8
 template <typename T>

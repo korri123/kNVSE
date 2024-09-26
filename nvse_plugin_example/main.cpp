@@ -485,7 +485,7 @@ void HandleCustomTextKeys()
 			erase();
 			continue;
 		}
-		if (animTime.trackEndTime && animTime.anim->m_fLastScaledTime >= animTime.anim->m_fEndKeyTime)
+		if (animTime.trackEndTime && time >= animTime.anim->m_fEndKeyTime)
 		{
 			erase();
 			continue;
