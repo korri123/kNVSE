@@ -23,7 +23,9 @@
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
 #include "blend_fixes.h"
+#if _DEBUG
 #include "commands_misc.h"
+#endif
 #include "knvse_events.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
