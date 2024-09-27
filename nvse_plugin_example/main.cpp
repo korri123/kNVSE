@@ -63,15 +63,10 @@ bool isEditor = false;
 
 float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 {
-	if (anim->m_fEndTime != -NI_INFINITY && (anim->m_eState == NiControllerSequence::TRANSSOURCE || anim->m_eState == NiControllerSequence::EASEOUT))
-	{
-		return anim->m_fEndTime - animData->timePassed;
-	}
-	if (anim->m_fStartTime != -NI_INFINITY && (anim->m_eState == NiControllerSequence::TRANSDEST || anim->m_eState == NiControllerSequence::EASEIN))
-	{
-		return animData->timePassed - anim->m_fStartTime;
-	}
-	return anim->m_fOffset + animData->timePassed;
+	if (anim->m_fLastTime != -NI_INFINITY)
+		return anim->m_fLastScaledTime;
+	return 0.0f;
+	
 }
 
 thread_local ScriptCache g_scriptCache;
@@ -371,7 +366,7 @@ void HandleCustomTextKeys()
 			continue;
 		}
 
-		const auto time = animData->timePassed + anim->m_fOffset;
+		const auto time = GetAnimTime(animData, anim);
 	
 		if (animTime.respectEndKey && anim->animGroup)
 		{

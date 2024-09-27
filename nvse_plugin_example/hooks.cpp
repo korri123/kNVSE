@@ -968,6 +968,13 @@ void ApplyHooks()
 	}), &uiUpdateHighProcessAnimationsAddr);
 #endif
 	AdditiveManager::WriteHooks();
+
+	static UInt32 uiAnimDataUpdateControllersAddr;
+	WriteRelCall(0x8885C9, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, Actor* actor)
+	{
+		OnActorUpdateAnimation::Dispatch(actor);
+		ThisStdCall(uiAnimDataUpdateControllersAddr, animData, g_thePlayer);
+	}), &uiAnimDataUpdateControllersAddr);
 }
 
 void WriteDelayedHooks()

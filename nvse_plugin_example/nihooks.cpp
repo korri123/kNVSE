@@ -1016,7 +1016,7 @@ namespace NiHooks
     // override stewie's tweaks
     void WriteDelayedHooks()
     {
-#if _DEBUG
+#if _DEBUG && 0
         WriteRelCall(0x4F0087, &NiMultiTargetTransformController::_Update);
 #endif
     }

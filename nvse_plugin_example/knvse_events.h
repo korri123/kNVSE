@@ -18,3 +18,8 @@ namespace InterceptStopSequence
 {
     std::optional<bool> Dispatch(Actor* actor, eAnimSequence sequenceType);
 }
+
+namespace OnActorUpdateAnimation
+{
+    void Dispatch(Actor* actor);
+}

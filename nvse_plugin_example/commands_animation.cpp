@@ -1442,7 +1442,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 
 	auto* animData = GetAnimDataForPov(playerPov, actor);
 
-	if (const auto anim = FindOrLoadAnim(animData, path); anim)
+	if (const auto anim = FindOrLoadAnim(animData, path))
 	{
 		if (anim->m_eState != NiControllerSequence::INACTIVE)
 			animData->controllerManager->DeactivateSequence(anim, 0.0f);

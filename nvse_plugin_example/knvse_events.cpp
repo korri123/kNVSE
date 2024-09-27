@@ -79,6 +79,16 @@ namespace InterceptStopSequence
     }
 }
 
+namespace OnActorUpdateAnimation
+{
+    const char* eventName = "kNVSE:OnActorUpdate";
+    
+    void Dispatch(Actor* actor)
+    {
+        g_eventManagerInterface->DispatchEvent(eventName, actor);
+    }
+}
+
 #define REGISTER_EVENT(event) g_eventManagerInterface->RegisterEvent(event::eventName, std::size(event::params), event::params, EventFlags::kFlag_FlushOnLoad)
 #define REGISTER_EVENT_NO_PARAMS(event) g_eventManagerInterface->RegisterEvent(event::eventName, 0, nullptr, EventFlags::kFlag_FlushOnLoad)
 
@@ -86,4 +96,6 @@ void Events::RegisterEvents()
 {
     REGISTER_EVENT(InterceptPlayAnimGroup);
     REGISTER_EVENT(InterceptStopSequence);
+    REGISTER_EVENT_NO_PARAMS(OnActorUpdateAnimation);
 }
+
