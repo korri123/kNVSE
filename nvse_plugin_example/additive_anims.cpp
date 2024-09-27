@@ -84,6 +84,15 @@ void InitDebugData(NiControllerSequence* additiveSequence)
 #endif
 }
 
+void MarkInterpolatorsAsAdditive(const NiControllerSequence* additiveSequence)
+{
+    for (const auto& block : additiveSequence->GetControlledBlocks())
+    {
+        if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms() && IS_TYPE(block.m_pkBlendInterp, NiBlendTransformInterpolator))
+            block.m_pkBlendInterp->SetHasAdditiveTransforms(true);
+    }
+}
+
 void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSequence* additiveSequence, NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities)
 {
     const auto metadata = AdditiveSequenceMetadata {
@@ -101,6 +110,7 @@ void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSeque
     }
     additiveSequenceMetadataMap.insert_or_assign(additiveSequence, metadata);
     AddReferencePoseTransforms(animData, additiveSequence, referencePoseSequence, timePoint, ignorePriorities, additiveInterpMetadataMap);
+    MarkInterpolatorsAsAdditive(additiveSequence);
     InitDebugData(additiveSequence);
 }
 
@@ -127,15 +137,6 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
     if (!additiveAnim->m_spTextKeys->FindFirstByName("noBlend"))
         easeInTime = GetDefaultBlendTime(additiveAnim, currentAnim);
     additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false);
-}
-
-void MarkInterpolatorsAsAdditive(const NiControllerSequence* additiveSequence)
-{
-    for (const auto& block : additiveSequence->GetControlledBlocks())
-    {
-        if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms() && IS_TYPE(block.m_pkBlendInterp, NiBlendTransformInterpolator))
-            block.m_pkBlendInterp->SetHasAdditiveTransforms(true);
-    }
 }
 
 bool AdditiveManager::IsAdditiveSequence(NiControllerSequence* sequence)

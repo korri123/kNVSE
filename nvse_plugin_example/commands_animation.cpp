@@ -1425,13 +1425,33 @@ bool QueueScriptAnimOperation(Actor* actor, bool runImmediately, Function&& call
 	return true;
 }
 
+AnimData* GetAnimData(Actor* actor, int firstPerson)
+{
+	if (!actor)
+		return nullptr;
+	switch (firstPerson)
+	{
+	case -1:
+		if (actor != g_thePlayer)
+			return actor->GetAnimData();
+		return !g_thePlayer->IsThirdPerson() ? g_thePlayer->firstPersonAnimData : g_thePlayer->baseProcess->GetAnimData();
+	case 0:
+		return actor->baseProcess->GetAnimData();
+	case 1:
+	default:
+		if (actor == g_thePlayer)
+			return g_thePlayer->firstPersonAnimData;
+		return actor->GetAnimData();
+	}
+}
+
 bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
 	sv::stack_string<0x400> path;
-	auto playerPov = 0;
+	auto bIsFirstPerson = -1;
 	
-	if (!ExtractArgs(EXTRACT_ARGS, &path.data_, &playerPov))
+	if (!ExtractArgs(EXTRACT_ARGS, &path.data_, &bIsFirstPerson))
 		return true;
 	path.calculate_size();
 	SetLowercase(path.data());
@@ -1440,7 +1460,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 	if (!actor)
 		return true;
 
-	auto* animData = GetAnimDataForPov(playerPov, actor);
+	auto* animData = GetAnimData(actor, bIsFirstPerson);
 
 	if (const auto anim = FindOrLoadAnim(animData, path))
 	{
@@ -1620,27 +1640,6 @@ std::vector<std::string_view> FindCustomAnimations(AnimData* animData, const UIn
 
 	}
 	return result;
-}
-
-
-AnimData* GetAnimData(Actor* actor, int firstPerson)
-{
-	if (!actor)
-		return nullptr;
-	switch (firstPerson)
-	{
-	case -1:
-		if (actor != g_thePlayer)
-			return actor->GetAnimData();
-		return !g_thePlayer->IsThirdPerson() ? g_thePlayer->firstPersonAnimData : g_thePlayer->baseProcess->GetAnimData();
-	case 0:
-		return actor->baseProcess->GetAnimData();
-	case 1:
-	default:
-		if (actor == g_thePlayer)
-			return g_thePlayer->firstPersonAnimData;
-		return actor->GetAnimData();
-	}
 }
 
 std::unordered_set<BaseProcess*> g_allowedNextAnims;
@@ -2024,22 +2023,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 			animData = g_thePlayer->firstPersonAnimData;
 		else
 			animData = actor->baseProcess->GetAnimData();
-		if (anim->m_eState != NiControllerSequence::ANIMATING)
-		{
-			*result = 0;
-			return true;
-		}
 
 		anim->m_fOffset = time - animData->timePassed;
-		const auto animTime = GetAnimTime(animData, anim);
-		if (animTime < anim->m_fBeginKeyTime)
-		{
-			anim->m_fOffset = anim->m_fEndKeyTime - (anim->m_fBeginKeyTime - anim->m_fOffset);
-		}
-		else if (animTime > anim->m_fEndKeyTime)
-		{
-			anim->m_fOffset = anim->m_fBeginKeyTime + (anim->m_fOffset - anim->m_fEndKeyTime);
-		}
 		*result = 1;
 		return true;
 	});
@@ -2062,17 +2047,16 @@ void CreateCommands(NVSECommandBuilder& builder)
 					auto& stack = stacks.anims;
 					for (auto& anims : stack)
 					{
-						std::unordered_set<UInt16> variants;
-						for (const auto& anim : anims->anims)
-						{
-							AnimOverrideData animOverrideData = {
-								.path = anim->path,
+						AnimOverrideData animOverrideData = {
 								.identifier = toForm->refID,
 								.enable = false,
 								.conditionScript = *anims->conditionScript,
 								.pollCondition = anims->pollCondition,
-								.matchBaseGroupId = false
-							};
+								.matchBaseGroupId = anims->matchBaseGroupId
+						};
+						for (const auto& anim : anims->anims)
+						{
+							animOverrideData.path = anim->path;
 							SetOverrideAnimation(animOverrideData, *map);
 							animOverrideData.enable = true;
 							SetOverrideAnimation(animOverrideData, *map);
@@ -2084,7 +2068,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 		return true;
 	});
-
 
 	builder.Create("IsAnimSequencePlaying", kRetnType_Default, { ParamInfo{"path", kParamType_String, false} }, true, [](COMMAND_ARGS)
 	{
@@ -2864,8 +2847,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	const auto params = { ParamInfo{"sPath", kParamType_String, false}, { "archive type", kParamType_Integer, true } };
-	builder.Create("GetDirectoryFiles", kRetnType_Array, params, false, [](COMMAND_ARGS)
+	const auto getDirFilesParams = { ParamInfo{"sPath", kParamType_String, false}, { "archive type", kParamType_Integer, true } };
+	builder.Create("GetDirectoryFiles", kRetnType_Array, getDirFilesParams, false, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		sv::stack_string<0x400> path;
@@ -2880,6 +2863,48 @@ void CreateCommands(NVSECommandBuilder& builder)
 			arr.Add(filePath);
 		}
 		*result = reinterpret_cast<UInt32>(arr.Build(g_arrayVarInterface, scriptObj));
+		return true;
+	});
+
+	// GetActiveAnims
+	builder.Create("GetActiveAnims", kRetnType_Array, { ParamInfo{"bIsFirstPerson", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		UInt32 firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &firstPerson))
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
+		if (!actor)
+			return true;
+		auto* animData = GetAnimData(actor, firstPerson);
+		if (!animData || !animData->controllerManager)
+			return true;
+		NVSEArrayBuilder arr;
+		for (auto* entry : animData->controllerManager->m_kActiveSequences)
+		{
+			if (entry && entry->m_eState != NiControllerSequence::INACTIVE)
+				arr.Add(entry->m_kName.CStr());
+		}
+		*result = reinterpret_cast<UInt32>(arr.Build(g_arrayVarInterface, scriptObj));
+		return true;
+	});
+
+	// IsAnimAdditive
+	builder.Create("IsAnimAdditive", kRetnType_Default, { ParamInfo{"anim sequence path", kParamType_String, false} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> animPath;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
+			return true;
+		SetLowercase(animPath.data_);
+		animPath.calculate_size();
+		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
+		if (!actor)
+			return true;
+		auto* additiveAnim = FindActiveAnimationForActor(actor, animPath.c_str());
+		if (!additiveAnim)
+			return true;
+		*result = AdditiveManager::IsAdditiveSequence(additiveAnim);
 		return true;
 	});
 
