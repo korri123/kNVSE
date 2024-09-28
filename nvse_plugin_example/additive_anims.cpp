@@ -185,9 +185,38 @@ AdditiveInterpMetadata* GetAdditiveInterpMetadata(NiInterpolator* interpolator)
     return nullptr; // not an additive interpolator
 }
 
+void check_float(float value) {
+#if _DEBUG
+    if (std::isnan(value)) {
+        DebugBreakIfDebuggerPresent();
+    }
+    else if (std::isinf(value)) {
+        DebugBreakIfDebuggerPresent();
+    }
+    else if (value == FLT_MAX) {
+        DebugBreakIfDebuggerPresent();
+    }
+    else if (value == -FLT_MAX) {
+        DebugBreakIfDebuggerPresent();
+    }
+    else if (value == FLT_MIN) {
+        DebugBreakIfDebuggerPresent();
+    }
+    else if (std::isfinite(value)) {
+        return;
+    }
+    else {
+        DebugBreakIfDebuggerPresent();
+    }
+#endif
+}
+
 void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
     float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue) const
 {
+#if _DEBUG
+    NiQuatTransform originalTransform = kValue;
+#endif
     NiPoint3 kFinalTranslate = NiPoint3::ZERO;
     NiQuaternion kFinalRotate = NiQuaternion(1.0f, 0.0f, 0.0f, 0.0f); // Identity quaternion
     float fFinalScale = 0.0f;
@@ -197,6 +226,10 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
     bool bScaleChanged = false;
 
 #if _DEBUG
+    if (false)
+    {
+        kValue = originalTransform;
+    }
     const char* targetNodeName = debugBlendInterpsToTargetsMap[const_cast<NiBlendTransformInterpolator*>(this)];
 #endif
     std::shared_lock lock(g_additiveManagerMutex);
@@ -272,19 +305,29 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
         DebugBreakIfDebuggerPresent();
 #endif
     
-    if (bTransChanged)
+    if (bTransChanged && kValue.IsTranslateValid())
     {
         kValue.m_kTranslate += kFinalTranslate;
     }
-    if (bRotChanged)
+    if (bRotChanged && kValue.IsRotateValid())
     {
         kValue.m_kRotate = kValue.m_kRotate * kFinalRotate;
         kValue.m_kRotate.Normalize();
     }
-    if (bScaleChanged)
+    if (bScaleChanged && kValue.IsScaleValid())
     {
         kValue.m_fScale += fFinalScale;
     }
+
+#if _DEBUG
+    check_float(kValue.m_kRotate.m_fW);
+    check_float(kValue.m_kRotate.m_fX);
+    check_float(kValue.m_kRotate.m_fY);
+    check_float(kValue.m_kRotate.m_fZ);
+    check_float(kValue.m_kTranslate.x);
+    check_float(kValue.m_kTranslate.y);
+    check_float(kValue.m_kTranslate.z);
+#endif
 }
 
 void NiBlendInterpolator::ComputeNormalizedWeightsFor2Additive(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const
@@ -427,7 +470,18 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
     lock.unlock();
 
     if (kItems.empty())
+    {
+        if (m_ucInterpCount)
+        {
+            const float fValue = 1.0f / static_cast<float>(m_ucInterpCount);
+            for (auto& item : GetItems())
+            {
+                if (item.m_spInterpolator)
+                    item.m_fNormalizedWeight = fValue;
+            }
+        }
         return;
+    }
 
     if (kItems.size() == 1)
     {

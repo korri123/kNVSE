@@ -629,6 +629,8 @@ void ApplyHooks()
 
 	if (conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
+
+	
 	
 	if (ini.GetOrCreate("Engine Fixes", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{
@@ -667,7 +669,7 @@ void ApplyHooks()
 	// determines the velocity of jumploopforward, do not remove since enhanced movement relies on it
 	WriteRelCall(0x493115, OverrideWithCustomAnimHook<-0x18C>);
 
-
+	
 	/* experimental */
 	// WriteRelCall(0x9D0E80, NonExistingAnimHook<-0x1C>);
 	// WriteRelCall(0x97FF06, NonExistingAnimHook<-0x8>);
@@ -740,6 +742,7 @@ void ApplyHooks()
 		return ThisStdCall<UInt32>(uiTESFormGetFlagsAddr2, form);
 	}), &uiTESFormGetFlagsAddr2);
 
+
 	WriteRelCall(0x490A45, RemoveDuplicateAnimsHook);
 
 	// AnimData::GetNextWeaponSequenceKey
@@ -772,7 +775,7 @@ void ApplyHooks()
 		ThisStdCall(0xA35640, anim);
 	}));
 
-
+	
 
 #if 0
 	// AnimData::GetSequenceOffsetPlusTimePassed
@@ -836,7 +839,9 @@ void ApplyHooks()
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
 	}));
 	PatchMemoryNop(0x4994F9 + 2, 1);
+
 	
+
 	// BSAnimGroupSequence::GetName
 	// apply text key fixes before AnimGroup is init
 	WriteRelCall(0x43B838, INLINE_HOOK(NiFixedString*, __fastcall, BSAnimGroupSequence* anim)
@@ -907,6 +912,7 @@ void ApplyHooks()
 		}));
 	};
 	writeAttackLoopToAimHooks();
+	
 
 	const auto writeInterruptLoopAllowReloadHooks = []
 	{
@@ -938,6 +944,7 @@ void ApplyHooks()
 			return anim->m_fLastScaledTime;
 		return ThisStdCall<float>(0x493800, animData, anim);
 	}));
+
 
 #if _DEBUG
 	// BSSimpleList<void *>::IsEmpty(ListMasters)
@@ -972,7 +979,7 @@ void ApplyHooks()
 	WriteRelCall(0x8885C9, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, Actor* actor)
 	{
 		OnActorUpdateAnimation::Dispatch(actor);
-		ThisStdCall(uiAnimDataUpdateControllersAddr, animData, g_thePlayer);
+		ThisStdCall(uiAnimDataUpdateControllersAddr, animData, actor);
 	}), &uiAnimDataUpdateControllersAddr);
 }
 
