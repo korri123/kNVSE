@@ -47,7 +47,7 @@ void WriteRelCall(UInt32 jumpSrc, UInt32 jumpTgt);
 template <typename T>
 void WriteRelCall(UInt32 jumpSrc, T jumpTgt, UInt32* originalFunction = nullptr)
 {
-	if (originalFunction)
+	if (originalFunction && *reinterpret_cast<UInt8*>(jumpSrc) == 0xE8)
 		*originalFunction = *reinterpret_cast<UInt32*>(jumpSrc + 1) + jumpSrc + 5;
 	WriteRelCall(jumpSrc, UInt32(jumpTgt));
 }

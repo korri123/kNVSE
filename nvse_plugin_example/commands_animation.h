@@ -194,6 +194,7 @@ struct AnimTime
 	std::set<std::pair<Script*, std::string>> cleanUpScripts;
 	bool trackEndTime = false;
 	bool endIfSequenceTypeChanges = true;
+	bool useLegacyTime = false;
 
 	struct RespectEndKeyData
 	{

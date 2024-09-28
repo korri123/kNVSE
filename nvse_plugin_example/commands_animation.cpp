@@ -517,7 +517,15 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	{
 		auto& animTime = getAnimTimeStruct();
 		animTime.hasCustomAnimGroups = true;
-		applied = true;
+	}
+
+	std::string_view animName(anim->m_kName);
+	if (animName.contains("_male\\idleanims\\B42Inject") ||
+		animName.contains("B42Interact\\Type") 
+	)
+	{
+		auto& animTime = getAnimTimeStruct();
+		animTime.useLegacyTime = true;
 	}
 		
 	if (applied || createIfNoKeys)
@@ -528,6 +536,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 		animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
 		return &animTime;
 	}
+	
 	return nullptr;
 }
 

@@ -68,7 +68,16 @@ float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
 	if (anim->m_fLastTime != -NI_INFINITY)
 		return anim->m_fLastScaledTime;
 	return 0.0f;
-	
+}
+
+float GetAnimTimeLegacy(const AnimData* animData, const NiControllerSequence* anim)
+{
+	auto time = anim->m_fOffset + animData->timePassed;
+	if (anim->m_eState == NiControllerSequence::TRANSDEST)
+	{
+		time = anim->m_fEndTime - animData->timePassed;
+	}
+	return time;
 }
 
 thread_local ScriptCache g_scriptCache;
@@ -368,7 +377,7 @@ void HandleCustomTextKeys()
 			continue;
 		}
 
-		const auto time = GetAnimTime(animData, anim);
+		const auto time = animTime.useLegacyTime ? GetAnimTimeLegacy(animData, anim) : GetAnimTime(animData, anim);
 	
 		if (animTime.respectEndKey && anim->animGroup)
 		{

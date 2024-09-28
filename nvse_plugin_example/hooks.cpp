@@ -699,16 +699,6 @@ void ApplyHooks()
 		ThisStdCall(0x48FF50, animData);
 	}));
 
-	// hooking TESForm::GetFlags
-	// Runs on empty clip when reloading
-	static UInt32 uiTESFormGetFlagsAddr;
-	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
-	{
-		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x1C);
-		[[msvc::noinline_calls]] { OnReloadHandler::SetDidReload(actor, ReloadType::NonPartial); }
-		return ThisStdCall<UInt32>(uiTESFormGetFlagsAddr, form);
-	}), &uiTESFormGetFlagsAddr);
-
 	// BSTasklet::SetData
 	// Runs when actor switches ammo type in Stewie Tweaks
 	using BSTasklet = void;
@@ -727,20 +717,6 @@ void ApplyHooks()
 		OnReloadHandler::SetDidReload(g_thePlayer, ReloadType::AmmoSwap);
 		ThisStdCall(uiBSTaskletSetDataAddr2, tasklet, ammoInfo);
 	}), &uiBSTaskletSetDataAddr2);
-
-	// TESForm::GetFlags
-	// Runs when player presses the reload control
-	static UInt32 uiTESFormGetFlagsAddr2;
-	WriteRelCall(0x9497A3, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
-	{
-		auto* ammoInfo = g_thePlayer->baseProcess->GetAmmoInfo();
-		if (ammoInfo)
-		{
-			const auto reloadType = ammoInfo->count == 0 ? ReloadType::NonPartial : ReloadType::Partial;
-			OnReloadHandler::SetDidReload(g_thePlayer, reloadType);
-		}
-		return ThisStdCall<UInt32>(uiTESFormGetFlagsAddr2, form);
-	}), &uiTESFormGetFlagsAddr2);
 
 
 	WriteRelCall(0x490A45, RemoveDuplicateAnimsHook);
@@ -987,6 +963,31 @@ void WriteDelayedHooks()
 {
 	NiHooks::WriteDelayedHooks();
 	AllowAttackKey::ApplyHooks();
+
+	// hooking TESForm::GetFlags
+	// Runs on empty clip when reloading
+	// nvac hooks here so it has to be delayed
+	static UInt32 uiTESFormGetFlagsAddr = 0x44DDC0;
+	WriteRelCall(0x8A8C1B, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
+	{
+		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x1C);
+		[[msvc::noinline_calls]] { OnReloadHandler::SetDidReload(actor, ReloadType::NonPartial); }
+		return ThisStdCall<UInt32>(uiTESFormGetFlagsAddr, form);
+	}), &uiTESFormGetFlagsAddr);
+
+	// TESForm::GetFlags
+	// Runs when player presses the reload control
+	static UInt32 uiTESFormGetFlagsAddr2 = 0x44DDC0;
+	WriteRelCall(0x9497A3, INLINE_HOOK(UInt32, __fastcall, TESForm* form)
+	{
+		auto* ammoInfo = g_thePlayer->baseProcess->GetAmmoInfo();
+		if (ammoInfo)
+		{
+			const auto reloadType = ammoInfo->count == 0 ? ReloadType::NonPartial : ReloadType::Partial;
+			OnReloadHandler::SetDidReload(g_thePlayer, reloadType);
+		}
+		return ThisStdCall<UInt32>(uiTESFormGetFlagsAddr2, form);
+	}), &uiTESFormGetFlagsAddr2);
 
 	if (auto* cmdGetCurrentAmmoRounds = const_cast<CommandInfo*>(g_cmdTable->GetByName("GetCurrentAmmoRounds")))
 	{
