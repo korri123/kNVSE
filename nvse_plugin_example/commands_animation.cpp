@@ -197,7 +197,6 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
 						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
-						std::unique_lock lock(g_loadCustomAnimationMutex);
 						auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return iter.first->second;
 					}
@@ -213,7 +212,8 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 			ERROR_LOG("Failed to load KF Model " + std::string(path));
 		return std::nullopt;
 	};
-	
+
+	std::unique_lock lock(g_loadCustomAnimationMutex);
 	auto* defaultMap = animData->mapAnimSequenceBase;
 
 	if (!s_customMap)
