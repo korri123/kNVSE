@@ -1375,18 +1375,18 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	}
 	try
 	{
+		AnimOverrideData animOverrideData = {
+			.identifier = actor ? actor->refID : 0xFF,
+			.enable = static_cast<bool>(enable),
+			.conditionScript = conditionScript,
+			.pollCondition = static_cast<bool>(pollCondition),
+			.matchBaseGroupId = static_cast<bool>(matchBaseGroupId)
+		};
 		*result = OverrideAnimsFromScript(path, [&](const char* animPath)
 		{
 			const auto pooledPath = AddStringToPool(ToLower(animPath));
-			AnimOverrideData animOverrideData = {
-				.path = pooledPath,
-				.identifier = actor->refID,
-				.enable = static_cast<bool>(enable),
-				.conditionScript = conditionScript,
-				.pollCondition = static_cast<bool>(pollCondition),
-				.matchBaseGroupId = static_cast<bool>(matchBaseGroupId)
-			};
-			return OverrideFormAnimation(animOverrideData, static_cast<bool>(firstPerson));
+			animOverrideData.path = pooledPath;
+			return actor ? OverrideFormAnimation(animOverrideData, static_cast<bool>(firstPerson)) : OverrideModIndexAnimation(animOverrideData, static_cast<bool>(firstPerson));
 		});
 	}
 	catch (std::exception& e)
