@@ -657,6 +657,8 @@ public:
 template <typename T_Key, typename T_Data>
 T_Data* NiTPointerMap_t <T_Key, T_Data>::Lookup(T_Key key)
 {
+	if (m_numBuckets == 0)
+		return nullptr;
 	const auto hashNiString = [](const char* str)
 	{
 		// 0x486DF0
