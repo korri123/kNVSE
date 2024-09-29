@@ -26,7 +26,6 @@ struct AdditiveSequenceMetadata
 std::unordered_map<NiControllerSequence*, AdditiveSequenceMetadata> additiveSequenceMetadataMap;
 AdditiveInterpMetadataMap additiveInterpMetadataMap;
 
-std::unordered_map<NiControllerSequence*, std::vector<NiControllerSequence*>> referenceToAdditiveMap;
 #if _DEBUG
 std::unordered_map<NiBlendInterpolator*, const char*> debugBlendInterpsToTargetsMap;
 std::unordered_map<NiBlendInterpolator*, NiControllerSequence*> debugBlendInterpToSequenceMap;
@@ -125,18 +124,22 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
     }
     InitAdditiveSequence(animData, additiveAnim, referenceAnim, 0.0f, false);
 
-    {
-        std::unique_lock lock(g_additiveManagerMutex);
-        referenceToAdditiveMap[referenceAnim].push_back(additiveAnim);
-    }
-
-    const BSAnimGroupSequence* currentAnim = nullptr;
+    BSAnimGroupSequence* currentAnim = nullptr;
     if (referenceAnim->animGroup)
         currentAnim = animData->animSequence[referenceAnim->animGroup->GetSequenceType()];
     float easeInTime = 0.0f;
     if (!additiveAnim->m_spTextKeys->FindFirstByName("noBlend"))
         easeInTime = GetDefaultBlendTime(additiveAnim, currentAnim);
-    additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false);
+    const auto result = additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false);
+    if (result)
+    {
+        if (auto* animTime = HandleExtraOperations(animData, additiveAnim, true))
+        {
+            animTime->endIfSequenceTypeChanges = false;
+            animTime->isOverlayAdditiveAnim = true;
+            animTime->referenceAnim = currentAnim;
+        }
+    }
 }
 
 bool AdditiveManager::IsAdditiveSequence(NiControllerSequence* sequence)
@@ -149,33 +152,11 @@ void AdditiveManager::EraseAdditiveSequence(NiControllerSequence* sequence)
 {
     std::unique_lock lock(g_additiveManagerMutex);
     additiveSequenceMetadataMap.erase(sequence);
-    for (auto& additiveSequences : referenceToAdditiveMap | std::views::values)
-    {
-        std::erase_if(additiveSequences, _L(auto& p, p == sequence));
-    }
 }
 
 bool IsAdditiveInterpolator(NiInterpolator* interpolator)
 {
     return additiveInterpMetadataMap.contains(interpolator);
-}
-
-bool AdditiveManager::StopManagedAdditiveSequenceFromParent(BSAnimGroupSequence* parentSequence, float afEaseTime)
-{
-    std::shared_lock lock(g_additiveManagerMutex);
-    if (const auto iter = referenceToAdditiveMap.find(parentSequence); iter != referenceToAdditiveMap.end())
-    {
-        for (const auto& additiveSequences = iter->second; auto* additiveSequence : additiveSequences)
-        {
-            auto* additiveAnimGroupSequence = static_cast<BSAnimGroupSequence*>(additiveSequence);
-            if (NOT_TYPE(additiveAnimGroupSequence, BSAnimGroupSequence))
-                continue;
-            const float easeOutTime = afEaseTime == INVALID_TIME ? additiveAnimGroupSequence->GetEaseInTime() : afEaseTime;
-            additiveSequence->Deactivate(easeOutTime, false);
-        }
-        return true;
-    }
-    return false;
 }
 
 AdditiveInterpMetadata* GetAdditiveInterpMetadata(NiInterpolator* interpolator)
@@ -194,12 +175,6 @@ void check_float(float value) {
         DebugBreakIfDebuggerPresent();
     }
     else if (value == FLT_MAX) {
-        DebugBreakIfDebuggerPresent();
-    }
-    else if (value == -FLT_MAX) {
-        DebugBreakIfDebuggerPresent();
-    }
-    else if (value == FLT_MIN) {
         DebugBreakIfDebuggerPresent();
     }
     else if (std::isfinite(value)) {

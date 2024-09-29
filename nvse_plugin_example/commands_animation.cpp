@@ -243,7 +243,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UI
 AnimTime::~AnimTime()
 {
 	Revert3rdPersonAnimTimes(this->respectEndKeyData.anim3rdCounterpart, this->anim);
-	if (this->trackEndTime)
+	if (this->trackEndTime || this->isOverlayAdditiveAnim)
 	{
 		const auto easeOutTime = this->anim->GetEaseOutTime();
 		this->anim->Deactivate(easeOutTime, false);

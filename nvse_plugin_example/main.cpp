@@ -484,6 +484,40 @@ void HandleCustomTextKeys()
 				}
 			}
 		}
+
+		if (animTime.isOverlayAdditiveAnim)
+		{
+			BSAnimGroupSequence* baseAnim = animTime.referenceAnim;
+			if (baseAnim->m_eState == NiControllerSequence::INACTIVE
+				|| baseAnim->m_eState == NiControllerSequence::EASEOUT)
+			{
+				erase();
+				continue;
+			}
+			const auto baseGroupId = baseAnim->animGroup->GetBaseGroupID();
+			if (baseGroupId == kAnimGroup_AttackLoop || baseGroupId == kAnimGroup_AttackLoopIS)
+			{
+				if (!GameFuncs::GetControlState(ControlCode::Attack, Decoding::IsDXKeyState::IsHeld))
+				{
+					erase();
+					continue;
+				}
+
+				const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+				if (!ammoInfo && !IsGodMode())
+				{
+					erase();
+					continue;
+				}
+
+				if (ammoInfo && ammoInfo->count == 0 && !IsGodMode())
+				{
+					erase();
+					continue;
+				}
+			}
+		}
+		
 		// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
 		// moved below so that keys on end frame are handled correctly (functional backpack by mrshersh)
 		if (!animTime.respectEndKey && !isAnimPlaying())

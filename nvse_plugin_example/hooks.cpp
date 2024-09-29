@@ -107,9 +107,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		auto* idle = animData->animSequence[kSequence_Idle];
 		if (idle && idle->m_eState == NiControllerSequence::ANIMATING)
 			BlendFixes::FixConflictingPriorities(currentAnim, destAnim, idle);
-		const auto easeTime = GetDefaultBlendTime(destAnim, currentAnim);
-		if (destAnim != currentAnim)
-			AdditiveManager::StopManagedAdditiveSequenceFromParent(currentAnim, easeTime);
 	}
 	return result;
 }
@@ -806,10 +803,6 @@ void ApplyHooks()
 			// jump to end of function
 			*addressOfReturn = 0x49979C;
 			return static_cast<eAnimSequence>(0);
-		}
-		if (auto* sequence = animData->animSequence[sequenceId])
-		{
-			AdditiveManager::StopManagedAdditiveSequenceFromParent(sequence);
 		}
 		*addressOfReturn = 0x4994FC;
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
