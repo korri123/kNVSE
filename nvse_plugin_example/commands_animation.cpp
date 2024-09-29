@@ -1082,6 +1082,34 @@ bool OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson)
 	return SetOverrideAnimation(data, map);
 }
 
+void PluginOverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition)
+{
+	AnimOverrideData animOverrideData = {
+		.path = AddStringToPool(path),
+		.identifier = form->refID,
+		.enable = enable,
+		.conditionScript = conditionScript,
+		.pollCondition = pollCondition,
+		.matchBaseGroupId = false
+	};
+	OverrideFormAnimation(animOverrideData, firstPerson);
+}
+
+bool ClearFormAnimations(TESForm* form)
+{
+	std::unique_lock lock(g_overrideMapMutex);
+	bool result = false;
+	for (auto* map : { &g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap })
+	{
+		if (const auto iter = map->find(form->refID); iter != map->end())
+		{
+			map->erase(iter);
+			result = true;
+		}
+	}
+	return result;
+}
+
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID)
 {
 	if (animGroupID < kAnimGroup_Forward || animGroupID > kAnimGroup_TurnRight)
@@ -1798,6 +1826,42 @@ NiControllerSequence::InterpArrayItem* FindAnimInterp(TESObjectREFR* thisObj, co
 	return anim->GetControlledBlock(interpName);
 }
 
+bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm)
+{
+	std::unique_lock lock(g_overrideMapMutex);
+	bool applied = false;
+	for (auto* map : {&g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap})
+	{
+		if (const auto iter = map->find(fromForm->refID); iter != map->end())
+		{
+			auto& entry = iter->second;
+			for (auto& stacks : entry.stacks | std::views::values)
+			{
+				auto& stack = stacks.anims;
+				for (auto& anims : stack)
+				{
+					AnimOverrideData animOverrideData = {
+						.identifier = toForm->refID,
+						.enable = false,
+						.conditionScript = *anims->conditionScript,
+						.pollCondition = anims->pollCondition,
+						.matchBaseGroupId = anims->matchBaseGroupId
+					};
+					for (const auto& anim : anims->anims)
+					{
+						animOverrideData.path = anim->path;
+						SetOverrideAnimation(animOverrideData, *map);
+						animOverrideData.enable = true;
+						SetOverrideAnimation(animOverrideData, *map);
+						applied = true;
+					}
+				}
+			}
+		}
+	}
+	return applied;
+}
+
 void CreateCommands(NVSECommandBuilder& builder)
 {
 	constexpr auto getAnimBySequenceTypeParams = {
@@ -2045,36 +2109,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		TESForm* toForm = nullptr;
 		if (!ExtractArgs(EXTRACT_ARGS, &fromForm, &toForm))
 			return true;
-		
-		for (auto* map : {&g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap})
-		{
-			if (const auto iter = map->find(fromForm->refID); iter != map->end())
-			{
-				auto& entry = iter->second;
-				for (auto& stacks : entry.stacks | std::views::values)
-				{
-					auto& stack = stacks.anims;
-					for (auto& anims : stack)
-					{
-						AnimOverrideData animOverrideData = {
-								.identifier = toForm->refID,
-								.enable = false,
-								.conditionScript = *anims->conditionScript,
-								.pollCondition = anims->pollCondition,
-								.matchBaseGroupId = anims->matchBaseGroupId
-						};
-						for (const auto& anim : anims->anims)
-						{
-							animOverrideData.path = anim->path;
-							SetOverrideAnimation(animOverrideData, *map);
-							animOverrideData.enable = true;
-							SetOverrideAnimation(animOverrideData, *map);
-							*result = 1;
-						}
-					}
-				}
-			}
-		}
+		*result = CopyAnimationsToForm(fromForm, toForm);
 		return true;
 	});
 

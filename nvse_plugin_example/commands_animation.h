@@ -539,7 +539,6 @@ struct AnimOverrideData
 bool OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson);
 bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson);
 
-
 float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
@@ -615,3 +614,9 @@ std::string_view GetBaseAnimGroupName(std::string_view name);
 AnimGroupID GroupNameToId(std::string_view name);
 
 extern std::mutex g_animTimeMutex;
+
+extern "C" { 
+	__declspec(dllexport) void PluginOverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition);
+	__declspec(dllexport) bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm);
+	__declspec(dllexport) bool ClearFormAnimations(TESForm* form);
+}
