@@ -520,12 +520,15 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	}
 
 	std::string_view animName(anim->m_kName);
-	if (animName.contains("_male\\idleanims\\B42Inject") ||
-		animName.contains("B42Interact\\Type") 
-	)
+	
+	for (const auto& legacyPath : g_pluginSettings.legacyAnimTimePaths)
 	{
-		auto& animTime = getAnimTimeStruct();
-		animTime.useLegacyTime = true;
+		if (animName.contains(legacyPath))
+		{
+			auto& animTime = getAnimTimeStruct();
+			animTime.useLegacyTime = true;
+			break;
+		}
 	}
 		
 	if (applied || createIfNoKeys)

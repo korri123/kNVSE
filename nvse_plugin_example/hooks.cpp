@@ -609,6 +609,11 @@ void ApplyHooks()
 	conf.fixWrongAnimName = ini.GetOrCreate("Anim Fixes", "bFixWrongAnimName", 1, "; try to fix animations where the name of the animation file does not match anim group name.");
 	conf.fixMissingPrnKey = ini.GetOrCreate("Anim Fixes", "bFixMissingPrnKey", 1, "; try to fix animations where the prn key is missing in the first person animation.");
 	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest");
+	const std::string legacyAnimTimePaths = ini.GetOrCreate("Anim Fixes", "sLegacyAnimTimePaths", "B42Inject,B42Interact,B42Loot", "; use legacy anim time algorithm for these paths (these mods rely on bugged behavior from previous versions of kNVSE)");
+	if (!legacyAnimTimePaths.empty())
+	{
+		conf.legacyAnimTimePaths = SplitString(legacyAnimTimePaths);
+	}
 	//WriteRelJump(0x4949D0, AnimationHook);
 	
 	WriteRelCall(0x494989, HandleAnimationChange);

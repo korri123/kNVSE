@@ -66,6 +66,27 @@ inline std::string_view ExtractUntilStringMatches(const std::string_view str, co
 	return str.substr(0, pos + (includeMatch ? match.length() : 0));
 }
 
+inline std::vector<std::string> SplitString(std::string_view str)
+{
+	std::vector<std::string> result;
+	std::string current;
+	for (const auto& ch : str)
+	{
+		if (ch == ',')
+		{
+			result.push_back(current);
+			current.clear();
+		}
+		else
+		{
+			current.push_back(ch);
+		}
+	}
+	if (!current.empty())
+		result.push_back(current);
+	return result;
+}
+
 void _Log(const std::string& msg);
 #define LOG(msg) do { if (g_logLevel >= 1) _Log(msg); } while (0)
 
