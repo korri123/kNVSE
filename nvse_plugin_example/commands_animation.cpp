@@ -1688,22 +1688,23 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const char* p
 {
 	if (auto* anim = animData->controllerManager->m_kSequenceMap.Lookup(path))
 		return static_cast<BSAnimGroupSequence*>(anim);
-	const std::string_view pooledPath = AddStringToPool(path);
-	const auto& ctx = LoadCustomAnimation(pooledPath, animData);
-	if (ctx)
-		return ctx->anim;
 	return nullptr;
 }
 
 BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path)
 {
-	auto* animData = actor->baseProcess->GetAnimData();
+	AnimData* animData;
+	if (actor == g_thePlayer && g_thePlayer->IsFirstPerson())
+		animData = g_thePlayer->firstPersonAnimData;
+	else
+		animData = actor->baseProcess->GetAnimData();
 	if (!animData)
 		return nullptr;
 	auto* anim = FindActiveAnimationByPath(animData, path);
 	if (!anim && actor == g_thePlayer)
 	{
-		anim = FindActiveAnimationByPath(g_thePlayer->firstPersonAnimData, path);
+		auto* otherAnimData = g_thePlayer->IsFirstPerson() ? g_thePlayer->baseProcess->GetAnimData() : g_thePlayer->firstPersonAnimData;
+		anim = FindActiveAnimationByPath(otherAnimData, path);
 	}
 	return anim;
 }
@@ -2955,39 +2956,33 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
+	builder.Create("SetAnimCycleType", kRetnType_Default, { ParamInfo{"anim sequence path", kParamType_String, false}, ParamInfo{"cycle type", kParamType_Integer, false}, ParamInfo{"first person", kParamType_Integer, true} }, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> animPath;
+		UInt32 cycleType;
+		UInt32 firstPerson = -1;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &cycleType, &firstPerson) || !thisObj)
+			return true;
+		if (cycleType > NiControllerSequence::MAX_CYCLE_TYPES)
+			return true;
+		SetLowercase(animPath.data());
+		animPath.calculate_size();
+		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
+		if (!actor)
+			return true;
+		if (firstPerson == -1)
+			firstPerson = IsPlayerInFirstPerson(static_cast<Actor*>(thisObj));
+		auto* anim = FindOrLoadAnim(actor, animPath.c_str(), firstPerson);
+		if (!anim)
+			return true;
+		anim->m_eCycleType = static_cast<NiControllerSequence::CycleType>(cycleType);
+		*result = 1;
+		return true;
+	});
+
 #if _DEBUG
 	
-	builder.Create("EachFrame", kRetnType_Default, {ParamInfo{"sScript", kParamType_String, false}}, false, [](COMMAND_ARGS)
-	{
-		if (!IsConsoleMode())
-		{
-			Console_Print("Do not call EachFrame from a script");
-			return true;
-		}
-		*result = 0;
-		char text[0x400];
-		text[0] = 0;
-		if (!ExtractArgs(EXTRACT_ARGS, &text) )
-			return true;
-		g_eachFrameScriptLines.push_back(text);
-		*result = 1;
-		return true;
-	});
-
-	builder.Create("ClearEachFrame", kRetnType_Default, {}, false, [](COMMAND_ARGS)
-	{
-		*result = 0;
-		if (!IsConsoleMode())
-		{
-			Console_Print("Do not call ClearEachFrame from a script");
-			return true;
-		}
-		g_eachFrameScriptLines.clear();
-		*result = 1;
-		return true;
-	});
-
-
 	static std::initializer_list<ParamInfo> kParams_ThisCall = {
 		{ "address", kNVSEParamType_Number, 0 },
 		{"arg0", kNVSEParamType_FormOrNumber, 1},

@@ -254,79 +254,21 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
     bool bScaleChanged = false;
 
     bool bFirstRotation = true;
-
-#if ADDITIVE_ANIMS
-    auto& kAdditiveMgr = AdditiveSequences::Get();
-#endif
     
     for (unsigned char uc = 0; uc < this->m_ucArraySize; uc++)
     {
         InterpArrayItem& kItem = this->m_pkInterpArray[uc];
         float fNormalizedWeight = kItem.m_fNormalizedWeight;
-#if ADDITIVE_ANIMS
-        const bool bIsAdditiveInterp =  kAdditiveMgr.IsAdditiveInterpolator(kItem.m_spInterpolator);
-#else
-        const bool bIsAdditiveInterp = false;
-#endif
-        if (kItem.m_spInterpolator && (fNormalizedWeight > 0.0f || bIsAdditiveInterp))
+        if (kItem.m_spInterpolator && (fNormalizedWeight > 0.0f))
         {
             float fUpdateTime = fTime;
-            if (!this->GetUpdateTimeForItem(fUpdateTime, kItem, bIsAdditiveInterp))
+            if (!this->GetUpdateTimeForItem(fUpdateTime, kItem, false))
             {
                 fTotalTransWeight -= fNormalizedWeight;
                 fTotalScaleWeight -= fNormalizedWeight;
                 continue;
             }
             NiQuatTransform kTransform;
-            
-#if ADDITIVE_ANIMS
-            if (bIsAdditiveInterp)
-            {
-#if _DEBUG
-                const char* targetNodeName = kAdditiveMgr.GetTargetNodeName(kItem.m_spInterpolator.data);
-#endif
-                if (auto kBaseTransformResult = kAdditiveMgr.GetBaseTransform(kItem.m_spInterpolator.data))
-                {
-                    const NiQuatTransform& kBaseTransform = *kBaseTransformResult;
-                    const bool bSuccess = kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kTransform);
-                    if (bSuccess)
-                    {
-                        NiQuatTransform kSubtractedTransform = kTransform - kBaseTransform;
-                        kSubtractedTransform = kSubtractedTransform * kItem.m_fEaseSpinner;
-                        if (kSubtractedTransform.IsTranslateValid())
-                            kFinalTranslate += kSubtractedTransform.GetTranslate();
-                        if (kSubtractedTransform.IsRotateValid())
-                        {
-                            auto kRotValue = kSubtractedTransform.GetRotate();
-                            if (!bFirstRotation)
-                            {
-                                float fCos = NiQuaternion::Dot(kFinalRotate,
-                                                       kRotValue);
-
-                                // If the angle is negative, we need to invert the
-                                // quat to get the best path.
-                                if (fCos < 0.0f)
-                                {
-                                    kRotValue = -kRotValue;
-                                }
-                            }
-                            else
-                                bFirstRotation = false;
-                            kFinalRotate = kRotValue * kFinalRotate;
-                            bRotChanged = true;
-                        }
-                        if (kSubtractedTransform.IsScaleValid())
-                            fFinalScale += kSubtractedTransform.GetScale();
-                    }
-                }
-                else
-                {
-                    DebugBreak();
-                }
-                continue;
-            }
-#endif
-
            
             bool bSuccess = kItem.m_spInterpolator.data->Update(fUpdateTime, pkInterpTarget, kTransform);
 
@@ -383,6 +325,11 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
                     // Note that this makes them non-rotations.
                     kRotValue = kRotValue * fNormalizedWeight;
 
+#if _DEBUG
+                    NiMatrix3 kRotValueMatrix{};
+                    kRotValue.ToRotation(kRotValueMatrix);
+#endif
+
                     // Accumulate the total weighted values into the 
                     // rotation
                     kFinalRotate.SetValues(
@@ -390,6 +337,11 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
                         kRotValue.GetX() + kFinalRotate.GetX(),
                         kRotValue.GetY() + kFinalRotate.GetY(),
                         kRotValue.GetZ() + kFinalRotate.GetZ());
+
+#if _DEBUG
+                    NiMatrix3 kFinRotValueMatrix{};
+                    kFinalRotate.ToRotation(kFinRotValueMatrix);
+#endif
 
                     // Need to re-normalize quaternion.
                     bRotChanged = true;
@@ -460,6 +412,11 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
             kValue.SetScale(fFinalScale);
         }
     }
+
+#if _DEBUG
+    NiMatrix3 kMatRotate{};
+    kValue.m_kRotate.ToRotation(kMatRotate);
+#endif
 
     if (kValue.IsTransformInvalid())
     {
@@ -730,6 +687,25 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
+void NiControllerSequence::RemoveInterpolator(const NiFixedString& name) const
+{
+    const auto idTags = GetIDTags();
+    const auto it = ra::find_if(idTags, [&](const auto& idTag)
+    {
+        return idTag.m_kAVObjectName == name;
+    });
+    if (it != idTags.end())
+    {
+        RemoveInterpolator(it - idTags.begin());
+    }
+}
+
+void NiControllerSequence::RemoveInterpolator(unsigned int index) const
+{
+    m_pkInterpArray[index].ClearValues();
+    m_pkIDTagArray[index].ClearValues();
+}
+
 void NiControllerSequence::AttachInterpolators(char cPriority)
 {
 #if !_DEBUG || !NI_OVERRIDE
@@ -887,6 +863,19 @@ void NiControllerSequence::SetTimePassed(float fTime, bool bUpdateInterpolators)
     ThisStdCall(0xA328B0, this, fTime, bUpdateInterpolators);
 }
 
+void NiControllerSequence::RemoveSingleInterps() const
+{
+    int i = 0;
+    for (auto& interp : GetControlledBlocks())
+    {
+        if (interp.m_spInterpolator && interp.m_pkBlendInterp && interp.m_pkBlendInterp->m_ucInterpCount != 0)
+        {
+            RemoveInterpolator(i);
+        }
+        ++i;
+    }
+}
+
 float BSAnimGroupSequence::GetEaseInTime() const
 {
     return GetDefaultBlendTime(this, nullptr);
@@ -1001,16 +990,16 @@ namespace NiHooks
     void WriteHooks()
     {
         WriteRelJump(0xA40C10, &NiBlendTransformInterpolator::BlendValues);
-        WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
-        WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
+        //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
+        //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeights);
         // WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues); // modified and enhanced movement bugs out when sprinting
-        WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
-        WriteRelJump(0xA2F800, &NiControllerManager::BlendFromPose);
-        WriteRelJump(0xA2E280, &NiControllerManager::CrossFade);
-        WriteRelJump(0xA2E1B0, &NiControllerManager::Morph);
-        WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
-        WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
+        //WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
+        //WriteRelJump(0xA2F800, &NiControllerManager::BlendFromPose);
+        //WriteRelJump(0xA2E280, &NiControllerManager::CrossFade);
+        //WriteRelJump(0xA2E1B0, &NiControllerManager::Morph);
+        //WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
+        //WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
     }
 
     // override stewie's tweaks
@@ -1131,7 +1120,7 @@ NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager
 
 void ApplyNiHooks()
 {
-#if _DEBUG && 0
+#if _DEBUG && 1
     NiHooks::WriteHooks();
 #endif
 #if EXPERIMENTAL_HOOKS

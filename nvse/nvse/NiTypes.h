@@ -552,6 +552,11 @@ struct NiTSet
 	{
 		return Iterator{ length, this };
 	}
+
+	std::span<T> ToSpan()
+	{
+		return std::span(data, length);
+	}
 };
 
 template <typename T_Key, typename T_Data>

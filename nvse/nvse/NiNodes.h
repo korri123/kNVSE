@@ -1757,6 +1757,8 @@ public:
 	~NiControllerSequence();
 	void AttachInterpolatorsAdditive(char cPriority) const;
 	void DetachInterpolatorsAdditive() const;
+	void RemoveInterpolator(const NiFixedString& name) const;
+	void RemoveInterpolator(unsigned int index) const;
 
 	enum
 	{
@@ -1773,6 +1775,14 @@ public:
 		unsigned char m_ucBlendIdx;
 		char m_ucPriority;
 		UInt8 gap0E[2];
+
+		void ClearValues()
+		{
+			m_spInterpolator = nullptr;
+			m_spInterpCtlr = nullptr;
+			m_pkBlendInterp = nullptr;
+			m_ucBlendIdx = INVALID_INDEX;
+		}
 	};
 
 	struct IDTag
@@ -1782,6 +1792,15 @@ public:
 		NiFixedString m_kCtlrType;
 		NiFixedString m_kCtlrID;
 		NiFixedString m_kInterpolatorID;
+
+		void ClearValues()
+		{
+			m_kAVObjectName = nullptr;
+			m_kPropertyType = nullptr;
+			m_kCtlrType = nullptr;
+			m_kCtlrID = nullptr;
+			m_kInterpolatorID = nullptr;
+		}
 	};
 
 	enum AnimState
@@ -1881,6 +1900,15 @@ public:
 	{
 		ThisStdCall(0xA34BA0, this, fTime, bUpdateInterpolators);
 	}
+
+	void StartTransition(float fDuration)
+	{
+		Deactivate(0.0f, true);
+		Activate(0, true, 1.0f, 0.0f, nullptr, true);
+		Deactivate(fDuration, true);
+	}
+
+	void RemoveSingleInterps() const;
 };
 ASSERT_SIZE(NiControllerSequence, 0x74);
 
@@ -2497,6 +2525,7 @@ public:
 	bool ActivateSequence(NiControllerSequence* pkSequence, int iPriority, bool bStartOver,
 		float fWeight, float fEaseInTime, NiControllerSequence* pkTimeSyncSeq);
 	bool DeactivateSequence(NiControllerSequence* pkSequence, float fEaseOutTime);
+	
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
 

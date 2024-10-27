@@ -998,4 +998,42 @@ void WriteDelayedHooks()
 			return true;
 		};
 	}
+
+
+#if _DEBUG
+
+	// AnimData::ResetSequenceState
+	WriteRelCall(0x494D86, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, UInt32 sequenceId, float fEaseOut)
+	{
+		if (sequenceId == kSequence_Movement)
+		{
+			auto* anim = animData->animSequence[sequenceId];
+			if (anim)
+				fEaseOut = anim->GetEaseOutTime();
+			else
+				fEaseOut = 0.2f;
+		}
+		ThisStdCall(0x496080, animData, sequenceId, fEaseOut);
+	}));
+
+	WriteRelCall(0x4953DF, INLINE_HOOK(bool, __fastcall, NiControllerManager *manager,
+	                                   void*,
+	                                   BSAnimGroupSequence *pkSequence,
+	                                   float fDestFrame,
+	                                   float fDuration,
+	                                   int iPriority,
+	                                   NiControllerSequence *pkSequenceToSynchronize)
+	{
+		const auto sequenceId = pkSequence->animGroup->GetSequenceType();
+		const auto baseGroupId = pkSequence->animGroup->GetBaseGroupID();
+		if (sequenceId == kSequence_Movement && baseGroupId >= kAnimGroup_Forward && baseGroupId <= kAnimGroup_FastRight)
+		{
+			auto* tempBlendSeq = manager->CreateTempBlendSequence(pkSequence, pkSequenceToSynchronize);
+			tempBlendSeq->RemoveSingleInterps();
+			tempBlendSeq->StartTransition(fDuration);
+			pkSequence->Activate(iPriority, true, pkSequence->m_fSeqWeight, fDuration, nullptr, true);
+		}
+		return ThisStdCall<bool>(0xA2F800, manager, pkSequence, fDestFrame, fDuration, iPriority, pkSequenceToSynchronize);
+	}));
+#endif
 }

@@ -152,6 +152,13 @@ void AdditiveManager::EraseAdditiveSequence(NiControllerSequence* sequence)
 {
     std::unique_lock lock(g_additiveManagerMutex);
     additiveSequenceMetadataMap.erase(sequence);
+    for (auto& item : sequence->GetControlledBlocks())
+    {
+        if (item.m_spInterpolator)
+            additiveInterpMetadataMap.erase(item.m_spInterpolator);
+        if (item.m_pkBlendInterp)
+            item.m_pkBlendInterp->SetHasAdditiveTransforms(false);
+    }
 }
 
 bool IsAdditiveInterpolator(NiInterpolator* interpolator)
@@ -191,6 +198,8 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
 {
 #if _DEBUG
     NiQuatTransform originalTransform = kValue;
+    NiMatrix3 originalRotation;
+    kValue.GetRotate().ToRotation(originalRotation);
 #endif
     NiPoint3 kFinalTranslate = NiPoint3::ZERO;
     NiQuaternion kFinalRotate = NiQuaternion(1.0f, 0.0f, 0.0f, 0.0f); // Identity quaternion
@@ -205,7 +214,6 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
     {
         kValue = originalTransform;
     }
-    const char* targetNodeName = debugBlendInterpsToTargetsMap[const_cast<NiBlendTransformInterpolator*>(this)];
 #endif
     std::shared_lock lock(g_additiveManagerMutex);
     unsigned int uiNumAdditiveInterps = 0;
@@ -275,26 +283,53 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
         }
     }
 
-#if _DEBUG && 0
-    if (uiNumAdditiveInterps == 0)
-        DebugBreakIfDebuggerPresent();
-#endif
+#define ADD_INVALID_TRANSFORM 1
     
-    if (bTransChanged && kValue.IsTranslateValid())
+    if (bTransChanged)
     {
-        kValue.m_kTranslate += kFinalTranslate;
+        if (kValue.IsTranslateValid())
+            kValue.m_kTranslate += kFinalTranslate;
+#if ADD_INVALID_TRANSFORM
+        else if (const auto* node = DYNAMIC_CAST(pkInterpTarget, NiObjectNET, NiAVObject))
+            kValue.m_kTranslate = node->m_kLocal.m_Translate + kFinalTranslate;
+#endif
     }
-    if (bRotChanged && kValue.IsRotateValid())
+    if (bRotChanged)
     {
-        kValue.m_kRotate = kValue.m_kRotate * kFinalRotate;
-        kValue.m_kRotate.Normalize();
+        if (kValue.IsRotateValid())
+        {
+            kValue.m_kRotate = kValue.m_kRotate * kFinalRotate;
+            kValue.m_kRotate.Normalize();
+        }
+#if ADD_INVALID_TRANSFORM
+        else if (const auto* node = DYNAMIC_CAST(pkInterpTarget, NiObjectNET, NiAVObject))
+        {
+            NiQuaternion kValueRotate;
+            kValueRotate.FromRotation(node->m_kLocal.m_Rotate);
+            kValueRotate = kValueRotate * kFinalRotate;
+            kValueRotate.Normalize();
+            kValue.m_kRotate = kFinalRotate;
+        }
+#endif
     }
-    if (bScaleChanged && kValue.IsScaleValid())
+    if (bScaleChanged)
     {
-        kValue.m_fScale += fFinalScale;
+        if (kValue.IsScaleValid())
+            kValue.m_fScale += fFinalScale;
+#if ADD_INVALID_TRANSFORM
+        else if (const auto* node = DYNAMIC_CAST(pkInterpTarget, NiObjectNET, NiAVObject))
+        {
+            kValue.m_fScale = node->m_kLocal.m_fScale + fFinalScale;
+        }
+#endif
     }
-
 #if _DEBUG
+    NiMatrix3 finalRotation;
+    kValue.GetRotate().ToRotation(finalRotation);
+
+#endif
+
+#if _DEBUG && 0
     check_float(kValue.m_kRotate.m_fW);
     check_float(kValue.m_kRotate.m_fX);
     check_float(kValue.m_kRotate.m_fY);
@@ -684,6 +719,14 @@ void AdditiveManager::WriteHooks()
     // NiBlendTransformInterpolator::BlendValues
     WriteRelCall(0xA41160, INLINE_HOOK(bool, __fastcall, NiBlendTransformInterpolator* pBlendInterpolator, void*, float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform* kValue)
     {
+#if _DEBUG
+        NiQuatTransform originalTransform = *kValue;
+        NiMatrix3 originalRotation{};
+        if (false)
+            *kValue = originalTransform;
+        if (kValue->IsRotateValid())
+            kValue->GetRotate().ToRotation(originalRotation);
+#endif
         const auto result = ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
         if (!result)
             return false;
@@ -705,9 +748,39 @@ void AdditiveManager::WriteHooks()
 #if _DEBUG && 0
         DebugSequence(pkSequence);
 #endif
+
         ThisStdCall(uiAttachInterpolatorsAddr, pkSequence, cPriority);
         
     }), &uiAttachInterpolatorsAddr);
+
+    // AnimData::Refresh
+    // this function deactivates all active sequences but only reactivates the ones in AnimData::animSequence
+    // this will also reactivate unmanaged sequences (which additive anims are)
+    static UInt32 uiAnimDataRefreshAddr = 0x499240;
+    WriteRelCall(0x8B0B8C, INLINE_HOOK(UInt32, __fastcall, AnimData* animData, void*, char cUnk)
+    {
+        const auto doRefresh = [&]
+        {
+            return ThisStdCall<UInt32>(uiAnimDataRefreshAddr, animData, cUnk);
+        };
+        std::vector<NiControllerSequence*> sequences;
+        auto* controllerManager = animData->controllerManager;
+        if (!controllerManager || controllerManager->m_kActiveSequences.length == 0)
+            return doRefresh();
+        
+        sequences.reserve(controllerManager->m_kActiveSequences.length);
+        for (auto* item : controllerManager->m_kActiveSequences)
+        {
+            sequences.push_back(item);
+        }
+        const auto result = doRefresh();
+        for (auto* sequence : sequences)
+        {
+            if (sequence->m_eState == NiControllerSequence::INACTIVE)
+                controllerManager->ActivateSequence(sequence, 0, false, sequence->m_fSeqWeight, 0.0f, nullptr);
+        }
+        return result;
+    }), &uiAnimDataRefreshAddr);
     
 #if 0
     static UInt32 uiDetachInterpolatorsAddr;
