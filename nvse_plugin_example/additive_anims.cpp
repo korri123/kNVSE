@@ -9,6 +9,7 @@ struct AdditiveInterpMetadata
     NiControllerSequence* additiveSequence;
     NiQuatTransform refTransform;
     bool ignorePriorities;
+    float weightMultiplier = 1.0f;
 };
 
 using AdditiveInterpMetadataMap = std::unordered_map<NiInterpolator*, AdditiveInterpMetadata>;
@@ -65,7 +66,11 @@ void AddReferencePoseTransforms(AnimData* animData, NiControllerSequence* additi
         refInterp->m_fLastTime = fOldTime;
         if (bSuccess)
         {
-            refPoseTransforms.insert_or_assign(additiveInterp, AdditiveInterpMetadata{additiveSequence, refTransform, ignorePriorities});
+            refPoseTransforms.insert_or_assign(additiveInterp, AdditiveInterpMetadata{
+                .additiveSequence = additiveSequence,
+                .refTransform = refTransform,
+                .ignorePriorities = ignorePriorities
+            });
         }
     }
 }
@@ -173,6 +178,14 @@ AdditiveInterpMetadata* GetAdditiveInterpMetadata(NiInterpolator* interpolator)
     return nullptr; // not an additive interpolator
 }
 
+void AdditiveManager::SetAdditiveInterpWeightMult(NiInterpolator* interpolator, float weightMult)
+{
+    if (auto* metadata = GetAdditiveInterpMetadata(interpolator); metadata)
+    {
+        metadata->weightMultiplier = weightMult;
+    }
+}
+
 void check_float(float value) {
 #if _DEBUG
     if (std::isnan(value)) {
@@ -235,7 +248,7 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
         }
         ++uiNumAdditiveInterps;
 
-        const auto& [sequence, kRefTransform, ignorePriorities] = *kContext;
+        const auto& [sequence, kRefTransform, ignorePriorities, weightMultiplier] = *kContext;
 
         if (kItem.m_cPriority < m_cNextHighPriority && !ignorePriorities)
             continue;
@@ -247,7 +260,7 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
         NiQuatTransform kInterpTransform;
         if (kItem.m_spInterpolator->Update(fUpdateTime, pkInterpTarget, kInterpTransform))
         {
-            const float fWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
+            const float fWeight = kItem.m_fWeight * kItem.m_fEaseSpinner * weightMultiplier;
             if (kInterpTransform.IsTranslateValid() && kRefTransform.IsTranslateValid())
             {
                 const auto& kBaseTranslate = kRefTransform.GetTranslate();
@@ -283,14 +296,14 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
         }
     }
 
-#define ADD_INVALID_TRANSFORM 1
+#define ADD_INVALID_TRANSFORM 0
     
     if (bTransChanged)
     {
         if (kValue.IsTranslateValid())
             kValue.m_kTranslate += kFinalTranslate;
 #if ADD_INVALID_TRANSFORM
-        else if (const auto* node = DYNAMIC_CAST(pkInterpTarget, NiObjectNET, NiAVObject))
+        else if (const auto* node = pkInterpTarget->GetAsNiNode())
             kValue.m_kTranslate = node->m_kLocal.m_Translate + kFinalTranslate;
 #endif
     }
@@ -302,7 +315,7 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
             kValue.m_kRotate.Normalize();
         }
 #if ADD_INVALID_TRANSFORM
-        else if (const auto* node = DYNAMIC_CAST(pkInterpTarget, NiObjectNET, NiAVObject))
+        else if (const auto* node = pkInterpTarget->GetAsNiNode())
         {
             NiQuaternion kValueRotate;
             kValueRotate.FromRotation(node->m_kLocal.m_Rotate);
@@ -317,7 +330,7 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
         if (kValue.IsScaleValid())
             kValue.m_fScale += fFinalScale;
 #if ADD_INVALID_TRANSFORM
-        else if (const auto* node = DYNAMIC_CAST(pkInterpTarget, NiObjectNET, NiAVObject))
+        else if (const auto* node = pkInterpTarget->GetAsNiNode())
         {
             kValue.m_fScale = node->m_kLocal.m_fScale + fFinalScale;
         }
@@ -459,6 +472,7 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
     kIndices.clear();
     
     kItems.reserve(m_ucArraySize);
+    kIndices.reserve(m_ucArraySize);
 
     std::shared_lock lock(g_additiveManagerMutex);
     for (int i = 0; i < m_ucArraySize; i++)
@@ -481,15 +495,6 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
 
     if (kItems.empty())
     {
-        if (m_ucInterpCount)
-        {
-            const float fValue = 1.0f / static_cast<float>(m_ucInterpCount);
-            for (auto& item : GetItems())
-            {
-                if (item.m_spInterpolator)
-                    item.m_fNormalizedWeight = fValue;
-            }
-        }
         return;
     }
 
@@ -727,12 +732,10 @@ void AdditiveManager::WriteHooks()
         if (kValue->IsRotateValid())
             kValue->GetRotate().ToRotation(originalRotation);
 #endif
-        const auto result = ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
-        if (!result)
-            return false;
+        ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
         if (pBlendInterpolator->GetHasAdditiveTransforms())
             pBlendInterpolator->ApplyAdditiveTransforms(fTime, pkInterpTarget, *kValue);
-        return true;
+        return !kValue->IsTransformInvalid();
     }), &uiBlendValuesAddr);
 
     // NiControllerSequence::AttachInterpolators
@@ -750,9 +753,8 @@ void AdditiveManager::WriteHooks()
 #endif
 
         ThisStdCall(uiAttachInterpolatorsAddr, pkSequence, cPriority);
-        
     }), &uiAttachInterpolatorsAddr);
-
+    
     // AnimData::Refresh
     // this function deactivates all active sequences but only reactivates the ones in AnimData::animSequence
     // this will also reactivate unmanaged sequences (which additive anims are)
@@ -771,7 +773,8 @@ void AdditiveManager::WriteHooks()
         sequences.reserve(controllerManager->m_kActiveSequences.length);
         for (auto* item : controllerManager->m_kActiveSequences)
         {
-            sequences.push_back(item);
+            if (IsAdditiveSequence(item))
+                sequences.push_back(item);
         }
         const auto result = doRefresh();
         for (auto* sequence : sequences)
@@ -781,6 +784,15 @@ void AdditiveManager::WriteHooks()
         }
         return result;
     }), &uiAnimDataRefreshAddr);
+
+    // NiInterpolator::Destroy
+    static UInt32 uiInterpolatorDestroyAddr = 0xA5D3D0;
+    WriteRelCall(0xA57089, INLINE_HOOK(void, __fastcall, NiInterpolator* pInterpolator)
+    {
+        std::unique_lock lock(g_additiveManagerMutex);
+        additiveInterpMetadataMap.erase(pInterpolator);
+        ThisStdCall(uiInterpolatorDestroyAddr, pInterpolator);
+    }), &uiInterpolatorDestroyAddr);
     
 #if 0
     static UInt32 uiDetachInterpolatorsAddr;

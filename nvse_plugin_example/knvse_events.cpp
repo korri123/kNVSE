@@ -2,6 +2,7 @@
 
 #include "hooks.h"
 #include "main.h"
+#include "SafeWrite.h"
 
 extern NVSEEventManagerInterface* g_eventManagerInterface;
 
@@ -92,10 +93,79 @@ namespace OnActorUpdateAnimation
 #define REGISTER_EVENT(event) g_eventManagerInterface->RegisterEvent(event::eventName, std::size(event::params), event::params, EventFlags::kFlag_FlushOnLoad)
 #define REGISTER_EVENT_NO_PARAMS(event) g_eventManagerInterface->RegisterEvent(event::eventName, 0, nullptr, EventFlags::kFlag_FlushOnLoad)
 
+void InitMoveEvents()
+{
+    struct MoveEvent
+    {
+        const char* name;
+        const char* endName;
+        MovementFlags flag;
+    };
+
+    static constexpr auto moveEvents = std::initializer_list<MoveEvent> {
+        {"kNVSE:OnSneak", "kNVSE:OnSneakEnd", kMoveFlag_Sneaking},
+        {"kNVSE:OnWalk", "kNVSE:OnWalkEnd", kMoveFlag_Walking},
+        {"kNVSE:OnSwim", "kNVSE:OnSwimEnd", kMoveFlag_Swimming},
+        {"kNVSE:OnRun", "kNVSE:OnRunEnd", kMoveFlag_Running},
+        {"kNVSE:OnJump", "kNVSE:OnJumpEnd", kMoveFlag_Jump},
+        {"kNVSE:OnFall", "kNVSE:OnFallEnd", kMoveFlag_Fall},
+        {"kNVSE:OnFly", "kNVSE:OnFlyEnd", kMoveFlag_Flying},
+        {"kNVSE:OnSlide", "kNVSE:OnSlideEnd", kMoveFlag_Slide},
+        {"kNVSE:OnMoveForward", "kNVSE:OnMoveForwardEnd", kMoveFlag_Forward },
+        {"kNVSE:OnMoveBackward", "kNVSE:OnMoveBackwardEnd", kMoveFlag_Backward },
+        {"kNVSE:OnMoveLeft", "kNVSE:OnMoveLeftEnd", kMoveFlag_Left },
+        {"kNVSE:OnMoveRight", "kNVSE:OnMoveRightEnd", kMoveFlag_Right },
+        {"kNVSE:OnTurnLeft", "kNVSE:OnTurnLeftEnd", kMoveFlag_TurnLeft },
+        {"kNVSE:OnTurnRight", "kNVSE:OnTurnRightEnd", kMoveFlag_TurnRight },
+    };
+    
+    for (const auto& moveEvent : moveEvents)
+    {
+        g_eventManagerInterface->RegisterEvent(moveEvent.name, 0, nullptr, EventFlags::kFlag_FlushOnLoad);
+        g_eventManagerInterface->RegisterEvent(moveEvent.endName, 0, nullptr, EventFlags::kFlag_FlushOnLoad);
+    }
+
+    static EventParamType onMoveFlagsChangeParams[] = {
+        EventParamType::eParamType_Int, EventParamType::eParamType_Int
+    }; 
+    g_eventManagerInterface->RegisterEvent("kNVSE:OnMoveFlagsChange", 2, onMoveFlagsChangeParams, EventFlags::kFlag_FlushOnLoad);
+
+    WriteRelCall(0x8B3A0F, INLINE_HOOK(void, __fastcall, ActorMover* actorMover, void*, UInt32 flags)
+    {
+        const auto previousFlags = actorMover->phMovementFlags1;
+        
+        actorMover->SetMovementFlag(flags);
+
+        const auto newFlags = actorMover->phMovementFlags1;
+
+        if (previousFlags == newFlags)
+            return;
+        
+        auto* actor = actorMover->actor;
+        if (!actor)
+            return;
+
+        g_eventManagerInterface->DispatchEvent("kNVSE:OnMoveFlagsChange", actor, previousFlags, newFlags);
+
+        const auto checkAndDispatchState = [&](UInt32 flag, const char* startEvent, const char* endEvent)
+        {
+            if ((previousFlags & flag) == 0 && (newFlags & flag) != 0) 
+                g_eventManagerInterface->DispatchEvent(startEvent, actor);
+            else if ((previousFlags & flag) != 0 && (newFlags & flag) == 0)
+                g_eventManagerInterface->DispatchEvent(endEvent, actor);
+        };
+
+        for (const auto& moveEvent : moveEvents)
+            checkAndDispatchState(moveEvent.flag, moveEvent.name, moveEvent.endName);
+    }));
+}
+
 void Events::RegisterEvents()
 {
     REGISTER_EVENT(InterceptPlayAnimGroup);
     REGISTER_EVENT(InterceptStopSequence);
     REGISTER_EVENT_NO_PARAMS(OnActorUpdateAnimation);
+
+    InitMoveEvents();
 }
 

@@ -461,11 +461,17 @@ struct NiTArray
 		T_Data& operator*() const { return *pData; }
 		T_Data& operator->() const { return *pData; }
 		T_Data& Get() const { return *pData; }
-
+		
+		Iterator(T_Data* ptr, UInt32 cnt) : pData(ptr), count(cnt) {}
 		Iterator(NiTArray& source) : pData(source.m_pBase), count(source.m_usSize) {}
+		bool operator!=(const Iterator& other) const { return count != other.count; }
 	};
 
 	Iterator Begin() { return Iterator(*this); }
+	Iterator End() { return Iterator(m_pBase + m_usSize, 0); }
+	Iterator begin() { return Begin(); }
+	Iterator end() { return End(); }
+	
 };
 
 

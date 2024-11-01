@@ -470,6 +470,66 @@ class TESObjectREFR;
 class TESEffectShader;
 class ActiveEffect;
 
+struct NiFixedString
+{
+	char* data;
+
+	NiFixedString()
+		: data(nullptr)
+	{
+	}
+
+	NiFixedString(const NiFixedString& other);
+
+	NiFixedString& operator=(const NiFixedString& other);
+
+	NiFixedString(NiFixedString&& other) noexcept;
+
+	~NiFixedString();
+
+	const char* CStr() const
+	{
+		return data;
+	}
+
+	NiFixedString(const char* data);
+
+	void Set(const char* newString);
+
+	operator char*() const
+	{
+		return data;
+	}
+
+	operator const char*() const
+	{
+		return data;
+	}
+
+	operator std::string_view() const
+	{
+		return data ? data : "";
+	}
+
+	std::string_view Str() const
+	{
+		return data ? data : "";
+	}
+
+	// assignment operator
+	NiFixedString& operator=(const char* newString)
+	{
+		Set(newString);
+		return *this;
+	}
+
+	bool operator==(const NiFixedString& other) const
+	{
+		return data == other.data;
+	}
+
+};
+
 // member fn addresses
 #if RUNTIME
 	const UInt32 kNiObjectNET_GetExtraData = 0x006FF9C0;
@@ -562,7 +622,7 @@ public:
 	DEFINE_MEMBER_FN(GetExtraData, NiExtraData*, kNiObjectNET_GetExtraData, const char* name);
 #endif
 
-	const char			* m_pcName;						// 008 - name known
+	NiFixedString m_pcName;						// 008 - name known
 	NiTimeController	* m_controller;					// 00C - size ok
 
 	// doesn't appear to be part of a class?
@@ -1652,100 +1712,6 @@ public:
 ASSERT_SIZE(NiGlobalStringTable, 0x2100);
 
 
-struct NiFixedString
-{
-	char* data;
-
-	NiFixedString()
-		: data(nullptr)
-	{
-	}
-
-	NiFixedString(const NiFixedString& other)
-		: data(other.data)
-	{
-		if (data)
-			NiGlobalStringTable::IncRefCount(data);
-	}
-
-	NiFixedString& operator=(const NiFixedString& other)
-	{
-		if (data)
-			NiGlobalStringTable::DecRefCount(data);
-		data = other.data;
-		if (data)
-			NiGlobalStringTable::IncRefCount(data);
-		return *this;
-	}
-
-	NiFixedString(NiFixedString&& other) noexcept
-		: data(other.data)
-	{
-		other.data = nullptr;
-	}
-
-	~NiFixedString()
-	{
-		if (data)
-			NiGlobalStringTable::DecRefCount(data);
-	}
-	
-	const char* CStr() const
-	{
-		return data;
-	}
-
-	NiFixedString(const char* data)
-	{
-		if (data)
-			this->data = NiGlobalStringTable::AddString(data);
-		else
-			this->data = nullptr;
-	}
-
-	void Set(const char* newString)
-	{
-		if (data == newString)
-			return;
-		if (data)
-			NiGlobalStringTable::DecRefCount(data);
-		data = NiGlobalStringTable::AddString(newString);
-	}
-
-	operator char*() const
-	{
-		return data;
-	}
-
-	operator const char*() const
-	{
-		return data;
-	}
-
-	operator std::string_view() const
-	{
-		return data ? data : "";
-	}
-
-	std::string_view Str() const
-	{
-		return data ? data : "";
-	}
-
-	// assignment operator
-	NiFixedString& operator=(const char* newString)
-	{
-		Set(newString);
-		return *this;
-	}
-
-	bool operator==(const NiFixedString& other) const
-	{
-		return data == other.data;
-	}
-
-};
-
 class NiInterpController;
 class NiBlendInterpolator;
 
@@ -1774,7 +1740,7 @@ public:
 		NiBlendInterpolator* m_pkBlendInterp;
 		unsigned char m_ucBlendIdx;
 		char m_ucPriority;
-		UInt8 gap0E[2];
+		UInt16 pad; 
 
 		void ClearValues()
 		{
@@ -1909,6 +1875,8 @@ public:
 	}
 
 	void RemoveSingleInterps() const;
+	bool StoreTargets(NiAVObject* pkRoot);
+
 };
 ASSERT_SIZE(NiControllerSequence, 0x74);
 

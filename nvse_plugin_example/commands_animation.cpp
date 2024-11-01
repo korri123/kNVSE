@@ -1485,6 +1485,15 @@ AnimData* GetAnimData(Actor* actor, int firstPerson)
 	}
 }
 
+void ApplyFootIK(Actor* actor)
+{
+	if (actor && actor->IsActor() && INISettings::UseRagdollAnimFootIK() &&
+			actor->ragDollController && actor->ragDollController->bHasFootIK )
+	{
+		actor->ragDollController->ApplyBoneTransforms();
+	}
+}
+
 bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 {
 	*result = 0;
@@ -1510,6 +1519,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 		const auto activateResult = animData->controllerManager->ActivateSequence(anim, 0, true, anim->m_fSeqWeight, easeInTime, nullptr);
 		if (activateResult)
 		{
+			ApplyFootIK(actor);
 			if (auto* animTime = HandleExtraOperations(animData, anim, true); animTime && anim->m_eCycleType != NiControllerSequence::LOOP)
 			{
 				animTime->trackEndTime = true;
@@ -1832,7 +1842,6 @@ NiControllerSequence::InterpArrayItem* FindAnimInterp(TESObjectREFR* thisObj, co
 
 bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm)
 {
-	std::unique_lock lock(g_overrideMapMutex);
 	bool applied = false;
 	for (auto* map : {&g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap})
 	{
@@ -2977,6 +2986,54 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim)
 			return true;
 		anim->m_eCycleType = static_cast<NiControllerSequence::CycleType>(cycleType);
+		*result = 1;
+		return true;
+	});
+
+	const auto boneParams = { ParamInfo{"anim sequence path", kParamType_String, false}, ParamInfo{"root node name", kParamType_String, false}, {"weight", kParamType_Float, false}, {"recursive", kParamType_Integer, false}, ParamInfo{"first person", kParamType_Integer, true} };
+	builder.Create("SetAnimAdditiveInterpsWeightMult", kRetnType_Default, boneParams, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> animPath;
+		sv::stack_string<0x400> nodeName;
+		float weight = 1.0f;
+		int firstPerson = -1;
+		int recursive = false;
+		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &nodeName, &weight, &recursive, &firstPerson) || !thisObj)
+			return true;
+		SetLowercase(animPath.data());
+		animPath.calculate_size();
+		nodeName.calculate_size();
+		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
+		if (!actor)
+			return true;
+		const auto* animData = GetAnimData(actor, firstPerson);
+		if (!animData)
+			return true;
+		auto* baseNode = animData->nBip01;
+		if (!baseNode) return true;
+		auto* anim = FindOrLoadAnim(actor, animPath.c_str(), firstPerson);
+		if (!anim || !AdditiveManager::IsAdditiveSequence(anim))
+			return true;
+		auto* bone = baseNode->GetObjectByName(nodeName.c_str());
+		if (!bone)
+			return true;
+		const auto setNodeWeightMult = [&](this auto& self, NiAVObject* node) -> void
+		{
+			auto* block = anim->GetControlledBlock(node->m_pcName);
+			if (block)
+				AdditiveManager::SetAdditiveInterpWeightMult(block->m_spInterpolator, weight);
+			if (recursive)
+			{
+				if (auto* niNode = node->GetAsNiNode())
+				{
+					for (auto* child : niNode->m_children)
+						if (child)
+							self(child);
+				}
+			}
+		};
+		setNodeWeightMult(bone);
 		*result = 1;
 		return true;
 	});

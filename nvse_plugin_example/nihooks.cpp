@@ -876,6 +876,11 @@ void NiControllerSequence::RemoveSingleInterps() const
     }
 }
 
+bool NiControllerSequence::StoreTargets(NiAVObject* pkRoot)
+{
+    return ThisStdCall<bool>(0xA32C70, this, pkRoot);
+}
+
 float BSAnimGroupSequence::GetEaseInTime() const
 {
     return GetDefaultBlendTime(this, nullptr);
@@ -989,10 +994,10 @@ namespace NiHooks
 {
     void WriteHooks()
     {
-        WriteRelJump(0xA40C10, &NiBlendTransformInterpolator::BlendValues);
+        //WriteRelJump(0xA40C10, &NiBlendTransformInterpolator::BlendValues);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
-        WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeights);
+        //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeights);
         // WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues); // modified and enhanced movement bugs out when sprinting
         //WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
         //WriteRelJump(0xA2F800, &NiControllerManager::BlendFromPose);
