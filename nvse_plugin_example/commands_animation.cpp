@@ -196,7 +196,6 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 					BSAnimGroupSequence* anim;
 					if (base && ((anim = base->GetSequenceByIndex(-1))))
 					{
-						AnimFixes::FixWrongAKeyInRespectEndKey(animData, anim);
 						auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
 						return iter.first->second;
 					}
@@ -223,6 +222,10 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 	const auto result = tryCreateAnimation();
 	animData->mapAnimSequenceBase = defaultMap;
 	s_customMap->Clear();
+	lock.unlock();
+
+	if (result && result->anim)
+		AnimFixes::FixWrongAKeyInRespectEndKey(animData, result->anim);
 	
 	return result;
 }
@@ -1510,6 +1513,8 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 		return true;
 
 	auto* animData = GetAnimData(actor, bIsFirstPerson);
+	if (!animData)
+		return true;
 
 	if (const auto anim = FindOrLoadAnim(animData, path))
 	{
@@ -1744,6 +1749,8 @@ BSAnimGroupSequence* FindActiveAnimationForRef(TESObjectREFR* thisObj, const cha
 
 BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path)
 {
+	if (!animData || !animData->controllerManager)
+		return nullptr;
 	if (auto* anim = animData->controllerManager->m_kSequenceMap.Lookup(path))
 		return static_cast<BSAnimGroupSequence*>(anim);
 	const std::string_view pooledPath = AddStringToPool(ToLower(path));
