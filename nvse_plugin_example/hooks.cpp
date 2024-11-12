@@ -1000,7 +1000,7 @@ void WriteDelayedHooks()
 	}
 
 
-#if _DEBUG
+#if _DEBUG && 0
 
 	// AnimData::ResetSequenceState
 	WriteRelCall(0x494D86, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, UInt32 sequenceId, float fEaseOut)

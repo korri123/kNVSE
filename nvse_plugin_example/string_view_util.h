@@ -199,6 +199,11 @@ namespace sv
             }
         }
 
+        bool starts_with(std::string_view str) const
+        {
+            return sv::starts_with_ci(data_, str);
+        }
+
         bool ends_with(char c) const
         {
             return size_ > 0 && data_[size_ - 1] == c;

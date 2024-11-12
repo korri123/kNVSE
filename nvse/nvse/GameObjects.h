@@ -467,7 +467,7 @@ public:
 	virtual void		Destroy(void);
 	virtual void		SetMovementFlag(UInt32 flags);
 	virtual void		ClearMovementFlag(void);
-	virtual void		Unk_03(void);
+	virtual void		SetMovementFlags(UInt32 flags);
 	virtual void		Unk_04(void);
 	virtual void		Unk_05(void);
 	virtual void		Unk_06(void);

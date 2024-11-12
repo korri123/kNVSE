@@ -1470,7 +1470,7 @@ bool QueueScriptAnimOperation(Actor* actor, bool runImmediately, Function&& call
 
 AnimData* GetAnimData(Actor* actor, int firstPerson)
 {
-	if (!actor)
+	if (!actor || !actor->baseProcess)
 		return nullptr;
 	switch (firstPerson)
 	{
@@ -1701,6 +1701,8 @@ std::unordered_set<BaseProcess*> g_allowedNextAnims;
 
 BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const char* path)
 {
+	if (!animData->controllerManager)
+		return nullptr;
 	if (auto* anim = animData->controllerManager->m_kSequenceMap.Lookup(path))
 		return static_cast<BSAnimGroupSequence*>(anim);
 	return nullptr;
@@ -1708,10 +1710,10 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const char* p
 
 BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path)
 {
-	AnimData* animData;
+	AnimData* animData = nullptr;
 	if (actor == g_thePlayer && g_thePlayer->IsFirstPerson())
 		animData = g_thePlayer->firstPersonAnimData;
-	else
+	else if (actor->baseProcess)
 		animData = actor->baseProcess->GetAnimData();
 	if (!animData)
 		return nullptr;
@@ -1762,6 +1764,8 @@ BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path)
 
 BSAnimGroupSequence* FindOrLoadAnim(Actor* actor, const char* path, bool firstPerson)
 {
+	if (!actor->baseProcess)
+		return nullptr;
 	auto* animData = firstPerson && actor == g_thePlayer ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
 	if (!animData)
 		return nullptr;
@@ -1774,7 +1778,7 @@ AnimData* GetAnimDataForAnim(TESObjectREFR* thisObj, BSAnimGroupSequence* anim)
 		return nullptr;
 	if (thisObj == g_thePlayer && anim->m_pkOwner == g_thePlayer->firstPersonAnimData->controllerManager)
 		return g_thePlayer->firstPersonAnimData;
-	if (const auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor))
+	if (const auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor); actor && actor->baseProcess)
 		return actor->baseProcess->GetAnimData();
 	return nullptr;
 }
@@ -1854,31 +1858,31 @@ bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm)
 	{
 		if (const auto iter = map->find(fromForm->refID); iter != map->end())
 		{
+			AnimOverrideData animOverrideData = {
+				.identifier = toForm->refID,
+				.enable = true,
+			};
 			auto& entry = iter->second;
 			for (auto& stacks : entry.stacks | std::views::values)
 			{
 				auto& stack = stacks.anims;
 				for (auto& anims : stack)
 				{
-					AnimOverrideData animOverrideData = {
-						.identifier = toForm->refID,
-						.enable = false,
-						.conditionScript = *anims->conditionScript,
-						.pollCondition = anims->pollCondition,
-						.matchBaseGroupId = anims->matchBaseGroupId
-					};
 					for (const auto& anim : anims->anims)
 					{
 						animOverrideData.path = anim->path;
+						animOverrideData.conditionScript = *anims->conditionScript;
+						animOverrideData.conditionScriptText = anims->conditionScriptText;
+						animOverrideData.pollCondition = anims->pollCondition;
+						animOverrideData.matchBaseGroupId = anims->matchBaseGroupId;
 						SetOverrideAnimation(animOverrideData, *map);
-						animOverrideData.enable = true;
-						SetOverrideAnimation(animOverrideData, *map);
-						applied = true;
 					}
 				}
 			}
 		}
+		
 	}
+	
 	return applied;
 }
 
@@ -2106,7 +2110,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		SetLowercase(path);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
-		if (!actor)
+		if (!actor || !actor->baseProcess)
 			return true;
 		auto* anim = FindActiveAnimationForActor(actor, path);
 		if (!anim)
@@ -2585,7 +2589,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		SetLowercase(animPath);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
-		if (!actor)
+		if (!actor || !actor->baseProcess)
 			return true;
 		
 		auto* anim = FindActiveAnimationForActor(actor, animPath);
@@ -2873,6 +2877,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 				return true;
 			const auto bIgnorePriorities = static_cast<bool>(ignorePriorities);
 			AdditiveManager::InitAdditiveSequence(animData, additiveAnim, refPoseAnim, refPoseTimePoint, bIgnorePriorities);
+			*result = 1;
 			return true;
 		}
 		return true;
@@ -2920,7 +2925,12 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!ExtractArgs(EXTRACT_ARGS, &path, &archiveType))
 			return true;
 		path.calculate_size();
-		const auto list = FileFinder::FindFiles(path.data(), path.data(), archiveType);
+		std::string realPath;
+		if (!path.starts_with("data\\"))
+		{
+			realPath = "data\\" + std::string(path.str());
+		}
+		const auto list = FileFinder::FindFiles(!realPath.empty() ? realPath.data() : path.data(), path.data(), archiveType);
 		NVSEArrayBuilder arr;
 		for (const auto* filePath : list)
 		{
