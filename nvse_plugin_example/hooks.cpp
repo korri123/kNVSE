@@ -955,6 +955,28 @@ void ApplyHooks()
 		OnActorUpdateAnimation::Dispatch(actor);
 		ThisStdCall(uiAnimDataUpdateControllersAddr, animData, actor);
 	}), &uiAnimDataUpdateControllersAddr);
+
+	static UInt32 uiGetAttackSpeedMultGetAnimAddr;
+	WriteRelCall(0x645DE0, INLINE_HOOK(Animation*, __fastcall, PlayerCharacter *pc, void*, bool bFirstPerson)
+	{
+		return ThisStdCall<Animation*>(0x950A60, pc, !pc->isInThirdPerson);
+	}), &uiGetAttackSpeedMultGetAnimAddr);
+
+	static UInt32 uiGetAttackSpeedMultGetGroupAddr;
+	WriteRelCall(0x645F51, INLINE_HOOK(uint32_t, __cdecl, uint32_t a1)
+	{
+		return CdeclCall<uint32_t>(0x5F2440, a1) & 0xFF;
+	}), & uiGetAttackSpeedMultGetGroupAddr);
+
+	static UInt32 uiGetAttackSpeedMultGetAnimAttackMultAddr;
+	WriteRelCall(0x645EE0, INLINE_HOOK(double, __fastcall, TESObjectWEAP* weap, void*, bool hasMod)
+	{
+		if (GET_CALLER_VAR_LAMBDA(Actor*, 0x8) == PlayerCharacter::GetSingleton()) {
+			return ThisStdCall<double>(0x646020, weap, false);
+		}
+
+		return ThisStdCall<double>(0x646020, weap, hasMod);
+	}), &uiGetAttackSpeedMultGetAnimAttackMultAddr);
 }
 
 void WriteDelayedHooks()
