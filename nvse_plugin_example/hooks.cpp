@@ -322,18 +322,18 @@ bool HasAnimBaseDuplicate(AnimSequenceBase* base, const BSAnimGroupSequence* ani
 	return false;
 }
 
-bool __cdecl RemoveDuplicateAnimsHook(void* aTypeBSAnimGroupSequence, BSAnimGroupSequence* arg1)
-{
+// 0x490A35
+void RemoveDuplicateAnimsHook() {
 	auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
 	auto* base = GET_CALLER_VAR(AnimSequenceBase*, -0x10);
 	const auto* kfModel = GET_CALLER_VAR(KFModel*, 0x8);
 	const auto* anim = kfModel->controllerSequence;
-	if (HasAnimBaseDuplicate(base, anim))
-	{
+	if (HasAnimBaseDuplicate(base, anim)){
 		*addrOfRetn = 0x490D7E;
-		return false;
+	} else {
+		// This hook replaces an opcode that takes 7 bytes, so return to next valid ins
+		*addrOfRetn = 0x490A3C;
 	}
-	return CdeclCall<bool>(0x43B300, aTypeBSAnimGroupSequence, arg1);
 }
 
 namespace LoopingReloadPauseFix
@@ -721,7 +721,7 @@ void ApplyHooks()
 	}), &uiBSTaskletSetDataAddr2);
 
 
-	WriteRelCall(0x490A45, RemoveDuplicateAnimsHook);
+	WriteRelCall(0x490A35, RemoveDuplicateAnimsHook);
 
 	// AnimData::GetNextWeaponSequenceKey
 	// fixes respectEndKey not working for a: keys
