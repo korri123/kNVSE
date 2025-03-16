@@ -1767,6 +1767,20 @@ BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path)
 	return nullptr;
 }
 
+BSAnimGroupSequence* FindOrLoadAnim(TESObjectREFR* thisObj, const char* path)
+{
+	if (!thisObj)
+		return GetAnimationByPath(path);
+	if (thisObj->IsActor())
+	{
+		auto* animData = GetAnimData(static_cast<Actor*>(thisObj), -1);
+		if (!animData)
+			return nullptr;
+		return FindOrLoadAnim(animData, path);
+	}
+	return FindActiveAnimationForRef(thisObj, path);
+}
+
 BSAnimGroupSequence* FindOrLoadAnim(Actor* actor, const char* path, bool firstPerson)
 {
 	if (!actor->baseProcess)
@@ -1951,7 +1965,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return true;
 		SetLowercase(path);
-		BSAnimGroupSequence* anim = FindActiveAnimationForRef(thisObj, path);
+		BSAnimGroupSequence* anim = FindOrLoadAnim(thisObj, path);
 
 		if (!anim)
 			return true;
