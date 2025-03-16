@@ -1107,10 +1107,15 @@ bool ClearFormAnimations(TESForm* form)
 	bool result = false;
 	for (auto* map : { &g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap })
 	{
-		if (const auto iter = map->find(form->refID); iter != map->end())
+		if (auto iter = map->find(form->refID); iter != map->end())
 		{
-			map->erase(iter);
-			result = true;
+			for (auto& stack : iter->second.stacks | std::views::values)
+			{
+				for (auto& anim : stack.anims)
+				{
+					anim->disabled = true;
+				}
+			}
 		}
 	}
 	return result;

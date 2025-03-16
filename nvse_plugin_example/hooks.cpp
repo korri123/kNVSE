@@ -488,6 +488,17 @@ namespace AllowAttackKey
 		
 		return defaultResult(process);
 	}
+
+	UInt32 g_reloadAnimActionAddr1 = 0x8A7570;
+	UInt32 g_reloadAnimActionAddr2 = 0x8A7570;
+
+	template <UInt32* Address>
+	AnimAction __fastcall ReloadAnimActionHook(Actor* actor)
+	{
+		if (HasAllowAttackKeyPassed())
+			return kAnimAction_Attack;
+		return ThisStdCall<AnimAction>(*Address, actor);
+	}
 	
 	void ApplyHooks()
 	{
@@ -499,6 +510,9 @@ namespace AllowAttackKey
 			WriteRelCall(patchAddr, AllowAttackHook);
 			SafeWrite16(patchAddr + 5, 0xC084); // test al, al
 		}
+
+		WriteRelCall(0x893E32, ReloadAnimActionHook<&g_reloadAnimActionAddr1>, &g_reloadAnimActionAddr1);
+		WriteRelCall(0x893E42, ReloadAnimActionHook<&g_reloadAnimActionAddr2>, &g_reloadAnimActionAddr2);
 	}
 	
 }
@@ -1000,7 +1014,7 @@ void WriteDelayedHooks()
 	}
 
 
-#if _DEBUG && 0
+#if _DEBUG && 1
 
 	// AnimData::ResetSequenceState
 	WriteRelCall(0x494D86, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, UInt32 sequenceId, float fEaseOut)
@@ -1008,10 +1022,15 @@ void WriteDelayedHooks()
 		if (sequenceId == kSequence_Movement)
 		{
 			auto* anim = animData->animSequence[sequenceId];
+			
 			if (anim)
+			{
 				fEaseOut = anim->GetEaseOutTime();
+			}
 			else
+			{
 				fEaseOut = 0.2f;
+			}
 		}
 		ThisStdCall(0x496080, animData, sequenceId, fEaseOut);
 	}));
@@ -1026,14 +1045,44 @@ void WriteDelayedHooks()
 	{
 		const auto sequenceId = pkSequence->animGroup->GetSequenceType();
 		const auto baseGroupId = pkSequence->animGroup->GetBaseGroupID();
-		if (sequenceId == kSequence_Movement && baseGroupId >= kAnimGroup_Forward && baseGroupId <= kAnimGroup_FastRight)
+		if (sequenceId == kSequence_Movement || baseGroupId == kAnimGroup_PipBoy)
 		{
-			auto* tempBlendSeq = manager->CreateTempBlendSequence(pkSequence, pkSequenceToSynchronize);
-			tempBlendSeq->RemoveSingleInterps();
-			tempBlendSeq->StartTransition(fDuration);
-			pkSequence->Activate(iPriority, true, pkSequence->m_fSeqWeight, fDuration, nullptr, true);
+#if 1
+			const auto hasInactiveBlocks = std::ranges::any_of(pkSequence->GetControlledBlocks(), [](const auto& block) {
+				return block.m_pkBlendInterp && block.m_pkBlendInterp->m_ucInterpCount == 0;
+			});
+			if (hasInactiveBlocks)
+			{
+				// prevent snapping for nodes that weren't previously being animated
+				auto* tempBlendSeq = manager->CreateTempBlendSequence(pkSequence, pkSequenceToSynchronize);
+				for (auto& block : tempBlendSeq->GetControlledBlocks())
+				{
+					if (!block.m_pkBlendInterp)
+						continue;
+					if (block.m_pkBlendInterp->m_ucInterpCount != 0)
+						tempBlendSeq->RemoveInterpolator(&block - tempBlendSeq->m_pkInterpArray);
+				}
+				const static auto sBip01 = NiGlobalStringTable::AddString("Bip01");
+				if (const auto* bip01 = pkSequence->GetControlledBlock(sBip01))
+				{
+					tempBlendSeq->RemoveInterpolator(bip01 - pkSequence->m_pkInterpArray);
+				}
+				tempBlendSeq->Deactivate(0.0f, false);
+				tempBlendSeq->Activate(iPriority, true, pkSequence->m_fSeqWeight, 0.0f, pkSequenceToSynchronize, false);
+				tempBlendSeq->Deactivate(fDuration, false);
+			}
+#endif
+			pkSequence->Activate(iPriority, true, pkSequence->m_fSeqWeight, fDuration, pkSequenceToSynchronize, false);
 		}
 		return ThisStdCall<bool>(0xA2F800, manager, pkSequence, fDestFrame, fDuration, iPriority, pkSequenceToSynchronize);
 	}));
+	// SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
+
+	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
+	{
+		// stop game from not ending move anims immediately
+		return NiControllerSequence::ANIMATING;
+	}));
+	
 #endif
 }
