@@ -690,7 +690,7 @@ T_Data* NiTPointerMap_t <T_Key, T_Data>::Lookup(T_Key key)
 	{
 		hashIndex = key % m_numBuckets;
 	}
-	for(Entry * traverse = m_buckets[hashIndex]; traverse; traverse = traverse->next)
+	for(Entry* traverse = m_buckets[hashIndex]; traverse; traverse = traverse->next)
 	{
 		if constexpr (std::is_same_v<T_Key, const char*>)
 		{
