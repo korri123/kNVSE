@@ -847,6 +847,15 @@ void ApplyHooks()
 		return &anim->m_kName;
 	}));
 
+	// BSAnimGroupSequence::SetSequenceName
+	WriteRelCall(0x43B99A, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim, void*, NiFixedString* name)
+	{
+		// we want to force every animation to have lowercase names so we can look them up case insensitive in NiTPointerMap
+		sv::stack_string<0x400> newName("%s", name->data);
+		newName.to_lower();
+		anim->m_kName = newName.c_str();
+	}));
+
 	// AnimData::PlayAnimGroup
 	// used to rig GetCurrentAmmoRounds command to add 1 to the result if we are about to play a looping reload anim
 	WriteRelCall(0x8BAD2C, INLINE_HOOK(void, __fastcall, AnimData *animData, void*, UInt16 groupID, int flags, int queuedState, eAnimSequence sequenceID)
