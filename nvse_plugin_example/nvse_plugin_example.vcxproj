@@ -453,6 +453,7 @@
     <ClInclude Include="class_vtbls.h" />
     <ClInclude Include="commands_animation.h" />
     <ClInclude Include="commands_misc.h" />
+    <ClInclude Include="containers.h" />
     <ClInclude Include="decompiled\AnimDataHooks.h" />
     <ClInclude Include="file_animations.h" />
     <ClInclude Include="hooks.h" />

@@ -8,6 +8,7 @@
 #include "NiTypes.h"
 #include "GameTypes.h"
 #include "Utilities.h"
+#include "nvse_plugin_example/containers.h"
 
 constexpr float NI_INFINITY = FLT_MAX;
 constexpr float INVALID_TIME = -NI_INFINITY;
@@ -2577,7 +2578,7 @@ public:
 
 		m_uiNumItems = other.m_uiNumItems;
 		m_pData = GameHeapAllocArray<T>(other.m_uiNumItems);
-		std::ranges::copy(other.GetItems(), GetItems());
+		std::copy(other.m_pData, other.m_pData + other.m_uiNumItems, m_pData);
 		return *this;
 	}
 
@@ -2688,7 +2689,7 @@ public:
 	UInt8 byte08[8];
 	UInt16 groupID;
 	UInt8 unk12;
-	NiFixedArray<float>	keyTimes;
+	SimpleFixedArray<float>	keyTimes;
 	NiPoint3 moveVector;
 	UInt8 leftOrRight_whichFootToSwitch;
 	UInt8 blend;
@@ -2697,7 +2698,7 @@ public:
 	UInt8 decal;
 	UInt8 gap2D[3];
 	NiFixedString parentRootNode;
-	NiFixedArray<AnimGroupSound> sounds;
+	SimpleFixedArray<AnimGroupSound> sounds;
 
 	static const char* StringForAnimGroupCode(UInt32 groupCode);
 	static UInt32 AnimGroupForString(const char* groupName);
