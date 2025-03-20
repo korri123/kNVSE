@@ -1511,7 +1511,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 	if (!ExtractArgs(EXTRACT_ARGS, &path.data_, &bIsFirstPerson))
 		return true;
 	path.calculate_size();
-	SetLowercase(path.data());
+	path.to_lower();
 
 	auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
 	if (!actor)
@@ -2080,6 +2080,13 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 
 		NiFixedArray<NiTextKey> newKeyArray(textKeyVector);
+
+		if (!anim->animGroup) 
+		{
+			anim->m_spTextKeys->m_kKeyArray = std::move(newKeyArray);
+			*result = 1;
+			return true;
+		}
 		
 		NiPointer oldAnimGroup = anim->animGroup;
 		const auto* animGroupInfo = oldAnimGroup->GetGroupInfo();
@@ -2098,7 +2105,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			anim->m_spTextKeys->m_kKeyArray = std::move(oldKeyArray);
 			anim->animGroup = oldAnimGroup;
 			
-			ERROR_LOG("SetAnimationTextKeys: Game failed to parse text key data, see falloutnv_error.log");
+			ERROR_LOG("SetAnimTextKeys: Game failed to parse text key data, see falloutnv_error.log");
 			*result = 0;
 			return true;
 		}
