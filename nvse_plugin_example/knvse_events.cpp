@@ -22,9 +22,9 @@ namespace InterceptPlayAnimGroup
     {
         if (!anim || !anim->animGroup)
             return nullptr;
-        static BSAnimGroupSequence* s_result;
-        static bool s_bSkip;
-        static AnimData* s_animData;
+        thread_local BSAnimGroupSequence* s_result;
+        thread_local bool s_bSkip;
+        thread_local AnimData* s_animData;
         // need to initialize static variable to null, otherwise it will be the old value when this function was last called
         s_result = nullptr;
         s_animData = animData;

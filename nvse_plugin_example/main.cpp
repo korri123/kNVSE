@@ -196,7 +196,7 @@ void HandlePollConditionAnims()
 	std::unique_lock lock(g_pollConditionMutex);
 	if (g_timeTrackedGroups.empty())
 		return;
-#if _DEBUG
+#if _DEBUG && 0
 	struct DebugInfo
 	{
 		std::string_view anim;
