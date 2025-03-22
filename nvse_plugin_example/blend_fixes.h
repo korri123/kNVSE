@@ -2,6 +2,8 @@
 #include "commands_animation.h"
 #include "GameProcess.h"
 
+void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequence* pkDest, NiControllerSequence* pkIdle);
+
 namespace BlendFixes
 {
 	enum Result

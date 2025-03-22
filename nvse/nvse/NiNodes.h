@@ -22,6 +22,12 @@ inline float NiAbs (float fValue)
 	return float(fabs(fValue));
 }
 
+template <typename T>
+T* NiNew()
+{
+	return CdeclCall<T*>(0xAA13E0, sizeof(T));
+}
+
 /*** class hierarchy
  *
  *	yet again taken from rtti information
@@ -1597,6 +1603,12 @@ public:
 	{
 		this->bPose = true;
 	}
+
+	static NiTransformInterpolator* Create(const NiQuatTransform& kTransform)
+	{
+		auto* memory = NiNew<NiTransformInterpolator>();
+		return ThisStdCall<NiTransformInterpolator*>(0xA3FAE0, memory, kTransform);
+	}
 };
 static_assert(sizeof(NiTransformInterpolator) == 0x48);
 
@@ -1723,9 +1735,21 @@ public:
 	NiControllerSequence();
 	~NiControllerSequence();
 	void AttachInterpolatorsAdditive(char cPriority) const;
+	void DetachInterpolators() const;
 	void DetachInterpolatorsAdditive() const;
 	void RemoveInterpolator(const NiFixedString& name) const;
 	void RemoveInterpolator(unsigned int index) const;
+
+	static NiControllerSequence* Create()
+	{
+		return CdeclCall<NiControllerSequence*>(0xA326C0);
+	}
+
+	static NiControllerSequence* Create(const NiFixedString &kName, unsigned int uiArraySize, unsigned int uiArrayGrowBy)
+	{
+		auto* memory = NiNew<NiControllerSequence>();
+		return ThisStdCall<NiControllerSequence*>(0xA326C0, memory, &kName, uiArraySize, uiArrayGrowBy);
+	}
 
 	enum
 	{
@@ -1741,7 +1765,7 @@ public:
 		NiBlendInterpolator* m_pkBlendInterp;
 		unsigned char m_ucBlendIdx;
 		char m_ucPriority;
-		UInt16 pad; 
+		UInt16 pad;
 
 		void ClearValues()
 		{
@@ -1825,6 +1849,7 @@ public:
 	InterpArrayItem* GetControlledBlock(const NiFixedString& name) const;
 
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
+	bool Deactivate_(float fEaseOutTime, bool bTransition);
 	
 	void ResetSequence()
 	{
@@ -1863,10 +1888,7 @@ public:
 	bool CanSyncTo(NiControllerSequence *pkTargetSequence) const;
 	void SetTimePassed(float fTime, bool bUpdateInterpolators);
 	
-	void Update(float fTime, bool bUpdateInterpolators)
-	{
-		ThisStdCall(0xA34BA0, this, fTime, bUpdateInterpolators);
-	}
+	void Update(float fTime, bool bUpdateInterpolators);
 
 	void StartTransition(float fDuration)
 	{
@@ -1878,8 +1900,24 @@ public:
 	void RemoveSingleInterps() const;
 	bool StoreTargets(NiAVObject* pkRoot);
 
+	float GetLastTime() const
+	{
+		return m_fLastTime;
+	}
+
+	float FindCorrespondingMorphFrame(NiControllerSequence* pkTargetSequence, float fTime) const;
+
+	void SetInterpsWeightAndTime(float fWeight, float fEaseSpinner, float fTime);
+
+	unsigned int AddInterpolator(NiInterpolator* pkInterpolator, const IDTag& idTag, unsigned char ucPriority)
+	{
+		return ThisStdCall(0xA32BC0, this, pkInterpolator, &idTag, ucPriority);
+	}
+
 };
 ASSERT_SIZE(NiControllerSequence, 0x74);
+
+using NiControllerSequencePtr = NiPointer<NiControllerSequence>;
 
 // 06C
 class BSAnimGroupSequence : public NiControllerSequence
@@ -2102,6 +2140,63 @@ public:
 				return uc;
 		}
 		return INVALID_INDEX;
+	}
+
+	void SetWeight(float fWeight, unsigned char ucIndex)
+	{
+		NIASSERT(ucIndex < m_ucArraySize);
+		NIASSERT(fWeight >= 0.0f);
+
+		if (m_ucInterpCount == 1 && ucIndex == m_ucSingleIdx)
+		{
+			// Do not set the weight for a single interpolator.
+			return;
+		}
+
+		if (m_pkInterpArray[ucIndex].m_fWeight == fWeight)
+		{
+			return;
+		}
+
+		m_pkInterpArray[ucIndex].m_fWeight = fWeight;
+		ClearWeightSums();
+		SetComputeNormalizedWeights(true);
+	}
+
+	void SetEaseSpinner(float fEaseSpinner, unsigned char ucIndex)
+	{
+		NIASSERT(ucIndex < m_ucArraySize);
+		NIASSERT(fEaseSpinner >= 0.0f && fEaseSpinner <= 1.0f);
+
+
+		if (m_ucInterpCount == 1 && ucIndex == m_ucSingleIdx)
+		{
+			// Do not set the ease spinner for a single interpolator.
+			return;
+		}
+
+		if (m_pkInterpArray[ucIndex].m_fEaseSpinner == fEaseSpinner)
+		{
+			return;
+		}
+
+		m_pkInterpArray[ucIndex].m_fEaseSpinner = fEaseSpinner;
+		ClearWeightSums();
+		SetComputeNormalizedWeights(true);
+	}
+
+	void SetTime(float fTime, unsigned char ucIndex)
+	{
+		NIASSERT(ucIndex < m_ucArraySize);
+		
+		if (m_ucInterpCount == 1 && ucIndex == m_ucSingleIdx)
+		{
+			// Set the cached time for a single interpolator.
+			m_fSingleTime = fTime;
+			return;
+		}
+
+		m_pkInterpArray[ucIndex].m_fUpdateTime = fTime;
 	}
 
 };
@@ -2494,6 +2589,10 @@ public:
 	bool ActivateSequence(NiControllerSequence* pkSequence, int iPriority, bool bStartOver,
 		float fWeight, float fEaseInTime, NiControllerSequence* pkTimeSyncSeq);
 	bool DeactivateSequence(NiControllerSequence* pkSequence, float fEaseOutTime);
+	bool AddSequence(NiControllerSequence* pkSequence, const NiFixedString& kName, bool bStoreTargets)
+	{
+		return ThisStdCall(0xA2F0C0, this, pkSequence, kName, bStoreTargets);
+	}
 	
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);

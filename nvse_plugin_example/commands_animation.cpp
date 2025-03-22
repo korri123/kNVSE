@@ -246,7 +246,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UI
 AnimTime::~AnimTime()
 {
 	Revert3rdPersonAnimTimes(this->respectEndKeyData.anim3rdCounterpart, this->anim);
-	if (this->trackEndTime || this->isOverlayAdditiveAnim)
+	if ((this->trackEndTime || this->isOverlayAdditiveAnim) && this->anim->m_eState != NiControllerSequence::EASEOUT && this->anim->m_eState != NiControllerSequence::TRANSSOURCE)
 	{
 		const auto easeOutTime = this->anim->GetEaseOutTime();
 		this->anim->Deactivate(easeOutTime, false);
@@ -1526,7 +1526,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 		if (anim->m_eState != NiControllerSequence::INACTIVE)
 			animData->controllerManager->DeactivateSequence(anim, 0.0f);
 		const auto easeInTime = anim->GetEaseInTime();
-		const auto activateResult = animData->controllerManager->ActivateSequence(anim, 0, true, anim->m_fSeqWeight, easeInTime, nullptr);
+		const auto activateResult = anim->Activate(0, true, anim->m_fSeqWeight, easeInTime, nullptr, false);
 		if (activateResult)
 		{
 			ApplyFootIK(actor);

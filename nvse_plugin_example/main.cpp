@@ -521,7 +521,7 @@ void HandleCustomTextKeys()
 			erase();
 			continue;
 		}
-		if (animTime.trackEndTime && time >= animTime.anim->m_fEndKeyTime)
+		if (animTime.trackEndTime && time >= animTime.anim->m_fEndKeyTime && anim->m_eState != NiControllerSequence::EASEIN && anim->m_eState != NiControllerSequence::TRANSDEST)
 		{
 			erase();
 			continue;

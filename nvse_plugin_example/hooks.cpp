@@ -1075,8 +1075,8 @@ void WriteDelayedHooks()
 	                                   NiControllerSequence *pkSequenceToSynchronize)
 	{
 		const auto sequenceId = pkSequence->animGroup->GetSequenceType();
-		const auto baseGroupId = pkSequence->animGroup->GetBaseGroupID();
-		if (sequenceId == kSequence_Movement || baseGroupId == kAnimGroup_PipBoy)
+		// const auto baseGroupId = pkSequence->animGroup->GetBaseGroupID();
+		if (sequenceId == kSequence_Movement)
 		{
 #if 1
 			const auto hasInactiveBlocks = std::ranges::any_of(pkSequence->GetControlledBlocks(), [](const auto& block) {
@@ -1093,7 +1093,7 @@ void WriteDelayedHooks()
 					if (block.m_pkBlendInterp->m_ucInterpCount != 0)
 						tempBlendSeq->RemoveInterpolator(&block - tempBlendSeq->m_pkInterpArray);
 				}
-				const static auto sBip01 = NiGlobalStringTable::AddString("Bip01");
+				const static auto sBip01 = NiFixedString("Bip01");
 				if (const auto* bip01 = pkSequence->GetControlledBlock(sBip01))
 				{
 					tempBlendSeq->RemoveInterpolator(bip01 - pkSequence->m_pkInterpArray);
@@ -1101,13 +1101,43 @@ void WriteDelayedHooks()
 				tempBlendSeq->Deactivate(0.0f, false);
 				tempBlendSeq->Activate(iPriority, true, pkSequence->m_fSeqWeight, 0.0f, pkSequenceToSynchronize, false);
 				tempBlendSeq->Deactivate(fDuration, false);
+				tempBlendSeq->m_spDeprecatedStringPalette = reinterpret_cast<UInt32>(pkSequence);
 			}
 #endif
-			pkSequence->Activate(iPriority, true, pkSequence->m_fSeqWeight, fDuration, pkSequenceToSynchronize, false);
+			const auto result = pkSequence->Activate(iPriority, true, pkSequence->m_fSeqWeight, fDuration, pkSequenceToSynchronize, false);
+
+			auto activeSequences = manager->m_kActiveSequences.ToSpan();
+			auto lastMoveSequence = std::ranges::find_if(activeSequences, [&](NiControllerSequence* sequence)
+			{
+				if (NOT_TYPE(sequence, BSAnimGroupSequence))
+					return false;
+				TESAnimGroup* animGroup = static_cast<BSAnimGroupSequence*>(sequence)->animGroup;
+				if (!animGroup)
+					return false;
+				return animGroup->GetSequenceType() == kSequence_Movement && sequence->m_eState == NiControllerSequence::EASEOUT;
+			});
+			if (lastMoveSequence != activeSequences.end())
+			{
+				auto idleSequence = std::ranges::find_if(activeSequences, [&](NiControllerSequence* sequence)
+				{
+					if (NOT_TYPE(sequence, BSAnimGroupSequence))
+						return false;
+					TESAnimGroup* animGroup = static_cast<BSAnimGroupSequence*>(sequence)->animGroup;
+					if (!animGroup)
+						return false;
+					return animGroup->GetSequenceType() == kSequence_Idle && sequence->m_eState == NiControllerSequence::ANIMATING;
+				});
+				if (idleSequence != activeSequences.end())
+				{
+					FixConflictingPriorities(*lastMoveSequence, pkSequence, *idleSequence);
+				}
+			}
+			
+			return result;
 		}
 		return ThisStdCall<bool>(0xA2F800, manager, pkSequence, fDestFrame, fDuration, iPriority, pkSequenceToSynchronize);
 	}));
-	// SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
+	SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
 
 	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
 	{

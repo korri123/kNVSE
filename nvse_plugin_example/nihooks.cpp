@@ -730,12 +730,23 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 #endif
 }
 
+UInt32 g_lastActivateCall = 0;
+
 bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
                                     NiControllerSequence* pkTimeSyncSeq, bool bTransition)
 {
-#if !_DEBUG || !NI_OVERRIDE
+#if !_DEBUG
+    
     return ThisStdCall<bool>(0xA34F20, this, cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
 #else
+    if (g_thePlayer && g_thePlayer->baseProcess && g_thePlayer->baseProcess->animData && g_thePlayer->baseProcess->animData->controllerManager)
+        if (m_pkOwner == g_thePlayer->baseProcess->animData->controllerManager)
+        {
+            auto name = sv::get_file_name(m_kName.CStr());
+            name = name.empty() ? m_kName.CStr() : name;
+            ++g_lastActivateCall;
+            Console_Print("Activate %.1f %s %d", fEaseInTime, name.data(), g_lastActivateCall);
+        }
     // return ThisStdCall(0xA34F20, this, cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
     assert(m_pkOwner);
 
@@ -863,6 +874,143 @@ void NiControllerSequence::SetTimePassed(float fTime, bool bUpdateInterpolators)
     ThisStdCall(0xA328B0, this, fTime, bUpdateInterpolators);
 }
 
+void NiControllerSequence::Update(float fTime, bool bUpdateInterpolators)
+{
+#if 0
+    ThisStdCall(0xA34BA0, this, fTime, bUpdateInterpolators);
+#else
+    if (m_eState == INACTIVE)
+    {
+        return;
+    }
+
+    if (m_fOffset == -NI_INFINITY)
+    {
+        m_fOffset = -fTime;
+    }
+
+    if (m_fStartTime == -NI_INFINITY)
+    {
+        m_fStartTime = fTime;
+        m_fEndTime = fTime + m_fEndTime;
+    }
+
+    float fEaseSpinner = 1.0f;
+    float fTransSpinner = 1.0f;
+    switch (m_eState)
+    {
+    case EASEIN:
+        if (fTime < m_fEndTime)
+        {
+            assert(fTime >= m_fStartTime && m_fEndTime != m_fStartTime);
+            fEaseSpinner = (fTime - m_fStartTime) / (m_fEndTime -
+                                                     m_fStartTime);
+        }
+        else
+        {
+            m_eState = ANIMATING;
+        }
+        break;
+    case TRANSDEST:
+        if (fTime < m_fEndTime)
+        {
+            assert(fTime >= m_fStartTime && m_fEndTime != m_fStartTime);
+            fTransSpinner = (fTime - m_fStartTime) / (m_fEndTime -
+                                                      m_fStartTime);
+        }
+        else
+        {
+            if (m_fDestFrame != -NI_INFINITY)
+            {
+                // This case is hit when we were blending in this
+                // sequence. In this case, we need to reset the sequence
+                // offset and clear the destination frame.
+                m_fOffset = -fTime + m_fDestFrame;
+                m_fDestFrame = -NI_INFINITY;
+            }
+            m_eState = ANIMATING;
+        }
+        break;
+    case EASEOUT:
+        if (fTime < m_fEndTime)
+        {
+            assert(fTime >= m_fStartTime && m_fEndTime != m_fStartTime);
+            fEaseSpinner = (m_fEndTime - fTime) / (m_fEndTime -
+                                                   m_fStartTime);
+        }
+        else
+        {
+            Deactivate(0.0f, false);
+            return;
+        }
+        break;
+    case MORPHSOURCE:
+    {
+        assert(m_pkPartnerSequence);
+
+        // Compute initial offset for partner sequence, undoing phase
+        // and frequency adjustments. This assumes the phase and
+        // frequency will not change between now and the end time of
+        // the morph.
+        float fStartFrame = m_pkPartnerSequence->FindCorrespondingMorphFrame(this, m_fOffset + fTime);
+        fStartFrame /= m_pkPartnerSequence->m_fFrequency;
+        m_pkPartnerSequence->m_fOffset = fStartFrame - fTime;
+
+        // Change sequence state appropriately.
+        m_eState = TRANSSOURCE;
+
+        // This case statement intentionally does not break. The code
+        // for the TRANSSOURCE case should be subsequently run.
+    }
+    case TRANSSOURCE:
+        if (fTime < m_fEndTime)
+        {
+            assert(fTime >= m_fStartTime && m_fEndTime != m_fStartTime);
+            fTransSpinner = (m_fEndTime - fTime) / (m_fEndTime -
+                                                    m_fStartTime);
+        }
+        else
+        {
+            Deactivate(0.0f, true);
+            return;
+        }
+        break;
+    default:
+        // Is there something better we can do here?
+        // possible cases are INACTIVE and ANIMATING
+        break;
+    }
+
+    if (bUpdateInterpolators)
+    {
+        float fUpdateTime;
+        if (m_fDestFrame != -NI_INFINITY)
+        {
+            fUpdateTime = m_fDestFrame;
+        }
+        else if (m_pkPartnerSequence)
+        {
+            if (m_pkPartnerSequence->GetLastTime() !=
+                m_pkPartnerSequence->m_fOffset + fTime)
+            {
+                m_pkPartnerSequence->Update(fTime, false);
+            }
+
+            fUpdateTime = FindCorrespondingMorphFrame(m_pkPartnerSequence,
+                                                      m_pkPartnerSequence->m_fOffset + fTime);
+            fUpdateTime /= m_fFrequency;
+        }
+        else
+        {
+            fUpdateTime = m_fOffset + fTime;
+        }
+
+        SetInterpsWeightAndTime(m_fSeqWeight * fTransSpinner, fEaseSpinner,
+                                ComputeScaledTime(fUpdateTime, true));
+    }
+#endif
+}
+
 void NiControllerSequence::RemoveSingleInterps() const
 {
     int i = 0;
@@ -879,6 +1027,26 @@ void NiControllerSequence::RemoveSingleInterps() const
 bool NiControllerSequence::StoreTargets(NiAVObject* pkRoot)
 {
     return ThisStdCall<bool>(0xA32C70, this, pkRoot);
+}
+
+float NiControllerSequence::FindCorrespondingMorphFrame(NiControllerSequence* pkTargetSequence, float fTime) const
+{
+    return ThisStdCall<float>(0xA32010, this, pkTargetSequence, fTime);
+}
+
+void NiControllerSequence::SetInterpsWeightAndTime(float fWeight, float fEaseSpinner, float fTime)
+{
+    for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
+    {
+        InterpArrayItem &kItem = m_pkInterpArray[ui];
+        if (kItem.m_pkBlendInterp)
+        {
+            kItem.m_pkBlendInterp->SetWeight(fWeight, kItem.m_ucBlendIdx);
+            kItem.m_pkBlendInterp->SetEaseSpinner(fEaseSpinner,
+                                                  kItem.m_ucBlendIdx);
+            kItem.m_pkBlendInterp->SetTime(fTime, kItem.m_ucBlendIdx);
+        }
+    }
 }
 
 float BSAnimGroupSequence::GetEaseInTime() const
@@ -990,6 +1158,100 @@ bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, f
 #endif
 }
 
+void NiControllerSequence::DetachInterpolators() const
+{
+    for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
+    {
+        InterpArrayItem &kItem = m_pkInterpArray[ui];
+        if (kItem.m_pkBlendInterp)
+        {
+            kItem.m_pkBlendInterp->RemoveInterpInfo(kItem.m_ucBlendIdx);
+        }
+    }
+}
+
+bool NiControllerSequence::Deactivate_(float fEaseOutTime, bool bTransition)
+{
+    if (m_eState == INACTIVE)
+    {
+        return false;
+    }
+
+    if (g_thePlayer && g_thePlayer->baseProcess && g_thePlayer->baseProcess->animData && g_thePlayer->baseProcess->animData->controllerManager)
+        if (m_pkOwner == g_thePlayer->baseProcess->animData->controllerManager)
+        {
+            auto name = sv::get_file_name(m_kName.CStr());
+            name = name.empty() ? m_kName.CStr() : name;
+            ++g_lastActivateCall;
+            Console_Print("Dctivate %.1f %s %d", fEaseOutTime, name.data(), g_lastActivateCall);
+        }
+
+    if (fEaseOutTime > 0.0f)
+    {
+        // Store the current animation state for a smooth transition
+        float fCurrentTime = m_fLastTime - m_fOffset;
+        float fCurrentEaseLevel = 0.0f;
+        bool bWasEasing = (m_eState == EASEIN || m_eState == EASEOUT);
+        
+        // Calculate current ease level if we were easing in
+        if (bWasEasing && m_fEndTime != m_fStartTime)
+        {
+            fCurrentEaseLevel = (fCurrentTime - m_fStartTime) / (m_fEndTime - m_fStartTime);
+            // Clamp between 0 and 1
+            fCurrentEaseLevel = (fCurrentEaseLevel < 0.0f) ? 0.0f : 
+                              (fCurrentEaseLevel > 1.0f) ? 1.0f : fCurrentEaseLevel;
+        }
+        
+        if (bTransition)
+        {
+            m_eState = TRANSSOURCE;
+        }
+        else
+        {
+            m_eState = EASEOUT;
+        }
+        
+        m_fStartTime = -NI_INFINITY;
+        m_fEndTime = fEaseOutTime;
+        
+        // Adjust timing to create a smooth transition from EASEIN to EASEOUT
+        if (bWasEasing && !bTransition && fCurrentEaseLevel > 0.0f && fCurrentEaseLevel < 1.0f)
+        {
+            // Set timing so that EASEOUT starts from the correct partially-eased level
+            // This creates a virtual start time that produces the correct ease spinner value
+            m_fEndTime = fCurrentTime + (fEaseOutTime * fCurrentEaseLevel);
+            m_fStartTime = fCurrentTime - (fEaseOutTime * (1.0f - fCurrentEaseLevel));
+        }
+    }
+    else
+    {
+        // Store the new offset.
+        if (m_fLastTime != -NI_INFINITY)
+        {
+            m_fOffset += (m_fWeightedLastTime / m_fFrequency) - m_fLastTime;
+        }
+
+        m_eState = INACTIVE;
+        m_pkPartnerSequence = NULL;
+        m_fDestFrame = -NI_INFINITY;
+
+        DetachInterpolators();
+
+        for (auto* sequence : m_pkOwner->m_kActiveSequences)
+        {
+            if (sv::starts_with_ci(sequence->m_kName.CStr(), "__") && sequence->m_spDeprecatedStringPalette == reinterpret_cast<UInt32>(this))
+            {
+                sequence->m_spDeprecatedStringPalette = 0;
+                sequence->Deactivate(0.0f, false);
+            }
+        }
+    }
+
+    
+
+    return true;
+}
+
 namespace NiHooks
 {
     void WriteHooks()
@@ -1004,7 +1266,9 @@ namespace NiHooks
         //WriteRelJump(0xA2E280, &NiControllerManager::CrossFade);
         //WriteRelJump(0xA2E1B0, &NiControllerManager::Morph);
         //WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
-        //WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
+        WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
+        WriteRelJump(0xA35030, &NiControllerSequence::Deactivate_);
+        //WriteRelJump(0xA34BA0, &NiControllerSequence::Update);
     }
 
     // override stewie's tweaks

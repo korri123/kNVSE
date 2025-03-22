@@ -425,14 +425,14 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
     const auto tags = pkDest->GetIDTags();
     auto index = 0;
 
-    const static std::array<NiFixedString, 4> s_ignoredInterps = {
-        "Bip01 NonAccum", "Bip01 Translate", "Bip01 Rotate", "Bip01"
+    const static std::array<NiFixedString, 1> s_ignoredInterps = {
+        "Bip01 NonAccum"
     };
     for (auto& destBlock : destControlledBlocks)
     {
         const auto& tag = tags[index++];
         auto* blendInterpolator = destBlock.m_pkBlendInterp;  
-        if (!destBlock.m_spInterpolator || !blendInterpolator || destBlock.m_ucPriority == 0xFF || blendInterpolator->m_ucInterpCount <= 2)
+        if (!destBlock.m_spInterpolator || !blendInterpolator || static_cast<unsigned char>(destBlock.m_ucPriority) == 0xFF || blendInterpolator->m_ucInterpCount <= 2)
             continue;
         if (ra::contains(s_ignoredInterps, tag.m_kAVObjectName))
             continue;
