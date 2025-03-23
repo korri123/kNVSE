@@ -17,6 +17,7 @@
 #include "nihooks.h"
 #include "blend_fixes.h"
 #include "knvse_events.h"
+#include "TempEaseSequence.h"
 
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
@@ -1052,6 +1053,7 @@ void WriteDelayedHooks()
 	{
 		if (sequenceId == kSequence_Movement)
 		{
+#if 0
 			auto* anim = animData->animSequence[sequenceId];
 			
 			if (anim)
@@ -1061,6 +1063,14 @@ void WriteDelayedHooks()
 			else
 			{
 				fEaseOut = 0.2f;
+			}
+#endif
+			if (auto* moveAnim = animData->animSequence[sequenceId])
+			{
+				auto* sequence = TempEaseSequence::Create(moveAnim);
+				sequence->Deactivate(0.0f, false);
+				sequence->Activate(0, true, sequence->m_fSeqWeight, 0.0f, nullptr, false);
+				sequence->Deactivate(0.2f, false);
 			}
 		}
 		ThisStdCall(0x496080, animData, sequenceId, fEaseOut);
@@ -1101,7 +1111,6 @@ void WriteDelayedHooks()
 				tempBlendSeq->Deactivate(0.0f, false);
 				tempBlendSeq->Activate(iPriority, true, pkSequence->m_fSeqWeight, 0.0f, pkSequenceToSynchronize, false);
 				tempBlendSeq->Deactivate(fDuration, false);
-				tempBlendSeq->m_spDeprecatedStringPalette = reinterpret_cast<UInt32>(pkSequence);
 			}
 #endif
 			const auto result = pkSequence->Activate(iPriority, true, pkSequence->m_fSeqWeight, fDuration, pkSequenceToSynchronize, false);
@@ -1143,6 +1152,20 @@ void WriteDelayedHooks()
 	{
 		// stop game from not ending move anims immediately
 		return NiControllerSequence::ANIMATING;
+	}));
+
+	// NiControllerManager::DeactivateSequence
+	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
+	{
+		if (pkSequence->animGroup->GetSequenceType() == kSequence_Movement && pkSequence->m_eState == NiControllerSequence::EASEIN)
+		{
+			const auto tempSequence = TempEaseSequence::Create(pkSequence);
+			tempSequence->Deactivate(0.0f, false);
+			tempSequence->Activate(0, true, tempSequence->m_fSeqWeight, 0.0f, nullptr, false);
+			tempSequence->Deactivate(fEaseOut, false);
+			return pkSequence->Deactivate(0.0f, false);
+		}
+		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
 	}));
 	
 #endif

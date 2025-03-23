@@ -4,6 +4,10 @@
 #include "Utilities.h"
 
 #define ASSERT_SIZE(name, size) static_assert(sizeof(name) == size, "Size mismatch for " #name)
+#define NI_DYNAMIC_CAST(type, ptr) ThisStdCall<type*>(0x653290, ptr, type::ms_RTTI)
+
+#define NIRTTI_ADDRESS(address) \
+	static inline const NiRTTI* const ms_RTTI = (NiRTTI*)address;
 
 #if RUNTIME
 
@@ -284,6 +288,15 @@ struct NiQuaternion
 	NiQuaternion operator* (float c) const
 	{
 		return NiQuaternion(c * m_fW, c * m_fX, c * m_fY, c * m_fZ);
+	}
+
+	NiQuaternion& operator*= (float c)
+	{
+		m_fW *= c;
+		m_fX *= c;
+		m_fY *= c;
+		m_fZ *= c;
+		return *this;
 	}
 	
 	void FromRotation(const NiMatrix33& rot)

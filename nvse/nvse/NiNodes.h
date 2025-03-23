@@ -1359,9 +1359,17 @@ public:
 
 struct NiQuatTransform
 {
+	static inline NiPoint3 INVALID_TRANSLATE = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
+	static inline NiQuaternion INVALID_ROTATE = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX };
+	static inline float INVALID_SCALE = -FLT_MAX;
+	
 	NiPoint3 m_kTranslate;
 	NiQuaternion m_kRotate;
 	float m_fScale;
+
+	NiQuatTransform(): m_kTranslate(INVALID_TRANSLATE), m_kRotate(INVALID_ROTATE), m_fScale(INVALID_SCALE) {}
+	NiQuatTransform(const NiPoint3& translate, const NiQuaternion& rotate, float scale)
+		: m_kTranslate(translate), m_kRotate(rotate), m_fScale(scale) {}
 
 	void MakeInvalid()
 	{
@@ -1748,7 +1756,7 @@ public:
 	static NiControllerSequence* Create(const NiFixedString &kName, unsigned int uiArraySize, unsigned int uiArrayGrowBy)
 	{
 		auto* memory = NiNew<NiControllerSequence>();
-		return ThisStdCall<NiControllerSequence*>(0xA326C0, memory, &kName, uiArraySize, uiArrayGrowBy);
+		return ThisStdCall<NiControllerSequence*>(0xA32A10, memory, &kName, uiArraySize, uiArrayGrowBy);
 	}
 
 	enum
@@ -1945,7 +1953,7 @@ public:
 	virtual void *SetInterpolator(NiInterpolator *, unsigned int);
 	virtual void *Unk_33();
 	virtual void *Unk_34();
-	virtual void *GetInterpolator();
+	virtual NiInterpolator *GetInterpolator(unsigned short usIndex);
 	virtual void *Unk_36();
 	virtual void *Unk_37();
 	virtual void *Unk_38(float, float);
@@ -1995,6 +2003,16 @@ public:
 	float m_fHighSumOfWeights;
 	float m_fNextHighSumOfWeights;
 	float m_fHighEaseSpinner;
+
+	InterpArrayItem* GetItemByInterpolator(const NiInterpolator* interpolator) const
+	{
+		for (auto& item : GetItems())
+		{
+			if (item.m_spInterpolator == interpolator)
+				return &item;
+		}
+		return nullptr;
+	}
 
 	void ComputeNormalizedWeightsFor2Additive(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const;
 	
@@ -2244,6 +2262,11 @@ class NiBlendTransformInterpolator : public NiBlendInterpolator
 
 
 public:
+	static NiBlendTransformInterpolator* Create()
+	{
+		return CdeclCall<NiBlendTransformInterpolator*>(0xA409D0);
+	}
+	
 	void ApplyAdditiveTransforms(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue) const;
 
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
@@ -2591,7 +2614,15 @@ public:
 	bool DeactivateSequence(NiControllerSequence* pkSequence, float fEaseOutTime);
 	bool AddSequence(NiControllerSequence* pkSequence, const NiFixedString& kName, bool bStoreTargets)
 	{
-		return ThisStdCall(0xA2F0C0, this, pkSequence, kName, bStoreTargets);
+		return ThisStdCall(0xA2F0C0, this, pkSequence, &kName, bStoreTargets);
+	}
+
+	template <typename T>
+	NiControllerSequence* FindSequence(T&& predicate)
+	{
+		const auto activeSequences = m_kActiveSequences.ToSpan();
+		auto it = std::ranges::find_if(activeSequences, predicate);
+		return it != activeSequences.end() ? *it : nullptr;
 	}
 	
 };

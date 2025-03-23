@@ -10,11 +10,11 @@
 		</Expand>
 	</Type>
 	<Type Name="NiTArray&lt;*&gt;">
-		<DisplayString>{{ Size={numObjs} }}</DisplayString>
+		<DisplayString>{{ Size={m_usSize} }}</DisplayString>
 		<Expand>
 			<ArrayItems>
-				<Size>numObjs</Size>
-				<ValuePointer>data</ValuePointer>
+				<Size>m_usSize</Size>
+				<ValuePointer>m_pBase</ValuePointer>
 			</ArrayItems>
 		</Expand>
 	</Type>
@@ -145,14 +145,24 @@
   		</ArrayItems>
   	</Expand>
   </Type>
-<Type Name="SimpleFixedArray&lt;*&gt;">
-	<DisplayString>{{ Size={m_uiNumItems} }}</DisplayString>
-	<Expand>
-		<ArrayItems>
-			<Size>m_uiNumItems</Size>
-			<ValuePointer>m_pData</ValuePointer>
-		</ArrayItems>
-	</Expand>
-</Type>
+	<Type Name="SimpleFixedArray&lt;*&gt;">
+		<DisplayString>{{ Size={m_uiNumItems} }}</DisplayString>
+		<Expand>
+			<ArrayItems>
+				<Size>m_uiNumItems</Size>
+				<ValuePointer>m_pData</ValuePointer>
+			</ArrayItems>
+		</Expand>
+	</Type>
+
+	<Type Name="NiTSet&lt;*&gt;">
+		<DisplayString>{{ Size={length} }}</DisplayString>
+		<Expand>
+			<ArrayItems>
+				<Size>length</Size>
+				<ValuePointer>data</ValuePointer>
+			</ArrayItems>
+		</Expand>
+	</Type>
 
 </AutoVisualizer>

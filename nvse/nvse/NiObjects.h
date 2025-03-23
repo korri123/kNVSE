@@ -63,6 +63,8 @@ class NiGeometryData;
 class NiAVObject : public NiObjectNET
 {
 public:
+	NIRTTI_ADDRESS(0x11F4280);
+	
 	/*08C*/virtual void		Unk_23(UInt32 arg1);
 	/*090*/virtual void		Unk_24(NiMatrix33* arg1, NiPoint3* arg2, bool arg3);
 	/*094*/virtual void		Unk_25(UInt32 arg1);

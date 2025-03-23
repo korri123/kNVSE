@@ -735,7 +735,7 @@ UInt32 g_lastActivateCall = 0;
 bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
                                     NiControllerSequence* pkTimeSyncSeq, bool bTransition)
 {
-#if !_DEBUG
+#if !_DEBUG || !NI_OVERRIDE
     
     return ThisStdCall<bool>(0xA34F20, this, cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
 #else
@@ -1069,7 +1069,7 @@ NiAVObject* NiInterpController::GetTargetNode(const NiControllerSequence::IDTag&
             return nullptr;
         return multiTargetTransformController->GetTargets()[index];
     }
-    if (index != 0)
+    if (index != 0 && index != 0xFFFF)
     {
 #ifdef _DEBUG
         if (IsDebuggerPresent())
@@ -1078,7 +1078,7 @@ NiAVObject* NiInterpController::GetTargetNode(const NiControllerSequence::IDTag&
 #endif
         return nullptr;
     }
-    return DYNAMIC_CAST(this->m_pkTarget, NiObjectNET, NiAVObject);
+    return NI_DYNAMIC_CAST(NiAVObject, this->m_pkTarget);
 }
 
 bool NiControllerManager::BlendFromPose(NiControllerSequence* pkSequence, float fDestFrame, float fDuration,
@@ -1236,19 +1236,7 @@ bool NiControllerSequence::Deactivate_(float fEaseOutTime, bool bTransition)
         m_fDestFrame = -NI_INFINITY;
 
         DetachInterpolators();
-
-        for (auto* sequence : m_pkOwner->m_kActiveSequences)
-        {
-            if (sv::starts_with_ci(sequence->m_kName.CStr(), "__") && sequence->m_spDeprecatedStringPalette == reinterpret_cast<UInt32>(this))
-            {
-                sequence->m_spDeprecatedStringPalette = 0;
-                sequence->Deactivate(0.0f, false);
-            }
-        }
     }
-
-    
-
     return true;
 }
 
@@ -1266,8 +1254,8 @@ namespace NiHooks
         //WriteRelJump(0xA2E280, &NiControllerManager::CrossFade);
         //WriteRelJump(0xA2E1B0, &NiControllerManager::Morph);
         //WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
-        WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
-        WriteRelJump(0xA35030, &NiControllerSequence::Deactivate_);
+        //WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
+        //WriteRelJump(0xA35030, &NiControllerSequence::Deactivate_);
         //WriteRelJump(0xA34BA0, &NiControllerSequence::Update);
     }
 

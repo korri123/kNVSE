@@ -421,6 +421,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="nihooks.cpp" />
     <ClCompile Include="blend_fixes.cpp" />
+    <ClCompile Include="TempEaseSequence.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
   </ItemGroup>
   <ItemGroup>
