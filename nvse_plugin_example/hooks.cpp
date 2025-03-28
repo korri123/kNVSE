@@ -110,6 +110,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
 	else
 		result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
+	
 	if (destAnim && currentAnim)
 	{
 		auto* idle = animData->animSequence[kSequence_Idle];
@@ -1185,6 +1186,45 @@ void WriteDelayedHooks()
 			return pkSequence->DeactivateNoReset(fEaseOut, false);
 		}
 		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
+	}));
+
+	// TurnLeft/Right hook
+	WriteRelCall(0x896C78, INLINE_HOOK(void, __fastcall)
+	{
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		const auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x10C);
+		auto* groupId = GET_CALLER_VAR_PTR_LAMBDA(UInt16*, -0x40);
+		const auto moveFlags = actor->actorMover ? actor->actorMover->GetMovementFlags() : 0;
+
+		const bool turningLeft = (moveFlags & kMoveFlag_TurnLeft) != 0;
+		const bool turningRight = (moveFlags & kMoveFlag_TurnRight) != 0;
+		if (turningLeft || turningRight)
+		{
+			NiControllerSequence* moveSequence;
+			[[msvc::noinline_calls]] {
+				moveSequence = actor->baseProcess->GetAnimData()->controllerManager->FindSequence([](const NiControllerSequence* seq)
+				{
+					if (NOT_TYPE(seq, BSAnimGroupSequence))
+						return false;
+					TESAnimGroup* animGroup = static_cast<const BSAnimGroupSequence*>(seq)->animGroup;
+					if (!animGroup)
+						return false;
+					return animGroup->IsBaseMovement();
+				});
+			}
+			if (!moveSequence)
+			{
+				if (turningLeft)
+				{
+					*groupId = kAnimGroup_TurnLeft;
+				}
+				else if (turningRight)
+				{
+					*groupId = kAnimGroup_TurnRight;
+				}
+			}
+		}
+		*addrOfRetn = 0x896C9A;
 	}));
 
 #if 0

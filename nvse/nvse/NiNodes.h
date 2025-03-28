@@ -1750,6 +1750,7 @@ public:
 	float GetEaseSpinner() const;
 	bool PopulateIDTags(NiControllerSequence* source);
 
+	
 	static NiControllerSequence* Create()
 	{
 		return CdeclCall<NiControllerSequence*>(0xA326C0);
@@ -1760,7 +1761,7 @@ public:
 		auto* memory = NiNew<NiControllerSequence>();
 		return ThisStdCall<NiControllerSequence*>(0xA32A10, memory, &kName, uiArraySize, uiArrayGrowBy);
 	}
-
+	
 	enum
 	{
 		kCycle_Loop = 0,
