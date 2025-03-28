@@ -419,6 +419,7 @@
     <ClCompile Include="LambdaVariableContext.cpp" />
     <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="movement_blend_fixes.cpp" />
     <ClCompile Include="nihooks.cpp" />
     <ClCompile Include="blend_fixes.cpp" />
     <ClCompile Include="TempEaseSequence.cpp" />
@@ -470,6 +471,7 @@
     <ClInclude Include="lib\memory_pool\MemoryPool.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="MemoizedMap.h" />
+    <ClInclude Include="movement_blend_fixes.h" />
     <ClInclude Include="nihooks.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="SimpleINILibrary.h" />

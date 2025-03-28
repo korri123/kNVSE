@@ -64,7 +64,7 @@ BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDes
 
   if ( pCurrentSequence )
     currentSequenceState = pCurrentSequence->m_eState;
-  if ( !apDestSequence || usAnimGroup == 0xff )
+  if ( !apDestSequence || usAnimGroup == 0xffff )
     return nullptr;
   if ( eSequenceType == kSequence_Weapon
     || eSequenceType == kSequence_WeaponUp

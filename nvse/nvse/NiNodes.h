@@ -1747,6 +1747,8 @@ public:
 	void DetachInterpolatorsAdditive() const;
 	void RemoveInterpolator(const NiFixedString& name) const;
 	void RemoveInterpolator(unsigned int index) const;
+	float GetEaseSpinner() const;
+	bool PopulateIDTags(NiControllerSequence* source);
 
 	static NiControllerSequence* Create()
 	{
@@ -1858,6 +1860,7 @@ public:
 
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
 	bool Deactivate_(float fEaseOutTime, bool bTransition);
+	bool DeactivateNoReset(float fEaseOutTime, bool bTransition);
 	
 	void ResetSequence()
 	{
@@ -1869,6 +1872,7 @@ public:
 	bool Activate(char cPriority, bool bStartOver, float fWeight,
 		float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
 		bool bTransition);
+	bool ActivateNoReset(float fEaseInTime, bool bTransition);
 
 	NiControllerManager* GetOwner() const
 	{
@@ -2805,6 +2809,17 @@ public:
 	}
 
 	AnimGroupID GetBaseGroupID() const;
+
+	bool IsTurning() const
+	{
+		auto animGroupId = GetBaseGroupID();
+		return animGroupId == kAnimGroup_TurnLeft || animGroupId == kAnimGroup_TurnRight;
+	}
+
+	bool IsBaseMovement() const
+	{
+		return GetSequenceType() == kSequence_Movement && !IsTurning();
+	}
 
 	struct AnimGroupSound
 	{

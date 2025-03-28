@@ -73,19 +73,19 @@ NiControllerSequence* TempEaseSequence::Create(NiControllerSequence* baseSequenc
         auto* idleInterp = idleSequence->GetControlledBlock(idTag.m_kAVObjectName);
         if (!idleInterp)
         {
-            if (!tmpBlendSequence)
-                continue;
-            idleInterp = tmpBlendSequence->GetControlledBlock(idTag.m_kAVObjectName);
-            if (!idleInterp)
-                continue;
+            if (tmpBlendSequence)
+                idleInterp = tmpBlendSequence->GetControlledBlock(idTag.m_kAVObjectName);
         }
-
-        auto* idleItem = idleInterp->m_pkBlendInterp->GetItemByInterpolator(idleInterp->m_spInterpolator);
-        if (!idleItem)
-            CONTINUE_OR_DBG;
-            
         NiPointer blendInterp = NiBlendTransformInterpolator::Create();
-        blendInterp->AddInterpInfo(idleInterp->m_spInterpolator, idleItem->m_fWeight, idleItem->m_cPriority, idleItem->m_fEaseSpinner);
+
+        if (idleInterp)
+        {
+            auto* idleItem = idleInterp->m_pkBlendInterp->GetItemByInterpolator(idleInterp->m_spInterpolator);
+            if (!idleItem)
+                CONTINUE_OR_DBG;
+            blendInterp->AddInterpInfo(idleInterp->m_spInterpolator, idleItem->m_fWeight, idleItem->m_cPriority, idleItem->m_fEaseSpinner);
+        }
+        
         blendInterp->AddInterpInfo(kItem.m_spInterpolator, item->m_fWeight, item->m_cPriority, item->m_fEaseSpinner);
 
         if (!blendInterp->Update(item->m_fUpdateTime, pkInterpTarget, kValue))
