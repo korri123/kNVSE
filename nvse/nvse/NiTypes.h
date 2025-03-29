@@ -67,6 +67,10 @@ struct NiPoint3
 	    return (x == pt.x && y == pt.y && z == pt.z);
 	}
 
+	bool IsAlmostEqual(const NiPoint3& pt, float fEpsilon = 0.0001f) const
+	{
+		return (fabs(x - pt.x) < fEpsilon && fabs(y - pt.y) < fEpsilon && fabs(z - pt.z) < fEpsilon);
+	}
 
 	float operator* (const NiPoint3& pt) const
 	{

@@ -2080,10 +2080,10 @@ public:
 		}
 	}
 
-	bool GetUpdateTimeForItem(float& fTime, InterpArrayItem& kItem, bool bAdditive)
+	bool GetUpdateTimeForItem(float& fTime, InterpArrayItem& kItem)
 	{
 		NiInterpolator* pkInterpolator = kItem.m_spInterpolator.data;
-		if (pkInterpolator && (kItem.m_fNormalizedWeight != 0.0f || bAdditive))
+		if (pkInterpolator && (kItem.m_fNormalizedWeight != 0.0f))
 		{
 			if (GetManagerControlled())
 			{
@@ -2276,6 +2276,9 @@ public:
 
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
 					 NiQuatTransform& kValue);
+
+	bool BlendValuesFixFloatingPointError(float fTime, NiObjectNET* pkInterpTarget,
+		NiQuatTransform& kValue);
 
 	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
 
@@ -3182,3 +3185,51 @@ public:
 };
 static_assert(sizeof(NiTextKeyExtraData) == 0x14);
 
+class NiBSplineData : public NiObject
+{
+public:
+	float *m_pafControlPoints;
+	short *m_pasCompactControlPoints;
+	unsigned int m_uiControlPointCount;
+	unsigned int m_uiCompactControlPointCount;
+};
+
+template <class REAL, int DEGREE>
+class NiBSplineBasis : public NiMemObject {
+public:
+    int32_t             m_iQuantity;
+    mutable REAL        m_afValue[DEGREE + 1];
+    mutable REAL        m_fLastTime;
+    mutable int32_t     m_iMin;
+    mutable int32_t     m_iMax;
+};
+
+class NiBSplineBasisData : public NiObject
+{
+public:
+	NiBSplineBasis<float,3> m_kBasisDegree3;
+};
+
+class NiBSplineInterpolator : public NiInterpolator
+{
+public:
+	float m_fStartTime;
+	float m_fEndTime;
+	NiPointer<NiBSplineData> m_spData;
+	NiPointer<NiBSplineBasisData> m_spBasisData;
+};
+
+class NiBSplineTransformInterpolator : public NiBSplineInterpolator
+{
+public:
+	NiQuatTransform m_kTransformValue;
+	unsigned int m_kTransCPHandle;
+	unsigned int m_kRotCPHandle;
+	unsigned int m_kScaleCPHandle;
+};
+
+class NiBSplineCompTransformInterpolator : public NiBSplineTransformInterpolator
+{
+public:
+	float m_afCompScalars[6];
+};

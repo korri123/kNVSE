@@ -196,9 +196,10 @@ void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
 {
     if (!GetActive() || !m_usNumInterps)
         return;
-    NiQuatTransform kTransform;
+    
     for (unsigned short us = 0; us < m_usNumInterps; us++)
     {
+        NiQuatTransform kTransform;
         auto* pkTarget = m_ppkTargets[us];
         // We need to check the UpdateSelected flag before updating the
         // interpolator. For instance, BoneLOD might have turned off that
@@ -217,7 +218,7 @@ void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
             // beth bs
             break;
         }
-
+        
         auto& kBlendInterp = m_pkBlendInterps[us];
         if (kBlendInterp.Update(fTime, pkTarget, kTransform))
         {
@@ -262,7 +263,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
         if (kItem.m_spInterpolator && (fNormalizedWeight > 0.0f))
         {
             float fUpdateTime = fTime;
-            if (!this->GetUpdateTimeForItem(fUpdateTime, kItem, false))
+            if (!this->GetUpdateTimeForItem(fUpdateTime, kItem))
             {
                 fTotalTransWeight -= fNormalizedWeight;
                 fTotalScaleWeight -= fNormalizedWeight;
@@ -325,11 +326,6 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
                     // Note that this makes them non-rotations.
                     kRotValue = kRotValue * fNormalizedWeight;
 
-#if _DEBUG
-                    NiMatrix3 kRotValueMatrix{};
-                    kRotValue.ToRotation(kRotValueMatrix);
-#endif
-
                     // Accumulate the total weighted values into the 
                     // rotation
                     kFinalRotate.SetValues(
@@ -337,12 +333,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
                         kRotValue.GetX() + kFinalRotate.GetX(),
                         kRotValue.GetY() + kFinalRotate.GetY(),
                         kRotValue.GetZ() + kFinalRotate.GetZ());
-
-#if _DEBUG
-                    NiMatrix3 kFinRotValueMatrix{};
-                    kFinalRotate.ToRotation(kFinRotValueMatrix);
-#endif
-
+                    
                     // Need to re-normalize quaternion.
                     bRotChanged = true;
                 }
@@ -392,6 +383,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
             // weighted sum
             NIASSERT(fTotalTransWeight != 0.0f);
             kFinalTranslate /= fTotalTransWeight;
+            
             kValue.SetTranslate(kFinalTranslate);
         }
         if (bRotChanged)
@@ -413,10 +405,127 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
         }
     }
 
-#if _DEBUG
-    NiMatrix3 kMatRotate{};
-    kValue.m_kRotate.ToRotation(kMatRotate);
-#endif
+    if (kValue.IsTransformInvalid())
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime, NiObjectNET* pkInterpTarget,
+    NiQuatTransform& kValue)
+{
+    // Accumulate weights positively instead of subtracting
+    double dTotalTransWeight = 0.0;
+    double dTotalScaleWeight = 0.0;
+
+    NiPoint3 kFinalTranslate = NiPoint3::ZERO;
+    NiQuaternion kFinalRotate = NiQuaternion(0.0f, 0.0f, 0.0f, 0.0f);
+    float fFinalScale = 0.0f;
+
+    bool bTransChanged = false;
+    bool bRotChanged = false;
+    bool bScaleChanged = false;
+
+    bool bFirstRotation = true;
+    for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
+    {
+        InterpArrayItem& kItem = m_pkInterpArray[uc];
+        if (kItem.m_spInterpolator && kItem.m_fNormalizedWeight > 0.0f)
+        {
+            float fUpdateTime = fTime;
+            if (!GetUpdateTimeForItem(fUpdateTime, kItem))
+            {
+                continue;
+            }
+
+            NiQuatTransform kTransform;
+            bool bSuccess = kItem.m_spInterpolator->Update(fUpdateTime, 
+                pkInterpTarget, kTransform);
+
+            if (bSuccess)
+            {
+                // Use double for weight calculations
+                double dWeight = static_cast<double>(kItem.m_fNormalizedWeight);
+                
+                if (kTransform.IsTranslateValid())
+                {
+                    kFinalTranslate += kTransform.GetTranslate() *
+                        kItem.m_fNormalizedWeight;
+                    dTotalTransWeight += dWeight;
+                    bTransChanged = true;
+                }
+
+                if (kTransform.IsRotateValid())
+                {
+                    NiQuaternion kRotValue = kTransform.GetRotate();
+
+                    if (!bFirstRotation)
+                    {
+                        float fCos = NiQuaternion::Dot(kFinalRotate,
+                            kRotValue);
+
+                        if (fCos < 0.0f)
+                        {
+                            kRotValue = -kRotValue;
+                        }
+                    }
+                    else
+                    {
+                        bFirstRotation = false;
+                    }
+
+                    kRotValue = kRotValue * kItem.m_fNormalizedWeight;
+
+                    kFinalRotate.SetValues(
+                        kRotValue.GetW() + kFinalRotate.GetW(), 
+                        kRotValue.GetX() + kFinalRotate.GetX(), 
+                        kRotValue.GetY() + kFinalRotate.GetY(),
+                        kRotValue.GetZ() + kFinalRotate.GetZ());
+
+                    bRotChanged = true;
+                }
+
+                if (kTransform.IsScaleValid())
+                {
+                    fFinalScale += kTransform.GetScale() *
+                        kItem.m_fNormalizedWeight;
+                    dTotalScaleWeight += dWeight;
+                    bScaleChanged = true;
+                }
+            }
+        }
+    }
+
+    kValue.MakeInvalid();
+    if (bTransChanged || bRotChanged || bScaleChanged)
+    {
+        constexpr double EPSILON = 1e-10;
+        // Use epsilon checks for safer divisions
+        if (bTransChanged && dTotalTransWeight > EPSILON)
+        {
+            // Convert back to float for the division
+            float fInverseWeight = static_cast<float>(1.0 / dTotalTransWeight);
+            kFinalTranslate *= fInverseWeight;  // Use multiplication instead of division
+            kValue.SetTranslate(kFinalTranslate);
+        }
+        
+        if (bRotChanged)
+        {
+            // Quaternion normalization handles the weighting implicitly
+            kFinalRotate.Normalize();
+            kValue.SetRotate(kFinalRotate);
+        }
+        
+        if (bScaleChanged && dTotalScaleWeight > EPSILON)
+        {
+            // Convert back to float for the division
+            float fInverseWeight = static_cast<float>(1.0 / dTotalScaleWeight);
+            fFinalScale *= fInverseWeight;  // Use multiplication instead of division
+            kValue.SetScale(fFinalScale);
+        }
+    }
 
     if (kValue.IsTransformInvalid())
     {
@@ -1360,7 +1469,8 @@ namespace NiHooks
 {
     void WriteHooks()
     {
-        //WriteRelJump(0xA40C10, &NiBlendTransformInterpolator::BlendValues);
+        // Spider hands fix
+        WriteRelJump(0xA40C10, &NiBlendTransformInterpolator::BlendValuesFixFloatingPointError);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeights);

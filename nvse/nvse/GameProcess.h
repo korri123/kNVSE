@@ -1,6 +1,6 @@
 #pragma once
 
-#include "NiNodes.h"
+#include "NiObjects.h"
 #include "GameForms.h"
 #include "GameTasks.h"
 #include "class_vtbls.h"
@@ -163,6 +163,18 @@ struct AnimData
 	void ResetSequenceState(eAnimSequence seqID, float blendAmount)
 	{
 		ThisStdCall(0x496080, this, seqID, blendAmount);
+	}
+
+	NiMultiTargetTransformController* GetMultiTargetTransformController() const
+	{
+		for (auto* controller = nSceneRoot->m_controller; controller; controller = controller->m_spNext)
+		{
+			if (IS_TYPE(controller, NiMultiTargetTransformController))
+			{
+				return static_cast<NiMultiTargetTransformController*>(controller);
+			}
+		}
+		return nullptr;
 	}
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);
