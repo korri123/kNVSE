@@ -58,9 +58,9 @@ void SetCurrentSequence(AnimData* animData, BSAnimGroupSequence* destAnim, bool 
 	const auto sequenceId = destAnim->animGroup->GetGroupInfo()->sequenceType;
 	const auto animGroupId = destAnim->animGroup->groupID;
 	animData->animSequence[sequenceId] = destAnim;
+	animData->groupIDs[sequenceId] = animGroupId;
 	if (resetSequenceState)
 		animData->sequenceState1[sequenceId] = 0;
-	animData->groupIDs[sequenceId] = animGroupId;
 }
 
 template <typename F>
@@ -209,7 +209,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 
 	const auto* destInfo = destAnim->animGroup->GetGroupInfo();
 	const auto sequenceId = static_cast<eAnimSequence>(destInfo->sequenceType);
-	if (sequenceId == kSequence_None)
+	if (sequenceId != kSequence_Weapon && sequenceId != kSequence_WeaponUp && sequenceId != kSequence_WeaponDown)
 		return RESUME;
 
 	const auto destGroupId = destAnim->animGroup->groupID;
@@ -219,89 +219,39 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 		return RESUME;
 
 	BSAnimGroupSequence* srcAnim = animData->animSequence[sequenceId];
-
-	const auto isDestUpOrDown = sequenceId == kSequence_WeaponUp || sequenceId == kSequence_WeaponDown;
-
 	if (!srcAnim || !srcAnim->animGroup || srcAnim == destAnim)
 		return RESUME;
 
 
-	if (!isDestAim && !isDestUpOrDown)
-		return RESUME;
-
-	const auto isSrcEasing = srcAnim->m_eState == kAnimState_EaseIn || srcAnim->m_eState == kAnimState_TransDest;
-	
-	//if (!isSrcEasing && ((isDestIS && isSrcIS) || (!isDestIS && !isSrcIS)))
-	//	return RESUME;
-	if (!isSrcEasing)
-		return RESUME;
-
-	if (animData != g_thePlayer->firstPersonAnimData)
+	if (animData != g_thePlayer->firstPersonAnimData && sequenceId != kSequence_Weapon)
 	{
 		// fix variant bs
 		const auto* baseProcess = animData->actor->baseProcess;
-		const auto* currentAnim = baseProcess->weaponSequence[sequenceId - 4];
+		const auto* currentAnim = baseProcess->weaponSequence[sequenceId - kSequence_Weapon];
 		if (currentAnim)
 			destAnim->m_fSeqWeight = currentAnim->m_fSeqWeight;
 	}
-#if USE_BLEND_FROM_POSE
-	auto* aimAnim = GetAnimByGroupID(animData, kAnimGroup_Aim);
-	auto* aimISAnim = GetAnimByGroupID(animData, kAnimGroup_AimIS);
-	float blend;
 
-	const auto toIS = IsAnimGroupIS(destBaseGroupId);
-
-
-	if (aimAnim && aimISAnim)
-	{
-		if (toIS)
-			blend = CalculateTransitionBlendTime(animData, aimAnim, aimISAnim);
-		else
-			blend = CalculateTransitionBlendTime(animData, aimISAnim, aimAnim);
-	}
-	else
-		blend = GetIniBlend();
-	
-	if (destAnim->m_eState != kAnimState_Inactive)
-		destAnim->m_pkOwner->DeactivateSequence(destAnim, 0.0f);
-	
-	if (srcAnim->m_eState != kAnimState_Inactive)
-		srcAnim->m_pkOwner->DeactivateSequence(srcAnim, 0.0f);
-
-	destAnim->m_pkOwner->BlendFromPose(destAnim, 0.0f, blend, 0, nullptr);
-
-	ManageTempBlendSequence(destAnim);
-	
 	SetCurrentSequence(animData, destAnim, true);
-#else
-	auto currentAnimTime = GetAnimTime(animData, srcAnim);
-	auto blend = GetIniBlend();
-	if (currentAnimTime == -FLT_MAX)
-	{
-		currentAnimTime = 0.0f;
-		blend = 0.0f;
-	}
-	if (srcAnim->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(srcAnim->owner, srcAnim, blend);
-	if (destAnim->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(destAnim->owner, destAnim, 0.0f);
-	float destFrame = blend - currentAnimTime;
-	if (isDestUpOrDown)//
-	{
-		// really annoyed with these desyncing
-		const auto* weaponAnim = animData->animSequence[kSequence_Weapon];
-		if (weaponAnim) // shouldn't ever be null
-			destFrame = GetAnimTime(animData, weaponAnim);
-	}
-	ApplyDestFrame(destAnim, destFrame / destAnim->frequency);
-	ApplyDestFrame(srcAnim, destFrame / srcAnim->frequency);
-	GameFuncs::ActivateSequence(destAnim->owner, destAnim, 0, true, destAnim->seqWeight, blend, nullptr);
-	FixConflictingPriorities(srcAnim, destAnim);
-	SetCurrentSequence(animData, destAnim, false);
-	if (animData != g_thePlayer->firstPersonAnimData)
-		Console_Print("AimBlendFix: %s -> %s (%.4f)", srcAnim->animGroup->GetGroupInfo()->name, destAnim->animGroup->GetGroupInfo()->name, destFrame);
-#endif
+
+	const auto blendTime = destAnim->GetEaseInTime();
 	
+	if (srcAnim->m_eState != NiControllerSequence::EASEIN)
+	{
+		destAnim->Activate(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
+		srcAnim->Deactivate(blendTime, false);
+		return SKIP;
+	}
+
+	srcAnim->DeactivateNoReset(blendTime, false);
+
+	if (destAnim->m_eState == NiControllerSequence::EASEOUT)
+	{
+		destAnim->ActivateNoReset(blendTime, false);
+		return SKIP;
+	}
+
+	destAnim->Activate(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
 	return SKIP;
 }
 

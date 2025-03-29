@@ -15,7 +15,7 @@ void ApplyDestFrame(NiControllerSequence* sequence, float destFrame);
 
 struct PluginINISettings
 {
-    bool fixSpineBlendBug = false;
+    bool fixSpineBlendBug = true;
     bool fixAttackISTransition = false;
     bool fixBlendSamePriority = false;
     bool fixLoopingReloadStart = false;
