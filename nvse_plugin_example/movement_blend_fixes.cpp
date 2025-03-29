@@ -38,13 +38,12 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	if (auto* currAnim = animData->animSequence[kSequence_Movement]; currAnim && currAnim->animGroup && currAnim->animGroup->IsTurning())
 		currAnim->Deactivate(0.0f, false);
 
-#if 0
+#if 1
 	const auto hasInactiveBlocks = std::ranges::any_of(pkSequence->GetControlledBlocks(), [](const auto& block) {
 		return block.m_pkBlendInterp && block.m_pkBlendInterp->m_ucInterpCount == 0;
 	});
-	if (existingTempBlendSeq)
-		existingTempBlendSeq->Deactivate(0.0f, false);
-	
+	const static auto sBip01 = NiFixedString("Bip01");
+
 	if (hasInactiveBlocks && !currentMoveAnim)
 	{
 		// prevent snapping for nodes that weren't previously being animated
@@ -56,7 +55,6 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 			if (block.m_pkBlendInterp->m_ucInterpCount != 0)
 				tempBlendSeq->RemoveInterpolator(&block - tempBlendSeq->m_pkInterpArray);
 		}
-		const static auto sBip01 = NiFixedString("Bip01");
 		if (const auto* bip01 = pkSequence->GetControlledBlock(sBip01))
 		{
 			tempBlendSeq->RemoveInterpolator(bip01 - pkSequence->m_pkInterpArray);
@@ -78,7 +76,7 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		{
 			auto* tmpBlendSeq = manager->CreateTempBlendSequence(pkSequence, nullptr);
 			tmpBlendSeq->PopulateIDTags(pkSequence);
-			tmpBlendSeq->RemoveInterpolator("Bip01");
+			tmpBlendSeq->RemoveInterpolator(sBip01);
 			tmpBlendSeq->Activate(0, true, tmpBlendSeq->m_fSeqWeight, 0.0f, nullptr, false);
 			tmpBlendSeq->Deactivate(fDuration, false);
 			currentMoveAnim->Deactivate(0.0f, false);
@@ -92,38 +90,7 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		}
 	}
 
-#if 0
-	auto activeSequences = manager->m_kActiveSequences.ToSpan();
-	const auto lastMoveSequence = std::ranges::find_if(activeSequences, [&](NiControllerSequence* sequence)
-	{
-		if (NOT_TYPE(sequence, BSAnimGroupSequence))
-			return false;
-		TESAnimGroup* animGroup = static_cast<BSAnimGroupSequence*>(sequence)->animGroup;
-		if (!animGroup)
-			return false;
-		return animGroup->GetSequenceType() == kSequence_Movement && sequence->m_eState == NiControllerSequence::EASEOUT;
-	});
-
-	if (lastMoveSequence != activeSequences.end())
-	{
-		auto idleSequence = std::ranges::find_if(activeSequences, [&](NiControllerSequence* sequence)
-		{
-			if (NOT_TYPE(sequence, BSAnimGroupSequence))
-				return false;
-			TESAnimGroup* animGroup = static_cast<BSAnimGroupSequence*>(sequence)->animGroup;
-			if (!animGroup)
-				return false;
-			return animGroup->GetSequenceType() == kSequence_Idle && sequence->m_eState == NiControllerSequence::ANIMATING;
-		});
-		if (idleSequence != activeSequences.end())
-		{
-			FixConflictingPriorities(*lastMoveSequence, pkSequence, *idleSequence);
-		}
-	}
-#endif
-
 	SetAnimDataState(animData, pkSequence);
-	
 	return pkSequence;
 }
 

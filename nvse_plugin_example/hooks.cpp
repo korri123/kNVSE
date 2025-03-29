@@ -1158,6 +1158,8 @@ void WriteDelayedHooks()
 
 	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
 	{
+		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
+			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
 		// stop game from not ending move anims immediately
 		return NiControllerSequence::ANIMATING;
 	}));
@@ -1225,6 +1227,28 @@ void WriteDelayedHooks()
 			}
 		}
 		*addrOfRetn = 0x896C9A;
+	}));
+
+	// allow move in jumpland
+	// bhkCharacterController::GetContextHkState
+	WriteRelCall(0x8964E1, INLINE_HOOK(UInt32, __fastcall, bhkCharacterController* controller)
+	{
+		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x10C);
+		auto* animData = actor->baseProcess->GetAnimData();
+		auto moveGroupId = animData->groupIDs[kSequence_Movement];
+
+		const auto result = ThisStdCall<UInt32>(0x5C0880, controller);
+		constexpr auto kCharControllerState_Jumping = 1;
+		constexpr auto kCharControllerState_InAir = 2;
+		if (result == kCharControllerState_Jumping || result == kCharControllerState_InAir)
+			return result;
+
+		if (moveGroupId == kAnimGroup_JumpLand)
+		{
+			GameFuncs::Actor_SetAnimActionAndSequence(actor, Decoding::kAnimAction_None, nullptr);
+		}
+		
+		return result;
 	}));
 
 #if 0

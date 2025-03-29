@@ -2817,6 +2817,21 @@ public:
 		return animGroupId == kAnimGroup_TurnLeft || animGroupId == kAnimGroup_TurnRight;
 	}
 
+	bool IsJumpLand() const
+	{
+		switch (GetBaseGroupID())
+		{
+		case kAnimGroup_JumpLand:
+		case kAnimGroup_JumpLandForward:
+		case kAnimGroup_JumpLandBackward:
+		case kAnimGroup_JumpLandLeft:
+		case kAnimGroup_JumpLandRight:
+			return true;
+		default:
+			return false;
+		};
+	}
+
 	bool IsBaseMovement() const
 	{
 		return GetSequenceType() == kSequence_Movement && !IsTurning();
