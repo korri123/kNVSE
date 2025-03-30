@@ -134,30 +134,70 @@ float GetIniBlend()
 	return GetIniFloat(0x11C56FC);
 }
 
-void FixAimPriorities(AnimData* animData)
+void BlendFixes::FixAimPriorities(AnimData* animData, BSAnimGroupSequence* destAnim)
 {
-	const auto* aimAnim = GetAnimByGroupID(animData, kAnimGroup_Aim);
-	const auto* aimAnimUp = GetAnimByGroupID(animData, kAnimGroup_AimUp);
-	const auto* aimAnimDown = GetAnimByGroupID(animData, kAnimGroup_AimDown);
-	const auto* aimAnimIS = GetAnimByGroupID(animData, kAnimGroup_AimIS);
-	if (!aimAnim || !aimAnimIS || !aimAnimUp || !aimAnimDown)
+	// Fix priorities for aim to aim is when move sequence has higher priorities than aim
+	// this happens when running in third person right and aiming down sights in and out
+	// we achieve this by setting the move priorities to aim priorities - 1 if both are playing
+	if (animData == g_thePlayer->firstPersonAnimData)
 		return;
-	if (aimAnim->m_uiArraySize != aimAnimUp->m_uiArraySize || aimAnim->m_uiArraySize != aimAnimDown->m_uiArraySize)
+	const auto baseAnimGroup = static_cast<AnimGroupID>(destAnim->animGroup->groupID);
+	const auto sequenceType = destAnim->animGroup->GetSequenceType();
+
+	if (!destAnim->animGroup->IsBaseMovement() && baseAnimGroup != kAnimGroup_AimIS)
 		return;
-	for (unsigned int i = 0; i < aimAnim->m_uiArraySize; ++i)
+
+	BSAnimGroupSequence* moveAnim;
+	if (sequenceType == kSequence_Movement)
+		moveAnim = destAnim;
+	else
+		moveAnim = animData->animSequence[kSequence_Movement];
+
+	const auto* aimISAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_AimIS);
+	if (sequenceType == kSequence_Movement && !aimISAnim)
+		return;
+
+	if (!moveAnim || !moveAnim->animGroup)
+		return;
+
+	BSAnimGroupSequence* aimAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_Aim);
+	if (!aimAnim || !aimAnim->animGroup)
+		return;
+
+	auto* tempBlendSequence = animData->controllerManager->FindSequence([](const NiControllerSequence* seq)
 	{
-		const auto& idTag = aimAnim->m_pkIDTagArray[i];
-		auto& aimBlock = aimAnim->m_pkInterpArray[i];
-		auto& aimBlockUp = aimAnimUp->m_pkInterpArray[i];
-		auto& aimBlockDown = aimAnimDown->m_pkInterpArray[i];
-		if (const auto* aimISBlock = aimAnimIS->GetControlledBlock(idTag.m_kAVObjectName))
+		return sv::starts_with_ci(seq->m_kName.CStr(), "__");
+	});
+
+	const static NiFixedString objName = "Bip01 Spine1";
+	// only affect upper body
+	auto* bip01Spine = animData->nBip01->GetObjectByName(objName);
+	if (!bip01Spine || !bip01Spine->GetAsNiNode())
+		return;
+
+	const auto processSequence = [&](const NiControllerSequence* sequenceToProcess) {
+		if (!sequenceToProcess)
+			return;
+            
+		const auto fn = [&](const NiAVObject* node)
 		{
-			const char iNewPriority = aimISBlock->m_ucPriority != 0 ? static_cast<char>(aimISBlock->m_ucPriority - 1) : 0;
-			aimBlock.m_ucPriority = iNewPriority;
-			aimBlockUp.m_ucPriority = iNewPriority;
-			aimBlockDown.m_ucPriority = iNewPriority;
-		}
-	}
+			auto* seqBlock = sequenceToProcess->GetControlledBlock(node->m_pcName);
+			if (!seqBlock || !seqBlock->m_spInterpolator || !seqBlock->m_pkBlendInterp)
+				return;
+			auto* aimBlock = aimAnim->GetControlledBlock(node->m_pcName);
+			if (!aimBlock || !aimBlock->m_spInterpolator || !aimBlock->m_pkBlendInterp
+			   || aimBlock->m_ucPriority > seqBlock->m_ucPriority)
+				return;
+			const char newPriority = aimBlock->m_ucPriority != 0 ? static_cast<char>(aimBlock->m_ucPriority - 1) : 0;
+			seqBlock->m_pkBlendInterp->SetPriority(newPriority, seqBlock->m_ucBlendIdx);
+		};
+
+		bip01Spine->GetAsNiNode()->RecurseTree(fn);
+	};
+
+	// Process both animations
+	processSequence(moveAnim);
+	processSequence(tempBlendSequence);
 }
 
 BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim)
@@ -179,9 +219,6 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	BSAnimGroupSequence* srcAnim = animData->animSequence[sequenceId];
 	if (!srcAnim || !srcAnim->animGroup || srcAnim == destAnim)
 		return RESUME;
-
-	if (animData != g_thePlayer->firstPersonAnimData)
-		FixAimPriorities(animData);
 
 	if (animData != g_thePlayer->firstPersonAnimData && sequenceId != kSequence_Weapon)
 	{
@@ -395,25 +432,6 @@ void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimG
 
 void BlendFixes::ApplyHooks()
 {
-	return;
-#if 0
-	// AnimData::GetSceneRoot
-	WriteRelCall(0x896162, INLINE_HOOK(NiNode*, __fastcall, AnimData* animData)
-	{
-		auto* anim = animData->animSequence[kSequence_Movement];
-		auto* result = animData->nSceneRoot;
-		if (!anim || !anim->animGroup)
-			return result;
-		auto* block = anim->GetControlledBlock("Weapon");
-		if (!block)
-			return result;
-		auto* interp = block->m_spInterpolator;
-		if (NOT_TYPE(interp, NiTransformInterpolator))
-			return result;
-		interp->Pause();
-		return result;
-	}));
-#endif
 }
 
 void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim)

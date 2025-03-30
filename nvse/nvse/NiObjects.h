@@ -366,6 +366,17 @@ public:
 	void GetBodyMass(float* totalMass);
 	void ApplyForce(NiVector4* forceVector);
 	void Dump();
+
+	template <typename F>
+	void RecurseTree(F&& predicate)
+	{
+		predicate(this);
+		for (const auto& child : m_children)
+		{
+			if (auto* node = child->GetAsNiNode())
+				node->RecurseTree(predicate);
+		}
+	}
 };
 STATIC_ASSERT(sizeof(NiNode) == 0xAC);
 #if 0

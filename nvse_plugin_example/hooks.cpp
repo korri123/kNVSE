@@ -49,9 +49,8 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 // UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
 BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
 {
-#ifdef _DEBUG
 	const auto baseAnimGroup = static_cast<AnimGroupID>(animGroupId);
-#endif
+
 	if (animData && animData->actor)
 	{
 		std::optional<AnimationResult> animResult;
@@ -95,7 +94,10 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		return destAnim;
 
 	if (g_pluginSettings.fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
+	{
+		BlendFixes::FixAimPriorities(animData, destAnim);
 		return destAnim;
+	}
 
 	BSAnimGroupSequence* currentAnim = nullptr;
 	if (destAnim && destAnim->animGroup)
@@ -117,6 +119,10 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		auto* idle = animData->animSequence[kSequence_Idle];
 		if (idle && idle->m_eState == NiControllerSequence::ANIMATING)
 			BlendFixes::FixConflictingPriorities(currentAnim, destAnim, idle);
+	}
+	if (destAnim)
+	{
+		BlendFixes::FixAimPriorities(animData, destAnim);
 	}
 	return result;
 }
@@ -1100,7 +1106,6 @@ void WriteDelayedHooks()
 				auto* tmpBlendSeq = manager->CreateTempBlendSequence(pkSequence, nullptr);
 				const sv::stack_string<0x100> tempBlendSeqName("__DeactivateTmpBlend__%s", sv::get_file_name(pkSequence->m_kName.CStr()).data());
 				tmpBlendSeq->m_kName = tempBlendSeqName.c_str();
-				tmpBlendSeq->PopulateIDTags(pkSequence);
 				tmpBlendSeq->RemoveInterpolator("Bip01");
 				tmpBlendSeq->Activate(0, true, tmpBlendSeq->m_fSeqWeight, 0.0f, nullptr, false);
 				tmpBlendSeq->Deactivate(fEaseOut, false);
@@ -1158,6 +1163,7 @@ void WriteDelayedHooks()
 		}
 		*addrOfRetn = 0x896C9A;
 	}));
+	PatchMemoryNop(0x896C7C + 1, 2);
 
 	// allow move in jumpland
 	// bhkCharacterController::GetContextHkState

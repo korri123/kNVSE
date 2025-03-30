@@ -836,18 +836,6 @@ float NiControllerSequence::GetEaseSpinner() const
     return blendItemIter->m_fEaseSpinner;
 }
 
-bool NiControllerSequence::PopulateIDTags(NiControllerSequence* source)
-{
-    if (m_uiArraySize != source->m_uiArraySize)
-        return false;
-
-    for (unsigned int i = 0; i < m_uiArraySize; i++)
-    {
-        m_pkIDTagArray[i] = source->m_pkIDTagArray[i];
-    }
-    return true;
-}
-
 void NiControllerSequence::AttachInterpolators(char cPriority)
 {
 #if !_DEBUG || !NI_OVERRIDE
@@ -1422,12 +1410,33 @@ bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime)
     return true;
 }
 
+unsigned int __fastcall AddInterpHook(NiControllerSequence* poseSequence, UInt32 offset, NiControllerSequence* pkSequence,
+    NiInterpolator* interpolator, NiControllerSequence::IDTag*, unsigned char priority)
+{
+    auto idx = offset / 0x10;
+    const auto& newIdTag = pkSequence->m_pkIDTagArray[idx];
+    return poseSequence->AddInterpolator(interpolator, newIdTag, priority);
+}
+
+__declspec(naked) void PoseSequenceIDTagHook()
+{
+    __asm
+    {
+        mov edx, [esp + ((0x38-0x2c) + 0x3c)] // offset ((ida stack offset of hook spot - ida initial var decl stack offset) + ida var hover info)
+        push ebp // pkSequence
+        call AddInterpHook
+        mov ecx, 0xA330B0
+        jmp ecx
+    }
+}
+
 namespace NiHooks
 {
     void WriteHooks()
     {
         // Spider hands fix
-        WriteRelJump(0xA40C10, &NiBlendTransformInterpolator::BlendValuesFixFloatingPointError);
+        WriteRelCall(0xA41160, &NiBlendTransformInterpolator::BlendValuesFixFloatingPointError);
+        WriteRelJump(0xA330AB, &PoseSequenceIDTagHook);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeights);

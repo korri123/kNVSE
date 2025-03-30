@@ -99,7 +99,6 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		{
 			auto* tmpBlendSeq = manager->CreateTempBlendSequence(pkSequence, nullptr);
 			SetTempBlendSequenceName(tmpBlendSeq, pkSequence);
-			tmpBlendSeq->PopulateIDTags(pkSequence);
 			tmpBlendSeq->RemoveInterpolator(sBip01);
 			tmpBlendSeq->Activate(0, true, tmpBlendSeq->m_fSeqWeight, 0.0f, nullptr, false);
 			tmpBlendSeq->Deactivate(fDuration, false);

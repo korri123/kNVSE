@@ -1748,7 +1748,6 @@ public:
 	void RemoveInterpolator(const NiFixedString& name) const;
 	void RemoveInterpolator(unsigned int index) const;
 	float GetEaseSpinner() const;
-	bool PopulateIDTags(NiControllerSequence* source);
 
 	
 	static NiControllerSequence* Create()
