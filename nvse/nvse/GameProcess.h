@@ -524,7 +524,7 @@ public:
 	virtual void	Unk_106();
 	virtual void	Unk_107();
 	virtual void	Unk_108();
-	virtual void	Unk_109();
+	virtual void	SetNthAnimSequenceWeight(int n, BSAnimGroupSequence* apSequence);
 	virtual void	Unk_10A();
 	virtual void	Unk_10B();
 	virtual void	Unk_10C();

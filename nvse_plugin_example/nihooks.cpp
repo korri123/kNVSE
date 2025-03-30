@@ -1486,57 +1486,6 @@ bool IsTempBlendSequence(const NiControllerSequence* sequence)
     return strncmp("__", sequence->m_kName.CStr(), 2) == 0;
 }
 
-void ClearTempBlendSequence(NiControllerSequence* sequence)
-{
-    if (auto it = g_tempBlendSequences.find(sequence->m_pkOwner); it != g_tempBlendSequences.end())
-    {
-        int index = 0;
-        auto& tempBlendSeqs = it->second;
-        for (auto* tempBlendSeq : tempBlendSeqs)
-        {
-            if (tempBlendSeq == sequence)
-            {
-                tempBlendSeqs[index] = nullptr;
-            }
-            ++index;
-        }
-    }
-}
-
-void __fastcall NiControllerSequence_ApplyDestFrameHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
-{
-    if (sequence->m_eState != kAnimState_Inactive && sequence->m_fDestFrame != -FLT_MAX)
-    {
-        if (auto iter = g_appliedDestFrameAnims.find(sequence); iter != g_appliedDestFrameAnims.end())
-        {
-            g_appliedDestFrameAnims.erase(iter);
-            if (sequence->m_fOffset == -FLT_MAX || sequence->m_eState == kAnimState_TransDest)
-            {
-                sequence->m_fOffset = -fTime + sequence->m_fDestFrame;
-            }
-
-            if (sequence->m_fStartTime == -FLT_MAX)
-            {
-                const float easeTime = sequence->m_fEndTime;
-                sequence->m_fEndTime = fTime + easeTime - sequence->m_fDestFrame;
-                sequence->m_fStartTime = fTime - sequence->m_fDestFrame;
-            }
-            sequence->m_fDestFrame = -FLT_MAX; // end my suffering
-#if _DEBUG
-            float fEaseSpinnerIn = (fTime - sequence->m_fStartTime) / (sequence->m_fEndTime - sequence->m_fStartTime);
-            float fEaseSpinnerOut = (sequence->m_fEndTime - fTime) / (sequence->m_fEndTime - sequence->m_fStartTime);
-            int i = 0;
-#endif
-        }
-		
-    }
-    ThisStdCall(0xA34BA0, sequence, fTime, bUpdateInterpolators);
-    if (IsTempBlendSequence(sequence) && sequence->m_eState == kAnimState_Inactive)
-    {
-        ClearTempBlendSequence(sequence);
-    }
-}
-
 std::string GetLastSubstringAfterSlash(const std::string& str)
 {
     const auto pos = str.find_last_of('\\');
@@ -1545,24 +1494,8 @@ std::string GetLastSubstringAfterSlash(const std::string& str)
     return str.substr(pos + 1);
 }
 
-std::unordered_map<NiControllerManager*, NiControllerSequence*> g_lastTempBlendSequence;
 
 #define EXPERIMENTAL_HOOKS 0
-
-NiControllerSequence* __fastcall TempBlendDebugHook(NiControllerManager* manager, void*, NiControllerSequence* source, NiControllerSequence* timeSync)
-{
-    auto* tempBlendSeq = ThisStdCall<NiControllerSequence*>(0xA2F170, manager, source, timeSync);
-    const auto& str = "__TMP_BLEND_" + GetLastSubstringAfterSlash(source->m_kName.CStr());
-    tempBlendSeq->m_kName = NiGlobalStringTable::AddString(str.c_str());
-    g_lastTempBlendSequence[manager] = tempBlendSeq;
-    return tempBlendSeq;
-}
-
-struct SequenceExtraData
-{
-    float fLastStartTime = -NI_INFINITY;
-};
-
 
 void __fastcall NiControllerSequenceUpdateHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
 {
@@ -1622,9 +1555,6 @@ void ApplyNiHooks()
         WriteRelCall(0xA350C5, NiControllerSequence_DetachInterpolatorsHook);
         //WriteRelJump(0xA2E280, CrossFadeHook);
     }
-
-    WriteRelCall(0xA2E251, NiControllerSequence_ApplyDestFrameHook);
-
 
 #if _DEBUG
     SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);

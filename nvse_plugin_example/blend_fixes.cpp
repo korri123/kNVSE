@@ -129,78 +129,36 @@ std::vector<BSAnimGroupSequence*> GetActiveSequencesBySequenceId(AnimData* animD
 	});
 }
 
-std::pair<BSAnimGroupSequence*, BSAnimGroupSequence*> GetUpDownSequences(AnimData* animData, const AnimGroupID baseGroupID)
-{
-	auto* upAnim = GetAnimByGroupID(animData, static_cast<AnimGroupID>(baseGroupID + 1));
-	auto* downAnim = GetAnimByGroupID(animData, static_cast<AnimGroupID>(baseGroupID + 2));
-	return { upAnim, downAnim };
-}
-
-void DeactivateUpDownVariants(AnimData* animData, const AnimGroupID baseGroupID)
-{
-	if (HasAnimGroupUpDownVariants(baseGroupID))
-	{
-		auto* upAnim = GetActiveSequenceByGroupID(animData, static_cast<AnimGroupID>(baseGroupID + 1));
-		auto* downAnim = GetActiveSequenceByGroupID(animData, static_cast<AnimGroupID>(baseGroupID + 2));
-		if (upAnim)
-			GameFuncs::DeactivateSequence(upAnim->m_pkOwner, upAnim, 0.0f);
-		if (downAnim)
-			GameFuncs::DeactivateSequence(downAnim->m_pkOwner, downAnim, 0.0f);
-	}
-}
-
 float GetIniBlend()
 {
 	return GetIniFloat(0x11C56FC);
 }
 
-std::unordered_map<NiControllerManager*, std::array<NiControllerSequence*, 8>> g_tempBlendSequences;
-
-void ManageTempBlendSequence(BSAnimGroupSequence* destAnim)
+void FixAimPriorities(AnimData* animData)
 {
-	const auto sequenceType = destAnim->animGroup->GetGroupInfo()->sequenceType;
-	auto* manager = destAnim->m_pkOwner;
-	auto* lastTempBlendSequence = g_lastTempBlendSequence[manager];
-	auto& tempBlendSequenceArray = g_tempBlendSequences[manager];
-	auto* currentSequence = tempBlendSequenceArray[sequenceType];
-	if (currentSequence && currentSequence != lastTempBlendSequence && currentSequence->m_eState != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(manager, currentSequence, 0.0f);
-	tempBlendSequenceArray[sequenceType] = lastTempBlendSequence;
+	const auto* aimAnim = GetAnimByGroupID(animData, kAnimGroup_Aim);
+	const auto* aimAnimUp = GetAnimByGroupID(animData, kAnimGroup_AimUp);
+	const auto* aimAnimDown = GetAnimByGroupID(animData, kAnimGroup_AimDown);
+	const auto* aimAnimIS = GetAnimByGroupID(animData, kAnimGroup_AimIS);
+	if (!aimAnim || !aimAnimIS || !aimAnimUp || !aimAnimDown)
+		return;
+	if (aimAnim->m_uiArraySize != aimAnimUp->m_uiArraySize || aimAnim->m_uiArraySize != aimAnimDown->m_uiArraySize)
+		return;
+	for (unsigned int i = 0; i < aimAnim->m_uiArraySize; ++i)
+	{
+		const auto& idTag = aimAnim->m_pkIDTagArray[i];
+		auto& aimBlock = aimAnim->m_pkInterpArray[i];
+		auto& aimBlockUp = aimAnimUp->m_pkInterpArray[i];
+		auto& aimBlockDown = aimAnimDown->m_pkInterpArray[i];
+		if (const auto* aimISBlock = aimAnimIS->GetControlledBlock(idTag.m_kAVObjectName))
+		{
+			const char iNewPriority = aimISBlock->m_ucPriority != 0 ? static_cast<char>(aimISBlock->m_ucPriority - 1) : 0;
+			aimBlock.m_ucPriority = iNewPriority;
+			aimBlockUp.m_ucPriority = iNewPriority;
+			aimBlockDown.m_ucPriority = iNewPriority;
+		}
+	}
 }
-
-float CalculateTransitionBlendTime(AnimData* animData, BSAnimGroupSequence* src, BSAnimGroupSequence* dst)
-{
-	const auto blend = GetIniBlend();
-	const auto* blockName = "Bip01 R Hand";
-	auto* sceneRoot = animData->nSceneRoot;
-	auto* weaponNode = sceneRoot->GetBlock(blockName);
-	if (!weaponNode)
-		return blend;
-	const auto& weaponPoint = weaponNode->m_kLocal.m_Translate;
-	auto* srcInterpItem = src->GetControlledBlock(blockName);
-	auto* destInterpItem = dst->GetControlledBlock(blockName);
-	if (!srcInterpItem || !destInterpItem)
-		return blend;
-	auto srcInterp = srcInterpItem->m_spInterpolator;
-	auto destInterp = destInterpItem->m_spInterpolator;
-	if (!srcInterp || !destInterp)
-		return blend;
-	NiQuatTransform destTransform;
-	NiQuatTransform srcTransform;
-	if (!srcInterp->Update(0.0f, sceneRoot, srcTransform) || !destInterp->Update(0.0f, sceneRoot, destTransform))
-		return blend;
-	const auto& srcPoint = srcTransform.m_kTranslate;
-	const auto& dstPoint = destTransform.m_kTranslate;
-
-	// calculate distance
-	const auto ab = dstPoint - srcPoint;
-	const auto ac = weaponPoint - srcPoint;
-	const auto lerpValue = ab.Dot(ac) / ab.SqrLength();
-	const auto result = blend * lerpValue;
-	return blend - result;
-}
-
-#define USE_BLEND_FROM_POSE 1
 
 BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim)
 {
@@ -222,12 +180,14 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	if (!srcAnim || !srcAnim->animGroup || srcAnim == destAnim)
 		return RESUME;
 
+	if (animData != g_thePlayer->firstPersonAnimData)
+		FixAimPriorities(animData);
 
 	if (animData != g_thePlayer->firstPersonAnimData && sequenceId != kSequence_Weapon)
 	{
 		// fix variant bs
 		const auto* baseProcess = animData->actor->baseProcess;
-		const auto* currentAnim = baseProcess->weaponSequence[sequenceId - kSequence_Weapon];
+		auto* currentAnim = baseProcess->weaponSequence[sequenceId - kSequence_Weapon];
 		if (currentAnim)
 			destAnim->m_fSeqWeight = currentAnim->m_fSeqWeight;
 	}
@@ -255,6 +215,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	return SKIP;
 }
 
+#if 0
 void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGroupID targetGroupId)
 {
 	auto* currentSequence = GetAnimByGroupID(animData, currentGroupId);
@@ -295,12 +256,14 @@ void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGrou
 		}
 	}
 }
+#endif
 
 float GetKeyTime(BSAnimGroupSequence* anim, SequenceState1 keyTime)
 {
 	return anim->animGroup->keyTimes[keyTime];
 }
 
+#if 0
 void BlendFixes::ApplyAttackISToAttackFix()
 {
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
@@ -331,6 +294,7 @@ void BlendFixes::ApplyAttackISToAttackFix()
 	GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, currentAnimAction, attackSequence);
 }
 
+
 void BlendFixes::ApplyAttackToAttackISFix()
 {
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
@@ -360,7 +324,7 @@ void BlendFixes::ApplyAttackToAttackISFix()
 	const auto currentAnimAction = static_cast<Decoding::AnimAction>(g_thePlayer->GetHighProcess()->GetCurrentAnimAction());
 	GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, currentAnimAction, attackISSequence);
 }
-
+#endif
 void BlendFixes::ApplyAimBlendHooks()
 {
 	// JMP 0x4996E7 -> 0x499709
@@ -466,4 +430,22 @@ void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSeque
 		return;
 	// set the time of the anim to end
 	anim->m_fOffset = anim->m_fEndKeyTime - animData->timePassed;
+}
+
+void BlendFixes::ApplyMissingUpDownAnims(AnimData* animData)
+{
+	if (animData == g_thePlayer->firstPersonAnimData)
+		return;
+	auto* baseProcess = animData->actor->baseProcess;
+	if (!baseProcess)
+		return;
+	const auto* currentAnim = baseProcess->weaponSequence[0];
+	if (!currentAnim)
+	{
+		// another bethesda retard moment
+		// you need to aim before these are set
+		baseProcess->weaponSequence[0] = GetAnimByGroupID(animData, kAnimGroup_Aim);
+		baseProcess->weaponSequence[1] = GetAnimByGroupID(animData, kAnimGroup_AimUp);
+		baseProcess->weaponSequence[2] = GetAnimByGroupID(animData, kAnimGroup_AimDown);
+	}
 }

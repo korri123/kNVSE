@@ -18,6 +18,6 @@ namespace BlendFixes
 	void FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimGroupSequence* pkDest, BSAnimGroupSequence* pkIdle);
 	void ApplyHooks();
 	void FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim);
+	void ApplyMissingUpDownAnims(AnimData* animData);
 }
 
-extern std::unordered_map<NiControllerManager*, std::array<NiControllerSequence*, 8>> g_tempBlendSequences;

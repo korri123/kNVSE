@@ -4,7 +4,6 @@
 
 #include "blend_fixes.h"
 #include "hooks.h"
-#include "NiObjects.h"
 
 void SetAnimDataState(AnimData* animData, BSAnimGroupSequence* pkSequence)
 {
@@ -14,22 +13,32 @@ void SetAnimDataState(AnimData* animData, BSAnimGroupSequence* pkSequence)
 	animData->sequenceState1[sequenceId] = 0;
 }
 
-BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence)
+void FixJumpLoopMovementSpeed(AnimData* animData, BSAnimGroupSequence* pkSequence)
 {
-
 	if (pkSequence->animGroup->GetBaseGroupID() == kAnimGroup_JumpLoop && animData != g_thePlayer->firstPersonAnimData)
 	{
 		auto* forwardAnim = GetAnimByGroupID(animData, kAnimGroup_Forward);
 		if (forwardAnim && forwardAnim->animGroup)
 			animData->movementSpeedMult = BSGlobals::walkSpeed / forwardAnim->animGroup->moveVector.Length() * animData->actor->GetWalkSpeedMult();
 	}
+}
+
+void SetTempBlendSequenceName(NiControllerSequence* kTempBlendSeq, NiControllerSequence* pkBlendSequence)
+{
+	const sv::stack_string<0x100> tempBlendSeqName("__ActivateTmpBlend__%s", sv::get_file_name(pkBlendSequence->m_kName.CStr()).data());
+	kTempBlendSeq->m_kName = tempBlendSeqName.c_str();
+}
+
+BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence)
+{
+
+	FixJumpLoopMovementSpeed(animData, pkSequence);
 	
 	auto* manager = animData->controllerManager;
 	const float fDuration = pkSequence->GetEaseInTime();
-	const static auto sTempBlendSequenceName = NiFixedString("__TempBlendSequence__");
 	const auto existingTempBlendSeq = manager->FindSequence([](const NiControllerSequence* seq)
 	{
-		return seq->m_kName == sTempBlendSequenceName;
+		return sv::starts_with_ci(seq->m_kName.CStr(), "__");
 	});
 	auto* currentMoveAnim = animData->controllerManager->FindSequence([](const NiControllerSequence* seq)
 	{
@@ -40,6 +49,9 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 			return false;
 		return animGroup->GetSequenceType() == kSequence_Movement;
 	});
+
+	if (currentMoveAnim && existingTempBlendSeq)
+		existingTempBlendSeq->Deactivate(0.0f, false);
 		
 	if (!currentMoveAnim)
 		currentMoveAnim = existingTempBlendSeq;
@@ -57,6 +69,8 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	{
 		// prevent snapping for nodes that weren't previously being animated
 		auto* tempBlendSeq = manager->CreateTempBlendSequence(pkSequence, nullptr);
+		const sv::stack_string<0x100> tempBlendSeqName("__InactiveInterpsSequence__%s", sv::get_file_name(pkSequence->m_kName.CStr()).data());
+		tempBlendSeq->m_kName = tempBlendSeqName.c_str();
 		for (auto& block : tempBlendSeq->GetControlledBlocks())
 		{
 			if (!block.m_pkBlendInterp)
@@ -84,6 +98,7 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		if (currentMoveAnim)
 		{
 			auto* tmpBlendSeq = manager->CreateTempBlendSequence(pkSequence, nullptr);
+			SetTempBlendSequenceName(tmpBlendSeq, pkSequence);
 			tmpBlendSeq->PopulateIDTags(pkSequence);
 			tmpBlendSeq->RemoveInterpolator(sBip01);
 			tmpBlendSeq->Activate(0, true, tmpBlendSeq->m_fSeqWeight, 0.0f, nullptr, false);
@@ -103,51 +118,3 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	return pkSequence;
 }
 
-NiControllerSequence* MovementBlendFixes::CreateExtraIdleSequence(AnimData* animData, BSAnimGroupSequence* pkIdleSequence)
-{
-	auto* bip01 = animData->nBip01;
-	auto* interpIdleSequence = NiControllerSequence::Create("InactiveInterpIdleSequence", 80, 12);
-
-	auto processNode = [&](auto&& self, NiAVObject* node) -> void
-	{
-		if (!node)
-			return;
-
-		if (pkIdleSequence->GetControlledBlock(node->m_pcName))
-			return;
-        
-		NiQuatTransform kTransform;
-		kTransform.m_kRotate.FromRotation(node->GetRotate());
-		kTransform.m_kTranslate = node->GetTranslate();
-		kTransform.m_fScale = node->GetScale();
-		auto* transform = NiTransformInterpolator::Create(kTransform);
-		const static auto sTransformController = NiFixedString("NiTransformController");
-		auto idTag = NiControllerSequence::IDTag {
-			.m_kAVObjectName = node->m_pcName,
-			.m_kPropertyType = nullptr,
-			.m_kCtlrType = sTransformController,
-			.m_kCtlrID = nullptr,
-			.m_kInterpolatorID = nullptr
-		};
-		interpIdleSequence->AddInterpolator(transform, idTag, 0);
-
-		auto* niNode = node->GetAsNiNode();
-		if (niNode)
-		{
-			for (NiAVObject* child : niNode->m_children)
-			{
-				self(self, child);
-			}
-		}
-	};
-
-	for (NiAVObject* child : bip01->m_children)
-	{
-		processNode(processNode, child);
-	}
-
-	animData->controllerManager->AddSequence(interpIdleSequence, nullptr, false);
-	interpIdleSequence->Activate(0, true, 1.0f, 0.0f, nullptr, false);
-	
-	return interpIdleSequence;
-}

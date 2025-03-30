@@ -55,6 +55,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (animData && animData->actor)
 	{
 		std::optional<AnimationResult> animResult;
+		BlendFixes::ApplyMissingUpDownAnims(animData);
 
 		if (auto* queuedAnim = GetQueuedAnim(animData, animGroupId))
 		{
@@ -106,7 +107,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	BSAnimGroupSequence* result;
 	
-	if (destAnim->animGroup && destAnim->animGroup->IsBaseMovement())
+	if (destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
 	else
 		result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
@@ -526,54 +527,46 @@ namespace AllowAttackKey
 	
 }
 
-void ApplyFixHolsterUnholsterLocomotionHooks()
+
+namespace HolsterUnholsterLocomotionFixes
 {
-	
-#if 0
-	// AnimData::GetNthSequenceGroupID(animData, sequenceType_1);
-	// Fix issue where new movement anim is played during equip or unequip
-	WriteRelCall(0x897237, INLINE_HOOK(UInt16, __fastcall, AnimData* animData, void*, eAnimSequence sequenceType)
+	void ApplyHooks()
 	{
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr();
-		auto* _ebp = GetParentBasePtr(addrOfRetn);
-		const auto groupId = animData->groupIDs[sequenceType];
-		const auto nextGroupId = *reinterpret_cast<UInt16*>(_ebp - 0x24);
-		if (sequenceType == kSequence_Movement && groupId != nextGroupId && (groupId & 0xFF) == (nextGroupId & 0xFF))
+	
+		// AnimData::GetNthSequenceGroupID(animData, sequenceType_1);
+		// Fix issue where new movement anim is played during equip or unequip
+		WriteRelCall(0x897237, INLINE_HOOK(UInt16, __fastcall, AnimData* animData, void*, eAnimSequence sequenceType)
 		{
-			if (auto* weaponAnim = animData->animSequence[kSequence_Weapon]; weaponAnim && weaponAnim->animGroup)
+			auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+			auto* _ebp = GetParentBasePtr(addrOfRetn);
+			const auto groupId = animData->groupIDs[sequenceType];
+			const auto nextGroupId = *reinterpret_cast<UInt16*>(_ebp - 0x24);
+			if (sequenceType == kSequence_Movement && groupId != nextGroupId && (groupId & 0xFF) == (nextGroupId & 0xFF))
 			{
-				const auto baseWeaponGroupId = weaponAnim->animGroup->GetBaseGroupID();
-				if (baseWeaponGroupId == kAnimGroup_Equip || baseWeaponGroupId == kAnimGroup_Unequip)
+				if (auto* weaponAnim = animData->animSequence[kSequence_Weapon]; weaponAnim && weaponAnim->animGroup)
 				{
-					*addrOfRetn = 0x897682;
-					return 0;
+					const auto baseWeaponGroupId = weaponAnim->animGroup->GetBaseGroupID();
+					if (baseWeaponGroupId == kAnimGroup_Equip || baseWeaponGroupId == kAnimGroup_Unequip)
+					{
+						*addrOfRetn = 0x897682;
+						return 0;
+					}
 				}
 			}
-		}
-		return groupId;
-	}));
+			return groupId;
+		}));
+	}
 
-	// BSAnimGroupSequence::GetState
-	// Also need to hook here to prevent game from trying to end movement sequence during equip/unequip
-	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
+	bool IsTryingToEndEquip(UInt32* addrOfRetn)
 	{
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		// need to check here to prevent game from trying to end movement sequence during equip/unequip
+
 		auto* _ebp = GetParentBasePtr(addrOfRetn);
 		const auto nextGroupId = *reinterpret_cast<AnimGroupID*>(_ebp - 0x40);
-		if (nextGroupId == kAnimGroup_Equip || nextGroupId == kAnimGroup_Unequip)
-		{
-			*addrOfRetn = 0x897760;
-			return static_cast<NiControllerSequence::AnimState>(-1);
-		}
-		return anim->m_eState;
-	}));
-
-#if 0
-	
-#endif
-#endif
-
+		return nextGroupId == kAnimGroup_Equip || nextGroupId == kAnimGroup_Unequip;
+	}
 }
+
 
 void ApplyFixLoopingReloadStartHooks()
 {
@@ -651,7 +644,8 @@ void ApplyHooks()
 
 	// WriteRelJump(0x4951D7, FixSpineBlendBug);
 
-
+	HolsterUnholsterLocomotionFixes::ApplyHooks();
+	
 	if (conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
 
@@ -1075,89 +1069,15 @@ void WriteDelayedHooks()
 		}
 		ThisStdCall(0x496080, animData, sequenceId, fEaseOut);
 	}));
-
-#if 0
-	WriteRelCall(0x4953DF, INLINE_HOOK(bool, __fastcall, NiControllerManager *manager,
-	                                   void*,
-	                                   BSAnimGroupSequence *pkSequence,
-	                                   float fDestFrame,
-	                                   float fDuration,
-	                                   int iPriority,
-	                                   NiControllerSequence *pkSequenceToSynchronize)
-	{
-		const auto sequenceId = pkSequence->animGroup->GetSequenceType();
-		// const auto baseGroupId = pkSequence->animGroup->GetBaseGroupID();
-		if (sequenceId == kSequence_Movement)
-		{
-#if 1
-			const auto hasInactiveBlocks = std::ranges::any_of(pkSequence->GetControlledBlocks(), [](const auto& block) {
-				return block.m_pkBlendInterp && block.m_pkBlendInterp->m_ucInterpCount == 0;
-			});
-			const static auto sTempBlendSequenceName = NiFixedString("__TempBlendSequence__");
-			const auto hasTempBlendSequence = manager->FindSequence([](const NiControllerSequence* seq)
-			{
-				return seq->m_kName == sTempBlendSequenceName;
-			});
-			if (hasInactiveBlocks && !hasTempBlendSequence)
-			{
-				// prevent snapping for nodes that weren't previously being animated
-				auto* tempBlendSeq = manager->CreateTempBlendSequence(pkSequence, pkSequenceToSynchronize);
-				for (auto& block : tempBlendSeq->GetControlledBlocks())
-				{
-					if (!block.m_pkBlendInterp)
-						continue;
-					if (block.m_pkBlendInterp->m_ucInterpCount != 0)
-						tempBlendSeq->RemoveInterpolator(&block - tempBlendSeq->m_pkInterpArray);
-				}
-				const static auto sBip01 = NiFixedString("Bip01");
-				if (const auto* bip01 = pkSequence->GetControlledBlock(sBip01))
-				{
-					tempBlendSeq->RemoveInterpolator(bip01 - pkSequence->m_pkInterpArray);
-				}
-				tempBlendSeq->Deactivate(0.0f, false);
-				tempBlendSeq->Activate(iPriority, true, pkSequence->m_fSeqWeight, 0.0f, pkSequenceToSynchronize, false);
-				tempBlendSeq->Deactivate(fDuration, false);
-			}
-#endif
-			const bool startOver = pkSequence->m_eState == NiControllerSequence::INACTIVE;
-			const auto result = pkSequence->Activate(iPriority, startOver, pkSequence->m_fSeqWeight, fDuration, pkSequenceToSynchronize, false);
-
-			auto activeSequences = manager->m_kActiveSequences.ToSpan();
-			auto lastMoveSequence = std::ranges::find_if(activeSequences, [&](NiControllerSequence* sequence)
-			{
-				if (NOT_TYPE(sequence, BSAnimGroupSequence))
-					return false;
-				TESAnimGroup* animGroup = static_cast<BSAnimGroupSequence*>(sequence)->animGroup;
-				if (!animGroup)
-					return false;
-				return animGroup->GetSequenceType() == kSequence_Movement && sequence->m_eState == NiControllerSequence::EASEOUT;
-			});
-			if (lastMoveSequence != activeSequences.end())
-			{
-				auto idleSequence = std::ranges::find_if(activeSequences, [&](NiControllerSequence* sequence)
-				{
-					if (NOT_TYPE(sequence, BSAnimGroupSequence))
-						return false;
-					TESAnimGroup* animGroup = static_cast<BSAnimGroupSequence*>(sequence)->animGroup;
-					if (!animGroup)
-						return false;
-					return animGroup->GetSequenceType() == kSequence_Idle && sequence->m_eState == NiControllerSequence::ANIMATING;
-				});
-				if (idleSequence != activeSequences.end())
-				{
-					FixConflictingPriorities(*lastMoveSequence, pkSequence, *idleSequence);
-				}
-			}
-			
-			return result;
-		}
-		return ThisStdCall<bool>(0xA2F800, manager, pkSequence, fDestFrame, fDuration, iPriority, pkSequenceToSynchronize);
-	}));
-#endif
 	//SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
 
 	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
 	{
+		// INACTIVE -> do not end movement
+		// ANIMATING -> end movement
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		if (HolsterUnholsterLocomotionFixes::IsTryingToEndEquip(addrOfRetn))
+			return NiControllerSequence::INACTIVE;
 		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
 			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
 		// stop game from not ending move anims immediately
@@ -1168,17 +1088,18 @@ void WriteDelayedHooks()
 	// NiControllerManager::DeactivateSequence
 	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
 	{
-		if (pkSequence->animGroup->IsBaseMovement() && pkSequence->m_eState == NiControllerSequence::EASEIN)
+		if (pkSequence->animGroup->GetSequenceType() == kSequence_Movement && pkSequence->m_eState == NiControllerSequence::EASEIN)
 		{
-			const static auto sTempBlendSequenceName = NiFixedString("__TempBlendSequence__");
 			const auto existingTempBlendSeq = manager->FindSequence([](const NiControllerSequence* seq)
 			{
-				return seq->m_kName == sTempBlendSequenceName;
+				return sv::starts_with_ci(seq->m_kName.CStr(), "__");
 			});
 			if (existingTempBlendSeq)
 			{
 				existingTempBlendSeq->Deactivate(0.0f, false);
 				auto* tmpBlendSeq = manager->CreateTempBlendSequence(pkSequence, nullptr);
+				const sv::stack_string<0x100> tempBlendSeqName("__DeactivateTmpBlend__%s", sv::get_file_name(pkSequence->m_kName.CStr()).data());
+				tmpBlendSeq->m_kName = tempBlendSeqName.c_str();
 				tmpBlendSeq->PopulateIDTags(pkSequence);
 				tmpBlendSeq->RemoveInterpolator("Bip01");
 				tmpBlendSeq->Activate(0, true, tmpBlendSeq->m_fSeqWeight, 0.0f, nullptr, false);
@@ -1188,6 +1109,15 @@ void WriteDelayedHooks()
 			return pkSequence->DeactivateNoReset(fEaseOut);
 		}
 		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
+	}));
+
+	// NiControllerManager::CreateTempBlendSequence
+	WriteRelCall(0xA2F817, INLINE_HOOK(NiControllerSequence*, __fastcall, NiControllerManager* pkManager, void*, NiControllerSequence* pkSequence, NiControllerSequence* pkTimeSyncSeq)
+	{
+		auto* result = ThisStdCall<NiControllerSequence*>(0xA2F170, pkManager, pkSequence, pkTimeSyncSeq);
+		const static auto sTempBlendSequenceName = NiFixedString("__TempBlendSequence__");
+		result->m_kName = sTempBlendSequenceName;
+		return result;
 	}));
 
 	// TurnLeft/Right hook
