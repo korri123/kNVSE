@@ -243,11 +243,11 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 		return SKIP;
 	}
 
-	srcAnim->DeactivateNoReset(blendTime, false);
+	srcAnim->DeactivateNoReset(blendTime);
 
 	if (destAnim->m_eState == NiControllerSequence::EASEOUT)
 	{
-		destAnim->ActivateNoReset(blendTime, false);
+		destAnim->ActivateNoReset(blendTime);
 		return SKIP;
 	}
 

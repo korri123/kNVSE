@@ -963,59 +963,40 @@ bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeig
 #endif
 }
 
-bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition)
+bool NiControllerSequence::ActivateNoReset(float fEaseInTime)
 {
-    if (m_eState == ANIMATING || m_eState == EASEIN)
+    if (m_eState != EASEOUT || fEaseInTime == 0.0f)
     {
+#if _DEBUG
+        DebugBreak();
+#endif
         return false;
     }
     
-    if (fEaseInTime > 0.0f)
+    const auto fTime = m_fLastTime - m_fOffset;
+    const auto fCurrentEaseTime = m_fEndTime - m_fStartTime;
+    const auto fEaseOutProgress = (fTime - m_fStartTime) / fCurrentEaseTime;
+            
+    // Calculate current animation level (1.0 at start of EASEOUT, 0.0 at end)
+    const float fCurrentAnimLevel = 1.0f - fEaseOutProgress;
+            
+    // Only apply special handling if we're partially through the ease-out
+    if (fCurrentAnimLevel > 0.0f && fCurrentAnimLevel < 1.0f)
     {
-        if (m_eState == EASEOUT && !bTransition)
-        {
-            const auto fTime = m_fLastScaledTime - m_fOffset;
-            const auto fCurrentEaseTime = m_fEndTime - m_fStartTime;
-            const auto fEaseOutProgress = (fTime - m_fStartTime) / fCurrentEaseTime;
-            
-            // Calculate current animation level (1.0 at start of EASEOUT, 0.0 at end)
-            const float fCurrentAnimLevel = 1.0f - fEaseOutProgress;
-            
-            // Only apply special handling if we're partially through the ease-out
-            if (fCurrentAnimLevel > 0.0f && fCurrentAnimLevel < 1.0f)
-            {
-                // Set timing for EASEIN to start from the current animation level
-                // Using fEaseInTime instead of fCurrentEaseTime
-                m_fEndTime = fTime + fEaseInTime * (1.0f - fCurrentAnimLevel);
-                m_fStartTime = fTime - fEaseInTime * fCurrentAnimLevel;
-            }
-            else
-            {
-                m_fStartTime = -NI_INFINITY;
-                m_fEndTime = fEaseInTime;
-            }
-        }
-        else
-        {
-            m_fStartTime = -NI_INFINITY;
-            m_fEndTime = fEaseInTime;
-        }
-        
-        if (bTransition)
-        {
-            m_eState = TRANSDEST;
-        }
-        else
-        {
-            m_eState = EASEIN;
-        }
+        // Set timing for EASEIN to start from the current animation level
+        // Using fEaseInTime instead of fCurrentEaseTime
+        m_fEndTime = fTime + fEaseInTime * (1.0f - fCurrentAnimLevel);
+        m_fStartTime = fTime - fEaseInTime * fCurrentAnimLevel;
     }
     else
     {
-        m_eState = ANIMATING;
-        m_fStartTime = 0.0f;
+#if _DEBUG
+        DebugBreak();
+#endif
+        return false;
     }
-
+        
+    m_eState = EASEIN;
     m_fLastTime = -NI_INFINITY;
     return true;
 }
@@ -1405,63 +1386,39 @@ bool NiControllerSequence::Deactivate_(float fEaseOutTime, bool bTransition)
     return true;
 }
 
-bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime, bool bTransition)
+bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime)
 {
-    if (m_eState == INACTIVE)
+    if (m_eState != EASEIN || fEaseOutTime == 0.0f)
     {
+#if _DEBUG
+        DebugBreak();
+#endif
         return false;
     }
-    if (m_eState == TRANSDEST)
-        DebugBreak();
     
-    if (fEaseOutTime > 0.0f)
+    // Store the current animation state for a smooth transition
+    const float fCurrentTime = m_fLastTime - m_fOffset;
+        
+    // Calculate current ease level if we were easing in
+    const float fCurrentEaseLevel = (fCurrentTime - m_fStartTime) / (m_fEndTime - m_fStartTime);
+    // Adjust timing to create a smooth transition from EASEIN to EASEOUT
+    if (fCurrentEaseLevel > 0.0f && fCurrentEaseLevel < 1.0f)
     {
-        // Store the current animation state for a smooth transition
-        float fCurrentTime = m_fLastScaledTime - m_fOffset;
-        float fCurrentEaseLevel = 0.0f;
-        bool bWasEasing = (m_eState == EASEIN);
-        
-        // Calculate current ease level if we were easing in
-        if (bWasEasing)
-        {
-            fCurrentEaseLevel = (fCurrentTime - m_fStartTime) / (m_fEndTime - m_fStartTime);
-        }
-        
-        if (bTransition)
-        {
-            m_eState = TRANSSOURCE;
-        }
-        else
-        {
-            m_eState = EASEOUT;
-        }
-        
-        m_fStartTime = -NI_INFINITY;
-        m_fEndTime = fEaseOutTime;
-        
-        // Adjust timing to create a smooth transition from EASEIN to EASEOUT
-        if (bWasEasing && !bTransition && fCurrentEaseLevel > 0.0f && fCurrentEaseLevel < 1.0f)
-        {
-            // Set timing so that EASEOUT starts from the correct partially-eased level
-            // This creates a virtual start time that produces the correct ease spinner value
-            m_fEndTime = fCurrentTime + (fEaseOutTime * fCurrentEaseLevel);
-            m_fStartTime = fCurrentTime - (fEaseOutTime * (1.0f - fCurrentEaseLevel));
-        }
+        // Set timing so that EASEOUT starts from the correct partially-eased level
+        // This creates a virtual start time that produces the correct ease spinner value
+        m_fEndTime = fCurrentTime + (fEaseOutTime * fCurrentEaseLevel);
+        m_fStartTime = fCurrentTime - (fEaseOutTime * (1.0f - fCurrentEaseLevel));
+        m_fLastTime = -NI_INFINITY;
     }
     else
     {
-        // Store the new offset.
-        if (m_fLastTime != -NI_INFINITY)
-        {
-            m_fOffset += (m_fWeightedLastTime / m_fFrequency) - m_fLastTime;
-        }
-
-        m_eState = INACTIVE;
-        m_pkPartnerSequence = NULL;
-        m_fDestFrame = -NI_INFINITY;
-
-        DetachInterpolators();
+#if _DEBUG
+        DebugBreak();
+#endif
+        return false;
     }
+    
+    m_eState = EASEOUT;
     return true;
 }
 

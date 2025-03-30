@@ -923,6 +923,12 @@ namespace INISettings
 	inline const auto UseRagdollAnimFootIK = reinterpret_cast<bool(__cdecl *)()>(0x495580);
 }
 
+namespace BSGlobals
+{
+	inline const float& walkSpeed = *reinterpret_cast<float*>(0x11A3B3C);
+	inline const float& turnSpeed = *reinterpret_cast<float*>(0x11A3B40);
+}
+
 struct TES
 {
 	bool IsRunningCellTests() const

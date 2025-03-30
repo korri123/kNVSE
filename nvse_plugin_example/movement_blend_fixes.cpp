@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "blend_fixes.h"
+#include "hooks.h"
 #include "NiObjects.h"
 
 void SetAnimDataState(AnimData* animData, BSAnimGroupSequence* pkSequence)
@@ -15,6 +16,14 @@ void SetAnimDataState(AnimData* animData, BSAnimGroupSequence* pkSequence)
 
 BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence)
 {
+
+	if (pkSequence->animGroup->GetBaseGroupID() == kAnimGroup_JumpLoop && animData != g_thePlayer->firstPersonAnimData)
+	{
+		auto* forwardAnim = GetAnimByGroupID(animData, kAnimGroup_Forward);
+		if (forwardAnim && forwardAnim->animGroup)
+			animData->movementSpeedMult = BSGlobals::walkSpeed / forwardAnim->animGroup->moveVector.Length() * animData->actor->GetWalkSpeedMult();
+	}
+	
 	auto* manager = animData->controllerManager;
 	const float fDuration = pkSequence->GetEaseInTime();
 	const static auto sTempBlendSequenceName = NiFixedString("__TempBlendSequence__");
@@ -67,7 +76,7 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	
 	if (pkSequence->m_eState == NiControllerSequence::EASEOUT && !currentMoveAnim)
 	{
-		if (!pkSequence->ActivateNoReset(fDuration, false))
+		if (!pkSequence->ActivateNoReset(fDuration))
 			return pkSequence;
 	}
 	else

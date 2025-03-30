@@ -1185,7 +1185,7 @@ void WriteDelayedHooks()
 				tmpBlendSeq->Deactivate(fEaseOut, false);
 				return pkSequence->Deactivate(0.0f, false);
 			}
-			return pkSequence->DeactivateNoReset(fEaseOut, false);
+			return pkSequence->DeactivateNoReset(fEaseOut);
 		}
 		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
 	}));
@@ -1235,13 +1235,13 @@ void WriteDelayedHooks()
 	{
 		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x10C);
 		auto* animData = actor->baseProcess->GetAnimData();
-		auto moveGroupId = animData->groupIDs[kSequence_Movement];
+		const auto moveGroupId = static_cast<AnimGroupID>(animData->groupIDs[kSequence_Movement]);
 
 		const auto result = ThisStdCall<UInt32>(0x5C0880, controller);
-		constexpr auto kCharControllerState_Jumping = 1;
-		constexpr auto kCharControllerState_InAir = 2;
-		if (result == kCharControllerState_Jumping || result == kCharControllerState_InAir)
-			return result;
+		//constexpr auto kCharControllerState_Jumping = 1;
+		//constexpr auto kCharControllerState_InAir = 2;
+		//if (result == kCharControllerState_Jumping || result == kCharControllerState_InAir)
+		//	return result;
 
 		if (moveGroupId == kAnimGroup_JumpLand)
 		{

@@ -1861,7 +1861,7 @@ public:
 
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
 	bool Deactivate_(float fEaseOutTime, bool bTransition);
-	bool DeactivateNoReset(float fEaseOutTime, bool bTransition);
+	bool DeactivateNoReset(float fEaseOutTime);
 	
 	void ResetSequence()
 	{
@@ -1873,7 +1873,7 @@ public:
 	bool Activate(char cPriority, bool bStartOver, float fWeight,
 		float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
 		bool bTransition);
-	bool ActivateNoReset(float fEaseInTime, bool bTransition);
+	bool ActivateNoReset(float fEaseInTime);
 
 	NiControllerManager* GetOwner() const
 	{
@@ -2832,7 +2832,7 @@ public:
 			return true;
 		default:
 			return false;
-		};
+		}
 	}
 
 	bool IsBaseMovement() const

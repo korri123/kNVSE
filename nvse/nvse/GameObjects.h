@@ -714,6 +714,16 @@ public:
 	}
 
 	bool HasWeaponWithMod(WeaponModFlags mod) const;
+
+	float GetWalkSpeedMult() const
+	{
+		return ThisStdCall<float>(0x884DC0, this);
+	}
+
+	float GetRunSpeedMult() const
+	{
+		return ThisStdCall<float>(0x884EB0, this);
+	}
 };
 STATIC_ASSERT(offsetof(Actor, magicCaster) == 0x088);
 

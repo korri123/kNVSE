@@ -3081,6 +3081,19 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
+	builder.Create("GetAnimMovementSpeedMult", kRetnType_Default, {}, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		const auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
+		if (!actor || !actor->baseProcess)
+			return true;
+		auto* animData = actor->baseProcess->GetAnimData();
+		if (!animData)
+			return true;
+		*result = animData->movementSpeedMult;
+		return true;
+	});
+
 #if _DEBUG
 	
 	static std::initializer_list<ParamInfo> kParams_ThisCall = {
