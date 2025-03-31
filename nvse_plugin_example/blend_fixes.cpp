@@ -136,6 +136,7 @@ float GetIniBlend()
 
 void BlendFixes::FixAimPriorities(AnimData* animData, BSAnimGroupSequence* destAnim)
 {
+	return;
 	// Fix priorities for aim to aim is when move sequence has higher priorities than aim
 	// this happens when running in third person right and aiming down sights in and out
 	// we achieve this by setting the move priorities to aim priorities - 1 if both are playing
@@ -153,12 +154,14 @@ void BlendFixes::FixAimPriorities(AnimData* animData, BSAnimGroupSequence* destA
 	else
 		moveAnim = animData->animSequence[kSequence_Movement];
 
-	const auto* aimISAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_AimIS);
-	if (sequenceType == kSequence_Movement && !aimISAnim)
-		return;
-
 	if (!moveAnim || !moveAnim->animGroup)
 		return;
+	
+	const auto* aimISAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_AimIS);
+	if (sequenceType == kSequence_Movement && !aimISAnim)
+	{
+		return;
+	}
 
 	BSAnimGroupSequence* aimAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_Aim);
 	if (!aimAnim || !aimAnim->animGroup)
@@ -175,7 +178,8 @@ void BlendFixes::FixAimPriorities(AnimData* animData, BSAnimGroupSequence* destA
 	if (!bip01Spine || !bip01Spine->GetAsNiNode())
 		return;
 
-	const auto processSequence = [&](const NiControllerSequence* sequenceToProcess) {
+	const auto processSequence = [&](const NiControllerSequence* sequenceToProcess)
+	{
 		if (!sequenceToProcess)
 			return;
             
@@ -198,6 +202,33 @@ void BlendFixes::FixAimPriorities(AnimData* animData, BSAnimGroupSequence* destA
 	// Process both animations
 	processSequence(moveAnim);
 	processSequence(tempBlendSequence);
+
+	const static auto sAimBlendFix = NiFixedString("__AimBlendFix__");
+	moveAnim->m_spTextKeys->SetOrAddKey(sAimBlendFix, 1.0f);
+}
+
+void BlendFixes::RevertFixAimPriorities(AnimData* animData)
+{
+	auto* moveAnim = animData->animSequence[kSequence_Movement];
+	if (!moveAnim || !moveAnim->animGroup)
+		return;
+	const static auto sAimBlendFix = NiFixedString("__AimBlendFix__");
+	const auto fixKey = moveAnim->m_spTextKeys->FindFirstByName(sAimBlendFix);
+	if (!fixKey || fixKey->m_fTime == 0.0f)
+		return;
+
+	auto* aimISAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_AimIS);
+	if (aimISAnim) 
+		return;
+	
+	// revert it now that aimIS is done
+	for (auto& controlledBlock : moveAnim->GetControlledBlocks())
+	{
+		if (!controlledBlock.m_spInterpolator || !controlledBlock.m_pkBlendInterp)
+			continue;
+		controlledBlock.m_pkBlendInterp->SetPriority(controlledBlock.m_ucPriority, controlledBlock.m_ucBlendIdx);
+	}
+	moveAnim->m_spTextKeys->SetOrAddKey(sAimBlendFix, 0.0f);
 }
 
 BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim)

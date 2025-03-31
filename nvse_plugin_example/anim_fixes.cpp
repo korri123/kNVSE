@@ -20,7 +20,8 @@ void LogAnimError(const char* anim, const std::string& msg)
 
 bool HasNoFixTextKey(const BSAnimGroupSequence* anim)
 {
-	if (!anim->m_spTextKeys || anim->m_spTextKeys->FindFirstByName("noFix"))
+	const static auto sNoFix = NiFixedString("noFix");
+	if (!anim->m_spTextKeys || anim->m_spTextKeys->FindFirstByName(sNoFix))
 		return true;
 	return false;
 }
@@ -30,7 +31,8 @@ void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 	if (!g_pluginSettings.fixEndKeyTimeShorterThanStopTime || HasNoFixTextKey(anim))
 		return;
 	const auto endKeyTime = anim->m_fEndKeyTime;
-	if (auto* endKey = anim->m_spTextKeys->FindFirstByName("end"))
+	const static auto sEnd = NiFixedString("end");
+	if (auto* endKey = anim->m_spTextKeys->FindFirstByName(sEnd))
 	{
 		endKey->m_fTime = endKeyTime;
 	}
@@ -147,8 +149,9 @@ NiTextKey* GetNextAttackAnimGroupTextKey(BSAnimGroupSequence* sequence)
 
 bool HasRespectEndKey(BSAnimGroupSequence* anim)
 {
-	return anim->m_spTextKeys->FindFirstByName("respectEndKey") || anim->m_spTextKeys->FindFirstByName(
-		"respectTextKeys");
+	const static auto sRespectEndKey = NiFixedString("respectEndKey");
+	const static auto sRespectTextKeys = NiFixedString("respectTextKeys");
+	return anim->m_spTextKeys->FindFirstByName(sRespectEndKey) || anim->m_spTextKeys->FindFirstByName(sRespectTextKeys);
 }
 
 void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
@@ -175,7 +178,7 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 		return;
 	// check if this is intentional by looking up the 3rd person version of this anim and checking if it also has it
 	const auto* anim3rd = GetAnimByGroupID(g_thePlayer->baseProcess->animData, groupId);
-	if (anim3rd && anim3rd->m_spTextKeys->FindFirstByName(nextAttackKey->m_kText.CStr()))
+	if (anim3rd && anim3rd->m_spTextKeys->FindFirstByName(nextAttackKey->m_kText))
 		return;
 	const auto aChar = GetACharForAnimGroup(groupId);
 	const auto newText = std::string("a:") + std::string(1, aChar);

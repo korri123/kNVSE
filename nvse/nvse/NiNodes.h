@@ -3123,11 +3123,11 @@ class NiTextKeyExtraData : public NiExtraData
 public:
 	NiFixedArray<NiTextKey> m_kKeyArray;
 
-	NiTextKey* FindFirstByName(const char* name) const
+	NiTextKey* FindFirstByName(NiFixedString name) const
 	{
 		const auto keys = GetKeys();
 		auto it = std::ranges::find_if(keys, [name](const NiTextKey& key) {
-			return _stricmp(key.m_kText.CStr(), name) == 0;
+			return key.m_kText == name;
 		});
 		return it != keys.end() ? &*it : nullptr;
 	}
@@ -3150,7 +3150,7 @@ public:
 		m_kKeyArray = keys;
 	}
 
-	NiTextKey* AddKey(const char* name, float time)
+	NiTextKey* AddKey(NiFixedString name, float time)
 	{
 		auto vec = ToVector();
 		vec.push_back(NiTextKey(time, name));
@@ -3158,7 +3158,7 @@ public:
 		return &m_kKeyArray.GetItems().back();
 	}
 
-	NiTextKey* SetOrAddKey(const char* name, float time)
+	NiTextKey* SetOrAddKey(NiFixedString name, float time)
 	{
 		auto* key = FindFirstByName(name);
 		if (key)

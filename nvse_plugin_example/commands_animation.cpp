@@ -1809,7 +1809,8 @@ float GetIniFloat(UInt32 addr)
 
 float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence)
 {
-	if (destSequence->m_spTextKeys->FindFirstByName("noBlend"))
+	const static auto sNoBlend = NiFixedString("noBlend");
+	if (destSequence->m_spTextKeys->FindFirstByName(sNoBlend))
 		return 0.0f;
 	const auto defaultBlend = GetIniFloat(0x11C56FC);
 	const auto blendMult = GetIniFloat(0x11C5724);
@@ -1823,7 +1824,8 @@ float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence)
 
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence)
 {
-	if (destSequence->m_spTextKeys->FindFirstByName("noBlend"))
+	const static auto sNoBlend = NiFixedString("noBlend");
+	if (destSequence->m_spTextKeys->FindFirstByName(sNoBlend))
 		return 0.0f;
 	const auto defaultBlend = GetIniFloat(0x11C56FC);
 	const auto blendMult = GetIniFloat(0x11C5724);
@@ -2789,7 +2791,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindOrLoadAnim(actor, animPath, firstPerson);
 		if (!anim)
 			return true;
-		anim->m_spTextKeys->SetOrAddKey("fDestFrame", destFrame);
+		const static auto sDestFrame = NiFixedString("fDestFrame");
+		anim->m_spTextKeys->SetOrAddKey(sDestFrame, destFrame);
 		*result = 1;
 		return true;
 	});

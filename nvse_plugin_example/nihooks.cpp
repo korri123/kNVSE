@@ -447,7 +447,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             if (bSuccess)
             {
                 // Use double for weight calculations
-                double dWeight = static_cast<double>(kItem.m_fNormalizedWeight);
+                double dWeight = kItem.m_fNormalizedWeight;
                 
                 if (kTransform.IsTranslateValid())
                 {

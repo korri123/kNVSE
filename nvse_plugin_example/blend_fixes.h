@@ -20,5 +20,6 @@ namespace BlendFixes
 	void FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim);
 	void ApplyMissingUpDownAnims(AnimData* animData);
 	void FixAimPriorities(AnimData* animData, BSAnimGroupSequence* destAnim);
+	void RevertFixAimPriorities(AnimData* animData);
 }
 
