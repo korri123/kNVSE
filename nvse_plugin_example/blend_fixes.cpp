@@ -194,7 +194,7 @@ struct WeightSmoothingDataItems
 	{
 		const auto iter = std::ranges::find_if(items, [&](const auto& it)
 		{
-			return it.interpolator == item.m_spInterpolator;
+			return it->interpolator == item.m_spInterpolator;
 		});
 		if (iter == items.end())
 		{
@@ -279,8 +279,8 @@ void BlendFixes::ApplyWeightSmoothing(NiBlendInterpolator* blendInterpolator)
 	
 	const auto deltaTime = g_timeGlobal->secondsPassed;
 	constexpr auto smoothingTime = 0.1f;
-	//const auto smoothingRate = 1.0f - expf(-deltaTime / smoothingTime);
-	const auto smoothingRate = std::clamp(deltaTime / smoothingTime, 0.0f, 1.0f);
+	const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
+	//const auto smoothingRate = std::clamp(deltaTime / smoothingTime, 0.0f, 1.0f);
 
 	data.ResetActive();
 
@@ -291,12 +291,15 @@ void BlendFixes::ApplyWeightSmoothing(NiBlendInterpolator* blendInterpolator)
 		if (!item.m_spInterpolator || AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
 			continue;
 		auto& dataItem = data.GetItem(item);
+		dataItem.isActive = true;
 		if (dataItem.previousSmoothedWeight == 0.0f && item.m_fNormalizedWeight == 0.0f)
 			continue;
-		dataItem.isActive = true;
+		
 		dataItem.updateTime = item.m_fUpdateTime;
 		const auto targetWeight = item.m_fNormalizedWeight;
 		const auto smoothedWeight = std::lerp(dataItem.previousSmoothedWeight, targetWeight, smoothingRate);
+		if (smoothedWeight < 0.0f)
+			DebugBreak();
 		dataItem.previousSmoothedWeight = smoothedWeight;
 		item.m_fNormalizedWeight = smoothedWeight;
 		if (smoothedWeight < MIN_WEIGHT)
@@ -311,13 +314,21 @@ void BlendFixes::ApplyWeightSmoothing(NiBlendInterpolator* blendInterpolator)
 	for (auto& dataItemPtr : data.items)
 	{
 		auto& dataItem = *dataItemPtr;
-		if (dataItem.isActive || dataItem.isRemoved)
+		if (dataItem.isActive || dataItem.isRemoved || dataItem.previousSmoothedWeight == 0.0f)
 			continue;
+		const auto blendItems = blendInterpolator->GetItems();
+		if (std::ranges::find_if(blendItems, [&](const auto& item)
+		{
+			return item.m_spInterpolator == dataItem.interpolator;
+		}) != blendItems.end())
+			DebugBreak();
 		dataItem.isRemoved = true;
 		dataItem.blendIndex = blendInterpolator->AddInterpInfo(dataItem.interpolator, 0.0f, 0, 0.0f);
 		auto& item = blendInterpolator->GetItems()[dataItem.blendIndex];
 		constexpr auto targetWeight = 0.0f;
 		const auto smoothedWeight = std::lerp(dataItem.previousSmoothedWeight, targetWeight, smoothingRate);
+		if (smoothedWeight < 0.0f)
+			DebugBreak();
 		item.m_fUpdateTime = dataItem.updateTime;
 		if (smoothedWeight < MIN_WEIGHT)
 		{
@@ -406,6 +417,8 @@ void BlendFixes::AttachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 			auto* poseInterp = CreatePoseInterpolator(block.m_spInterpCtlr, idTag);
 			if (!poseInterp)
 				continue;
+			if (poseInterp == block.m_spInterpolator)
+				DebugBreak();
 			auto& data = g_secondaryTempInterpolatorDataMap[block.m_spInterpolator];
 			data.blendIndex = blendInterp->AddInterpInfo(poseInterp, 1.0f, 0, 1.0f);
 		}
@@ -446,14 +459,10 @@ void BlendFixes::DetachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 			auto* poseInterpolator = CreatePoseInterpolator(block.m_spInterpCtlr, idTag);
 			if (!poseInterpolator)
 				continue;
+			if (poseInterpolator == otherInterpItem->m_spInterpolator)
+				DebugBreak();
 			auto& data = g_secondaryTempInterpolatorDataMap[otherInterpItem->m_spInterpolator];
 			data.blendIndex = blendInterpolator->AddInterpInfo(poseInterpolator, 1.0f, 0, 1.0f);
-		}
-		if (auto iter = g_interpToWeightSmoothingDataMap.find(block.m_spInterpolator); iter != g_interpToWeightSmoothingDataMap.end())
-		{
-			auto& dataItem = *iter->second;
-			dataItem.isRemoved = true;
-			dataItem.blendIndex = blendInterpolator->AddInterpInfo(block.m_spInterpolator, 0.0f, 0, 0.0f);
 		}
 	}
 }
@@ -708,8 +717,8 @@ void BlendFixes::ApplyHooks()
 	static UInt32 uiDetachInterpolatorsAddr = 0xA30540;
 	WriteRelCall(0xA350C5, INLINE_HOOK(void, __fastcall, NiControllerSequence* pkSequence)
 	{
-		if (!AdditiveManager::IsAdditiveSequence(pkSequence))
-			DetachSecondaryTempInterpolators(pkSequence);
+		//if (!AdditiveManager::IsAdditiveSequence(pkSequence))
+		DetachSecondaryTempInterpolators(pkSequence);
 		ThisStdCall(uiDetachInterpolatorsAddr, pkSequence);
 	}));
 }
