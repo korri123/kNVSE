@@ -29,37 +29,78 @@ void SetTempBlendSequenceName(NiControllerSequence* kTempBlendSeq, NiControllerS
 	kTempBlendSeq->m_kName = tempBlendSeqName.c_str();
 }
 
+void CopyPriorities(NiControllerSequence* pkSequenceTo, NiControllerSequence* pkSequenceFrom)
+{
+	for (auto& controlledBlock : pkSequenceTo->GetControlledBlocks())
+	{
+		auto* pkBlendInterp = controlledBlock.m_pkBlendInterp;
+		if (!pkBlendInterp || !controlledBlock.m_spInterpolator)
+			continue;
+		auto& idTag = controlledBlock.GetIDTag(pkSequenceTo);
+		const static auto sBip01 = NiFixedString("Bip01");
+		if (idTag.m_kAVObjectName == sBip01)
+			continue;
+		auto* fromBlock = pkSequenceFrom->GetControlledBlock(controlledBlock.m_pkBlendInterp);
+		if (!fromBlock || !fromBlock->m_spInterpolator || fromBlock->m_ucBlendIdx == INVALID_INDEX)
+			continue;
+		const auto& fromBlendItem = pkBlendInterp->m_pkInterpArray[fromBlock->m_ucBlendIdx];
+		pkBlendInterp->SetPriority(fromBlendItem.m_cPriority, controlledBlock.m_ucBlendIdx);
+	}
+}
+
+void RemoveOtherEaseOutInterpolators(NiControllerSequence* pkSequence)
+{
+	for (auto& controlledBlock : pkSequence->GetControlledBlocks())
+	{
+		auto* pkBlendInterp = controlledBlock.m_pkBlendInterp;
+		if (!pkBlendInterp || !controlledBlock.m_spInterpolator)
+			continue;
+		for (auto& item : pkBlendInterp->GetItems())
+		{
+			if (item.m_spInterpolator == controlledBlock.m_spInterpolator || !item.m_spInterpolator)
+				continue;
+			auto* owner = pkSequence->m_pkOwner->GetInterpolatorOwner(item.m_spInterpolator);
+			if (!owner)
+				continue;
+			if (owner->m_eState == NiControllerSequence::EASEOUT)
+			{
+				auto* ownerBlock = owner->GetControlledBlock(item.m_spInterpolator);
+				pkBlendInterp->SetPriority(0, ownerBlock->m_ucBlendIdx);
+			}
+		}
+	}
+}
+
 BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence)
 {
-
 	FixJumpLoopMovementSpeed(animData, pkSequence);
 	
-	auto* manager = animData->controllerManager;
 	const float fDuration = pkSequence->GetEaseInTime();
-	const auto existingTempBlendSeq = manager->FindSequence([](const NiControllerSequence* seq)
-	{
-		return sv::starts_with_ci(seq->m_kName.CStr(), "__");
-	});
-	auto* currentMoveAnim = animData->controllerManager->FindSequence([](const NiControllerSequence* seq)
-	{
-		if (NOT_TYPE(seq, BSAnimGroupSequence))
-			return false;
-		const TESAnimGroup* animGroup = static_cast<const BSAnimGroupSequence*>(seq)->animGroup;
-		if (!animGroup)
-			return false;
-		return animGroup->GetSequenceType() == kSequence_Movement;
-	});
-
-	if (currentMoveAnim && existingTempBlendSeq)
-		existingTempBlendSeq->Deactivate(0.0f, false);
-		
+	auto* currentMoveAnim = animData->animSequence[kSequence_Movement];
 	if (!currentMoveAnim)
-		currentMoveAnim = existingTempBlendSeq;
+	{
+		currentMoveAnim = GetActiveSequenceWhere(animData, [](const BSAnimGroupSequence* seq)
+		{
+			return seq->animGroup->GetSequenceType() == kSequence_Movement && seq->m_eState != NiControllerSequence::EASEOUT;
+		});
+	}
 
-	if (auto* currAnim = animData->animSequence[kSequence_Movement]; currAnim && currAnim->animGroup && currAnim->animGroup->IsTurning())
-		currAnim->Deactivate(0.0f, false);
+	if (currentMoveAnim && currentMoveAnim != pkSequence && currentMoveAnim->m_eState != NiControllerSequence::EASEOUT)
+	{
+		if (currentMoveAnim->m_eState == NiControllerSequence::EASEIN)
+			currentMoveAnim->DeactivateNoReset(fDuration);
+		else
+			currentMoveAnim->Deactivate(fDuration, false);
+	}
+	
+	
+	//if (currentMoveAnim && existingTempBlendSeq)
+	//	existingTempBlendSeq->Deactivate(0.0f, false);
+		
+	//if (!currentMoveAnim)
+	//	currentMoveAnim = existingTempBlendSeq;
 
-#if 1
+#if 0
 	const auto hasInactiveBlocks = std::ranges::any_of(pkSequence->GetControlledBlocks(), [](const auto& block) {
 		return block.m_pkBlendInterp && block.m_pkBlendInterp->m_ucInterpCount == 0;
 	});
@@ -88,13 +129,14 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	}
 #endif
 	
-	if (pkSequence->m_eState == NiControllerSequence::EASEOUT && !currentMoveAnim)
+	if (pkSequence->m_eState == NiControllerSequence::EASEOUT)
 	{
 		if (!pkSequence->ActivateNoReset(fDuration))
 			return pkSequence;
 	}
 	else
 	{
+#if 0
 		if (currentMoveAnim)
 		{
 			auto* tmpBlendSeq = manager->CreateTempBlendSequence(pkSequence, nullptr);
@@ -102,16 +144,25 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 			tmpBlendSeq->RemoveInterpolator(sBip01);
 			tmpBlendSeq->Activate(0, true, tmpBlendSeq->m_fSeqWeight, 0.0f, nullptr, false);
 			tmpBlendSeq->Deactivate(fDuration, false);
+			if (existingTempBlendSeq)
+				existingTempBlendSeq->Deactivate(0.0f, false);
 			currentMoveAnim->Deactivate(0.0f, false);
 			if (!pkSequence->Activate(0, true, pkSequence->m_fSeqWeight, fDuration, nullptr, false))
 				return pkSequence;
+			SetSequenceInterpolatorsHighPriority(tmpBlendSeq);
+			//RemoveOtherEaseOutInterpolators(tmpBlendSeq);
 		}
 		else
 		{
-			if (!pkSequence->Activate(0, true, pkSequence->m_fSeqWeight, fDuration, nullptr, false))
-				return pkSequence;
+			
 		}
+#endif
+		if (!pkSequence->ActivateBlended(0, true, pkSequence->m_fSeqWeight, fDuration, nullptr, false))
+			return pkSequence;
 	}
+
+	//if (currentMoveAnim)
+	//	CopyPriorities(pkSequence, currentMoveAnim);
 
 	SetAnimDataState(animData, pkSequence);
 	return pkSequence;

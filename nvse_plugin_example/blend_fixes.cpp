@@ -7,6 +7,8 @@
 #include "main.h"
 #include "nihooks.h"
 #include <array>
+
+#include "additive_anims.h"
 #include "SafeWrite.h"
 #include "anim_fixes.h"
 #include "NiObjects.h"
@@ -64,18 +66,6 @@ void SetCurrentSequence(AnimData* animData, BSAnimGroupSequence* destAnim, bool 
 }
 
 template <typename F>
-BSAnimGroupSequence* GetActiveSequenceWhere(AnimData* animData, F&& predicate)
-{
-	for (auto* sequence : animData->controllerManager->m_kActiveSequences)
-	{
-		auto* bsSequence = static_cast<BSAnimGroupSequence*>(sequence);
-		if (IS_TYPE(bsSequence, BSAnimGroupSequence) && bsSequence && predicate(bsSequence))
-			return bsSequence;
-	}
-	return nullptr;
-}
-
-template <typename F>
 std::vector<BSAnimGroupSequence*> GetActiveSequencesWhere(AnimData* animData, F&& predicate)
 {
 	std::vector<BSAnimGroupSequence*> sequences;
@@ -86,14 +76,6 @@ std::vector<BSAnimGroupSequence*> GetActiveSequencesWhere(AnimData* animData, F&
 			sequences.push_back(bsSequence);
 	}
 	return sequences;
-}
-
-BSAnimGroupSequence* GetActiveSequenceByGroupID(AnimData* animData, AnimGroupID groupId)
-{
-	return GetActiveSequenceWhere(animData, [&](BSAnimGroupSequence* sequence)
-	{
-		return sequence->animGroup->GetBaseGroupID() == groupId;
-	});
 }
 
 std::vector<BSAnimGroupSequence*> GetActiveAttackSequences(AnimData* animData)
@@ -142,69 +124,28 @@ void BlendFixes::FixAimPriorities(AnimData* animData, BSAnimGroupSequence* destA
 	// we achieve this by setting the move priorities to aim priorities - 1 if both are playing
 	if (animData == g_thePlayer->firstPersonAnimData)
 		return;
-	const auto baseAnimGroup = static_cast<AnimGroupID>(destAnim->animGroup->groupID);
-	const auto sequenceType = destAnim->animGroup->GetSequenceType();
 
-	if (!destAnim->animGroup->IsBaseMovement() && baseAnimGroup != kAnimGroup_AimIS)
-		return;
+	auto* aimISAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_AimIS);
 
-	BSAnimGroupSequence* moveAnim;
-	if (sequenceType == kSequence_Movement)
-		moveAnim = destAnim;
-	else
-		moveAnim = animData->animSequence[kSequence_Movement];
-
-	if (!moveAnim || !moveAnim->animGroup)
-		return;
-	
-	const auto* aimISAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_AimIS);
-	if (sequenceType == kSequence_Movement && !aimISAnim)
-	{
-		return;
-	}
-
-	BSAnimGroupSequence* aimAnim = GetActiveSequenceByGroupID(animData, kAnimGroup_Aim);
-	if (!aimAnim || !aimAnim->animGroup)
+	if (destAnim->animGroup->GetBaseGroupID() != kAnimGroup_Aim || !aimISAnim)
 		return;
 
 	auto* tempBlendSequence = animData->controllerManager->FindSequence([](const NiControllerSequence* seq)
 	{
 		return sv::starts_with_ci(seq->m_kName.CStr(), "__");
 	});
-
-	const static NiFixedString objName = "Bip01 Spine1";
-	// only affect upper body
-	auto* bip01Spine = animData->nBip01->GetObjectByName(objName);
-	if (!bip01Spine || !bip01Spine->GetAsNiNode())
+	if (!tempBlendSequence)
 		return;
 
-	const auto processSequence = [&](const NiControllerSequence* sequenceToProcess)
+	for (auto& aimISTags : aimISAnim->GetIDTags())
 	{
-		if (!sequenceToProcess)
-			return;
-            
-		const auto fn = [&](const NiAVObject* node)
-		{
-			auto* seqBlock = sequenceToProcess->GetControlledBlock(node->m_pcName);
-			if (!seqBlock || !seqBlock->m_spInterpolator || !seqBlock->m_pkBlendInterp)
-				return;
-			auto* aimBlock = aimAnim->GetControlledBlock(node->m_pcName);
-			if (!aimBlock || !aimBlock->m_spInterpolator || !aimBlock->m_pkBlendInterp
-			   || aimBlock->m_ucPriority > seqBlock->m_ucPriority)
-				return;
-			const char newPriority = aimBlock->m_ucPriority != 0 ? static_cast<char>(aimBlock->m_ucPriority - 1) : 0;
-			seqBlock->m_pkBlendInterp->SetPriority(newPriority, seqBlock->m_ucBlendIdx);
-		};
-
-		bip01Spine->GetAsNiNode()->RecurseTree(fn);
-	};
-
-	// Process both animations
-	processSequence(moveAnim);
-	processSequence(tempBlendSequence);
-
-	const static auto sAimBlendFix = NiFixedString("__AimBlendFix__");
-	moveAnim->m_spTextKeys->SetOrAddKey(sAimBlendFix, 1.0f);
+		auto* tempSeqControlledBlock = tempBlendSequence->GetControlledBlock(aimISTags.m_kAVObjectName);
+		if (!tempSeqControlledBlock || !tempSeqControlledBlock->m_spInterpolator || !tempSeqControlledBlock->m_pkBlendInterp)
+			continue;
+		tempSeqControlledBlock->m_pkBlendInterp->RemoveInterpInfo(tempSeqControlledBlock->m_ucBlendIdx);
+		tempSeqControlledBlock->m_pkBlendInterp = nullptr;
+		tempSeqControlledBlock->m_ucBlendIdx = NiBlendInterpolator::INVALID_INDEX;
+	}
 }
 
 void BlendFixes::RevertFixAimPriorities(AnimData* animData)
@@ -229,6 +170,306 @@ void BlendFixes::RevertFixAimPriorities(AnimData* animData)
 		controlledBlock.m_pkBlendInterp->SetPriority(controlledBlock.m_ucPriority, controlledBlock.m_ucBlendIdx);
 	}
 	moveAnim->m_spTextKeys->SetOrAddKey(sAimBlendFix, 0.0f);
+}
+
+struct WeightSmoothingData
+{
+	NiPointer<NiInterpolator> interpolator = nullptr;
+	float previousSmoothedWeight = 0.0f;
+	float updateTime = -NI_INFINITY;
+	bool isActive = false;
+	bool isRemoved = false;
+	bool queueDelete = false;
+	unsigned char blendIndex = 0xFF;
+};
+
+thread_local std::unordered_map<NiInterpolator*, std::shared_ptr<WeightSmoothingData>> g_interpToWeightSmoothingDataMap;
+
+struct WeightSmoothingDataItems
+{
+	std::vector<std::shared_ptr<WeightSmoothingData>> items;
+	bool isFirstFrame = true;
+
+	WeightSmoothingData& GetItem(const NiBlendInterpolator::InterpArrayItem& item)
+	{
+		const auto iter = std::ranges::find_if(items, [&](const auto& it)
+		{
+			return it.interpolator == item.m_spInterpolator;
+		});
+		if (iter == items.end())
+		{
+			const auto weightSmoothingData = std::make_shared<WeightSmoothingData>(WeightSmoothingData{
+				.interpolator = item.m_spInterpolator,
+				.previousSmoothedWeight = item.m_fNormalizedWeight,
+				.updateTime = item.m_fUpdateTime,
+				.isActive = false,
+				.isRemoved = false,
+				.queueDelete = false,
+				.blendIndex = 0xFF
+			});
+			items.push_back(weightSmoothingData);
+			g_interpToWeightSmoothingDataMap[item.m_spInterpolator] = weightSmoothingData;
+			return *weightSmoothingData;
+		}
+		return **iter;
+	}
+
+	void ResetActive()
+	{
+		for (auto& item : items)
+		{
+			item->isActive = false;
+		}
+	}
+};
+
+thread_local std::unordered_map<NiBlendInterpolator*, WeightSmoothingDataItems> g_weightSmoothingDataMap;
+// TODO handle deletes (possibly on another thread)
+
+void BlendFixes::ApplyWeightSmoothing(NiBlendInterpolator* blendInterpolator)
+{
+	auto& data = g_weightSmoothingDataMap[blendInterpolator];
+	if (data.isFirstFrame)
+	{
+		data.items.reserve(blendInterpolator->m_ucArraySize);
+		for (auto& item : blendInterpolator->GetItems())
+		{
+			if (!item.m_spInterpolator || AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
+				continue;
+			const auto dataItem = std::make_shared<WeightSmoothingData>(WeightSmoothingData{
+				.interpolator = item.m_spInterpolator,
+				.previousSmoothedWeight = item.m_fNormalizedWeight,
+				.updateTime = item.m_fUpdateTime,
+				.isActive = false,
+				.isRemoved = false,
+				.queueDelete = false,
+				.blendIndex = 0xFF
+			});
+			data.items.push_back(dataItem);
+			g_interpToWeightSmoothingDataMap[item.m_spInterpolator] = dataItem;
+		}
+		data.isFirstFrame = false;
+		return;
+	}
+
+	// check duplicates
+	for (auto& dataItemPtr : data.items)
+	{
+		auto& dataItem = *dataItemPtr;
+		unsigned int count = 0;
+		for (auto& item : blendInterpolator->GetItems())
+		{
+			if (!item.m_spInterpolator)
+				continue;		
+			if (dataItem.interpolator == item.m_spInterpolator)
+				count++;
+			if (count > 1)
+			{
+				if (!dataItem.isRemoved || dataItem.blendIndex == 0xFF || dataItem.blendIndex >= blendInterpolator->m_ucArraySize)
+				{
+					DebugBreak();
+				}
+				blendInterpolator->RemoveInterpInfo(dataItem.blendIndex);
+				dataItem.isRemoved = false;
+				dataItem.blendIndex = 0xFF;
+				break;
+			}
+		}
+	}
+	
+	const auto deltaTime = g_timeGlobal->secondsPassed;
+	constexpr auto smoothingTime = 0.1f;
+	//const auto smoothingRate = 1.0f - expf(-deltaTime / smoothingTime);
+	const auto smoothingRate = std::clamp(deltaTime / smoothingTime, 0.0f, 1.0f);
+
+	data.ResetActive();
+
+	float totalWeight = 0.0f;
+	constexpr float MIN_WEIGHT = 0.001f;
+	for (auto& item : blendInterpolator->GetItems())
+	{
+		if (!item.m_spInterpolator || AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
+			continue;
+		auto& dataItem = data.GetItem(item);
+		if (dataItem.previousSmoothedWeight == 0.0f && item.m_fNormalizedWeight == 0.0f)
+			continue;
+		dataItem.isActive = true;
+		dataItem.updateTime = item.m_fUpdateTime;
+		const auto targetWeight = item.m_fNormalizedWeight;
+		const auto smoothedWeight = std::lerp(dataItem.previousSmoothedWeight, targetWeight, smoothingRate);
+		dataItem.previousSmoothedWeight = smoothedWeight;
+		item.m_fNormalizedWeight = smoothedWeight;
+		if (smoothedWeight < MIN_WEIGHT)
+		{
+			dataItem.previousSmoothedWeight = 0.0f;
+			item.m_fNormalizedWeight = 0.0f;
+			continue;
+		}
+		totalWeight += smoothedWeight;
+	}
+
+	for (auto& dataItemPtr : data.items)
+	{
+		auto& dataItem = *dataItemPtr;
+		if (dataItem.isActive || dataItem.isRemoved)
+			continue;
+		dataItem.isRemoved = true;
+		dataItem.blendIndex = blendInterpolator->AddInterpInfo(dataItem.interpolator, 0.0f, 0, 0.0f);
+		auto& item = blendInterpolator->GetItems()[dataItem.blendIndex];
+		constexpr auto targetWeight = 0.0f;
+		const auto smoothedWeight = std::lerp(dataItem.previousSmoothedWeight, targetWeight, smoothingRate);
+		item.m_fUpdateTime = dataItem.updateTime;
+		if (smoothedWeight < MIN_WEIGHT)
+		{
+			dataItem.previousSmoothedWeight = 0.0f;
+			item.m_fNormalizedWeight = 0.0f;
+			continue;
+		}
+		dataItem.previousSmoothedWeight = smoothedWeight;
+		item.m_fNormalizedWeight = smoothedWeight;
+		totalWeight += smoothedWeight;
+	}
+
+	for (auto& dataItemPtr : data.items)
+	{
+		auto& dataItem = *dataItemPtr;
+		if (!dataItem.isRemoved)
+			continue;
+		
+		if (dataItem.previousSmoothedWeight < MIN_WEIGHT)
+		{
+			dataItem.previousSmoothedWeight = 0.0f;
+			if (dataItem.blendIndex == 0xFF || dataItem.blendIndex >= blendInterpolator->m_ucArraySize)
+				DebugBreak();
+			blendInterpolator->RemoveInterpInfo(dataItem.blendIndex);
+			dataItem.isRemoved = false;
+			dataItem.blendIndex = 0xFF;
+		}
+	}
+
+	for (auto& itemPtr : data.items)
+	{
+		auto& item = *itemPtr;
+		if (item.queueDelete && item.previousSmoothedWeight == 0.0f)
+			g_interpToWeightSmoothingDataMap.erase(item.interpolator);
+	}
+
+	std::erase_if(data.items, [&](auto& item)
+	{
+		return item->queueDelete && item->previousSmoothedWeight == 0.0f;
+	});
+
+	float newTotalWeight = 0.0f;
+	
+	if (totalWeight > 0.0f)
+	{
+		// renormalize weights
+		const auto invTotalWeight = 1.0f / totalWeight;
+		for (auto& item : blendInterpolator->GetItems())
+		{
+			if (!item.m_spInterpolator || AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
+				continue;
+			item.m_fNormalizedWeight *= invTotalWeight;
+			newTotalWeight += item.m_fNormalizedWeight;
+		}
+	}
+
+	if (newTotalWeight != 0.0f && std::abs(newTotalWeight - 1.0f) > 0.001f)
+		DebugBreak();
+}
+
+NiInterpolator* CreatePoseInterpolator(NiInterpController* controller, const NiControllerSequence::IDTag& idTag)
+{
+	const auto index = controller->GetInterpolatorIndexByIDTag(&idTag);
+	if (index == 0xFFFF)
+		return nullptr;
+	return controller->CreatePoseInterpolator(index);
+}
+
+struct SecondaryTempInterpolatorData
+{
+	unsigned char blendIndex = 0xFF;
+};
+
+thread_local std::unordered_map<NiInterpolator*, SecondaryTempInterpolatorData> g_secondaryTempInterpolatorDataMap;
+
+void BlendFixes::AttachSecondaryTempInterpolators(NiControllerSequence* pkSequence)
+{
+	for (auto& block : pkSequence->GetControlledBlocks())
+	{
+		auto* blendInterp = block.m_pkBlendInterp;
+		if (!block.m_spInterpolator || !blendInterp)
+			continue;
+		if (blendInterp->m_ucInterpCount == 0)
+		{
+			const auto& idTag = block.GetIDTag(pkSequence);
+			auto* poseInterp = CreatePoseInterpolator(block.m_spInterpCtlr, idTag);
+			if (!poseInterp)
+				continue;
+			auto& data = g_secondaryTempInterpolatorDataMap[block.m_spInterpolator];
+			data.blendIndex = blendInterp->AddInterpInfo(poseInterp, 1.0f, 0, 1.0f);
+		}
+		else if (blendInterp->m_ucInterpCount == 1)
+		{
+			if (auto iter = g_secondaryTempInterpolatorDataMap.find(blendInterp->m_pkSingleInterpolator); iter != g_secondaryTempInterpolatorDataMap.end())
+			{
+				block.m_pkBlendInterp->RemoveInterpInfo(iter->second.blendIndex);
+				g_secondaryTempInterpolatorDataMap.erase(iter);
+			}
+		}
+	}
+}
+
+void BlendFixes::DetachSecondaryTempInterpolators(NiControllerSequence* pkSequence)
+{
+	for (auto& block : pkSequence->GetControlledBlocks())
+	{
+		auto* blendInterpolator = block.m_pkBlendInterp;
+		if (!block.m_spInterpolator || !blendInterpolator)
+			continue;
+		if (auto iter = g_secondaryTempInterpolatorDataMap.find(block.m_spInterpolator); iter != g_secondaryTempInterpolatorDataMap.end())
+		{
+			blendInterpolator->RemoveInterpInfo(iter->second.blendIndex);
+			g_secondaryTempInterpolatorDataMap.erase(iter);
+		}
+		if (blendInterpolator->m_ucInterpCount == 2) // going to be 1 since this is going to be removed
+		{
+			const auto blendInterpItems = blendInterpolator->GetItems();
+			auto otherInterpItem = std::ranges::find_if(blendInterpItems, [&](const auto& item)
+			{
+				return item.m_spInterpolator && item.m_spInterpolator != block.m_spInterpolator;
+			});
+			if (otherInterpItem == blendInterpItems.end())
+				DebugBreak();
+
+			const auto& idTag = block.GetIDTag(pkSequence);
+			auto* poseInterpolator = CreatePoseInterpolator(block.m_spInterpCtlr, idTag);
+			if (!poseInterpolator)
+				continue;
+			auto& data = g_secondaryTempInterpolatorDataMap[otherInterpItem->m_spInterpolator];
+			data.blendIndex = blendInterpolator->AddInterpInfo(poseInterpolator, 1.0f, 0, 1.0f);
+		}
+		if (auto iter = g_interpToWeightSmoothingDataMap.find(block.m_spInterpolator); iter != g_interpToWeightSmoothingDataMap.end())
+		{
+			auto& dataItem = *iter->second;
+			dataItem.isRemoved = true;
+			dataItem.blendIndex = blendInterpolator->AddInterpInfo(block.m_spInterpolator, 0.0f, 0, 0.0f);
+		}
+	}
+}
+
+void BlendFixes::OnSequenceDestroy(NiControllerSequence* sequence)
+{
+}
+
+void BlendFixes::OnInterpolatorDestroy(NiInterpolator* interpolator)
+{
+	g_secondaryTempInterpolatorDataMap.erase(interpolator);
+
+	if (const auto iter = g_interpToWeightSmoothingDataMap.find(interpolator); iter != g_interpToWeightSmoothingDataMap.end())
+	{
+		iter->second->queueDelete = true;
+	}
 }
 
 BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim)
@@ -266,8 +507,8 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	
 	if (srcAnim->m_eState != NiControllerSequence::EASEIN)
 	{
-		destAnim->Activate(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
 		srcAnim->Deactivate(blendTime, false);
+		destAnim->ActivateBlended(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
 		return SKIP;
 	}
 
@@ -279,7 +520,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 		return SKIP;
 	}
 
-	destAnim->Activate(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
+	destAnim->ActivateBlended(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
 	return SKIP;
 }
 
@@ -463,6 +704,14 @@ void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimG
 
 void BlendFixes::ApplyHooks()
 {
+	// NiControllerSequence::DetachInterpolators
+	static UInt32 uiDetachInterpolatorsAddr = 0xA30540;
+	WriteRelCall(0xA350C5, INLINE_HOOK(void, __fastcall, NiControllerSequence* pkSequence)
+	{
+		if (!AdditiveManager::IsAdditiveSequence(pkSequence))
+			DetachSecondaryTempInterpolators(pkSequence);
+		ThisStdCall(uiDetachInterpolatorsAddr, pkSequence);
+	}));
 }
 
 void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim)

@@ -11,5 +11,5 @@ namespace AdditiveManager
     void PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim);
     void SetAdditiveInterpWeightMult(NiInterpolator* interpolator, float weightMult);
     void WriteHooks();
-    
+    bool IsAdditiveInterpolator(NiInterpolator* interpolator);
 }

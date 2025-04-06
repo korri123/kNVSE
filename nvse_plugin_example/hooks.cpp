@@ -95,7 +95,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	if (g_pluginSettings.fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 	{
-		BlendFixes::FixAimPriorities(animData, destAnim);
+		// BlendFixes::FixAimPriorities(animData, destAnim);
 		return destAnim;
 	}
 
@@ -119,10 +119,6 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		auto* idle = animData->animSequence[kSequence_Idle];
 		if (idle && idle->m_eState == NiControllerSequence::ANIMATING)
 			BlendFixes::FixConflictingPriorities(currentAnim, destAnim, idle);
-	}
-	if (destAnim)
-	{
-		BlendFixes::FixAimPriorities(animData, destAnim);
 	}
 	return result;
 }
@@ -654,6 +650,7 @@ void ApplyHooks()
 	
 	if (conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
+	BlendFixes::ApplyHooks();
 
 	
 	
@@ -1009,6 +1006,7 @@ void ApplyHooks()
 
 		return ThisStdCall<double>(0x646020, weap, hasMod);
 	}), &uiGetAttackSpeedMultGetAnimAttackMultAddr);
+	
 }
 
 void WriteDelayedHooks()
@@ -1056,6 +1054,7 @@ void WriteDelayedHooks()
 
 #if _DEBUG && 1
 
+#if 0
 	// AnimData::ResetSequenceState
 	WriteRelCall(0x494D86, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, UInt32 sequenceId, float fEaseOut)
 	{
@@ -1076,7 +1075,7 @@ void WriteDelayedHooks()
 		ThisStdCall(0x496080, animData, sequenceId, fEaseOut);
 	}));
 	//SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
-
+#endif
 	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
 	{
 		// INACTIVE -> do not end movement
@@ -1094,23 +1093,8 @@ void WriteDelayedHooks()
 	// NiControllerManager::DeactivateSequence
 	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
 	{
-		if (pkSequence->animGroup->GetSequenceType() == kSequence_Movement && pkSequence->m_eState == NiControllerSequence::EASEIN)
+		if (pkSequence->animGroup->GetSequenceType() == kSequence_Movement && pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
 		{
-			const auto existingTempBlendSeq = manager->FindSequence([](const NiControllerSequence* seq)
-			{
-				return sv::starts_with_ci(seq->m_kName.CStr(), "__");
-			});
-			if (existingTempBlendSeq)
-			{
-				existingTempBlendSeq->Deactivate(0.0f, false);
-				auto* tmpBlendSeq = manager->CreateTempBlendSequence(pkSequence, nullptr);
-				const sv::stack_string<0x100> tempBlendSeqName("__DeactivateTmpBlend__%s", sv::get_file_name(pkSequence->m_kName.CStr()).data());
-				tmpBlendSeq->m_kName = tempBlendSeqName.c_str();
-				tmpBlendSeq->RemoveInterpolator("Bip01");
-				tmpBlendSeq->Activate(0, true, tmpBlendSeq->m_fSeqWeight, 0.0f, nullptr, false);
-				tmpBlendSeq->Deactivate(fEaseOut, false);
-				return pkSequence->Deactivate(0.0f, false);
-			}
 			return pkSequence->DeactivateNoReset(fEaseOut);
 		}
 		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);

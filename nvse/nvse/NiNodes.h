@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -1744,6 +1745,7 @@ public:
 	~NiControllerSequence();
 	void AttachInterpolatorsAdditive(char cPriority) const;
 	void DetachInterpolators() const;
+	void DetachInterpolatorsHooked() const;
 	void DetachInterpolatorsAdditive() const;
 	void RemoveInterpolator(const NiFixedString& name) const;
 	void RemoveInterpolator(unsigned int index) const;
@@ -1768,24 +1770,6 @@ public:
 		kCycle_Clamp,
 	};
 
-	struct InterpArrayItem
-	{
-		NiPointer<NiInterpolator> m_spInterpolator;
-		NiPointer<NiInterpController> m_spInterpCtlr;
-		NiBlendInterpolator* m_pkBlendInterp;
-		unsigned char m_ucBlendIdx;
-		char m_ucPriority;
-		UInt16 pad;
-
-		void ClearValues()
-		{
-			m_spInterpolator = nullptr;
-			m_spInterpCtlr = nullptr;
-			m_pkBlendInterp = nullptr;
-			m_ucBlendIdx = INVALID_INDEX;
-		}
-	};
-
 	struct IDTag
 	{
 		NiFixedString m_kAVObjectName;
@@ -1803,6 +1787,40 @@ public:
 			m_kInterpolatorID = nullptr;
 		}
 	};
+	
+	struct InterpArrayItem
+	{
+		NiPointer<NiInterpolator> m_spInterpolator;
+		NiPointer<NiInterpController> m_spInterpCtlr;
+		NiBlendInterpolator* m_pkBlendInterp;
+		unsigned char m_ucBlendIdx;
+		char m_ucPriority;
+		UInt16 pad;
+
+		void ClearValues()
+		{
+			m_spInterpolator = nullptr;
+			m_spInterpCtlr = nullptr;
+			m_pkBlendInterp = nullptr;
+			m_ucBlendIdx = INVALID_INDEX;
+		}
+
+		IDTag& GetIDTag(const NiControllerSequence* owner) const
+		{
+			const auto index = GetIndex(owner);
+#if _DEBUG
+			assert(index < owner->m_uiArraySize);
+#endif
+			return owner->m_pkIDTagArray[index];
+		}
+
+		unsigned int GetIndex(const NiControllerSequence* owner) const
+		{
+			return this - owner->m_pkInterpArray;
+		}
+	};
+
+	
 
 	enum AnimState
 	{
@@ -1857,6 +1875,8 @@ public:
 
 	InterpArrayItem* GetControlledBlock(const char* name) const;
 	InterpArrayItem* GetControlledBlock(const NiFixedString& name) const;
+	InterpArrayItem* GetControlledBlock(const NiInterpolator* interpolator) const;
+	InterpArrayItem* GetControlledBlock(const NiBlendInterpolator* interpolator) const;
 
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
 	bool Deactivate_(float fEaseOutTime, bool bTransition);
@@ -1868,10 +1888,14 @@ public:
 	}
 	
 	void AttachInterpolators(char cPriority);
+	void AttachInterpolatorsHooked(char cPriority);
 
 	bool Activate(char cPriority, bool bStartOver, float fWeight,
-		float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
-		bool bTransition);
+	              float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
+	              bool bTransition);
+	bool ActivateBlended(char cPriority, bool bStartOver, float fWeight,
+				  float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
+				  bool bTransition);
 	bool ActivateNoReset(float fEaseInTime);
 
 	NiControllerManager* GetOwner() const
@@ -1953,11 +1977,11 @@ public:
 	virtual void *Unk_2E();
 	virtual void *Unk_2F();
 	virtual UInt16 GetInterpolatorIndexByIDTag(const NiControllerSequence::IDTag*) const;
-	virtual NiInterpolator* CreatePoseInterpolator(UInt16 index) const;
+	virtual NiInterpolator* GetInterpolator(UInt16 index) const;
 	virtual void *SetInterpolator(NiInterpolator *, unsigned int);
 	virtual void *Unk_33();
 	virtual void *Unk_34();
-	virtual NiInterpolator *GetInterpolator(unsigned short usIndex);
+	virtual NiInterpolator *CreatePoseInterpolator(unsigned short usIndex);
 	virtual void *Unk_36();
 	virtual void *Unk_37();
 	virtual void *Unk_38(float, float);
@@ -1973,6 +1997,8 @@ public:
 	virtual NiInterpolator* RemoveInterpInfo(unsigned char ucIndex);
 	virtual void *Unk_39();
 	virtual void *Unk_3A();
+
+	static constexpr unsigned char INVALID_INDEX = 0xFF;
 
 	void ComputeNormalizedWeightsAdditive();
 	void CalculatePrioritiesAdditive();
@@ -2099,6 +2125,7 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
+	void ComputeNormalizedWeightsHighPriorityDominant();
 
 	void ClearWeightSums()
 	{
@@ -2625,11 +2652,32 @@ public:
 	}
 
 	template <typename T>
-	NiControllerSequence* FindSequence(T&& predicate)
+	NiControllerSequence* FindSequence(T&& predicate) const
 	{
 		const auto activeSequences = m_kActiveSequences.ToSpan();
 		auto it = std::ranges::find_if(activeSequences, predicate);
 		return it != activeSequences.end() ? *it : nullptr;
+	}
+
+	NiControllerSequence* GetTempBlendSequence() const
+	{
+		return FindSequence([](const NiControllerSequence* seq)
+		{
+			return std::string_view(seq->m_kName.CStr()).starts_with("__");
+		});
+	}
+
+	NiControllerSequence* GetInterpolatorOwner(const NiInterpolator* interpolator)
+	{
+		for (auto* sequence : m_kActiveSequences)
+		{
+			for (auto& controlledBlock : sequence->GetControlledBlocks())
+			{
+				if (controlledBlock.m_spInterpolator == interpolator)
+					return sequence;
+			}
+		}
+		return nullptr;
 	}
 	
 };

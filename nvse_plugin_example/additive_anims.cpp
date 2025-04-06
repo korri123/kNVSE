@@ -1,5 +1,6 @@
 ﻿#include "additive_anims.h"
 
+#include "blend_fixes.h"
 #include "hooks.h"
 #include "SafeWrite.h"
 #include "utility.h"
@@ -166,7 +167,7 @@ void AdditiveManager::EraseAdditiveSequence(NiControllerSequence* sequence)
     }
 }
 
-bool IsAdditiveInterpolator(NiInterpolator* interpolator)
+bool AdditiveManager::IsAdditiveInterpolator(NiInterpolator* interpolator)
 {
     return additiveInterpMetadataMap.contains(interpolator);
 }
@@ -480,7 +481,7 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
         auto& item = m_pkInterpArray[i];
         if (item.m_spInterpolator != nullptr)
         {
-            if (!IsAdditiveInterpolator(item.m_spInterpolator))
+            if (!AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
             {
                 kItems.push_back(&item);
                 kIndices.push_back(i);
@@ -677,7 +678,7 @@ void NiBlendInterpolator::CalculatePrioritiesAdditive()
     }
     for (auto& item : GetItems())
     {
-        if (item.m_spInterpolator != nullptr && !IsAdditiveInterpolator(item.m_spInterpolator))
+        if (item.m_spInterpolator != nullptr && !AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
         {
             if (item.m_cPriority > m_cNextHighPriority)
             {
@@ -716,6 +717,7 @@ void AdditiveManager::WriteHooks()
             pBlendInterpolator->ComputeNormalizedWeightsAdditive();
             return;
         }
+
         ThisStdCall(uiComputeNormalizedWeightsAddr, pBlendInterpolator);
     }), &uiComputeNormalizedWeightsAddr);
 
@@ -732,9 +734,13 @@ void AdditiveManager::WriteHooks()
         if (kValue->IsRotateValid())
             kValue->GetRotate().ToRotation(originalRotation);
 #endif
-        ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
+        BlendFixes::ApplyWeightSmoothing(pBlendInterpolator);
+        // ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
+        pBlendInterpolator->BlendValuesFixFloatingPointError(fTime, pkInterpTarget, *kValue);
         if (pBlendInterpolator->GetHasAdditiveTransforms())
             pBlendInterpolator->ApplyAdditiveTransforms(fTime, pkInterpTarget, *kValue);
+
+        
         return !kValue->IsTransformInvalid();
     }), &uiBlendValuesAddr);
 
@@ -752,6 +758,7 @@ void AdditiveManager::WriteHooks()
         DebugSequence(pkSequence);
 #endif
 
+        BlendFixes::AttachSecondaryTempInterpolators(pkSequence);
         ThisStdCall(uiAttachInterpolatorsAddr, pkSequence, cPriority);
     }), &uiAttachInterpolatorsAddr);
     
@@ -789,8 +796,11 @@ void AdditiveManager::WriteHooks()
     static UInt32 uiInterpolatorDestroyAddr = 0xA5D3D0;
     WriteRelCall(0xA57089, INLINE_HOOK(void, __fastcall, NiInterpolator* pInterpolator)
     {
-        std::unique_lock lock(g_additiveManagerMutex);
-        additiveInterpMetadataMap.erase(pInterpolator);
+        BlendFixes::OnInterpolatorDestroy(pInterpolator);
+        {
+            std::unique_lock lock(g_additiveManagerMutex);
+            additiveInterpMetadataMap.erase(pInterpolator);
+        }
         ThisStdCall(uiInterpolatorDestroyAddr, pInterpolator);
     }), &uiInterpolatorDestroyAddr);
     

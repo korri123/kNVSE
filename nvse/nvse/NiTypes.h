@@ -576,7 +576,7 @@ struct NiTSet
 		return Iterator{ length, this };
 	}
 
-	std::span<T> ToSpan()
+	std::span<T> ToSpan() const
 	{
 		return std::span(data, length);
 	}
