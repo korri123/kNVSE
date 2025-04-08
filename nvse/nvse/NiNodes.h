@@ -29,6 +29,12 @@ T* NiNew()
 	return CdeclCall<T*>(0xAA13E0, sizeof(T));
 }
 
+template <typename T>
+void NiDelete(T* ptr)
+{
+	CdeclCall<void>(0xAA1460, ptr, sizeof(T));
+}
+
 /*** class hierarchy
  *
  *	yet again taken from rtti information
@@ -634,12 +640,26 @@ public:
 	NiTimeController	* m_controller;					// 00C - size ok
 
 	// doesn't appear to be part of a class?
-	NiExtraData			** m_extraDataList;				// 010 - size ok
-	UInt16				m_extraDataListLen;				// 014 - size ok
-	UInt16				m_extraDataListCapacity;		// 016 - size ok
+	NiExtraData			** m_ppkExtra;				// 010 - size ok
+	UInt16				m_usExtraDataSize;				// 014 - size ok
+	UInt16				m_usMaxSize;		// 016 - size ok
 	// 018
 
 	void SetName(const char* newName);
+
+	bool AddExtraData(NiExtraData* extraData)
+	{
+		return ThisStdCall<bool>(0xA5BCA0, this, extraData);
+	}
+
+	bool RemoveExtraData(const NiFixedString& arKey) {
+		return ThisStdCall<bool>(0xA5BE90, this, &arKey);
+	}
+
+	NiExtraData* GetExtraData(const NiFixedString& arKey) const
+	{
+		return ThisStdCall<NiExtraData*>(0xA5BDD0, this, &arKey);
+	}
 };
 STATIC_ASSERT(sizeof(NiObjectNET) == 0x18);
 
@@ -3164,6 +3184,8 @@ class NiExtraData : public NiObject
 {
 public:
 	NiFixedString m_kName;
+
+	NIRTTI_ADDRESS(0x11F4A80);
 };
 
 class NiTextKeyExtraData : public NiExtraData

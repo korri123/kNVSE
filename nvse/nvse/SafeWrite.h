@@ -85,3 +85,25 @@ void WriteRelJle(UInt32 jumpSrc, UInt32 jumpTgt);
 void PatchMemoryNop(ULONG_PTR Address, SIZE_T Size);
 
 UInt32 GetRelJumpAddr(UInt32 jumpSrc);
+
+template <typename C, typename Ret, typename... Args>
+void ReplaceVTableEntry(void** apVTable, uint32_t auiPosition, Ret(C::* const target)(Args...) const) {
+	union {
+		Ret(C::* tgt)(Args...) const;
+		SIZE_T funcPtr;
+	} conversion;
+	conversion.tgt = target;
+
+	apVTable[auiPosition] = (void*)conversion.funcPtr;
+}
+
+template <typename C, typename Ret, typename... Args>
+void ReplaceVTableEntry(void** apVTable, uint32_t auiPosition, Ret(C::* const target)(Args...)) {
+	union {
+		Ret(C::* tgt)(Args...);
+		SIZE_T funcPtr;
+	} conversion;
+	conversion.tgt = target;
+
+	apVTable[auiPosition] = (void*)conversion.funcPtr;
+}
