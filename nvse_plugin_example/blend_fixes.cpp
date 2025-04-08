@@ -473,6 +473,8 @@ void BlendFixes::OnSequenceDestroy(NiControllerSequence* sequence)
 
 void BlendFixes::OnInterpolatorDestroy(NiInterpolator* interpolator)
 {
+	if (!g_pluginSettings.blendSmoothing)
+		return;
 	g_secondaryTempInterpolatorDataMap.erase(interpolator);
 
 	if (const auto iter = g_interpToWeightSmoothingDataMap.find(interpolator); iter != g_interpToWeightSmoothingDataMap.end())
@@ -718,7 +720,8 @@ void BlendFixes::ApplyHooks()
 	WriteRelCall(0xA350C5, INLINE_HOOK(void, __fastcall, NiControllerSequence* pkSequence)
 	{
 		//if (!AdditiveManager::IsAdditiveSequence(pkSequence))
-		DetachSecondaryTempInterpolators(pkSequence);
+		if (g_pluginSettings.blendSmoothing)
+			DetachSecondaryTempInterpolators(pkSequence);
 		ThisStdCall(uiDetachInterpolatorsAddr, pkSequence);
 	}));
 }

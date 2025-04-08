@@ -734,12 +734,12 @@ void AdditiveManager::WriteHooks()
         if (kValue->IsRotateValid())
             kValue->GetRotate().ToRotation(originalRotation);
 #endif
-        BlendFixes::ApplyWeightSmoothing(pBlendInterpolator);
+        if (g_pluginSettings.blendSmoothing)
+            BlendFixes::ApplyWeightSmoothing(pBlendInterpolator);
         // ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
         pBlendInterpolator->BlendValuesFixFloatingPointError(fTime, pkInterpTarget, *kValue);
         if (pBlendInterpolator->GetHasAdditiveTransforms())
             pBlendInterpolator->ApplyAdditiveTransforms(fTime, pkInterpTarget, *kValue);
-
         
         return !kValue->IsTransformInvalid();
     }), &uiBlendValuesAddr);
@@ -758,7 +758,8 @@ void AdditiveManager::WriteHooks()
         DebugSequence(pkSequence);
 #endif
 
-        BlendFixes::AttachSecondaryTempInterpolators(pkSequence);
+        if (g_pluginSettings.blendSmoothing)
+            BlendFixes::AttachSecondaryTempInterpolators(pkSequence);
         ThisStdCall(uiAttachInterpolatorsAddr, pkSequence, cPriority);
     }), &uiAttachInterpolatorsAddr);
     
