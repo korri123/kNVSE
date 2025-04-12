@@ -110,15 +110,15 @@
 	</Type>
 
   <Type Name="NiTPointerMap_t&lt;*&gt;">
-    <DisplayString>{{NumBuckets = {m_numBuckets}, NumItems = {m_numItems}}}</DisplayString>
+    <DisplayString>{{NumBuckets = {m_uiHashSize}, NumItems = {m_uiCount}}}</DisplayString>
     <Expand>
-      <Item Name="NumBuckets">m_numBuckets</Item>
-      <Item Name="NumItems">m_numItems</Item>
-      <Item Name="Buckets">m_buckets</Item>
+      <Item Name="NumBuckets">m_uiHashSize</Item>
+      <Item Name="NumItems">m_uiCount</Item>
+      <Item Name="Buckets">m_ppkHashTable</Item>
       <CustomListItems>
         <Variable Name="bucketIndex" InitialValue="0" />
-        <Variable Name="entry" InitialValue="m_buckets[0]" />
-        <Size>m_numItems</Size>
+        <Variable Name="entry" InitialValue="m_ppkHashTable[0]" />
+        <Size>m_uiCount</Size>
         <Loop>
 
           <Loop>
@@ -127,10 +127,10 @@
             <Exec>entry = entry->next</Exec>
           </Loop>
 
-          <Break Condition="bucketIndex == m_numBuckets - 1" />
+          <Break Condition="bucketIndex == m_uiHashSize - 1" />
 
           <Exec>
-            entry = m_buckets[++bucketIndex]
+            entry = m_ppkHashTable[++bucketIndex]
           </Exec>
         </Loop>
       </CustomListItems>
@@ -162,6 +162,34 @@
 				<Size>length</Size>
 				<ValuePointer>data</ValuePointer>
 			</ArrayItems>
+		</Expand>
+	</Type>
+
+	<Type Name="NiTFixedStringMap&lt;*&gt;">
+		<DisplayString>{{NumBuckets = {m_uiHashSize}, NumItems = {m_uiCount}}}</DisplayString>
+		<Expand>
+			<Item Name="NumBuckets">m_uiHashSize</Item>
+			<Item Name="NumItems">m_uiCount</Item>
+			<Item Name="Buckets">m_ppkHashTable</Item>
+			<CustomListItems>
+				<Variable Name="bucketIndex" InitialValue="0" />
+				<Variable Name="entry" InitialValue="m_ppkHashTable[0]" />
+				<Size>m_uiCount</Size>
+				<Loop>
+
+					<Loop>
+						<Break Condition="entry == nullptr"/>
+						<Item Condition="entry != nullptr" Name="{entry->m_key}">entry->m_val</Item>
+						<Exec>entry = entry->m_pkNext</Exec>
+					</Loop>
+
+					<Break Condition="bucketIndex == m_uiHashSize - 1" />
+
+					<Exec>
+						entry = m_ppkHashTable[++bucketIndex]
+					</Exec>
+				</Loop>
+			</CustomListItems>
 		</Expand>
 	</Type>
 

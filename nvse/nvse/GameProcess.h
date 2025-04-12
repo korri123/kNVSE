@@ -134,7 +134,7 @@ struct AnimData
 	float							timePassed;			// 0D0
 	UInt32							unk0D4;				// 0D4
 	NiControllerManager* controllerManager;			// 0D8
-	NiTPointerMap<AnimSequenceBase>* mapAnimSequenceBase;// 0DC
+	NiTPointerMap<AnimSequenceBase*>* mapAnimSequenceBase;// 0DC
 	BSAnimGroupSequence* animSequence[8];	// 0E0
 	BSAnimGroupSequence* animSeq100;		// 100
 	tList<KFModel>	loadingAnims;		// 104

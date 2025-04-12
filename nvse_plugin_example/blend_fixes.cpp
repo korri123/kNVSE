@@ -715,15 +715,6 @@ void BlendFixes::FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimG
 
 void BlendFixes::ApplyHooks()
 {
-	// NiControllerSequence::DetachInterpolators
-	static UInt32 uiDetachInterpolatorsAddr = 0xA30540;
-	WriteRelCall(0xA350C5, INLINE_HOOK(void, __fastcall, NiControllerSequence* pkSequence)
-	{
-		//if (!AdditiveManager::IsAdditiveSequence(pkSequence))
-		if (g_pluginSettings.blendSmoothing)
-			DetachSecondaryTempInterpolators(pkSequence);
-		ThisStdCall(uiDetachInterpolatorsAddr, pkSequence);
-	}));
 }
 
 void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim)

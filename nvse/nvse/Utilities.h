@@ -236,3 +236,12 @@ void GeckExtenderMessageLog(const char* fmt, ...);
 #endif
 
 std::vector<void*> GetCallStack(int i);
+
+
+inline void DebugAssert(bool condition)
+{
+#if _DEBUG
+	if (!condition)
+		DebugBreak();
+#endif
+}

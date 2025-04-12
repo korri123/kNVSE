@@ -207,17 +207,16 @@ bool TESObjectREFR::Update3D()
 	return true;
 }
 
-#define GetExtraType(xDataList, Type) (Extra ## Type*)(xDataList)->GetByType(kExtraData_ ## Type)
-
 TESActorBase* Actor::GetActorBase() const
 {
 	if (baseForm->GetModIndex() == 0xFF)
 	{
-		auto* xLvlCre = GetExtraType(&extraDataList, LeveledCreature);
+		auto* xLvlCre = static_cast<ExtraLeveledCreature*>(extraDataList.GetByType(kExtraData_LeveledCreature));
 		if (xLvlCre) return xLvlCre->actorBase;
 	}
 	return static_cast<TESActorBase*>(baseForm);
 }
+
 
 TESObjectREFR* TESObjectREFR::Create(bool bTemp)
 {

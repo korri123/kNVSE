@@ -168,8 +168,8 @@ public:
 		kFlags_HasHardware3D =	1 << 2,
 	};
 	
-	typedef NiTPointerMap <TESGameSound>	TESGameSoundMap;
-	typedef NiTPointerMap <NiAVObject>		NiAVObjectMap;
+	typedef NiTPointerMap <TESGameSound*>	TESGameSoundMap;
+	typedef NiTPointerMap <NiAVObject*>		NiAVObjectMap;
 
 	UInt32					unk000;						// 000
 	UInt32					unk004;						// 004

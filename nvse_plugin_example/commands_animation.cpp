@@ -123,7 +123,7 @@ std::unordered_map<std::pair<const char*, AnimData*>, BSAnimationContext, pair_h
 
 
 #if _DEBUG
-NiTPointerMap_t<const char*, NiAVObject>::Entry entry;
+NiTPointerMap_t<const char*, NiAVObject*>::Entry entry;
 #endif
 
 /*

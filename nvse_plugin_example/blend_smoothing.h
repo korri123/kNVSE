@@ -3,9 +3,20 @@
 
 struct kBlendInterpItem
 {
-    NiControllerSequencePtr sequence = nullptr;
     NiPointer<NiInterpolator> interpolator = nullptr;
     float lastSmoothedWeight = -NI_INFINITY;
+    NiControllerSequence* sequence = nullptr;
+    bool detached = false;
+    unsigned char blendIndex = INVALID_INDEX;
+
+    void ClearValues()
+    {
+        interpolator = nullptr;
+        lastSmoothedWeight = -NI_INFINITY;
+        sequence = nullptr;
+        detached = false;
+        blendIndex = INVALID_INDEX;
+    }
 };
 
 class kBlendInterpolatorExtraData : public NiExtraData
@@ -20,5 +31,12 @@ public:
 
     static kBlendInterpolatorExtraData* Create();
     static const NiFixedString& GetKey();
-    static kBlendInterpolatorExtraData* Acquire(NiAVObject* obj);
+    static kBlendInterpolatorExtraData* Obtain(NiObjectNET* obj);
+
+    kBlendInterpItem& GetItem(NiInterpolator* interpolator);
 };
+
+namespace BlendSmoothing
+{
+    void Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target);
+}

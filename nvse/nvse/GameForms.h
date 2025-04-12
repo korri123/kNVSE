@@ -3583,8 +3583,8 @@ public:
 		char			footstepMaterials[0x12C];	// 030
 	};
 
-	typedef NiTPointerMap<BSSimpleList<TESObjectREFR> > RefListPointerMap;
-	typedef NiTPointerMap<TESObjectCELL> CellPointerMap;
+	typedef NiTPointerMap<BSSimpleList<TESObjectREFR*>* > RefListPointerMap;
+	typedef NiTPointerMap<TESObjectCELL*> CellPointerMap;
 	typedef NiTMapBase<ModInfo *,TESWorldSpace::Offset_Data *> OffsetDataMap;
 
 	TESFullName			fullName;			// 018 confirmed

@@ -32,8 +32,10 @@ T* NiNew()
 template <typename T>
 void NiDelete(T* ptr)
 {
-	CdeclCall<void>(0xAA1460, ptr, sizeof(T));
+	CdeclCall<void*>(0xAA1460, ptr, sizeof(T));
 }
+
+
 
 /*** class hierarchy
  *
@@ -584,7 +586,7 @@ public:
 	NiObject();
 	~NiObject();
 
-	virtual NiRTTI *	GetType(void);		// 02
+	virtual NiRTTI*		GetType(void);		// 02
 	virtual NiNode *	GetAsNiNode(void);	// 03 
 	virtual UInt32		Unk_04(void);		// 04
 	virtual UInt32		Unk_05(void);		// 05
@@ -627,9 +629,11 @@ class RefNiObject
 // 018 (used to be 100, delta E8) confirmed, confirmed no virtual funcs
 class NiObjectNET : public NiObject
 {
+	
 public:
-	NiObjectNET();
 	~NiObjectNET();
+	NiObjectNET();
+
 
 #if RUNTIME
 	MEMBER_FN_PREFIX(NiObjectNET);
@@ -1765,7 +1769,7 @@ public:
 	~NiControllerSequence();
 	void AttachInterpolatorsAdditive(char cPriority) const;
 	void DetachInterpolators() const;
-	void DetachInterpolatorsHooked() const;
+	void DetachInterpolatorsHooked();
 	void DetachInterpolatorsAdditive() const;
 	void RemoveInterpolator(const NiFixedString& name) const;
 	void RemoveInterpolator(unsigned int index) const;
@@ -2039,6 +2043,13 @@ public:
 		char m_cPriority;
 		float m_fEaseSpinner;
 		float m_fUpdateTime;
+
+		unsigned char GetIndex(const NiBlendInterpolator* owner) const
+		{
+			const auto result = this - owner->m_pkInterpArray;
+			DebugAssert(result >= 0 && result < owner->m_ucArraySize);
+			return static_cast<unsigned char>(result);
+		}
 	};
 	unsigned char m_uFlags;
 	unsigned char m_ucArraySize;
@@ -2627,10 +2638,81 @@ class NiAVObjectPalette : public NiObject
 };
 
 
+template <class T_Data>
+class NiTFixedStringMap : public NiMemObject
+{
+public:
+	class NiTMapItem : public NiMemObject {
+	public:
+		NiTMapItem* m_pkNext;
+		NiFixedString m_key;
+		T_Data      m_val;
+	};
+	
+	uint32_t m_uiHashSize;
+	NiTMapItem** m_ppkHashTable;
+	UInt32	m_uiCount;
+
+	NiTFixedStringMap(const NiTFixedStringMap&) = delete;
+	NiTFixedStringMap& operator=(const NiTFixedStringMap&) = delete;
+
+	virtual ~NiTFixedStringMap();
+	virtual NiTMapItem* NewItem();
+	virtual void DeleteItem(NiTMapItem* apItem);
+
+	UInt32 KeyToHashIndex(const NiFixedString& arKey) const
+	{
+		const char* pcKey = arKey;
+		return reinterpret_cast<size_t>(pcKey) % m_uiHashSize;
+	}
+
+	bool IsKeysEqual(const NiFixedString& arKey1, const NiFixedString& arKey2) const
+	{
+		return arKey1 == arKey2;
+	}
+	
+	bool GetAt(const NiFixedString& arKey, T_Data& dataOut) const
+	{
+		if (m_uiCount == 0)
+			return false;
+		uint32_t uiHashIndex = KeyToHashIndex(arKey);
+		auto* pItem = m_ppkHashTable[uiHashIndex];
+		while (pItem) {
+			if (IsKeysEqual(pItem->m_key, arKey)) {
+				dataOut = pItem->m_val;
+				return true;
+			}
+			pItem = pItem->m_pkNext;
+		}
+		return false;
+	}
+
+	T_Data Lookup(const NiFixedString& arKey)
+	{
+		T_Data data;
+		if (GetAt(arKey, data))
+			return data;
+		return nullptr;
+	}
+
+	void RemoveAll() {
+		for (uint32_t i = 0; i < m_uiHashSize; i++)
+		{
+			while (m_ppkHashTable[i])
+			{
+				auto* pkSave = m_ppkHashTable[i];
+				m_ppkHashTable[i] = m_ppkHashTable[i]->m_pkNext;
+				DeleteItem(pkSave);
+			}
+		}
+		m_uiCount = 0;
+	}
+};
+
 class NiDefaultAVObjectPalette : public NiAVObjectPalette
 {
 public:
-	NiTStringPointerMap<NiAVObject> m_kHash;
+	NiTFixedStringMap<NiAVObject*> m_kHash;
 	NiAVObject* m_pkScene;
 };
 
@@ -2644,7 +2726,7 @@ public:
 
 	NiTArray<NiControllerSequence*>	sequences;		// 34
 	NiTSet<NiControllerSequence*> m_kActiveSequences;
-	NiTStringPointerMap<NiControllerSequence> m_kSequenceMap;
+	NiTStringPointerMap<NiControllerSequence*> m_kSequenceMap;
 	NiTArray<void*> *pListener;
 	bool m_bCumulitive;
 	NiTSet<NiControllerSequence*> m_kTempBlendSeqs;

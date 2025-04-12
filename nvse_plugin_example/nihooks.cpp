@@ -12,6 +12,8 @@
 #include <functional>
 #include <ranges>
 
+#include "blend_smoothing.h"
+
 #define BETHESDA_MODIFICATIONS 1
 #define NI_OVERRIDE 0
 
@@ -1002,36 +1004,37 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
+    BlendFixes::AttachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
         auto* pkBlendInterp = kItem.m_pkBlendInterp;
         if (!kItem.m_spInterpolator || !pkBlendInterp)
             continue;
-        const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
 
-        if (cInterpPriority > pkBlendInterp->m_cHighPriority)
+        auto& idTag = kItem.GetIDTag(this);
+        auto* target = m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName);
+        DebugAssert(target && target->m_pcName == idTag.m_kAVObjectName);
+
+        auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+        DebugAssert(extraData);
+
+        auto& extraInterpItem = extraData->GetItem(kItem.m_spInterpolator);
+        extraInterpItem.sequence = this;
+
+        const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
+        if (!extraInterpItem.detached)
         {
-            for (auto& item : pkBlendInterp->GetItems())
-            {
-                if (!item.m_spInterpolator || item.m_cPriority != pkBlendInterp->m_cNextHighPriority)
-                    continue;
-                item.m_cPriority = pkBlendInterp->m_cHighPriority;
-            }
+            kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(kItem.m_spInterpolator, 0.0f, cInterpPriority);
         }
-        else if (cInterpPriority > pkBlendInterp->m_cNextHighPriority && cInterpPriority != pkBlendInterp->m_cHighPriority)
+        else
         {
-            for (auto& item : pkBlendInterp->GetItems())
-            {
-                if (!item.m_spInterpolator || item.m_cPriority != pkBlendInterp->m_cNextHighPriority)
-                    continue;
-                item.m_cPriority = cInterpPriority;
-            }
+            extraInterpItem.detached = false;
+            kItem.m_ucBlendIdx = extraInterpItem.blendIndex;
+            extraInterpItem.blendIndex = INVALID_INDEX;
+            pkBlendInterp->SetPriority(cInterpPriority, kItem.m_ucBlendIdx);
         }
-        
-        kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(
-            kItem.m_spInterpolator, 0.0f, cInterpPriority);
-        assert(kItem.m_ucBlendIdx != INVALID_INDEX);
+        DebugAssert(kItem.m_ucBlendIdx != INVALID_INDEX);
     }
 }
 
@@ -1547,23 +1550,44 @@ void NiControllerSequence::DetachInterpolators() const
     }
 }
 
-void NiControllerSequence::DetachInterpolatorsHooked() const
+void NiControllerSequence::DetachInterpolatorsHooked()
 {
+    BlendFixes::DetachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
-        if (kItem.m_pkBlendInterp)
+        if (auto* blendInterp = kItem.m_pkBlendInterp)
         {
-            if (kItem.m_ucPriority == kItem.m_pkBlendInterp->m_cHighPriority)
+            const auto& idTag = kItem.GetIDTag(this);
+            auto* target = m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName);
+            if (!target)
             {
-                for (auto& kOther : kItem.m_pkBlendInterp->GetItems())
-                {
-                    if (!kOther.m_spInterpolator)
-                        continue;
-                    
-                }
+                // this case happens in the destructor of NiControllerSequence
+                blendInterp->RemoveInterpInfo(kItem.m_ucBlendIdx);
+                kItem.m_ucBlendIdx = INVALID_INDEX;
+                continue;
             }
-            kItem.m_pkBlendInterp->RemoveInterpInfo(kItem.m_ucBlendIdx);
+            
+            auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+            DebugAssert(extraData);
+
+            auto& extraInterpItem = extraData->GetItem(kItem.m_spInterpolator);
+
+            if (extraInterpItem.lastSmoothedWeight == 0.0f || extraInterpItem.lastSmoothedWeight == -NI_INFINITY)
+            {
+                DebugAssert(!extraInterpItem.detached);
+                DebugAssert(kItem.m_ucBlendIdx != INVALID_INDEX);
+                if (kItem.m_ucBlendIdx != INVALID_INDEX)
+                    blendInterp->RemoveInterpInfo(kItem.m_ucBlendIdx);
+                extraInterpItem.ClearValues();
+            }
+            else
+            {
+                extraInterpItem.detached = true;
+                extraInterpItem.blendIndex = kItem.m_ucBlendIdx;
+                blendInterp->SetPriority(0, kItem.m_ucBlendIdx);
+            }
+            kItem.m_ucBlendIdx = INVALID_INDEX;
         }
     }
 }
@@ -1693,11 +1717,12 @@ namespace NiHooks
         // Spider hands fix
         // WriteRelCall(0xA41160, &NiBlendTransformInterpolator::BlendValuesFixFloatingPointError); // hook conflict
         WriteRelJump(0xA330AB, &PoseSequenceIDTagHook);
-        //WriteRelJump(0xA30900, &NiControllerSequence::AttachInterpolatorsHooked);
+        WriteRelJump(0xA30900, &NiControllerSequence::AttachInterpolatorsHooked);
+        WriteRelJump(0xA30540, &NiControllerSequence::DetachInterpolatorsHooked);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant);
-        // WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues); // modified and enhanced movement bugs out when sprinting
+        //WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues); // modified and enhanced movement bugs out when sprinting
         //WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
         //WriteRelJump(0xA2F800, &NiControllerManager::BlendFromPose);
         //WriteRelJump(0xA2E280, &NiControllerManager::CrossFade);

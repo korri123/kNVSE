@@ -1,7 +1,6 @@
 #pragma once
 #include <span>
 
-#include "NiNodes.h"
 #include "Utilities.h"
 
 #define ASSERT_SIZE(name, size) static_assert(sizeof(name) == size, "Size mismatch for " #name)
@@ -641,7 +640,7 @@ struct MapNode
 {
 	MapNode* next;
 	T_Key	key;
-	T_Data* data;
+	T_Data data;
 };
 
 // 10
@@ -652,7 +651,10 @@ class NiTPointerMap_t
 {
 public:
 	typedef MapNode<T_Key, T_Data> Entry;
-
+	UInt32	m_uiHashSize;	// 4
+	Entry	** m_ppkHashTable;	// 8
+	UInt32	m_uiCount;		// C
+	
 	virtual ~NiTPointerMap_t();
 	
 	// note: traverses in non-numerical order
@@ -694,19 +696,19 @@ public:
 		UInt32		m_bucket;
 	};
 
-	virtual UInt32	CalculateBucket(UInt32 key);
-	virtual bool	CompareKey(UInt32 lhs, UInt32 rhs);
-	virtual void	SetValue(UInt32 arg0, UInt32 arg1, UInt32 arg2);	// assign to entry
-	virtual void	NullSub(UInt32 arg);
-	virtual void	NewItem(void);	// locked operations
+	virtual UInt32	KeyToHashIndex(const T_Key key);
+	virtual bool	IsKeysEqual(const T_Key key1, const T_Key key2);
+	virtual void	SetValue(Entry* node, T_Key key, T_Data data);	// assign to entry
+	virtual void	ClearValue(Entry* apItem);
+	virtual void	NewItem();	// locked operations
 	virtual void	DeleteItem(Entry* entry);	// locked operations
 
-	T_Data *	Lookup(T_Key key);
+	T_Data	Lookup(T_Key key);
 	bool		Insert(Entry* nuEntry);
 
 	void Replace(T_Key key, T_Data* data)
 	{
-		for (Entry* traverse = m_buckets[key % m_numBuckets]; traverse; traverse = traverse->next)
+		for (Entry* traverse = m_ppkHashTable[key % m_uiHashSize]; traverse; traverse = traverse->next)
 			if (traverse->key == key)
 			{
 				traverse->data = data;
@@ -726,54 +728,26 @@ public:
 
 	[[nodiscard]] Iterator end()
 	{
-		return Iterator(this, static_cast<Entry*>(nullptr), m_numBuckets + 1);
+		return Iterator(this, static_cast<Entry*>(nullptr), m_uiHashSize + 1);
 	}
 
 
 //	void	** _vtbl;		// 0
-	UInt32	m_numBuckets;	// 4
-	Entry	** m_buckets;	// 8
-	UInt32	m_numItems;		// C
+
 };
 
 template <typename T_Key, typename T_Data>
-T_Data* NiTPointerMap_t <T_Key, T_Data>::Lookup(T_Key key)
+T_Data NiTPointerMap_t <T_Key, T_Data>::Lookup(T_Key key)
 {
-	if (m_numBuckets == 0)
-		return nullptr;
-	const auto hashNiString = [](const char* str)
+	auto hashIndex = KeyToHashIndex(key);
+	auto* item = m_ppkHashTable[hashIndex];
+	while (item)
 	{
-		// 0x486DF0
-		UInt32 hash = 0;
-		while (*str)
+		if (IsKeysEqual(item->key, key))
 		{
-			hash = *str + 33 * hash;
-			++str;
+			return item->data;
 		}
-		return hash;
-	};
-	UInt32 hashIndex;
-	if constexpr (std::is_same_v<T_Key, const char*>)
-	{
-		hashIndex = hashNiString(key) % m_numBuckets;
-	}
-	else
-	{
-		hashIndex = key % m_numBuckets;
-	}
-	for(Entry* traverse = m_buckets[hashIndex]; traverse; traverse = traverse->next)
-	{
-		if constexpr (std::is_same_v<T_Key, const char*>)
-		{
-			if (!_stricmp(traverse->key, key))
-			{
-				return traverse->data;
-			}
-		}
-		else if (traverse->key == key)
-		{
-			return traverse->data;
-		}
+		item = item->next;
 	}
 	return nullptr;
 }
@@ -782,13 +756,13 @@ template <typename T_Key, typename T_Data>
 bool NiTPointerMap_t <T_Key, T_Data>::Insert(Entry* nuEntry)
 {
 	// game code does not appear to care about ordering of entries in buckets
-	UInt32 bucket = nuEntry->key % m_numBuckets;
-	Entry* prev = NULL;
-	for (Entry* cur = m_buckets[bucket]; cur; cur = cur->next) {
-		if (cur->key == nuEntry->key) {
+	UInt32 bucket = KeyToHashIndex(nuEntry->key);
+	Entry* prev = nullptr;
+	for (Entry* cur = m_ppkHashTable[bucket]; cur; cur = cur->next) {
+		if (IsKeysEqual(cur->key, nuEntry->key)) {
 			return false;
 		}
-		else if (!cur->next) {
+		if (!cur->next) {
 			prev = cur;
 			break;
 		}
@@ -798,10 +772,10 @@ bool NiTPointerMap_t <T_Key, T_Data>::Insert(Entry* nuEntry)
 		prev->next = nuEntry;
 	}
 	else {
-		m_buckets[bucket] = nuEntry;
+		m_ppkHashTable[bucket] = nuEntry;
 	}
 
-	m_numBuckets++;
+	m_uiHashSize++;
 	return true;
 }
 
@@ -829,11 +803,11 @@ bool NiTPointerMap_t <T_Key, T_Data>::Iterator::Next(void)
 	if(m_entry)
 		m_entry = m_entry->next;
 
-	while(!m_entry && (m_bucket < (m_table->m_numBuckets - 1)))
+	while(!m_entry && (m_bucket < (m_table->m_uiHashSize - 1)))
 	{
 		m_bucket++;
 
-		m_entry = m_table->m_buckets[m_bucket];
+		m_entry = m_table->m_ppkHashTable[m_bucket];
 	}
 
 	return m_entry != NULL;
@@ -849,17 +823,17 @@ template <typename T_Key, typename T_Data>
 void NiTPointerMap_t <T_Key, T_Data>::Iterator::FindValid(void)
 {
 	// validate bucket
-	if(m_bucket >= m_table->m_numBuckets) return;
+	if(m_bucket >= m_table->m_uiHashSize) return;
 
 	// get bucket
-	m_entry = m_table->m_buckets[m_bucket];
+	m_entry = m_table->m_ppkHashTable[m_bucket];
 
 	// find non-empty bucket
-	while(!m_entry && (m_bucket < (m_table->m_numBuckets - 1)))
+	while(!m_entry && (m_bucket < (m_table->m_uiHashSize - 1)))
 	{
 		m_bucket++;
 
-		m_entry = m_table->m_buckets[m_bucket];
+		m_entry = m_table->m_ppkHashTable[m_bucket];
 	}
 }
 

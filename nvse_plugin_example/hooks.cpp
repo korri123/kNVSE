@@ -285,7 +285,7 @@ BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID groupId)
 
 // attempt to fix anims that don't get loaded since they aren't in the game to begin with
 template <int AnimDataOffset>
-bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void*, UInt16 groupId, AnimSequenceBase** base)
+bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase*>* animMap, void*, UInt16 groupId, AnimSequenceBase** base)
 {
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
@@ -304,7 +304,7 @@ bool __fastcall NonExistingAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, vo
 
 // here we first try to get kNVSE anims without murdering performance
 template <int AnimDataOffset>
-bool __fastcall OverrideWithCustomAnimHook(NiTPointerMap<AnimSequenceBase>* animMap, void*, UInt16 groupId, AnimSequenceBase** base)
+bool __fastcall OverrideWithCustomAnimHook(NiTPointerMap<AnimSequenceBase*>* animMap, void*, UInt16 groupId, AnimSequenceBase** base)
 {
 	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
 	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
@@ -1006,6 +1006,108 @@ void ApplyHooks()
 
 		return ThisStdCall<double>(0x646020, weap, hasMod);
 	}), &uiGetAttackSpeedMultGetAnimAttackMultAddr);
+
+	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
+	{
+		// INACTIVE -> do not end movement
+		// ANIMATING -> end movement
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		if (HolsterUnholsterLocomotionFixes::IsTryingToEndEquip(addrOfRetn))
+			return NiControllerSequence::INACTIVE;
+		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
+			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
+		// stop game from not ending move anims immediately
+		return NiControllerSequence::ANIMATING;
+	}));
+
+
+	// NiControllerManager::DeactivateSequence
+	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
+	{
+		if (pkSequence->animGroup->GetSequenceType() == kSequence_Movement && pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
+		{
+			return pkSequence->DeactivateNoReset(fEaseOut);
+		}
+		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
+	}));
+
+	// NiControllerManager::CreateTempBlendSequence
+	WriteRelCall(0xA2F817, INLINE_HOOK(NiControllerSequence*, __fastcall, NiControllerManager* pkManager, void*, NiControllerSequence* pkSequence, NiControllerSequence* pkTimeSyncSeq)
+	{
+		auto* result = ThisStdCall<NiControllerSequence*>(0xA2F170, pkManager, pkSequence, pkTimeSyncSeq);
+		const static auto sTempBlendSequenceName = NiFixedString("__TempBlendSequence__");
+		result->m_kName = sTempBlendSequenceName;
+		return result;
+	}));
+
+	// TurnLeft/Right hook
+	WriteRelCall(0x896C78, INLINE_HOOK(void, __fastcall)
+	{
+		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+		const auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x10C);
+		auto* groupId = GET_CALLER_VAR_PTR_LAMBDA(UInt16*, -0x40);
+		const auto moveFlags = actor->actorMover ? actor->actorMover->GetMovementFlags() : 0;
+
+		const bool turningLeft = (moveFlags & kMoveFlag_TurnLeft) != 0;
+		const bool turningRight = (moveFlags & kMoveFlag_TurnRight) != 0;
+		if (turningLeft || turningRight)
+		{
+			NiControllerSequence* moveSequence;
+			[[msvc::noinline_calls]] {
+				moveSequence = actor->baseProcess->GetAnimData()->controllerManager->FindSequence([](const NiControllerSequence* seq)
+				{
+					if (NOT_TYPE(seq, BSAnimGroupSequence))
+						return false;
+					TESAnimGroup* animGroup = static_cast<const BSAnimGroupSequence*>(seq)->animGroup;
+					if (!animGroup)
+						return false;
+					return animGroup->IsBaseMovement();
+				});
+			}
+				if (!moveSequence)
+				{
+					if (turningLeft)
+					{
+						*groupId = kAnimGroup_TurnLeft;
+					}
+					else if (turningRight)
+					{
+						*groupId = kAnimGroup_TurnRight;
+					}
+				}
+		}
+		*addrOfRetn = 0x896C9A;
+	}));
+	PatchMemoryNop(0x896C7C + 1, 2);
+
+	// allow move in jumpland
+	// bhkCharacterController::GetContextHkState
+	WriteRelCall(0x8964E1, INLINE_HOOK(UInt32, __fastcall, bhkCharacterController* controller)
+	{
+		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x10C);
+		auto* animData = actor->baseProcess->GetAnimData();
+		const auto moveGroupId = static_cast<AnimGroupID>(animData->groupIDs[kSequence_Movement]);
+
+		const auto result = ThisStdCall<UInt32>(0x5C0880, controller);
+		//constexpr auto kCharControllerState_Jumping = 1;
+		//constexpr auto kCharControllerState_InAir = 2;
+		//if (result == kCharControllerState_Jumping || result == kCharControllerState_InAir)
+		//	return result;
+
+		if (moveGroupId == kAnimGroup_JumpLand)
+		{
+			GameFuncs::Actor_SetAnimActionAndSequence(actor, Decoding::kAnimAction_None, nullptr);
+		}
+
+		return result;
+	}));
+
+	// clear object palette in NiControllerManager destructor
+	WriteRelCall(0xA2EF83, INLINE_HOOK(void, __fastcall, NiControllerManager* manager)
+	{
+		manager->m_spObjectPalette->m_kHash.RemoveAll();
+		ThisStdCall(0xA2EBB0, manager);
+	}));
 	
 }
 
@@ -1076,100 +1178,7 @@ void WriteDelayedHooks()
 	}));
 	//SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
 #endif
-	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
-	{
-		// INACTIVE -> do not end movement
-		// ANIMATING -> end movement
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		if (HolsterUnholsterLocomotionFixes::IsTryingToEndEquip(addrOfRetn))
-			return NiControllerSequence::INACTIVE;
-		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
-			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
-		// stop game from not ending move anims immediately
-		return NiControllerSequence::ANIMATING;
-	}));
-
-
-	// NiControllerManager::DeactivateSequence
-	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
-	{
-		if (pkSequence->animGroup->GetSequenceType() == kSequence_Movement && pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
-		{
-			return pkSequence->DeactivateNoReset(fEaseOut);
-		}
-		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
-	}));
-
-	// NiControllerManager::CreateTempBlendSequence
-	WriteRelCall(0xA2F817, INLINE_HOOK(NiControllerSequence*, __fastcall, NiControllerManager* pkManager, void*, NiControllerSequence* pkSequence, NiControllerSequence* pkTimeSyncSeq)
-	{
-		auto* result = ThisStdCall<NiControllerSequence*>(0xA2F170, pkManager, pkSequence, pkTimeSyncSeq);
-		const static auto sTempBlendSequenceName = NiFixedString("__TempBlendSequence__");
-		result->m_kName = sTempBlendSequenceName;
-		return result;
-	}));
-
-	// TurnLeft/Right hook
-	WriteRelCall(0x896C78, INLINE_HOOK(void, __fastcall)
-	{
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		const auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x10C);
-		auto* groupId = GET_CALLER_VAR_PTR_LAMBDA(UInt16*, -0x40);
-		const auto moveFlags = actor->actorMover ? actor->actorMover->GetMovementFlags() : 0;
-
-		const bool turningLeft = (moveFlags & kMoveFlag_TurnLeft) != 0;
-		const bool turningRight = (moveFlags & kMoveFlag_TurnRight) != 0;
-		if (turningLeft || turningRight)
-		{
-			NiControllerSequence* moveSequence;
-			[[msvc::noinline_calls]] {
-				moveSequence = actor->baseProcess->GetAnimData()->controllerManager->FindSequence([](const NiControllerSequence* seq)
-				{
-					if (NOT_TYPE(seq, BSAnimGroupSequence))
-						return false;
-					TESAnimGroup* animGroup = static_cast<const BSAnimGroupSequence*>(seq)->animGroup;
-					if (!animGroup)
-						return false;
-					return animGroup->IsBaseMovement();
-				});
-			}
-			if (!moveSequence)
-			{
-				if (turningLeft)
-				{
-					*groupId = kAnimGroup_TurnLeft;
-				}
-				else if (turningRight)
-				{
-					*groupId = kAnimGroup_TurnRight;
-				}
-			}
-		}
-		*addrOfRetn = 0x896C9A;
-	}));
-	PatchMemoryNop(0x896C7C + 1, 2);
-
-	// allow move in jumpland
-	// bhkCharacterController::GetContextHkState
-	WriteRelCall(0x8964E1, INLINE_HOOK(UInt32, __fastcall, bhkCharacterController* controller)
-	{
-		auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x10C);
-		auto* animData = actor->baseProcess->GetAnimData();
-		const auto moveGroupId = static_cast<AnimGroupID>(animData->groupIDs[kSequence_Movement]);
-
-		const auto result = ThisStdCall<UInt32>(0x5C0880, controller);
-		//constexpr auto kCharControllerState_Jumping = 1;
-		//constexpr auto kCharControllerState_InAir = 2;
-		//if (result == kCharControllerState_Jumping || result == kCharControllerState_InAir)
-		//	return result;
-
-		if (moveGroupId == kAnimGroup_JumpLand)
-		{
-			GameFuncs::Actor_SetAnimActionAndSequence(actor, Decoding::kAnimAction_None, nullptr);
-		}
-		
-		return result;
-	}));
+	
 
 #if 0
 	// BSAnimGroupSequence::Deactivate when easing out

@@ -266,7 +266,7 @@ enum AnimKeyTypes
 	kAnimKeyType_MAX = 0xB,
 };
 
-using GameAnimMap = NiTPointerMap<AnimSequenceBase>;
+using GameAnimMap = NiTPointerMap<AnimSequenceBase*>;
 
 struct SavedAnims
 {

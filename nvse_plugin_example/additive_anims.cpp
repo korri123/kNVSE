@@ -1,6 +1,7 @@
 ﻿#include "additive_anims.h"
 
 #include "blend_fixes.h"
+#include "blend_smoothing.h"
 #include "hooks.h"
 #include "SafeWrite.h"
 #include "utility.h"
@@ -735,7 +736,10 @@ void AdditiveManager::WriteHooks()
             kValue->GetRotate().ToRotation(originalRotation);
 #endif
         if (g_pluginSettings.blendSmoothing)
-            BlendFixes::ApplyWeightSmoothing(pBlendInterpolator);
+        {
+            // BlendFixes::ApplyWeightSmoothing(pBlendInterpolator);
+            BlendSmoothing::Apply(pBlendInterpolator, pkInterpTarget);
+        }
         // ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
         pBlendInterpolator->BlendValuesFixFloatingPointError(fTime, pkInterpTarget, *kValue);
         if (pBlendInterpolator->GetHasAdditiveTransforms())
@@ -757,10 +761,8 @@ void AdditiveManager::WriteHooks()
 #if _DEBUG && 0
         DebugSequence(pkSequence);
 #endif
-
-        if (g_pluginSettings.blendSmoothing)
-            BlendFixes::AttachSecondaryTempInterpolators(pkSequence);
-        ThisStdCall(uiAttachInterpolatorsAddr, pkSequence, cPriority);
+        pkSequence->AttachInterpolatorsHooked(cPriority);
+        // ThisStdCall(uiAttachInterpolatorsAddr, pkSequence, cPriority);
     }), &uiAttachInterpolatorsAddr);
     
     // AnimData::Refresh

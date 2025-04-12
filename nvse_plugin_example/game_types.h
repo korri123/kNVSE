@@ -1219,7 +1219,7 @@ enum WeaponModFlags: UInt32
 
 struct IdleAnimDirectoryMap
 {
-	NiTStringPointerMap<NiTLargeArray<TESIdleForm*>> animRootMap;
+	NiTStringPointerMap<NiTLargeArray<TESIdleForm*>*> animRootMap;
 	bool bLoaded;
 	NiTArray<TESIdleForm*> formArray;
 

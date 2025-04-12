@@ -558,7 +558,7 @@ struct BGSFormChange
 
 struct	BGSSaveLoadChangesMap
 {
-	NiTPointerMap<BGSFormChange> BGSFormChangeMap;
+	NiTPointerMap<BGSFormChange*> BGSFormChangeMap;
 	// most likely more
 };
 
