@@ -2724,12 +2724,12 @@ class NiControllerManager : public NiTimeController
 public:
 	virtual void	Unk_2D(void);
 
-	NiTArray<NiControllerSequence*>	sequences;		// 34
+	NiTArray<NiPointer<NiControllerSequence>>	sequences;		// 34
 	NiTSet<NiControllerSequence*> m_kActiveSequences;
 	NiTStringPointerMap<NiControllerSequence*> m_kSequenceMap;
 	NiTArray<void*> *pListener;
 	bool m_bCumulitive;
-	NiTSet<NiControllerSequence*> m_kTempBlendSeqs;
+	NiTSet<NiPointer<NiControllerSequence>> m_kTempBlendSeqs;
 	NiDefaultAVObjectPalette* m_spObjectPalette;
 
 	bool BlendFromPose(NiControllerSequence* pkSequence, float fDestFrame,

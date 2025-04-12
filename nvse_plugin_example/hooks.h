@@ -26,7 +26,7 @@ struct PluginINISettings
     bool fixWrongAnimName = false;
     bool fixMissingPrnKey = false;
     bool fixReloadStartAllowReloadTweak = false;
-    bool blendSmoothing = true;
+    bool blendSmoothing = false;
     std::vector<std::string> legacyAnimTimePaths;
 };
 extern PluginINISettings g_pluginSettings;

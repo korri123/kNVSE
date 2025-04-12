@@ -82,7 +82,7 @@ public:
 	virtual void		Unk_77(void);
 	virtual void		Unk_78(void);
 	virtual AnimData*	GetAnimData(void);			// 0079
-	virtual ValidBip01Names * GetValidBip01Names(void);	// 007A	Character only
+	virtual ValidBip01Names * GetValidBip01Names(AnimData* animData, Actor* actor);	// 007A	Character only
 	virtual ValidBip01Names * CallGetValidBip01Names(void);
 	virtual void		SetValidBip01Names(ValidBip01Names validBip01Names);
 	virtual NiPoint3*		GetPos(void);				// GetPos or GetDistance
@@ -724,6 +724,8 @@ public:
 	{
 		return ThisStdCall<float>(0x884EB0, this);
 	}
+
+	void RestartAnims();
 };
 STATIC_ASSERT(offsetof(Actor, magicCaster) == 0x088);
 

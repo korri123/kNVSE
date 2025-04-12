@@ -294,6 +294,27 @@ ExtraContainerExtendDataArray	Actor::GetEquippedExtendDataList()
 	return outExtendData;
 }
 
+void Actor::RestartAnims()
+{
+	if (this == g_thePlayer)
+	{
+		auto* baseProcess = g_thePlayer->baseProcess;
+		auto* animData1st = g_thePlayer->firstPersonAnimData;
+		auto* animData3rd = baseProcess->animData;
+		auto* bipedAnims1st = g_thePlayer->bipedAnims1st;
+		auto* bipedAnim3rd = g_thePlayer->validBip01Names;
+		auto weaponOut = baseProcess->IsWeaponOut();
+		baseProcess->LoadAnimData(weaponOut, bipedAnim3rd, animData3rd, this);
+		baseProcess->LoadAnimData(weaponOut, bipedAnims1st, animData1st, this);
+		return;
+	}
+	auto* baseProcess = this->baseProcess;
+	auto* animData = baseProcess->GetAnimData();
+	auto* bipedAnim = this->GetValidBip01Names(animData, this);
+	auto weaponOut = baseProcess->IsWeaponOut();
+	baseProcess->LoadAnimData(weaponOut, bipedAnim, animData, this);
+}
+
 bool TESObjectREFR::GetInventoryItems(InventoryItemsMap &invItems)
 {
 	TESContainer *container = GetContainer();

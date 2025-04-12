@@ -354,15 +354,16 @@ extern IOManager** g_ioManager;
 
 // O4 assumed
 class InterfacedClass {
-	virtual void Destroy(bool doFree);
-	virtual void AllocateTLSValue(void) = 0;		// not implemented
+public:
+	virtual ~InterfacedClass(); // 00
+	virtual void AllocateTLSValue(void);		// not implemented
 };
 
 // 40
-template<typename _K, class _C>
+template<typename T_Key, class T_Data>
 class LockFreeMap: public InterfacedClass
 {
-protected:
+public:
 	// 0C
 	struct Data004
 	{
@@ -400,23 +401,24 @@ protected:
 		Data008	**dat008;		// array of pair of DWord
 		UInt32	count;		// Init'd to 0
 	};	// most likely an array or a map
+	
 
-	virtual bool Get(_K key, _C *destination) = 0;
-	virtual void Unk_03(void) = 0;
-	virtual void Unk_04(void) = 0;
-	virtual void Unk_05(void) = 0;
-	virtual void Unk_06(void) = 0;
-	virtual void Unk_07(void) = 0;
-	virtual void Unk_08(void) = 0;
-	virtual UInt32 Hash(_K key) = 0;
-	virtual void Unk_0A(void) = 0;
-	virtual void Unk_0B(void) = 0;
-	virtual void Unk_0C(void) = 0;
-	virtual void Unk_0D(void) = 0;
-	virtual void Unk_0E(void) = 0;
-	virtual void Unk_0F(void) = 0;
-	virtual void Unk_10(void) = 0;
-	virtual void Unk_11(void) = 0;
+	virtual bool Get(T_Key key, T_Data *destination); // 02
+	virtual bool SetAt(UInt32 auiPos, T_Key key, T_Data& val, bool); // 03
+	virtual bool SetAtAlt(T_Key key, T_Data& val, bool); // 04
+	virtual bool RemoveAt(T_Key key); // 05
+	virtual void Unk_06(void); // 06
+	virtual void Unk_07(void); // 07
+	virtual void Unk_08(void); // 08
+	virtual UInt32 GetBucketForKey(T_Key key); // 09
+	virtual void DeleteKey(T_Key key); // 0A
+	virtual T_Key GenerateKey(T_Key src); // 0B
+	virtual T_Key CopyKey(T_Key src, T_Key& val); // 0C
+	virtual bool IsKeyGreaterOrEqual(T_Key lkey, T_Key rkey);// 0D
+	virtual bool IsKeyEqual(T_Key lkey, T_Key rkey); // 0E
+	virtual UInt32 IncrementCount(); // 0F
+	virtual UInt32 DecrementCount(); // 10
+	virtual UInt32 GetCount() const; // 11
 
 	Data004	**dat004;		// 04 array of arg0 12 bytes elements (uninitialized)
 	UInt32	bucketCount;	// 08 Init'd to arg1, count of DWord to allocate in array at 000C
@@ -438,7 +440,7 @@ class LockFreeStringMap: public LockFreeMap<char const *, _C> {};
 template<class _C>
 class LockFreeCaseInsensitiveStringMap: public LockFreeStringMap<_C>
 {
-protected:
+public:
 	struct InternalIterator
 	{
 		InternalIterator()

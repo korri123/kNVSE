@@ -507,6 +507,29 @@ struct NiTArray
 		return NULL;
 	}
 
+	UInt16 SizeWithEmpty() const { return m_usSize; }
+
+	UInt16 EffectiveSize() const { return m_usESize; }
+
+	uint32_t Remove(const T_Data& element)
+	{
+		if (element != T_Data(0)) {
+			for (uint16_t i = 0; i < m_usSize; i++) {
+				if (m_pBase[i] == element) {
+					m_pBase[i] = T_Data(0);
+
+					m_usESize--;
+					if (i == m_usSize - 1)
+						m_usSize--;
+
+					return i;
+				}
+			}
+		}
+
+		return static_cast<uint32_t>(~0);
+	}
+
 	T_Data Get(UInt32 idx) { return m_pBase[idx]; }
 
 	UInt16 Length() { return m_usSize; }
@@ -638,9 +661,9 @@ struct NiTSet
 template <typename T_Key, typename T_Data>
 struct MapNode
 {
-	MapNode* next;
-	T_Key	key;
-	T_Data data;
+	MapNode* m_pkNext;
+	T_Key	m_key;
+	T_Data m_val;
 };
 
 // 10
@@ -706,14 +729,66 @@ public:
 	T_Data	Lookup(T_Key key);
 	bool		Insert(Entry* nuEntry);
 
-	void Replace(T_Key key, T_Data* data)
+	Entry* GetEntry(T_Key key)
 	{
-		for (Entry* traverse = m_ppkHashTable[key % m_uiHashSize]; traverse; traverse = traverse->next)
-			if (traverse->key == key)
+		auto hashIndex = KeyToHashIndex(key);
+		auto* item = m_ppkHashTable[hashIndex];
+		while (item)
+		{
+			if (IsKeysEqual(item->m_key, key))
 			{
-				traverse->data = data;
-				break;
+				return item;
 			}
+			item = item->m_pkNext;
+		}
+		return nullptr;
+	}
+
+	bool RemoveAt(T_Key key)
+	{
+		// look up hash table location for key
+		unsigned int uiIndex = KeyToHashIndex(key);
+		auto* pkItem = m_ppkHashTable[uiIndex];
+
+		// search list at hash table location for key
+		if (pkItem)
+		{
+			if (IsKeysEqual(key, pkItem->m_key))
+			{
+				// item at front of list, remove it
+				m_ppkHashTable[uiIndex] = pkItem->m_pkNext;
+				ClearValue(pkItem);
+            
+				DeleteItem(pkItem);
+
+				m_uiCount--;
+				return true;
+			}
+			else
+			{
+				// search rest of list for item
+				auto* pkPrev = pkItem;
+				auto* pkCurr = pkPrev->m_pkNext;
+				while (pkCurr && !IsKeysEqual(key, pkCurr->m_key))
+				{
+					pkPrev = pkCurr;
+					pkCurr = pkCurr->m_pkNext;
+				}
+				if (pkCurr)
+				{
+					// found the item, remove it
+					pkPrev->m_pkNext = pkCurr->m_pkNext;
+					ClearValue(pkCurr);
+                
+					DeleteItem(pkCurr);
+
+					m_uiCount--;
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	void Clear()
@@ -743,11 +818,11 @@ T_Data NiTPointerMap_t <T_Key, T_Data>::Lookup(T_Key key)
 	auto* item = m_ppkHashTable[hashIndex];
 	while (item)
 	{
-		if (IsKeysEqual(item->key, key))
+		if (IsKeysEqual(item->m_key, key))
 		{
-			return item->data;
+			return item->m_val;
 		}
-		item = item->next;
+		item = item->m_pkNext;
 	}
 	return nullptr;
 }
@@ -756,20 +831,20 @@ template <typename T_Key, typename T_Data>
 bool NiTPointerMap_t <T_Key, T_Data>::Insert(Entry* nuEntry)
 {
 	// game code does not appear to care about ordering of entries in buckets
-	UInt32 bucket = KeyToHashIndex(nuEntry->key);
+	UInt32 bucket = KeyToHashIndex(nuEntry->m_key);
 	Entry* prev = nullptr;
-	for (Entry* cur = m_ppkHashTable[bucket]; cur; cur = cur->next) {
-		if (IsKeysEqual(cur->key, nuEntry->key)) {
+	for (Entry* cur = m_ppkHashTable[bucket]; cur; cur = cur->m_pkNext) {
+		if (IsKeysEqual(cur->m_key, nuEntry->m_key)) {
 			return false;
 		}
-		if (!cur->next) {
+		if (!cur->m_pkNext) {
 			prev = cur;
 			break;
 		}
 	}
 
 	if (prev) {
-		prev->next = nuEntry;
+		prev->m_pkNext = nuEntry;
 	}
 	else {
 		m_ppkHashTable[bucket] = nuEntry;
@@ -783,7 +858,7 @@ template <typename T_Key, typename T_Data>
 T_Data * NiTPointerMap_t <T_Key, T_Data>::Iterator::Get(void)
 {
 	if(m_entry)
-		return m_entry->data;
+		return m_entry->m_val;
 
 	return NULL;
 }
@@ -792,7 +867,7 @@ template <typename T_Key, typename T_Data>
 UInt32 NiTPointerMap_t <T_Key, T_Data>::Iterator::GetKey(void)
 {
 	if(m_entry)
-		return m_entry->key;
+		return m_entry->m_key;
 
 	return 0;
 }
@@ -801,7 +876,7 @@ template <typename T_Key, typename T_Data>
 bool NiTPointerMap_t <T_Key, T_Data>::Iterator::Next(void)
 {
 	if(m_entry)
-		m_entry = m_entry->next;
+		m_entry = m_entry->m_pkNext;
 
 	while(!m_entry && (m_bucket < (m_table->m_uiHashSize - 1)))
 	{

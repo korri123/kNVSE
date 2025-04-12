@@ -1544,6 +1544,41 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 
 bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 {
+	std::unordered_set<Actor*> actors;
+	for (auto& [nameAndAnimData, context] : g_cachedAnimMap)
+	{
+		auto name = NiFixedString(nameAndAnimData.first);
+		auto* animData = nameAndAnimData.second;
+		BSAnimGroupSequence* anim = context.anim;
+
+		auto* manager = animData->controllerManager;
+		if (anim->m_eState != NiControllerSequence::INACTIVE)
+		{
+			if (anim->animGroup)
+				animData->ResetSequenceState(anim->animGroup->GetSequenceType(), 0.0);
+			manager->DeactivateSequence(anim, 0.0f);
+			NiUpdateData updateData{};
+			manager->Update(&updateData);
+		}
+		const auto seqCount = manager->sequences.EffectiveSize();
+		manager->sequences.Remove(anim);
+		const auto newSeqCount = manager->sequences.EffectiveSize();
+		DebugAssert(newSeqCount == seqCount - 1);
+
+		const auto seqMapCount = manager->m_kSequenceMap.m_uiCount;
+		manager->m_kSequenceMap.RemoveAt(name);
+		DebugAssert(manager->m_kSequenceMap.m_uiCount == seqMapCount - 1);
+		
+		auto& kfMap = ModelLoader::GetSingleton()->kfMap;
+		const auto kfCount = kfMap->GetCount();
+		kfMap->RemoveAt(name);
+		const auto newKfCount = kfMap->GetCount();
+		DebugAssert(newKfCount == kfCount - 1);
+
+		if (animData->actor)
+			actors.insert(animData->actor);
+	}
+	
 	g_animGroupFirstPersonMap.clear();
 	g_animGroupThirdPersonMap.clear();
 	g_animGroupModIdxFirstPersonMap.clear();
@@ -1556,6 +1591,12 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 	g_timeTrackedGroups.clear();
 	// HandleGarbageCollection();
 	LoadFileAnimPaths();
+
+	for (auto* actor : actors)
+	{
+		actor->RestartAnims();
+	}
+	
 	if (!IsConsoleMode())
 		Console_Print("kNVSEReset called from a script! This is a DEBUG function that maybe leak memory");
 	return true;
@@ -3094,6 +3135,23 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!animData)
 			return true;
 		*result = animData->movementSpeedMult;
+		return true;
+	});
+
+	builder.Create("kNVSEToggleSetting", kRetnType_Default, { ParamInfo{"sFeatureName", kParamType_String, false} }, false, [](COMMAND_ARGS)
+	{
+		sv::stack_string<0x400> featureName;
+		*result = 0;
+		if (!ExtractArgs(EXTRACT_ARGS, &featureName))
+			return true;
+		featureName.calculate_size();
+
+		if (featureName.str() == "blendSmoothing")
+		{
+			g_pluginSettings.blendSmoothing = !g_pluginSettings.blendSmoothing;
+			*result = g_pluginSettings.blendSmoothing;
+		}
+		
 		return true;
 	});
 

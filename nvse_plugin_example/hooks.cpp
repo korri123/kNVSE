@@ -18,7 +18,6 @@
 #include "blend_fixes.h"
 #include "knvse_events.h"
 #include "movement_blend_fixes.h"
-#include "TempEaseSequence.h"
 
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
@@ -93,7 +92,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	else if (bSkip)
 		return destAnim;
 
-	if (g_pluginSettings.fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
+	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 	{
 		// BlendFixes::FixAimPriorities(animData, destAnim);
 		return destAnim;
@@ -109,7 +108,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	BSAnimGroupSequence* result;
 	
-	if (destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
+	if (g_pluginSettings.blendSmoothing && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
 	else
 		result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
@@ -646,8 +645,9 @@ void ApplyHooks()
 
 	// WriteRelJump(0x4951D7, FixSpineBlendBug);
 
+#if 0
 	HolsterUnholsterLocomotionFixes::ApplyHooks();
-	
+#endif
 	if (conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
 	BlendFixes::ApplyHooks();
@@ -1012,8 +1012,10 @@ void ApplyHooks()
 		// INACTIVE -> do not end movement
 		// ANIMATING -> end movement
 		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
+#if 0
 		if (HolsterUnholsterLocomotionFixes::IsTryingToEndEquip(addrOfRetn))
 			return NiControllerSequence::INACTIVE;
+#endif
 		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
 			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
 		// stop game from not ending move anims immediately
@@ -1024,7 +1026,8 @@ void ApplyHooks()
 	// NiControllerManager::DeactivateSequence
 	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
 	{
-		if (pkSequence->animGroup->GetSequenceType() == kSequence_Movement && pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
+		if (g_pluginSettings.blendSmoothing &&pkSequence->animGroup->GetSequenceType() == kSequence_Movement &&
+			pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
 		{
 			return pkSequence->DeactivateNoReset(fEaseOut);
 		}
@@ -1047,6 +1050,22 @@ void ApplyHooks()
 		const auto* actor = GET_CALLER_VAR_LAMBDA(Actor*, -0x10C);
 		auto* groupId = GET_CALLER_VAR_PTR_LAMBDA(UInt16*, -0x40);
 		const auto moveFlags = actor->actorMover ? actor->actorMover->GetMovementFlags() : 0;
+
+		if (!g_pluginSettings.blendSmoothing)
+		{
+			const bool turningLeft = (moveFlags & kMoveFlag_TurnLeft) != 0;
+			const bool turningRight = (moveFlags & kMoveFlag_TurnRight) != 0;
+			if (turningLeft)
+			{
+				*groupId = kAnimGroup_TurnLeft;
+			}
+			else if (turningRight)
+			{
+				*groupId = kAnimGroup_TurnRight;
+			}
+			*addrOfRetn = 0x896C9A;
+			return;
+		}
 
 		const bool turningLeft = (moveFlags & kMoveFlag_TurnLeft) != 0;
 		const bool turningRight = (moveFlags & kMoveFlag_TurnRight) != 0;

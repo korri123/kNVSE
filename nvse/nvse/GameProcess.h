@@ -165,6 +165,11 @@ struct AnimData
 		ThisStdCall(0x496080, this, seqID, blendAmount);
 	}
 
+	bool Refresh(bool storeTargets)
+	{
+		return ThisStdCall<bool>(0x499240, this, storeTargets);
+	}
+
 	NiMultiTargetTransformController* GetMultiTargetTransformController() const
 	{
 		for (auto* controller = nSceneRoot->m_controller; controller; controller = controller->m_spNext)
@@ -374,7 +379,7 @@ public:
 	virtual void	Unk_70(void);
 	virtual void	Unk_71(void);
 	virtual void	Unk_72(void);
-	virtual void	Unk_73(void);
+	virtual void	LoadAnimData(bool weaponOut, ValidBip01Names* bipedAnim, AnimData* animData, Actor* actor);
 	virtual void	Unk_74(void);
 	virtual void	Unk_75(void);
 	virtual void	Unk_76(void);
@@ -534,9 +539,9 @@ public:
 	virtual void	Unk_110();
 	virtual void	GetAttackLoopTimeRemaining();
 	virtual void	Unk_112();
-	virtual void	WantsWeaponOut();
-	virtual void	SetWantsWeaponOut();
-	virtual void	IsWeaponOut();
+	virtual bool	WantsWeaponOut();
+	virtual bool	SetWantsWeaponOut();
+	virtual bool	IsWeaponOut();
 	virtual void	SetWeaponOut(Actor* actor, bool weaponOut);
 	virtual void	Unk_117();
 	virtual void	Unk_118();

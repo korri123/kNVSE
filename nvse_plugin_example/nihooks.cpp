@@ -980,7 +980,7 @@ float NiControllerSequence::GetEaseSpinner() const
 
 void NiControllerSequence::AttachInterpolators(char cPriority)
 {
-#if !_DEBUG || !NI_OVERRIDE
+#if (!_DEBUG || !NI_OVERRIDE) && 0
     ThisStdCall(0xA30900, this, cPriority);
 #else
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
@@ -1004,6 +1004,11 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
+    if (!g_pluginSettings.blendSmoothing)
+    {
+        AttachInterpolators(cPriority);
+        return;
+    }
     BlendFixes::AttachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
@@ -1552,6 +1557,11 @@ void NiControllerSequence::DetachInterpolators() const
 
 void NiControllerSequence::DetachInterpolatorsHooked()
 {
+    if (!g_pluginSettings.blendSmoothing)
+    {
+        DetachInterpolators();
+        return;
+    }
     BlendFixes::DetachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
