@@ -16,6 +16,7 @@
 #include "main.h"
 #include "nihooks.h"
 #include "blend_fixes.h"
+#include "blend_smoothing.h"
 #include "knvse_events.h"
 #include "movement_blend_fixes.h"
 
@@ -108,7 +109,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	BSAnimGroupSequence* result;
 	
-	if (g_pluginSettings.blendSmoothing && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
+	if (g_pluginSettings.blendSmoothing && destAnim && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
 	else
 		result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
@@ -1121,13 +1122,7 @@ void ApplyHooks()
 		return result;
 	}));
 
-	// clear object palette in NiControllerManager destructor
-	WriteRelCall(0xA2EF83, INLINE_HOOK(void, __fastcall, NiControllerManager* manager)
-	{
-		manager->m_spObjectPalette->m_kHash.RemoveAll();
-		ThisStdCall(0xA2EBB0, manager);
-	}));
-	
+	BlendSmoothing::WriteHooks();
 }
 
 void WriteDelayedHooks()

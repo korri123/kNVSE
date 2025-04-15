@@ -1569,7 +1569,7 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 		manager->m_kSequenceMap.RemoveAt(name);
 		DebugAssert(manager->m_kSequenceMap.m_uiCount == seqMapCount - 1);
 		
-		auto& kfMap = ModelLoader::GetSingleton()->kfMap;
+		auto* kfMap = ModelLoader::GetSingleton()->kfMap;
 		const auto kfCount = kfMap->GetCount();
 		kfMap->RemoveAt(name);
 		const auto newKfCount = kfMap->GetCount();

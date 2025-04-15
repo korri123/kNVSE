@@ -11,6 +11,7 @@
 #include "additive_anims.h"
 #include "SafeWrite.h"
 #include "anim_fixes.h"
+#include "blend_smoothing.h"
 #include "NiObjects.h"
 
 
@@ -404,6 +405,22 @@ struct SecondaryTempInterpolatorData
 
 thread_local std::unordered_map<NiInterpolator*, SecondaryTempInterpolatorData> g_secondaryTempInterpolatorDataMap;
 
+kBlendInterpItem* GetExtraItem(const NiControllerSequence* pkSequence, const NiControllerSequence::IDTag& idTag, NiInterpolator* interpolator)
+{
+	auto* target = pkSequence->m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName);
+	if (!target)
+		return nullptr;
+	DebugAssert(target && target->m_pcName == idTag.m_kAVObjectName);
+	auto* kExtraData = kBlendInterpolatorExtraData::Obtain(target);
+	DebugAssert(kExtraData);
+	return &kExtraData->GetItem(interpolator);
+}
+
+kBlendInterpItem* GetExtraItem(const NiControllerSequence* pkSequence, NiControllerSequence::InterpArrayItem* item)
+{
+	return GetExtraItem(pkSequence, item->GetIDTag(pkSequence), item->m_spInterpolator);
+}
+
 void BlendFixes::AttachSecondaryTempInterpolators(NiControllerSequence* pkSequence)
 {
 	for (auto& block : pkSequence->GetControlledBlocks())
@@ -411,9 +428,10 @@ void BlendFixes::AttachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 		auto* blendInterp = block.m_pkBlendInterp;
 		if (!block.m_spInterpolator || !blendInterp)
 			continue;
+		const auto& idTag = block.GetIDTag(pkSequence);
+
 		if (blendInterp->m_ucInterpCount == 0)
 		{
-			const auto& idTag = block.GetIDTag(pkSequence);
 			auto* poseInterp = CreatePoseInterpolator(block.m_spInterpCtlr, idTag);
 			if (!poseInterp)
 				continue;
@@ -421,11 +439,20 @@ void BlendFixes::AttachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 				DebugBreak();
 			auto& data = g_secondaryTempInterpolatorDataMap[block.m_spInterpolator];
 			data.blendIndex = blendInterp->AddInterpInfo(poseInterp, 1.0f, 0, 1.0f);
+
+			auto* kExtraItem = GetExtraItem(pkSequence, idTag, poseInterp);
+			DebugAssert(kExtraItem);
+			kExtraItem->blendInterp = blendInterp;
+			kExtraItem->sequence = pkSequence;
 		}
 		else if (blendInterp->m_ucInterpCount == 1)
 		{
 			if (auto iter = g_secondaryTempInterpolatorDataMap.find(blendInterp->m_pkSingleInterpolator); iter != g_secondaryTempInterpolatorDataMap.end())
 			{
+				auto* kExtraItem = GetExtraItem(pkSequence, idTag, blendInterp->m_pkSingleInterpolator);
+				DebugAssert(kExtraItem);
+				kExtraItem->ClearValues();
+				
 				block.m_pkBlendInterp->RemoveInterpInfo(iter->second.blendIndex);
 				g_secondaryTempInterpolatorDataMap.erase(iter);
 			}
@@ -440,12 +467,17 @@ void BlendFixes::DetachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 		auto* blendInterpolator = block.m_pkBlendInterp;
 		if (!block.m_spInterpolator || !blendInterpolator)
 			continue;
+		const auto& idTag = block.GetIDTag(pkSequence);
 		if (auto iter = g_secondaryTempInterpolatorDataMap.find(block.m_spInterpolator); iter != g_secondaryTempInterpolatorDataMap.end())
 		{
+			NiInterpolator* interpolator = blendInterpolator->m_pkInterpArray[iter->second.blendIndex].m_spInterpolator;
+			DebugAssert(interpolator != nullptr);
+			if (auto* kExtraItem = GetExtraItem(pkSequence, idTag, interpolator))
+				kExtraItem->ClearValues();
 			blendInterpolator->RemoveInterpInfo(iter->second.blendIndex);
 			g_secondaryTempInterpolatorDataMap.erase(iter);
 		}
-		if (blendInterpolator->m_ucInterpCount == 2) // going to be 1 since this is going to be removed
+		if (blendInterpolator->m_ucInterpCount == 2 && pkSequence->m_pkOwner->m_spObjectPalette->m_kHash.m_uiCount != 0) // going to be 1 since this is going to be removed
 		{
 			const auto blendInterpItems = blendInterpolator->GetItems();
 			auto otherInterpItem = std::ranges::find_if(blendInterpItems, [&](const auto& item)
@@ -463,6 +495,10 @@ void BlendFixes::DetachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 				DebugBreak();
 			auto& data = g_secondaryTempInterpolatorDataMap[otherInterpItem->m_spInterpolator];
 			data.blendIndex = blendInterpolator->AddInterpInfo(poseInterpolator, 1.0f, 0, 1.0f);
+			auto* kExtraItem = GetExtraItem(pkSequence, idTag, poseInterpolator);
+			DebugAssert(kExtraItem);
+			kExtraItem->blendInterp = blendInterpolator;
+			kExtraItem->sequence = pkSequence;
 		}
 	}
 }

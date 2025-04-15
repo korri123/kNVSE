@@ -1009,7 +1009,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         AttachInterpolators(cPriority);
         return;
     }
-    BlendFixes::AttachSecondaryTempInterpolators(this);
+    //BlendFixes::AttachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
@@ -1023,23 +1023,42 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 
         auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
         DebugAssert(extraData);
-
+        
         auto& extraInterpItem = extraData->GetItem(kItem.m_spInterpolator);
         extraInterpItem.sequence = this;
-
+        if (extraInterpItem.blendInterp)
+            DebugAssert(extraInterpItem.blendInterp == pkBlendInterp);
+        if (!extraInterpItem.blendInterp)
+            extraInterpItem.blendInterp = pkBlendInterp;
+        
+        
         const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
-        if (!extraInterpItem.detached)
+        const auto detached = extraInterpItem.detached;
+
+        const auto prevState = extraInterpItem.state;
+        if (!detached)
         {
+            DebugAssert(extraInterpItem.blendIndex == INVALID_INDEX);
             kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(kItem.m_spInterpolator, 0.0f, cInterpPriority);
+            extraInterpItem.state = kInterpState::AttachedNormally;
         }
         else
         {
             extraInterpItem.detached = false;
+            DebugAssert(extraInterpItem.blendIndex < pkBlendInterp->m_ucArraySize
+                && kItem.m_ucBlendIdx == INVALID_INDEX);
+
             kItem.m_ucBlendIdx = extraInterpItem.blendIndex;
             extraInterpItem.blendIndex = INVALID_INDEX;
+
+            DebugAssert(kItem.m_ucBlendIdx < pkBlendInterp->m_ucArraySize);
             pkBlendInterp->SetPriority(cInterpPriority, kItem.m_ucBlendIdx);
+            extraInterpItem.state = kInterpState::ReattachedWhileSmoothing;
         }
-        DebugAssert(kItem.m_ucBlendIdx != INVALID_INDEX);
+        DebugAssert(pkBlendInterp->m_pkInterpArray[kItem.m_ucBlendIdx].m_spInterpolator == kItem.m_spInterpolator &&
+            extraInterpItem.interpolator == kItem.m_spInterpolator &&
+            kItem.m_spInterpolator != nullptr &&
+            kItem.m_ucBlendIdx != INVALID_INDEX);
     }
 }
 
@@ -1562,40 +1581,60 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         DetachInterpolators();
         return;
     }
-    BlendFixes::DetachSecondaryTempInterpolators(this);
+    //BlendFixes::DetachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
-        if (auto* blendInterp = kItem.m_pkBlendInterp)
+        if (auto* blendInterp = kItem.m_pkBlendInterp; blendInterp && kItem.m_spInterpolator)
         {
             const auto& idTag = kItem.GetIDTag(this);
             auto* target = m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName);
+            const auto blendIndex = kItem.m_ucBlendIdx;
             if (!target)
             {
                 // this case happens in the destructor of NiControllerSequence
-                blendInterp->RemoveInterpInfo(kItem.m_ucBlendIdx);
+                blendInterp->RemoveInterpInfo(blendIndex);
                 kItem.m_ucBlendIdx = INVALID_INDEX;
                 continue;
             }
+            DebugAssert(target->m_pcName == idTag.m_kAVObjectName);
             
             auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
             DebugAssert(extraData);
 
             auto& extraInterpItem = extraData->GetItem(kItem.m_spInterpolator);
 
+            DebugAssert(blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator
+                && extraInterpItem.interpolator == kItem.m_spInterpolator && kItem.m_spInterpolator != nullptr);
+
             if (extraInterpItem.lastSmoothedWeight == 0.0f || extraInterpItem.lastSmoothedWeight == -NI_INFINITY)
             {
-                DebugAssert(!extraInterpItem.detached);
-                DebugAssert(kItem.m_ucBlendIdx != INVALID_INDEX);
-                if (kItem.m_ucBlendIdx != INVALID_INDEX)
-                    blendInterp->RemoveInterpInfo(kItem.m_ucBlendIdx);
+                DebugAssert(!extraInterpItem.detached && blendIndex != INVALID_INDEX);
+                if (blendIndex != INVALID_INDEX)
+                    blendInterp->RemoveInterpInfo(blendIndex);
                 extraInterpItem.ClearValues();
+                extraInterpItem.state = kInterpState::RemovedInDetachInterpolators;
             }
             else
             {
+                DebugAssert(!extraInterpItem.detached && extraInterpItem.blendIndex == INVALID_INDEX
+                    && blendIndex != INVALID_INDEX);
                 extraInterpItem.detached = true;
-                extraInterpItem.blendIndex = kItem.m_ucBlendIdx;
-                blendInterp->SetPriority(0, kItem.m_ucBlendIdx);
+                extraInterpItem.blendIndex = blendIndex;
+                blendInterp->SetPriority(0, blendIndex);
+                DebugAssert(kItem.m_spInterpolator == extraInterpItem.interpolator &&
+                    blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator &&
+                    kItem.m_spInterpolator != nullptr);
+                extraInterpItem.state = kInterpState::DetachedButSmoothing;
+
+#if _DEBUG && 0
+                static const NiFixedString kSequence = R"(characters\_1stperson\mtidle.kf)";
+                static const NiFixedString kNodeName = "Camera1st";
+                if (m_kName == kSequence && idTag.m_kAVObjectName == kNodeName)
+                {
+                    DebugBreak();
+                }
+#endif
             }
             kItem.m_ucBlendIdx = INVALID_INDEX;
         }
@@ -1746,7 +1785,7 @@ namespace NiHooks
     // override stewie's tweaks
     void WriteDelayedHooks()
     {
-#if _DEBUG && 0
+#if _DEBUG && 1
         WriteRelCall(0x4F0087, &NiMultiTargetTransformController::_Update);
 #endif
     }
