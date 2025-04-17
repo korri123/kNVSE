@@ -5,6 +5,7 @@
 #include "additive_anims.h"
 #include "GameAPI.h"
 #include "GameRTTI.h"
+#include "hooks.h"
 #include "SafeWrite.h"
 #include "utility.h"
 
@@ -73,7 +74,7 @@ kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::GetExtraData(NiObjectN
     return nullptr;
 }
 
-kBlendInterpItem& kBlendInterpolatorExtraData::GetItem(NiInterpolator* interpolator)
+kBlendInterpItem& kBlendInterpolatorExtraData::ObtainItem(NiInterpolator* interpolator)
 {
     kBlendInterpItem* freeItem = nullptr;
     for (auto& item : items)
@@ -91,6 +92,51 @@ kBlendInterpItem& kBlendInterpolatorExtraData::GetItem(NiInterpolator* interpola
     return items.emplace_back(interpolator);
 }
 
+NiInterpolator* CreatePoseInterpolator(NiAVObject* object)
+{
+    return NiTransformInterpolator::Create(object->m_kLocal);
+}
+
+kBlendInterpItem& kBlendInterpolatorExtraData::CreatePoseInterpItem(NiBlendInterpolator* blendInterp,
+                                                                    NiControllerSequence* sequence,
+                                                                    NiAVObject* target)
+{
+    auto* poseInterp = CreatePoseInterpolator(target);
+    const auto poseIndex = blendInterp->AddInterpInfo(poseInterp, 1.0f, 0, 1.0f);
+    DebugAssert(poseIndex != INVALID_INDEX);
+    auto& poseItem = ObtainItem(poseInterp);
+    poseItem.state = kInterpState::Activating;
+    poseItem.sequence = sequence;
+    poseItem.blendInterp = blendInterp;
+    poseItem.isPoseInterp = true;
+    poseItem.poseInterpIndex = poseIndex;
+    return poseItem;
+}
+
+kBlendInterpItem* kBlendInterpolatorExtraData::GetItem(NiInterpolator* interpolator)
+{
+    for (auto& item : items)
+    {
+        if (item.interpolator == interpolator)
+            return &item;
+        
+    }
+    return nullptr;
+}
+
+kBlendInterpItem* kBlendInterpolatorExtraData::GetPoseInterpItem()
+{
+    for (auto& item : items)
+    {
+        if (item.isPoseInterp)
+        {
+            DebugAssert(item.poseInterpIndex != INVALID_INDEX);
+            return &item;
+        }
+    }
+    return nullptr;
+}
+
 void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target)
 {
     const auto deltaTime = g_timeGlobal->secondsPassed;
@@ -99,7 +145,9 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
     constexpr float MIN_WEIGHT = 0.001f;
     
     float totalWeight = 0.0f;
-    auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+    auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
+    if (!extraData)
+        return;
 
     auto blendInterpItems = blendInterp->GetItems();
     
@@ -107,7 +155,13 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
     {
         if (!item.m_spInterpolator)
             continue;
-        auto& extraItem = extraData->GetItem(item.m_spInterpolator);
+        auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
+        if (!extraItemPtr)
+            continue;
+        auto& extraItem = *extraItemPtr;
+        DebugAssert(extraItem.state != kInterpState::NotSet);
+        if (extraItem.debugState == kInterpDebugState::NotSet)
+            continue;
         if (extraItem.lastSmoothedWeight == -NI_INFINITY)
         {
             extraItem.lastSmoothedWeight = item.m_fNormalizedWeight;
@@ -122,7 +176,7 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
             targetWeight = 0.0f;
         const auto smoothedWeight = std::lerp(extraItem.lastSmoothedWeight, targetWeight, smoothingRate);
 
-        if (smoothedWeight < MIN_WEIGHT)
+        if (smoothedWeight < MIN_WEIGHT && extraItem.state == kInterpState::Deactivating)
         {
             extraItem.lastSmoothedWeight = 0.0f;
             item.m_fNormalizedWeight = 0.0f;
@@ -131,7 +185,17 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
                 const auto ucIndex = item.GetIndex(blendInterp);
                 blendInterp->RemoveInterpInfo(ucIndex);
                 extraItem.ClearValues();
-                extraItem.state = kInterpState::RemovedInBlendSmoothing;
+                extraItem.debugState = kInterpDebugState::RemovedInBlendSmoothing;
+
+                if (blendInterp->m_ucInterpCount == 1 && g_pluginSettings.poseInterpolators)
+                {
+                    if (auto* poseItem = extraData->GetPoseInterpItem())
+                    {
+                        DebugAssert(poseItem->poseInterpIndex < blendInterp->m_ucArraySize);
+                        blendInterp->RemoveInterpInfo(poseItem->poseInterpIndex);
+                        poseItem->ClearValues();
+                    }
+                }
             }
             continue;
         }
@@ -139,7 +203,7 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
         extraItem.lastSmoothedWeight = smoothedWeight;
         item.m_fNormalizedWeight = smoothedWeight;
 
-        if (smoothedWeight > 0.999f) 
+        if (smoothedWeight > 0.999f && extraItem.state == kInterpState::Activating)
         {
             extraItem.lastSmoothedWeight = 1.0f;
             item.m_fNormalizedWeight = 1.0f;
@@ -163,7 +227,7 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
         }
     }
 
-#if _DEBUG
+#if 0
     for (auto& item : blendInterpItems)
     {
         if (!item.m_spInterpolator)
@@ -183,98 +247,36 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
 #endif
 }
 
-void ClearExtraDataInterpItems(NiMultiTargetTransformController* pController)
-{
-    const auto targets = pController->GetTargets();
-    for (auto* target : targets)
-    {
-        if (!target)
-            continue;
-        if (auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target))
-        {
-            for (auto& item : extraData->items)
-            {
-                item.ClearValues();
-                item.state = kInterpState::InterpControllerDestroyed;
-            }
-        }
-    }
-}
-
-void DecreateTargetRefCounts(NiMultiTargetTransformController* pController)
-{
-    for (auto* item : pController->GetTargets())
-    {
-        if (item)
-            item->DecrementRefCount();
-    }
-}
-
-void __fastcall HandleAssignTarget(const UInt16 index, NiAVObject** targets, NiAVObject* target)
-{
-    auto& replaceTarget = targets[index];
-    if (replaceTarget == target)
-        return;
-    if (replaceTarget)
-        replaceTarget->DecrementRefCount();
-    target->IncrementRefCount();
-    targets[index] = target;
-}
-
-__declspec(naked) void AddTargetHook1()
-{
-    __asm
-    {
-        mov edx, edi
-        push esi
-        movzx eax, cx
-        mov ecx, eax
-        call HandleAssignTarget
-        mov eax, 0xA31E1A
-        jmp eax
-    }
-}
-
-__declspec(naked) void AddTargetHook2()
-{
-    __asm
-    {
-        push ecx
-        push eax
-        push esi
-        movzx eax, cx
-        mov ecx, eax
-        call HandleAssignTarget
-        pop eax
-        pop ecx
-        mov edx, 0xA31DFB
-        jmp edx
-    }
-}
-
-
 void BlendSmoothing::WriteHooks()
 {
-
 #if 1
 
     WriteRelCall(0x499252, INLINE_HOOK(NiControllerManager*, __fastcall, NiControllerManager** managerPtr)
     {
         auto* manager = *managerPtr;
-        int iCount = 0;
+        if (!manager)
+            return nullptr;
 
         std::unordered_set<const char*> toKeep;
         std::unordered_map<const char*, NiAVObject*> toKeepMap;
         manager->m_spObjectPalette->m_pkScene->GetAsNiNode()->RecurseTree([&](NiAVObject* node)
         {
             toKeepMap.emplace(node->m_pcName, node);
-            NiTFixedStringMap<NiAVObject*>::NiTMapItem* item;
-            if (manager->m_spObjectPalette->m_kHash.GetAt(node->m_pcName, item))
+            NiTFixedStringMap<NiAVObject*>::NiTMapItem* mapItem;
+            if (manager->m_spObjectPalette->m_kHash.GetAt(node->m_pcName, mapItem))
             {
                 toKeep.insert(node->m_pcName);
-                if (item->m_val != node)
+                if (mapItem->m_val != node)
                 {
-                    item->m_val = node;
+                    mapItem->m_val = node;
+                }
+            }
+            if (auto* extraData = kBlendInterpolatorExtraData::GetExtraData(node))
+            {
+                auto& items = extraData->items;
+                for (auto& item : items)
+                {
+                    item.ClearValues();
                 }
             }
         });
@@ -285,45 +287,12 @@ void BlendSmoothing::WriteHooks()
             if (!toKeep.contains(name))
                 toRemove.emplace_back(name);
         }
-        UInt32 numRemoved = 0;
         for (auto& name : toRemove)
         {
-            ++numRemoved;
             manager->m_spObjectPalette->m_kHash.RemoveAt(name);
         }
-        
-        for (auto& mapItem : manager->m_spObjectPalette->m_kHash)
-        {
-            ++iCount;
-            auto* node = mapItem.m_val;
-            if (!node)
-                continue;
-            if (auto* extraData = kBlendInterpolatorExtraData::GetExtraData(node))
-            {
-                auto& items = extraData->items;
-                for (auto& item : items)
-                {
-                    item.ClearValues();
-                }
-            }
-        }
-        DebugAssert(iCount == manager->m_spObjectPalette->m_kHash.m_uiCount);
         return manager;
     }));
-    
-    WriteRelJump(0xA31E14, &AddTargetHook1);
-    PatchMemoryNop(0xA31E14 + 5, 1);
-
-    WriteRelJump(0xA31DF5, &AddTargetHook2);
-    PatchMemoryNop(0xA31DF5 + 5, 1);
-    
-    static UInt32 uiNiMultiTargetTransformControllerDestroy = 0xA2FB70;
-    WriteRelCall(0xA30283, INLINE_HOOK(void, __fastcall, NiMultiTargetTransformController* pController)
-    {
-        ClearExtraDataInterpItems(pController);
-        DecreateTargetRefCounts(pController);
-        ThisStdCall(uiNiMultiTargetTransformControllerDestroy, pController);
-    }), &uiNiMultiTargetTransformControllerDestroy);
 
     static UInt32 uiNiControllerManagerDestroy = 0xA2EBB0;
     // clear object palette in NiControllerManager destructor
@@ -333,26 +302,6 @@ void BlendSmoothing::WriteHooks()
         ThisStdCall(uiNiControllerManagerDestroy, manager);
     }), &uiNiControllerManagerDestroy);
 
-    static UInt32 uiNiStreamResolveLinkID = 0xA64620;
-
-    // NiStream::ResolveLinkID
-    WriteRelCall(0xA30422, INLINE_HOOK(NiAVObject*, __fastcall, NiStream* stream)
-    {
-        auto* result = ThisStdCall<NiAVObject*>(uiNiStreamResolveLinkID, stream);
-        if (result)
-            result->IncrementRefCount();
-        return result;
-    }), &uiNiStreamResolveLinkID);
-
-    static UInt32 uiNiMultiTargetTransformControllerAddInterpolatorTarget = 0x43B320;
-    
-    // NiMultiTargetTransformController::AddInterpolatorTarget
-    WriteRelCall(0x4F0678, INLINE_HOOK(void, __fastcall, NiMultiTargetTransformController* controller, void*, UInt16 index, NiAVObject* target)
-    {
-        if (target)
-            target->IncrementRefCount();
-        ThisStdCall(uiNiMultiTargetTransformControllerAddInterpolatorTarget, controller, index, target);
-    }), &uiNiMultiTargetTransformControllerAddInterpolatorTarget);
 
 #endif
 }

@@ -741,7 +741,12 @@ void AdditiveManager::WriteHooks()
             BlendSmoothing::Apply(pBlendInterpolator, pkInterpTarget);
         }
         // ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
-        pBlendInterpolator->BlendValuesFixFloatingPointError(fTime, pkInterpTarget, *kValue);
+        if (g_pluginSettings.fixSpiderHands)
+            pBlendInterpolator->BlendValuesFixFloatingPointError(fTime, pkInterpTarget, *kValue);
+        else
+            ThisStdCall<bool>(0xA40C10, pBlendInterpolator, fTime, pkInterpTarget, kValue);
+            // pBlendInterpolator->BlendValues(fTime, pkInterpTarget, *kValue);
+                
         if (pBlendInterpolator->GetHasAdditiveTransforms())
             pBlendInterpolator->ApplyAdditiveTransforms(fTime, pkInterpTarget, *kValue);
         

@@ -390,14 +390,6 @@ void BlendFixes::ApplyWeightSmoothing(NiBlendInterpolator* blendInterpolator)
 		DebugBreak();
 }
 
-NiInterpolator* CreatePoseInterpolator(NiInterpController* controller, const NiControllerSequence::IDTag& idTag)
-{
-	const auto index = controller->GetInterpolatorIndexByIDTag(&idTag);
-	if (index == 0xFFFF)
-		return nullptr;
-	return controller->CreatePoseInterpolator(index);
-}
-
 struct SecondaryTempInterpolatorData
 {
 	unsigned char blendIndex = 0xFF;
@@ -413,7 +405,7 @@ kBlendInterpItem* GetExtraItem(const NiControllerSequence* pkSequence, const NiC
 	DebugAssert(target && target->m_pcName == idTag.m_kAVObjectName);
 	auto* kExtraData = kBlendInterpolatorExtraData::Obtain(target);
 	DebugAssert(kExtraData);
-	return &kExtraData->GetItem(interpolator);
+	return &kExtraData->ObtainItem(interpolator);
 }
 
 kBlendInterpItem* GetExtraItem(const NiControllerSequence* pkSequence, NiControllerSequence::InterpArrayItem* item)
@@ -423,6 +415,7 @@ kBlendInterpItem* GetExtraItem(const NiControllerSequence* pkSequence, NiControl
 
 void BlendFixes::AttachSecondaryTempInterpolators(NiControllerSequence* pkSequence)
 {
+#if 0
 	for (auto& block : pkSequence->GetControlledBlocks())
 	{
 		auto* blendInterp = block.m_pkBlendInterp;
@@ -444,6 +437,7 @@ void BlendFixes::AttachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 			DebugAssert(kExtraItem);
 			kExtraItem->blendInterp = blendInterp;
 			kExtraItem->sequence = pkSequence;
+			kExtraItem->state = kInterpState::Activating;
 		}
 		else if (blendInterp->m_ucInterpCount == 1)
 		{
@@ -458,10 +452,12 @@ void BlendFixes::AttachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 			}
 		}
 	}
+#endif
 }
 
 void BlendFixes::DetachSecondaryTempInterpolators(NiControllerSequence* pkSequence)
 {
+#if 0
 	for (auto& block : pkSequence->GetControlledBlocks())
 	{
 		auto* blendInterpolator = block.m_pkBlendInterp;
@@ -501,6 +497,7 @@ void BlendFixes::DetachSecondaryTempInterpolators(NiControllerSequence* pkSequen
 			kExtraItem->sequence = pkSequence;
 		}
 	}
+#endif
 }
 
 void BlendFixes::OnSequenceDestroy(NiControllerSequence* sequence)
@@ -685,7 +682,7 @@ void BlendFixes::ApplyAimBlendHooks()
 {
 	// JMP 0x4996E7 -> 0x499709
 	// disable the game resetting sequence state for aimup and aimdown as we will do it ourselves
-	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug)
+	if (g_pluginSettings.fixSpineBlendBug)
 		SafeWriteBuf(0x4996E7, "\xEB\x20\x90\x90", 4);
 }
 

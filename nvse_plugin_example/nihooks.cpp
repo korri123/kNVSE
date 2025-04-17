@@ -1009,7 +1009,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         AttachInterpolators(cPriority);
         return;
     }
-    //BlendFixes::AttachSecondaryTempInterpolators(this);
+    // BlendFixes::AttachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
@@ -1024,23 +1024,23 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
         DebugAssert(extraData);
         
-        auto& extraInterpItem = extraData->GetItem(kItem.m_spInterpolator);
+        auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
         extraInterpItem.sequence = this;
+        extraInterpItem.state = kInterpState::Activating;
         if (extraInterpItem.blendInterp)
             DebugAssert(extraInterpItem.blendInterp == pkBlendInterp);
         if (!extraInterpItem.blendInterp)
             extraInterpItem.blendInterp = pkBlendInterp;
         
-        
         const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
         const auto detached = extraInterpItem.detached;
 
-        const auto prevState = extraInterpItem.state;
+        const auto prevDebugState = extraInterpItem.debugState;
         if (!detached)
         {
             DebugAssert(extraInterpItem.blendIndex == INVALID_INDEX);
             kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(kItem.m_spInterpolator, 0.0f, cInterpPriority);
-            extraInterpItem.state = kInterpState::AttachedNormally;
+            extraInterpItem.debugState = kInterpDebugState::AttachedNormally;
         }
         else
         {
@@ -1053,12 +1053,32 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 
             DebugAssert(kItem.m_ucBlendIdx < pkBlendInterp->m_ucArraySize);
             pkBlendInterp->SetPriority(cInterpPriority, kItem.m_ucBlendIdx);
-            extraInterpItem.state = kInterpState::ReattachedWhileSmoothing;
+            extraInterpItem.debugState = kInterpDebugState::ReattachedWhileSmoothing;
         }
         DebugAssert(pkBlendInterp->m_pkInterpArray[kItem.m_ucBlendIdx].m_spInterpolator == kItem.m_spInterpolator &&
             extraInterpItem.interpolator == kItem.m_spInterpolator &&
             kItem.m_spInterpolator != nullptr &&
             kItem.m_ucBlendIdx != INVALID_INDEX);
+
+        if (g_pluginSettings.poseInterpolators)
+        {
+            auto* existingPoseInterp = extraData->GetPoseInterpItem();
+            if (existingPoseInterp)
+            {
+                DebugAssert(existingPoseInterp->poseInterpIndex < pkBlendInterp->m_ucArraySize
+                    && existingPoseInterp->blendInterp == pkBlendInterp);
+            }
+            if (!existingPoseInterp)
+                extraData->CreatePoseInterpItem(pkBlendInterp, this, target);
+            else
+            {
+                auto& poseItem = pkBlendInterp->m_pkInterpArray[existingPoseInterp->poseInterpIndex];
+                DebugAssert(poseItem.m_spInterpolator);
+                auto* poseInterp = NI_DYNAMIC_CAST(NiTransformInterpolator, poseItem.m_spInterpolator);
+                DebugAssert(poseInterp);
+                poseInterp->m_kTransformValue = target->m_kLocal;
+            }
+        }
     }
 }
 
@@ -1581,7 +1601,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         DetachInterpolators();
         return;
     }
-    //BlendFixes::DetachSecondaryTempInterpolators(this);
+    // BlendFixes::DetachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
@@ -1602,7 +1622,8 @@ void NiControllerSequence::DetachInterpolatorsHooked()
             auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
             DebugAssert(extraData);
 
-            auto& extraInterpItem = extraData->GetItem(kItem.m_spInterpolator);
+            auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
+            extraInterpItem.state = kInterpState::Deactivating;
 
             DebugAssert(blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator
                 && extraInterpItem.interpolator == kItem.m_spInterpolator && kItem.m_spInterpolator != nullptr);
@@ -1613,7 +1634,17 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                 if (blendIndex != INVALID_INDEX)
                     blendInterp->RemoveInterpInfo(blendIndex);
                 extraInterpItem.ClearValues();
-                extraInterpItem.state = kInterpState::RemovedInDetachInterpolators;
+                extraInterpItem.debugState = kInterpDebugState::RemovedInDetachInterpolators;
+
+                if (blendInterp->m_ucInterpCount == 1 && g_pluginSettings.poseInterpolators)
+                {
+                    if (auto* poseItem = extraData->GetPoseInterpItem())
+                    {
+                        DebugAssert(poseItem->poseInterpIndex < blendInterp->m_ucArraySize);
+                        blendInterp->RemoveInterpInfo(poseItem->poseInterpIndex);
+                        poseItem->ClearValues();
+                    }
+                }
             }
             else
             {
@@ -1625,16 +1656,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                 DebugAssert(kItem.m_spInterpolator == extraInterpItem.interpolator &&
                     blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator &&
                     kItem.m_spInterpolator != nullptr);
-                extraInterpItem.state = kInterpState::DetachedButSmoothing;
-
-#if _DEBUG && 0
-                static const NiFixedString kSequence = R"(characters\_1stperson\mtidle.kf)";
-                static const NiFixedString kNodeName = "Camera1st";
-                if (m_kName == kSequence && idTag.m_kAVObjectName == kNodeName)
-                {
-                    DebugBreak();
-                }
-#endif
+                extraInterpItem.debugState = kInterpDebugState::DetachedButSmoothing;
             }
             kItem.m_ucBlendIdx = INVALID_INDEX;
         }
@@ -1785,7 +1807,7 @@ namespace NiHooks
     // override stewie's tweaks
     void WriteDelayedHooks()
     {
-#if _DEBUG && 1
+#if _DEBUG
         WriteRelCall(0x4F0087, &NiMultiTargetTransformController::_Update);
 #endif
     }
@@ -1882,25 +1904,5 @@ void __fastcall NiControllerSequenceUpdateHook(NiControllerSequence* sequence, v
 
 void ApplyNiHooks()
 {
-#if _DEBUG && 1
     NiHooks::WriteHooks();
-    // WriteRelCall(0xA2E251, &NiControllerSequenceUpdateHook);
-#endif
-#if EXPERIMENTAL_HOOKS
-
-    if (g_fixBlendSamePriority)
-    {
-        //WriteRelJump(0xA37260, NiBlendInterpolator_ComputeNormalizedWeights);
-        WriteRelCall(0xA34F71, NiControllerSequence_AttachInterpolatorsHook);
-        WriteRelCall(0xA350C5, NiControllerSequence_DetachInterpolatorsHook);
-        //WriteRelJump(0xA2E280, CrossFadeHook);
-    }
-
-#if _DEBUG
-    SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
-
-    WriteRelCall(0xA2F817, TempBlendDebugHook);
-   
-#endif
-#endif
 }

@@ -1,10 +1,14 @@
 ﻿#pragma once
 #include "NiObjects.h"
 
+enum class kInterpDebugState: UInt8
+{
+    NotSet, RemovedInBlendSmoothing, RemovedInDetachInterpolators, AttachedNormally, DetachedButSmoothing, ReattachedWhileSmoothing
+};
+
 enum class kInterpState: UInt8
 {
-    NotSet, RemovedInBlendSmoothing, RemovedInDetachInterpolators, AttachedNormally, DetachedButSmoothing, ReattachedWhileSmoothing,
-    InterpControllerDestroyed
+    NotSet, Activating, Deactivating
 };
 
 struct kBlendInterpItem
@@ -18,7 +22,10 @@ struct kBlendInterpItem
     float lastCalculatedNormalizedWeight = -NI_INFINITY;
     bool detached = false;
     unsigned char blendIndex = INVALID_INDEX;
+    kInterpDebugState debugState = kInterpDebugState::NotSet;
     kInterpState state = kInterpState::NotSet;
+    unsigned char poseInterpIndex = INVALID_INDEX;
+    bool isPoseInterp = false;
 
     void ClearValues()
     {
@@ -31,6 +38,9 @@ struct kBlendInterpItem
         lastCalculatedNormalizedWeight = -NI_INFINITY;
         detached = false;
         blendIndex = INVALID_INDEX;
+        state = kInterpState::NotSet;
+        poseInterpIndex = INVALID_INDEX;
+        isPoseInterp = false;
     }
 };
 
@@ -49,7 +59,11 @@ public:
     static kBlendInterpolatorExtraData* Obtain(NiObjectNET* obj);
     static kBlendInterpolatorExtraData* GetExtraData(NiObjectNET* obj);
 
-    kBlendInterpItem& GetItem(NiInterpolator* interpolator);
+    kBlendInterpItem& ObtainItem(NiInterpolator* interpolator);
+    kBlendInterpItem& CreatePoseInterpItem(NiBlendInterpolator* blendInterp, NiControllerSequence* sequence, NiAVObject* target);
+    kBlendInterpItem* GetItem(NiInterpolator* interpolator);
+
+    kBlendInterpItem* GetPoseInterpItem();
 };
 
 namespace BlendSmoothing

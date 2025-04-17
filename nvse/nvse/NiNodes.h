@@ -1396,6 +1396,15 @@ struct NiQuatTransform
 	NiQuatTransform(const NiPoint3& translate, const NiQuaternion& rotate, float scale)
 		: m_kTranslate(translate), m_kRotate(rotate), m_fScale(scale) {}
 
+	NiQuatTransform(const NiTransform& transform)
+	{
+		NiQuaternion rotation;
+		rotation.FromRotation(transform.m_Rotate);
+		m_kTranslate = transform.m_Translate;
+		m_kRotate = rotation;
+		m_fScale = transform.m_fScale;
+	}
+
 	void MakeInvalid()
 	{
 		SetTranslateValid(false);
@@ -1420,7 +1429,7 @@ struct NiQuatTransform
 
 	bool IsTransformInvalid() const
 	{
-		return !(IsScaleValid() || IsRotateValid() || IsTranslateValid());
+		return !IsScaleValid() && !IsRotateValid() && !IsTranslateValid();
 	}
 
 	void SetScaleValid(bool bValid)
@@ -1559,6 +1568,8 @@ public:
 	UInt16				m_usLastScaleIdx;
 	NiPoint3			m_kDefaultTranslate;
 	bool				bPose;
+	
+	NIRTTI_ADDRESS(0x11F3E50);
 	
 	NiFloatKey* GetScaleData(unsigned int& uiNumKeys, NiFloatKey::KeyType& eType, unsigned char& ucSize) const
 	{
