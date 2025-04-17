@@ -423,7 +423,6 @@
     <ClCompile Include="movement_blend_fixes.cpp" />
     <ClCompile Include="nihooks.cpp" />
     <ClCompile Include="blend_fixes.cpp" />
-    <ClCompile Include="TempEaseSequence.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -480,7 +479,6 @@
     <ClInclude Include="blend_fixes.h" />
     <ClInclude Include="stack_allocator.h" />
     <ClInclude Include="string_view_util.h" />
-    <ClInclude Include="TempEaseSequence.h" />
     <ClInclude Include="utility.h" />
   </ItemGroup>
   <ItemGroup>

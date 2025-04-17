@@ -1122,7 +1122,8 @@ void ApplyHooks()
 		return result;
 	}));
 
-	BlendSmoothing::WriteHooks();
+	if (g_pluginSettings.blendSmoothing)
+		BlendSmoothing::WriteHooks();
 }
 
 void WriteDelayedHooks()

@@ -685,7 +685,8 @@ void BlendFixes::ApplyAimBlendHooks()
 {
 	// JMP 0x4996E7 -> 0x499709
 	// disable the game resetting sequence state for aimup and aimdown as we will do it ourselves
-	SafeWriteBuf(0x4996E7, "\xEB\x20\x90\x90", 4);
+	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug)
+		SafeWriteBuf(0x4996E7, "\xEB\x20\x90\x90", 4);
 }
 
 

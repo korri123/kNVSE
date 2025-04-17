@@ -255,6 +255,27 @@ void BlendSmoothing::WriteHooks()
 {
 
 #if 1
+
+    WriteRelCall(0x499252, INLINE_HOOK(NiControllerManager*, __fastcall, NiControllerManager** managerPtr)
+    {
+        auto* manager = *managerPtr;
+        for (auto& mapItem : manager->m_spObjectPalette->m_kHash)
+        {
+            auto* node = mapItem->m_val;
+            if (!node)
+                continue;
+            if (auto* extraData = kBlendInterpolatorExtraData::GetExtraData(node))
+            {
+                auto& items = extraData->items;
+                for (auto& item : items)
+                {
+                    item.ClearValues();
+                }
+            }
+        }
+        return manager;
+    }));
+    
     WriteRelJump(0xA31E14, &AddTargetHook1);
     PatchMemoryNop(0xA31E14 + 5, 1);
 

@@ -2648,6 +2648,48 @@ public:
 		NiFixedString m_key;
 		T_Data      m_val;
 	};
+
+	class Iterator
+	{
+	public:
+		NiTMapItem** m_pkItem;
+		UInt32 m_uiIndex;
+		UInt32 m_uiCount;
+
+		Iterator(NiTMapItem** pkItem, UInt32 uiIndex, UInt32 uiCount)
+			: m_pkItem(pkItem), m_uiIndex(uiIndex), m_uiCount(uiCount)
+		{
+		}
+
+		bool Next()
+		{
+			if (m_uiIndex >= m_uiCount)
+				return false;
+			m_pkItem = &m_pkItem[m_uiIndex++];
+			return true;
+		}
+
+		Iterator& operator++()
+		{
+			Next();
+			return *this;
+		}
+
+		bool operator !=(const Iterator& other) const
+		{
+			return m_uiIndex != other.m_uiIndex;
+		}
+
+		NiTMapItem*& operator*()
+		{
+			return *m_pkItem;
+		}
+
+		const NiTMapItem*& operator*() const
+		{
+			return *m_pkItem;
+		}
+	};
 	
 	uint32_t m_uiHashSize;
 	NiTMapItem** m_ppkHashTable;
@@ -2659,6 +2701,16 @@ public:
 	virtual ~NiTFixedStringMap();
 	virtual NiTMapItem* NewItem();
 	virtual void DeleteItem(NiTMapItem* apItem);
+
+	Iterator begin()
+	{
+		return Iterator(m_ppkHashTable, 0, m_uiCount);
+	}
+
+	Iterator end()
+	{
+		return Iterator(m_ppkHashTable, m_uiCount, m_uiCount);
+	}
 
 	UInt32 KeyToHashIndex(const NiFixedString& arKey) const
 	{

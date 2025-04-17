@@ -1552,8 +1552,10 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 		BSAnimGroupSequence* anim = context.anim;
 
 		auto* manager = animData->controllerManager;
+		bool wasActive = false;
 		if (anim->m_eState != NiControllerSequence::INACTIVE)
 		{
+			wasActive = true;
 			if (anim->animGroup)
 				animData->ResetSequenceState(anim->animGroup->GetSequenceType(), 0.0);
 			manager->DeactivateSequence(anim, 0.0f);
@@ -1575,7 +1577,7 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 		const auto newKfCount = kfMap->GetCount();
 		DebugAssert(newKfCount == kfCount - 1);
 
-		if (animData->actor)
+		if (animData->actor && wasActive)
 			actors.insert(animData->actor);
 	}
 	
