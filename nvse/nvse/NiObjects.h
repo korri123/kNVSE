@@ -373,8 +373,12 @@ public:
 		predicate(this);
 		for (const auto& child : m_children)
 		{
+			if (!child)
+				continue;
 			if (auto* node = child->GetAsNiNode())
 				node->RecurseTree(predicate);
+			else
+				predicate(child);
 		}
 	}
 };

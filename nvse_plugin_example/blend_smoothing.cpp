@@ -1,5 +1,7 @@
 ﻿#include "blend_smoothing.h"
 
+#include <unordered_set>
+
 #include "additive_anims.h"
 #include "GameAPI.h"
 #include "GameRTTI.h"
@@ -259,9 +261,41 @@ void BlendSmoothing::WriteHooks()
     WriteRelCall(0x499252, INLINE_HOOK(NiControllerManager*, __fastcall, NiControllerManager** managerPtr)
     {
         auto* manager = *managerPtr;
+        int iCount = 0;
+
+        std::unordered_set<const char*> toKeep;
+        std::unordered_map<const char*, NiAVObject*> toKeepMap;
+        manager->m_spObjectPalette->m_pkScene->GetAsNiNode()->RecurseTree([&](NiAVObject* node)
+        {
+            toKeepMap.emplace(node->m_pcName, node);
+            NiTFixedStringMap<NiAVObject*>::NiTMapItem* item;
+            if (manager->m_spObjectPalette->m_kHash.GetAt(node->m_pcName, item))
+            {
+                toKeep.insert(node->m_pcName);
+                if (item->m_val != node)
+                {
+                    item->m_val = node;
+                }
+            }
+        });
+        std::vector<const char*> toRemove;
         for (auto& mapItem : manager->m_spObjectPalette->m_kHash)
         {
-            auto* node = mapItem->m_val;
+            auto& name = mapItem.m_key;
+            if (!toKeep.contains(name))
+                toRemove.emplace_back(name);
+        }
+        UInt32 numRemoved = 0;
+        for (auto& name : toRemove)
+        {
+            ++numRemoved;
+            manager->m_spObjectPalette->m_kHash.RemoveAt(name);
+        }
+        
+        for (auto& mapItem : manager->m_spObjectPalette->m_kHash)
+        {
+            ++iCount;
+            auto* node = mapItem.m_val;
             if (!node)
                 continue;
             if (auto* extraData = kBlendInterpolatorExtraData::GetExtraData(node))
@@ -273,6 +307,7 @@ void BlendSmoothing::WriteHooks()
                 }
             }
         }
+        DebugAssert(iCount == manager->m_spObjectPalette->m_kHash.m_uiCount);
         return manager;
     }));
     
@@ -285,10 +320,8 @@ void BlendSmoothing::WriteHooks()
     static UInt32 uiNiMultiTargetTransformControllerDestroy = 0xA2FB70;
     WriteRelCall(0xA30283, INLINE_HOOK(void, __fastcall, NiMultiTargetTransformController* pController)
     {
-        [[msvc::noinline_calls]] {
-            ClearExtraDataInterpItems(pController);
-            DecreateTargetRefCounts(pController);
-        }
+        ClearExtraDataInterpItems(pController);
+        DecreateTargetRefCounts(pController);
         ThisStdCall(uiNiMultiTargetTransformControllerDestroy, pController);
     }), &uiNiMultiTargetTransformControllerDestroy);
 
@@ -296,9 +329,7 @@ void BlendSmoothing::WriteHooks()
     // clear object palette in NiControllerManager destructor
     WriteRelCall(0xA2EF83, INLINE_HOOK(void, __fastcall, NiControllerManager* manager)
     {
-        [[msvc::noinline_calls]] {
-            manager->m_spObjectPalette->m_kHash.RemoveAll();
-        }
+        manager->m_spObjectPalette->m_kHash.RemoveAll();
         ThisStdCall(uiNiControllerManagerDestroy, manager);
     }), &uiNiControllerManagerDestroy);
 

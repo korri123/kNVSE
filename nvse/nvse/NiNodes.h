@@ -2650,46 +2650,80 @@ public:
 	};
 
 	class Iterator
-	{
-	public:
-		NiTMapItem** m_pkItem;
-		UInt32 m_uiIndex;
-		UInt32 m_uiCount;
+    {
+    public:
+        explicit Iterator(NiTMapItem** apkHashTable, uint32_t auiHashSize, uint32_t auiCurrentBucket = 0, NiTMapItem* apkCurrentItem = nullptr)
+            : m_ppkHashTable(apkHashTable)
+            , m_uiHashSize(auiHashSize)
+            , m_uiCurrentBucket(auiCurrentBucket)
+            , m_pkCurrentItem(apkCurrentItem)
+        {
+            if (!m_pkCurrentItem && m_ppkHashTable)
+            {
+                FindNextItem();
+            }
+        }
 
-		Iterator(NiTMapItem** pkItem, UInt32 uiIndex, UInt32 uiCount)
-			: m_pkItem(pkItem), m_uiIndex(uiIndex), m_uiCount(uiCount)
-		{
-		}
+        Iterator& operator++()
+        {
+            if (m_pkCurrentItem)
+            {
+                m_pkCurrentItem = m_pkCurrentItem->m_pkNext;
+                if (!m_pkCurrentItem)
+                {
+                    ++m_uiCurrentBucket;
+                    FindNextItem();
+                }
+            }
+            return *this;
+        }
 
-		bool Next()
-		{
-			if (m_uiIndex >= m_uiCount)
-				return false;
-			m_pkItem = &m_pkItem[m_uiIndex++];
-			return true;
-		}
+        Iterator operator++(int)
+        {
+            Iterator temp = *this;
+            ++*this;
+            return temp;
+        }
 
-		Iterator& operator++()
-		{
-			Next();
-			return *this;
-		}
+        NiTMapItem& operator*() const
+        {
+            return *m_pkCurrentItem;
+        }
 
-		bool operator !=(const Iterator& other) const
-		{
-			return m_uiIndex != other.m_uiIndex;
-		}
+        NiTMapItem* operator->() const
+        {
+            return m_pkCurrentItem;
+        }
 
-		NiTMapItem*& operator*()
-		{
-			return *m_pkItem;
-		}
+        bool operator==(const Iterator& arOther) const
+        {
+            return m_pkCurrentItem == arOther.m_pkCurrentItem;
+        }
 
-		const NiTMapItem*& operator*() const
-		{
-			return *m_pkItem;
-		}
-	};
+        bool operator!=(const Iterator& arOther) const
+        {
+            return !(*this == arOther);
+        }
+
+    private:
+        void FindNextItem()
+        {
+            while (m_uiCurrentBucket < m_uiHashSize)
+            {
+                m_pkCurrentItem = m_ppkHashTable[m_uiCurrentBucket];
+                if (m_pkCurrentItem)
+                    return;
+
+            	++m_uiCurrentBucket;
+            }
+            m_pkCurrentItem = nullptr;
+        }
+
+        NiTMapItem** m_ppkHashTable;
+        uint32_t m_uiHashSize;
+        uint32_t m_uiCurrentBucket;
+        NiTMapItem* m_pkCurrentItem;
+    };
 	
 	uint32_t m_uiHashSize;
 	NiTMapItem** m_ppkHashTable;
@@ -2704,12 +2738,14 @@ public:
 
 	Iterator begin()
 	{
-		return Iterator(m_ppkHashTable, 0, m_uiCount);
+		// Return iterator pointing to first item
+		return Iterator(m_ppkHashTable, m_uiHashSize);
 	}
 
 	Iterator end()
 	{
-		return Iterator(m_ppkHashTable, m_uiCount, m_uiCount);
+		// Return iterator representing the end (past-the-last item)
+		return Iterator(m_ppkHashTable, m_uiHashSize, m_uiHashSize, nullptr);
 	}
 
 	UInt32 KeyToHashIndex(const NiFixedString& arKey) const
@@ -2722,8 +2758,8 @@ public:
 	{
 		return arKey1 == arKey2;
 	}
-	
-	bool GetAt(const NiFixedString& arKey, T_Data& dataOut) const
+
+	bool GetAt(const NiFixedString& arKey, NiTMapItem*& dataOut) const
 	{
 		if (m_uiCount == 0)
 			return false;
@@ -2731,13 +2767,25 @@ public:
 		auto* pItem = m_ppkHashTable[uiHashIndex];
 		while (pItem) {
 			if (IsKeysEqual(pItem->m_key, arKey)) {
-				dataOut = pItem->m_val;
+				dataOut = pItem;
 				return true;
 			}
 			pItem = pItem->m_pkNext;
 		}
 		return false;
 	}
+	
+	bool GetAt(const NiFixedString& arKey, T_Data& dataOut) const
+	{
+		NiTMapItem* pItem;
+		if (GetAt(arKey, pItem)) {
+			dataOut = pItem->m_val;
+			return true;
+		}
+		return false;
+	}
+
+	bool RemoveAt(const NiFixedString& kKey);
 
 	T_Data Lookup(const NiFixedString& arKey)
 	{
@@ -2760,6 +2808,49 @@ public:
 		m_uiCount = 0;
 	}
 };
+
+template <class T_Data>
+bool NiTFixedStringMap<T_Data>::RemoveAt(const NiFixedString& kKey)
+{
+	// look up hash table location for key
+	unsigned int uiIndex = KeyToHashIndex(kKey);
+	auto* pkItem = m_ppkHashTable[uiIndex];
+
+	// search list at hash table location for key
+	if (pkItem)
+	{
+		if (IsKeysEqual(kKey, pkItem->m_key))
+		{
+			// item at front of list, remove it
+			m_ppkHashTable[uiIndex] = pkItem->m_pkNext;
+
+			DeleteItem(pkItem);
+
+			m_uiCount--;
+			return true;
+		}
+		// search rest of list for item
+		auto* pkPrev = pkItem;
+		auto* pkCurr = pkPrev->m_pkNext;
+		while (pkCurr && !IsKeysEqual(kKey, pkCurr->m_key))
+		{
+			pkPrev = pkCurr;
+			pkCurr = pkCurr->m_pkNext;
+		}
+		if (pkCurr)
+		{
+			// found the item, remove it
+			pkPrev->m_pkNext = pkCurr->m_pkNext;
+
+			DeleteItem(pkCurr);
+
+			m_uiCount--;
+			return true;
+		}
+	}
+
+	return false;
+}
 
 class NiDefaultAVObjectPalette : public NiAVObjectPalette
 {
