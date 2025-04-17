@@ -1016,9 +1016,15 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         auto* pkBlendInterp = kItem.m_pkBlendInterp;
         if (!kItem.m_spInterpolator || !pkBlendInterp)
             continue;
-
+        const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
         auto& idTag = kItem.GetIDTag(this);
         auto* target = m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName);
+        if (!target) 
+        {
+            // hello "Ripper" from 1hmidle.kf
+            kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(kItem.m_spInterpolator, 0.0f, cInterpPriority);
+            continue;
+        }
         DebugAssert(target && target->m_pcName == idTag.m_kAVObjectName);
 
         auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
@@ -1032,7 +1038,6 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         if (!extraInterpItem.blendInterp)
             extraInterpItem.blendInterp = pkBlendInterp;
         
-        const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
         const auto detached = extraInterpItem.detached;
 
         const auto prevDebugState = extraInterpItem.debugState;
@@ -1612,8 +1617,9 @@ void NiControllerSequence::DetachInterpolatorsHooked()
             const auto blendIndex = kItem.m_ucBlendIdx;
             if (!target)
             {
-                // this case happens in the destructor of NiControllerSequence
-                blendInterp->RemoveInterpInfo(blendIndex);
+                // this case happens in the destructor of NiControllerSequence or when you have blocks that don't exist in nif ("Ripper" in 1hmidle.kf for example)
+                if (blendIndex != INVALID_INDEX)
+                    blendInterp->RemoveInterpInfo(blendIndex);
                 kItem.m_ucBlendIdx = INVALID_INDEX;
                 continue;
             }
