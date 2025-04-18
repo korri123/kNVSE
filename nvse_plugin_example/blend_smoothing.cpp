@@ -140,7 +140,7 @@ kBlendInterpItem* kBlendInterpolatorExtraData::GetPoseInterpItem()
 void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target)
 {
     const auto deltaTime = g_timeGlobal->secondsPassed;
-    constexpr auto smoothingTime = 0.1f;
+    const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
     const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
     constexpr float MIN_WEIGHT = 0.001f;
     

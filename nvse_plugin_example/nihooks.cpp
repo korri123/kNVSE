@@ -1042,6 +1042,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         AttachInterpolators(cPriority);
         return;
     }
+    m_pkOwner->CleanObjectPalette();
     // BlendFixes::AttachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
@@ -1637,6 +1638,38 @@ NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
         }
     }
     return nullptr;
+}
+
+void NiControllerManager::CleanObjectPalette() const
+{
+    thread_local std::unordered_set<const char*> toKeep;
+    thread_local std::unordered_map<const char*, NiAVObject*> toKeepMap;
+    toKeep.clear();
+    toKeepMap.clear();
+    m_spObjectPalette->m_pkScene->GetAsNiNode()->RecurseTree([&](NiAVObject* node)
+    {
+        toKeepMap.emplace(node->m_pcName, node);
+        NiTFixedStringMap<NiAVObject*>::NiTMapItem* mapItem;
+        if (m_spObjectPalette->m_kHash.GetAt(node->m_pcName, mapItem))
+        {
+            toKeep.insert(node->m_pcName);
+            if (mapItem->m_val != node)
+            {
+                mapItem->m_val = node;
+            }
+        }
+    });
+    std::vector<const char*> toRemove;
+    for (auto& mapItem : m_spObjectPalette->m_kHash)
+    {
+        auto& name = mapItem.m_key;
+        if (!toKeep.contains(name))
+            toRemove.emplace_back(name);
+    }
+    for (auto& name : toRemove)
+    {
+        m_spObjectPalette->m_kHash.RemoveAt(name);
+    }
 }
 
 void NiControllerSequence::DetachInterpolators() const

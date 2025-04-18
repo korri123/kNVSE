@@ -2941,6 +2941,8 @@ public:
 	}
 
 	NiAVObject* GetTarget(NiInterpController* controller, const NiControllerSequence::IDTag& idTag);
+
+	void CleanObjectPalette() const;
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
 

@@ -29,6 +29,7 @@ struct PluginINISettings
     bool blendSmoothing = true;
     bool fixSpiderHands = true;
     bool poseInterpolators = false;
+    float blendSmoothingRate = 0.075f;
     std::vector<std::string> legacyAnimTimePaths;
 };
 extern PluginINISettings g_pluginSettings;
