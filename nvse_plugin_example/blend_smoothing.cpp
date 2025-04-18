@@ -156,7 +156,7 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
         if (!item.m_spInterpolator)
             continue;
         auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
-        if (!extraItemPtr)
+        if (!extraItemPtr || extraItemPtr->isAdditive)
             continue;
         auto& extraItem = *extraItemPtr;
         DebugAssert(extraItem.state != kInterpState::NotSet);
@@ -211,7 +211,8 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
         totalWeight += item.m_fNormalizedWeight;
     }
 
-#if 0
+#define NORMALIZE_WEIGHTS 0
+#if NORMALIZE_WEIGHTS
     float newTotalWeight = 0.0f;
 	
     if (totalWeight > 0.0f)

@@ -22,6 +22,7 @@
 	NiImplementRTTI(classname, baseclassname) \
 	NiImplementGetRTTI(classname)
 
+#define CREATE_OBJECT(CLASS, ADDRESS) static CLASS* CreateObject() { return CdeclCall<CLASS*>(ADDRESS); };
 
 #if RUNTIME
 

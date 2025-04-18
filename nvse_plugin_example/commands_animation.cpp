@@ -1706,7 +1706,7 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 	builder.Add("address", address.c_str());
 #endif
 
-	const auto* textKeyData = anim->m_spTextKeys;
+	const NiTextKeyExtraData* textKeyData = anim->m_spTextKeys;
 	if (textKeyData)
 	{
 		NVSEArrayBuilder textKeyTimeBuilder;
@@ -2732,7 +2732,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 		if (!anim)
 			return true;
-		auto* textKeyData = anim->m_spTextKeys;
+		NiTextKeyExtraData* textKeyData = anim->m_spTextKeys;
 		if (!textKeyData)
 			return true;
 		textKeyData->AddKey(textKey, time);
@@ -2752,7 +2752,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		const auto* anim = FindActiveAnimationForRef(thisObj, animPath);
 		if (!anim)
 			return true;
-		auto* textKeyData = anim->m_spTextKeys;
+		NiTextKeyExtraData* textKeyData = anim->m_spTextKeys;
 		if (!textKeyData)
 			return true;
 		*result = textKeyData->RemoveKey(index);
@@ -2896,7 +2896,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* anim = FindActiveAnimationForActor(actor, animPath);
 		if (!anim || !anim->animGroup)
 			return true;
-		auto* textKeyData = anim->m_spTextKeys;
+		NiTextKeyExtraData* textKeyData = anim->m_spTextKeys;
 		if (!textKeyData)
 			return true;
 		const NiTextKey* key = textKeyData->FindFirstByName(textKey);
@@ -3111,7 +3111,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		{
 			auto* block = anim->GetControlledBlock(node->m_pcName);
 			if (block)
-				AdditiveManager::SetAdditiveInterpWeightMult(block->m_spInterpolator, weight);
+				AdditiveManager::SetAdditiveInterpWeightMult(node, block->m_spInterpolator, weight);
 			if (recursive)
 			{
 				if (auto* niNode = node->GetAsNiNode())

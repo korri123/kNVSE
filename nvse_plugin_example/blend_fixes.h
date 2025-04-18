@@ -19,15 +19,8 @@ namespace BlendFixes
 	void ApplyHooks();
 	void FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim);
 	void ApplyMissingUpDownAnims(AnimData* animData);
-	void FixAimPriorities(AnimData* animData, BSAnimGroupSequence* destAnim);
-	void RevertFixAimPriorities(AnimData* animData);
-	void ApplyWeightSmoothing(NiBlendInterpolator* blendInterpolator);
 
-	void AttachSecondaryTempInterpolators(NiControllerSequence* pkSequence);
-	void DetachSecondaryTempInterpolators(NiControllerSequence* pkSequence);
 
-	void OnSequenceDestroy(NiControllerSequence* sequence);
-	void OnInterpolatorDestroy(NiInterpolator* interpolator);
 	
 }
 

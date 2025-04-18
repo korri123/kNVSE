@@ -188,7 +188,7 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 
 void AnimFixes::EraseNullTextKeys(const BSAnimGroupSequence* anim)
 {
-	auto* textKeys = anim->m_spTextKeys;
+	NiTextKeyExtraData* textKeys = anim->m_spTextKeys;
 	if (ra::any_of(textKeys->GetKeys(), [](const NiTextKey& key) { return key.m_kText.CStr() == nullptr; }))
 	{
 		// LogAnimError(anim, "Erased null text keys");
@@ -256,7 +256,7 @@ void AnimFixes::EraseNegativeAnimKeys(const BSAnimGroupSequence* anim)
 
 void AnimFixes::FixWrongPrnKey(BSAnimGroupSequence* anim)
 {
-	const auto* textKeys = anim->m_spTextKeys;
+	const NiTextKeyExtraData* textKeys = anim->m_spTextKeys;
 	const auto groupId = anim->animGroup->GetBaseGroupID();
 	for (auto& key : textKeys->GetKeys())
 	{

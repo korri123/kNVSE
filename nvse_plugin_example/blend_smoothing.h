@@ -11,6 +11,20 @@ enum class kInterpState: UInt8
     NotSet, Activating, Deactivating
 };
 
+struct kAdditiveInterpMetadata
+{
+    NiQuatTransform refTransform;
+    bool ignorePriorities = false;
+    float weightMultiplier = 1.0f;
+
+    void ClearValues()
+    {
+        refTransform = NiQuatTransform();
+        ignorePriorities = false;
+        weightMultiplier = 1.0f;
+    }
+};
+
 struct kBlendInterpItem
 {
     NiPointer<NiInterpolator> interpolator = nullptr;
@@ -26,6 +40,8 @@ struct kBlendInterpItem
     kInterpState state = kInterpState::NotSet;
     unsigned char poseInterpIndex = INVALID_INDEX;
     bool isPoseInterp = false;
+    bool isAdditive = false;
+    kAdditiveInterpMetadata additiveMetadata;
 
     void ClearValues()
     {
@@ -41,6 +57,8 @@ struct kBlendInterpItem
         state = kInterpState::NotSet;
         poseInterpIndex = INVALID_INDEX;
         isPoseInterp = false;
+        isAdditive = false;
+        additiveMetadata.ClearValues();
     }
 };
 

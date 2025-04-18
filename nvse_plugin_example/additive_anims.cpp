@@ -6,18 +6,11 @@
 #include "SafeWrite.h"
 #include "utility.h"
 
-struct AdditiveInterpMetadata
-{
-    NiControllerSequence* additiveSequence;
-    NiQuatTransform refTransform;
-    bool ignorePriorities;
-    float weightMultiplier = 1.0f;
-};
-
-using AdditiveInterpMetadataMap = std::unordered_map<NiInterpolator*, AdditiveInterpMetadata>;
+const char* sAdditiveSequenceMetadata = "AdditiveSequenceMetadata";
 
 struct AdditiveSequenceMetadata
 {
+    const char* type = sAdditiveSequenceMetadata;
     NiFixedString referencePoseSequenceName;
     float referenceTimePoint;
     bool ignorePriorities;
@@ -26,98 +19,120 @@ struct AdditiveSequenceMetadata
     bool operator==(const AdditiveSequenceMetadata& other) const = default;
 };
 
-std::unordered_map<NiControllerSequence*, AdditiveSequenceMetadata> additiveSequenceMetadataMap;
-AdditiveInterpMetadataMap additiveInterpMetadataMap;
-
-#if _DEBUG
-std::unordered_map<NiBlendInterpolator*, const char*> debugBlendInterpsToTargetsMap;
-std::unordered_map<NiBlendInterpolator*, NiControllerSequence*> debugBlendInterpToSequenceMap;
-#endif
-
-std::shared_mutex g_additiveManagerMutex;
-
-void AddReferencePoseTransforms(AnimData* animData, NiControllerSequence* additiveSequence,
-                                   NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities,
-                                   AdditiveInterpMetadataMap& refPoseTransforms)
+namespace
 {
-    const auto refIdTags = referencePoseSequence->GetIDTags();
-    const auto refBlocks = referencePoseSequence->GetControlledBlocks();
-
-    NiNode* node = animData->nBip01;
-    if (!node)
-        return;
-    for (size_t i = 0; i < refBlocks.size(); i++)
+    void AddReferencePoseTransforms(AnimData* animData, NiControllerSequence* additiveSequence,
+                                       NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities)
     {
-        const auto& idTag = refIdTags[i];
-        const auto& refBlock = refBlocks[i];
-        NiInterpolator* refInterp = refBlock.m_spInterpolator;
-        const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
-        if (!refInterp || !refBlock.m_pkBlendInterp || NOT_TYPE(refBlock.m_pkBlendInterp, NiBlendTransformInterpolator) || !additiveBlock)
-            continue;
-        NiInterpolator* additiveInterp = additiveBlock->m_spInterpolator;
-        if (!additiveInterp)
-            continue;
-        
-        NiAVObject* targetNode = node->GetObjectByName(idTag.m_kAVObjectName);
-        if (!targetNode)
-            continue;
+        const auto refBlocks = referencePoseSequence->GetControlledBlocks();
 
-        const float fOldTime = refInterp->m_fLastTime;
-        NiQuatTransform refTransform;
-        const bool bSuccess = refInterp->Update(timePoint, targetNode, refTransform);
-        refInterp->m_fLastTime = fOldTime;
-        if (bSuccess)
+        NiNode* node = animData->nBip01;
+        if (!node)
+            return;
+        for (auto& refBlock : refBlocks)
         {
-            refPoseTransforms.insert_or_assign(additiveInterp, AdditiveInterpMetadata{
-                .additiveSequence = additiveSequence,
-                .refTransform = refTransform,
-                .ignorePriorities = ignorePriorities
-            });
+            const auto& idTag = refBlock.GetIDTag(referencePoseSequence);
+            NiInterpolator* refInterp = refBlock.m_spInterpolator;
+            const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
+            if (!refInterp || !refBlock.m_pkBlendInterp || !NI_DYNAMIC_CAST(NiBlendTransformInterpolator, refBlock.m_pkBlendInterp) || !additiveBlock)
+                continue;
+            NiInterpolator* additiveInterp = additiveBlock->m_spInterpolator;
+            if (!additiveInterp)
+                continue;
+
+            auto* target = animData->controllerManager->GetTarget(refBlock.m_spInterpCtlr, idTag);
+            if (!target)
+                continue;
+        
+            NiAVObject* targetNode = node->GetObjectByName(idTag.m_kAVObjectName);
+            if (!targetNode)
+                continue;
+
+            const float fOldTime = refInterp->m_fLastTime;
+            NiQuatTransform refTransform;
+            const bool bSuccess = refInterp->Update(timePoint, targetNode, refTransform);
+            refInterp->m_fLastTime = fOldTime;
+            if (bSuccess)
+            {
+                auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+                DebugAssert(extraData);
+                auto& extraInterpItem = extraData->ObtainItem(additiveInterp);
+                extraInterpItem.isAdditive = true;
+                extraInterpItem.additiveMetadata.refTransform = refTransform;
+                extraInterpItem.additiveMetadata.ignorePriorities = ignorePriorities;
+            }
         }
     }
-}
 
-void InitDebugData(NiControllerSequence* additiveSequence)
-{
-#if _DEBUG
-    const auto controlledBlocks = additiveSequence->GetControlledBlocks();
-    for (unsigned int i = 0; i < controlledBlocks.size(); i++)
+    bool IsAdditiveInterpolator(kBlendInterpolatorExtraData* extraData, NiInterpolator* interpolator)
     {
-        auto& idTag = additiveSequence->GetIDTags()[i];
-        debugBlendInterpsToTargetsMap[controlledBlocks[i].m_pkBlendInterp] = idTag.m_kAVObjectName.CStr();
-        debugBlendInterpToSequenceMap[controlledBlocks[i].m_pkBlendInterp] = additiveSequence;
+        auto* kExtraItem = extraData->GetItem(interpolator);
+        if (!kExtraItem)
+            return false;
+        return kExtraItem->isAdditive;
     }
-#endif
+
+    kAdditiveInterpMetadata* GetAdditiveInterpMetadata(kBlendInterpolatorExtraData* extraData, NiInterpolator* interpolator)
+    {
+        auto* kExtraItem = extraData->GetItem(interpolator);
+        if (!kExtraItem || !kExtraItem->isAdditive)
+            return nullptr;
+        return &kExtraItem->additiveMetadata;
+    }
 }
 
-void MarkInterpolatorsAsAdditive(const NiControllerSequence* additiveSequence)
+namespace
+{
+    const NiFixedString& sAdditiveMetadata()
+    {
+        const static NiFixedString sAdditiveMetadata = "__AdditiveMetadata__";
+        return sAdditiveMetadata;
+    }
+}
+
+void AdditiveManager::MarkInterpolatorsAsAdditive(const NiControllerSequence* additiveSequence)
 {
     for (const auto& block : additiveSequence->GetControlledBlocks())
     {
-        if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms() && IS_TYPE(block.m_pkBlendInterp, NiBlendTransformInterpolator))
+        if (block.m_pkBlendInterp && !block.m_pkBlendInterp->GetHasAdditiveTransforms() && NI_DYNAMIC_CAST(NiBlendTransformInterpolator, block.m_pkBlendInterp))
             block.m_pkBlendInterp->SetHasAdditiveTransforms(true);
     }
 }
 
 void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSequence* additiveSequence, NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities)
 {
-    const auto metadata = AdditiveSequenceMetadata {
+    auto metadata = AdditiveSequenceMetadata {
+        .type = sAdditiveSequenceMetadata,
         .referencePoseSequenceName = referencePoseSequence->m_kName,
         .referenceTimePoint = timePoint,
         .ignorePriorities = ignorePriorities,
         .controllerManager = animData->controllerManager,
         .firstPerson = animData == g_thePlayer->firstPersonAnimData
     };
-    std::unique_lock lock(g_additiveManagerMutex);
-    if (const auto iter = additiveSequenceMetadataMap.find(additiveSequence); iter != additiveSequenceMetadataMap.end())
+
+    if (!additiveSequence->m_spTextKeys)
+        additiveSequence->m_spTextKeys = NiTextKeyExtraData::CreateObject();
+    
+    bool isNew;
+    if (auto* textKey = additiveSequence->m_spTextKeys->GetOrAddKey(sAdditiveMetadata(), 0.0f, &isNew))
     {
-        if (iter->second == metadata)
-            return;
+        if (!isNew && textKey->m_fTime != 0.0f)
+        {
+            auto* existingMetadata = *reinterpret_cast<AdditiveSequenceMetadata**>(&textKey->m_fTime);
+            DebugAssert(existingMetadata->type == sAdditiveSequenceMetadata);
+            if (metadata == *existingMetadata)
+                return;
+            
+            *existingMetadata = metadata;
+        }
+        else 
+        {
+            auto* newMetadata = new AdditiveSequenceMetadata(metadata);
+            textKey->m_fTime = reinterpret_cast<float&>(newMetadata);
+        }
     }
-    additiveSequenceMetadataMap.insert_or_assign(additiveSequence, metadata);
-    AddReferencePoseTransforms(animData, additiveSequence, referencePoseSequence, timePoint, ignorePriorities, additiveInterpMetadataMap);
+    AddReferencePoseTransforms(animData, additiveSequence, referencePoseSequence, timePoint, ignorePriorities);
     MarkInterpolatorsAsAdditive(additiveSequence);
-    InitDebugData(additiveSequence);
 }
 
 void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim)
@@ -135,7 +150,8 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
     if (referenceAnim->animGroup)
         currentAnim = animData->animSequence[referenceAnim->animGroup->GetSequenceType()];
     float easeInTime = 0.0f;
-    if (!additiveAnim->m_spTextKeys->FindFirstByName("noBlend"))
+    const static NiFixedString sNoBlend = "noBlend";
+    if (!additiveAnim->m_spTextKeys->FindFirstByName(sNoBlend))
         easeInTime = GetDefaultBlendTime(additiveAnim, currentAnim);
     const auto result = additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false);
     if (result)
@@ -151,38 +167,49 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
 
 bool AdditiveManager::IsAdditiveSequence(NiControllerSequence* sequence)
 {
-    std::shared_lock lock(g_additiveManagerMutex);
-    return additiveSequenceMetadataMap.contains(sequence);
+    if (!sequence->m_spTextKeys)
+        return false;
+    auto textKey = sequence->m_spTextKeys->FindFirstByName(sAdditiveMetadata());
+    return textKey != nullptr && textKey->m_fTime != 0.0f;
 }
 
 void AdditiveManager::EraseAdditiveSequence(NiControllerSequence* sequence)
 {
-    std::unique_lock lock(g_additiveManagerMutex);
-    additiveSequenceMetadataMap.erase(sequence);
+    if (sequence->m_spTextKeys && sequence->m_spTextKeys->m_uiRefCount == 1)
+    {
+        if (auto textKey = sequence->m_spTextKeys->FindFirstByName(sAdditiveMetadata()); textKey->m_fTime != 0.0f)
+        {
+            auto* metadata = *reinterpret_cast<AdditiveSequenceMetadata**>(&textKey->m_fTime);
+            DebugAssert(metadata->type == sAdditiveSequenceMetadata);
+            delete metadata;
+        }
+    }
     for (auto& item : sequence->GetControlledBlocks())
     {
-        if (item.m_spInterpolator)
-            additiveInterpMetadataMap.erase(item.m_spInterpolator);
         if (item.m_pkBlendInterp)
             item.m_pkBlendInterp->SetHasAdditiveTransforms(false);
     }
 }
 
-bool AdditiveManager::IsAdditiveInterpolator(NiInterpolator* interpolator)
+bool AdditiveManager::IsAdditiveInterpolator(NiObjectNET* target, NiInterpolator* interpolator)
 {
-    return additiveInterpMetadataMap.contains(interpolator);
+    auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
+    if (!extraData)
+        return false;
+    return ::IsAdditiveInterpolator(extraData, interpolator);
 }
 
-AdditiveInterpMetadata* GetAdditiveInterpMetadata(NiInterpolator* interpolator)
+static kAdditiveInterpMetadata* GetAdditiveInterpMetadata(NiObjectNET* target, NiInterpolator* interpolator)
 {
-    if (const auto iter = additiveInterpMetadataMap.find(interpolator); iter != additiveInterpMetadataMap.end())
-        return &iter->second;
-    return nullptr; // not an additive interpolator
+    auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
+    if (!extraData)
+        return nullptr;
+    return GetAdditiveInterpMetadata(extraData, interpolator);
 }
 
-void AdditiveManager::SetAdditiveInterpWeightMult(NiInterpolator* interpolator, float weightMult)
+void AdditiveManager::SetAdditiveInterpWeightMult(NiObjectNET* target, NiInterpolator* interpolator, float weightMult)
 {
-    if (auto* metadata = GetAdditiveInterpMetadata(interpolator); metadata)
+    if (auto* metadata = GetAdditiveInterpMetadata(target, interpolator); metadata)
     {
         metadata->weightMultiplier = weightMult;
     }
@@ -230,13 +257,12 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
         kValue = originalTransform;
     }
 #endif
-    std::shared_lock lock(g_additiveManagerMutex);
     unsigned int uiNumAdditiveInterps = 0;
     for (auto& kItem : GetItems())
     {
         if (!kItem.m_spInterpolator)
             continue;
-        const auto* kContext = GetAdditiveInterpMetadata(kItem.m_spInterpolator.data);
+        const auto* kContext = GetAdditiveInterpMetadata(pkInterpTarget, kItem.m_spInterpolator.data);
         if (!kContext)
             continue; // not an additive interpolator
         if (kItem.m_fNormalizedWeight != 0.0f)
@@ -250,7 +276,7 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
         }
         ++uiNumAdditiveInterps;
 
-        const auto& [sequence, kRefTransform, ignorePriorities, weightMultiplier] = *kContext;
+        const auto& [kRefTransform, ignorePriorities, weightMultiplier] = *kContext;
 
         if (kItem.m_cPriority < m_cNextHighPriority && !ignorePriorities)
             continue;
@@ -459,7 +485,7 @@ void NiBlendInterpolator::ComputeNormalizedWeightsFor2Additive(InterpArrayItem* 
     }
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
+void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(NiObjectNET* target)
 {
     if (!GetComputeNormalizedWeights())
     {
@@ -476,13 +502,15 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
     kItems.reserve(m_ucArraySize);
     kIndices.reserve(m_ucArraySize);
 
-    std::shared_lock lock(g_additiveManagerMutex);
+    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(target);
+    DebugAssert(kExtraData);
+
     for (int i = 0; i < m_ucArraySize; i++)
     {
         auto& item = m_pkInterpArray[i];
         if (item.m_spInterpolator != nullptr)
         {
-            if (!AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
+            if (!IsAdditiveInterpolator(kExtraData, item.m_spInterpolator))
             {
                 kItems.push_back(&item);
                 kIndices.push_back(i);
@@ -493,7 +521,6 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive()
             }
         }
     }
-    lock.unlock();
 
     if (kItems.empty())
     {
@@ -639,7 +666,7 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority) const
         InterpArrayItem& kItem = m_pkInterpArray[ui];
         if (kItem.m_spInterpolator != nullptr && kItem.m_pkBlendInterp != nullptr)
         {
-            if (NOT_TYPE(kItem.m_pkBlendInterp, NiBlendTransformInterpolator))
+            if (!NI_DYNAMIC_CAST(NiBlendTransformInterpolator, kItem.m_pkBlendInterp))
             {
                 // make sure that only blend transform interpolators are attached
                 kItem.m_ucBlendIdx = INVALID_INDEX;
@@ -655,19 +682,7 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority) const
     }
 }
 
-void NiControllerSequence::DetachInterpolatorsAdditive() const
-{
-    for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
-    {
-        InterpArrayItem &kItem = m_pkInterpArray[ui];
-        if (kItem.m_pkBlendInterp && kItem.m_ucBlendIdx != INVALID_INDEX)
-        {
-            kItem.m_pkBlendInterp->RemoveInterpInfo(kItem.m_ucBlendIdx);
-        }
-    }
-}
-
-void NiBlendInterpolator::CalculatePrioritiesAdditive()
+void NiBlendInterpolator::CalculatePrioritiesAdditive(NiObjectNET* target)
 {
     m_cNextHighPriority = INVALID_INDEX;
     m_cHighPriority = INVALID_INDEX;
@@ -677,9 +692,11 @@ void NiBlendInterpolator::CalculatePrioritiesAdditive()
         m_cHighPriority = m_pkInterpArray[m_ucSingleIdx].m_cPriority;
         return;
     }
+    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(target);
+    DebugAssert(kExtraData);
     for (auto& item : GetItems())
     {
-        if (item.m_spInterpolator != nullptr && !AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
+        if (item.m_spInterpolator != nullptr && !IsAdditiveInterpolator(kExtraData, item.m_spInterpolator))
         {
             if (item.m_cPriority > m_cNextHighPriority)
             {
@@ -695,81 +712,10 @@ void NiBlendInterpolator::CalculatePrioritiesAdditive()
             }
         }
     }
-#if _DEBUG && 0
-    const size_t numAdditiveInterps = ra::count_if(GetItems(), [](const auto& item) { return item.m_spInterpolator && IsAdditiveInterpolator(item.m_spInterpolator); });
-    if (numAdditiveInterps == 0)
-        DebugBreakIfDebuggerPresent();
-#endif
 }
-
-void DebugSequence(NiControllerSequence* pkSequence);
 
 void AdditiveManager::WriteHooks()
 {
-    static UInt32 uiComputeNormalizedWeightsAddr;
-
-    // NiBlendInterpolator::ComputeNormalizedWeights
-    WriteRelCall(0xA41147, INLINE_HOOK(void, __fastcall, NiBlendInterpolator* pBlendInterpolator)
-    {
-        // make sure that no additive interpolator gets factored into the normalized weight
-        if (pBlendInterpolator->GetHasAdditiveTransforms())
-        {
-            pBlendInterpolator->CalculatePrioritiesAdditive();
-            pBlendInterpolator->ComputeNormalizedWeightsAdditive();
-            return;
-        }
-
-        ThisStdCall(uiComputeNormalizedWeightsAddr, pBlendInterpolator);
-    }), &uiComputeNormalizedWeightsAddr);
-
-    static UInt32 uiBlendValuesAddr;
-
-    // NiBlendTransformInterpolator::BlendValues
-    WriteRelCall(0xA41160, INLINE_HOOK(bool, __fastcall, NiBlendTransformInterpolator* pBlendInterpolator, void*, float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform* kValue)
-    {
-#if _DEBUG
-        NiQuatTransform originalTransform = *kValue;
-        NiMatrix3 originalRotation{};
-        if (false)
-            *kValue = originalTransform;
-        if (kValue->IsRotateValid())
-            kValue->GetRotate().ToRotation(originalRotation);
-#endif
-        if (g_pluginSettings.blendSmoothing)
-        {
-            // BlendFixes::ApplyWeightSmoothing(pBlendInterpolator);
-            BlendSmoothing::Apply(pBlendInterpolator, pkInterpTarget);
-        }
-        // ThisStdCall<bool>(uiBlendValuesAddr, pBlendInterpolator, fTime, pkInterpTarget, kValue);
-        if (g_pluginSettings.fixSpiderHands)
-            pBlendInterpolator->BlendValuesFixFloatingPointError(fTime, pkInterpTarget, *kValue);
-        else
-            ThisStdCall<bool>(0xA40C10, pBlendInterpolator, fTime, pkInterpTarget, kValue);
-            // pBlendInterpolator->BlendValues(fTime, pkInterpTarget, *kValue);
-                
-        if (pBlendInterpolator->GetHasAdditiveTransforms())
-            pBlendInterpolator->ApplyAdditiveTransforms(fTime, pkInterpTarget, *kValue);
-        
-        return !kValue->IsTransformInvalid();
-    }), &uiBlendValuesAddr);
-
-    // NiControllerSequence::AttachInterpolators
-    static UInt32 uiAttachInterpolatorsAddr;
-    WriteRelCall(0xA34F71, INLINE_HOOK(void, __fastcall, NiControllerSequence* pkSequence, void*, char cPriority)
-    {
-        if (IsAdditiveSequence(pkSequence))
-        {
-            MarkInterpolatorsAsAdditive(pkSequence);
-            pkSequence->AttachInterpolatorsAdditive(cPriority);
-            return;
-        }
-#if _DEBUG && 0
-        DebugSequence(pkSequence);
-#endif
-        pkSequence->AttachInterpolatorsHooked(cPriority);
-        // ThisStdCall(uiAttachInterpolatorsAddr, pkSequence, cPriority);
-    }), &uiAttachInterpolatorsAddr);
-    
     // AnimData::Refresh
     // this function deactivates all active sequences but only reactivates the ones in AnimData::animSequence
     // this will also reactivate unmanaged sequences (which additive anims are)
@@ -799,77 +745,4 @@ void AdditiveManager::WriteHooks()
         }
         return result;
     }), &uiAnimDataRefreshAddr);
-
-    // NiInterpolator::Destroy
-    static UInt32 uiInterpolatorDestroyAddr = 0xA5D3D0;
-    WriteRelCall(0xA57089, INLINE_HOOK(void, __fastcall, NiInterpolator* pInterpolator)
-    {
-        BlendFixes::OnInterpolatorDestroy(pInterpolator);
-        {
-            std::unique_lock lock(g_additiveManagerMutex);
-            additiveInterpMetadataMap.erase(pInterpolator);
-        }
-        ThisStdCall(uiInterpolatorDestroyAddr, pInterpolator);
-    }), &uiInterpolatorDestroyAddr);
-    
-#if 0
-    static UInt32 uiDetachInterpolatorsAddr;
-    WriteRelCall(0xA350C5, INLINE_HOOK(void, __fastcall, NiControllerSequence* pkSequence)
-    {
-        if (IsAdditiveSequence(pkSequence))
-            ClearLocalInterpsToTransformsMap(pkSequence);
-        ThisStdCall(uiDetachInterpolatorsAddr, pkSequence);
-    }), &uiDetachInterpolatorsAddr);
-#endif
-
-#if 0
-    static UInt32 uiNiControllerSequenceUpdateAddr;
-    WriteRelCall(0xA2E251, INLINE_HOOK(void, __fastcall, NiControllerSequence* pkSequence, void*, float fTime, bool bUpdateInterpolators)
-    {
-        if (pkSequence->m_fLastTime == -NI_INFINITY && pkSequence->m_eState != NiControllerSequence::INACTIVE && IsAdditiveSequence(pkSequence))
-        {
-            MarkInterpolatorsAsAdditive(pkSequence);
-            PopulateAdditiveInterpsToTransformsMap(pkSequence);
-        }
-        ThisStdCall(uiNiControllerSequenceUpdateAddr, pkSequence, fTime, bUpdateInterpolators);
-        //if (pkSequence->m_eState == NiControllerSequence::INACTIVE && IsAdditiveSequence(pkSequence))
-        //    ClearLocalInterpsToTransformsMap(pkSequence);
-    }), &uiNiControllerSequenceUpdateAddr);
-#endif
-}
-
-void DebugSequence(NiControllerSequence* pkSequence)
-{
-#if _DEBUG
-    auto idx = 0u;
-    for (auto& block : pkSequence->GetControlledBlocks())
-    {
-        auto& idTag = pkSequence->GetIDTags()[idx];
-        if (block.m_pkBlendInterp)
-        {
-            debugBlendInterpToSequenceMap[block.m_pkBlendInterp] = pkSequence;
-            debugBlendInterpsToTargetsMap[block.m_pkBlendInterp] = idTag.m_kAVObjectName.CStr();
-        }
-        idx++;
-    }
-#endif
-}
-
-void DebugInterpolator(NiBlendInterpolator* pBlendInterpolator)
-{
-#if _DEBUG
-    static std::unordered_set<UInt32> s_threadIds;
-    static std::unordered_map<UInt32, std::unordered_set<const char*>> s_threadToNameMap;
-    static std::unordered_map<UInt32, std::unordered_set<const char*>> s_threadToAnimMap;
-    static std::unordered_map<UInt32, std::unordered_set<NiControllerManager*>> s_threadToActorMap;
-    const auto currentThreadId = GetCurrentThreadId();
-    const auto mainThreadId = OSGlobals::GetSingleton()->mainThreadID;
-    const auto linearTaskThread = AILinearTaskManager::GetSingleton()->pThreads[0]->threadID;
-    s_threadIds.insert(currentThreadId);
-    auto* name = debugBlendInterpsToTargetsMap[pBlendInterpolator];
-    s_threadToNameMap[currentThreadId].insert(name);
-    auto* sequence = debugBlendInterpToSequenceMap[pBlendInterpolator];
-    s_threadToAnimMap[currentThreadId].insert(sequence->m_kName.CStr());
-    s_threadToActorMap[currentThreadId].insert(sequence->m_pkOwner);
-#endif
 }

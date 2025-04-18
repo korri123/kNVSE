@@ -1781,7 +1781,6 @@ public:
 	void AttachInterpolatorsAdditive(char cPriority) const;
 	void DetachInterpolators() const;
 	void DetachInterpolatorsHooked();
-	void DetachInterpolatorsAdditive() const;
 	void RemoveInterpolator(const NiFixedString& name) const;
 	void RemoveInterpolator(unsigned int index) const;
 	float GetEaseSpinner() const;
@@ -1885,7 +1884,7 @@ public:
 	InterpArrayItem* m_pkInterpArray; // 14
 	IDTag* m_pkIDTagArray; // 18
 	float m_fSeqWeight; // 1C
-	NiTextKeyExtraData* m_spTextKeys; // 20
+	NiPointer<NiTextKeyExtraData> m_spTextKeys; // 20
 	CycleType m_eCycleType;
 	float m_fFrequency;
 	float m_fBeginKeyTime;
@@ -2035,8 +2034,8 @@ public:
 
 	static constexpr unsigned char INVALID_INDEX = 0xFF;
 
-	void ComputeNormalizedWeightsAdditive();
-	void CalculatePrioritiesAdditive();
+	void ComputeNormalizedWeightsAdditive(NiObjectNET* target);
+	void CalculatePrioritiesAdditive(NiObjectNET* target);
 
 	enum
 	{
@@ -2335,6 +2334,7 @@ class NiBlendTransformInterpolator : public NiBlendInterpolator
 
 
 public:
+	NIRTTI_ADDRESS(0x11F3E64);
 	static NiBlendTransformInterpolator* Create()
 	{
 		return CdeclCall<NiBlendTransformInterpolator*>(0xA409D0);
@@ -2349,6 +2349,8 @@ public:
 		NiQuatTransform& kValue);
 
 	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+
+	bool UpdateHooked(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
 
 	bool StoreSingleValue(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 	{
@@ -2937,7 +2939,8 @@ public:
 		}
 		return nullptr;
 	}
-	
+
+	NiAVObject* GetTarget(NiInterpController* controller, const NiControllerSequence::IDTag& idTag);
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
 
@@ -3423,12 +3426,14 @@ class NiExtraData : public NiObject
 public:
 	NiFixedString m_kName;
 
-	NIRTTI_ADDRESS(0x11F4A80);
+	NIRTTI_ADDRESS(0x11F4A80)
 };
 
 class NiTextKeyExtraData : public NiExtraData
 {
 public:
+	CREATE_OBJECT(NiTextKeyExtraData, 0xA46B70);
+	
 	NiFixedArray<NiTextKey> m_kKeyArray;
 
 	NiTextKey* FindFirstByName(NiFixedString name) const
@@ -3466,9 +3471,10 @@ public:
 		return &m_kKeyArray.GetItems().back();
 	}
 
-	NiTextKey* SetOrAddKey(NiFixedString name, float time)
+	NiTextKey* SetOrAddKey(NiFixedString name, float time, bool* isNew = nullptr)
 	{
 		auto* key = FindFirstByName(name);
+		*isNew = key == nullptr;
 		if (key)
 			key->SetTime(time);
 		else
@@ -3476,11 +3482,20 @@ public:
 		return key;
 	}
 
+	NiTextKey* GetOrAddKey(NiFixedString name, float time, bool* isNew = nullptr)
+	{
+		auto* key = FindFirstByName(name);
+		*isNew = key == nullptr;
+		if (key)
+			return key;
+		return AddKey(name, time);
+	}
+
 	bool RemoveKey(size_t index)
 	{
 		if (index >= m_kKeyArray.GetItems().size())
 			return false;
-		m_kKeyArray = GetKeys() | std::views::drop(index) | std::ranges::to<std::vector>();
+		m_kKeyArray = GetKeys() | std::views::drop(index) | std::ranges::to<NiFixedArray<NiTextKey>>();
 		return true;
 	}
 

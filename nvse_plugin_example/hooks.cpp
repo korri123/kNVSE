@@ -130,7 +130,7 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 	auto* anim1st = GetAnimByGroupID(g_thePlayer->firstPersonAnimData, anim3rd->animGroup->GetBaseGroupID());
 	if (!anim1st || !anim1st->animGroup || !anim1st->m_spTextKeys)
 		return;
-	auto* textKeys = anim1st->m_spTextKeys;
+	NiTextKeyExtraData* textKeys = anim1st->m_spTextKeys;
 	if (!textKeys->FindFirstByName("respectEndKey") && !textKeys->FindFirstByName("respectTextKeys"))
 		return;
 	if (textKeys->FindFirstByName("noBlend"))
@@ -748,7 +748,7 @@ void ApplyHooks()
 	// fixes respectEndKey not working for a: keys
 	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
 	{
-		auto* defaultData = sequence->m_spTextKeys;
+		NiTextKeyExtraData* defaultData = sequence->m_spTextKeys;
 		const auto* anim1st = Find1stPersonRespectEndKeyAnim(g_thePlayer->firstPersonAnimData, sequence);
 		if (anim1st)
 			return anim1st->m_spTextKeys;

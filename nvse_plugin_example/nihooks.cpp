@@ -12,6 +12,7 @@
 #include <functional>
 #include <ranges>
 
+#include "additive_anims.h"
 #include "blend_smoothing.h"
 
 #define BETHESDA_MODIFICATIONS 1
@@ -539,9 +540,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
 bool NiBlendTransformInterpolator::_Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 {
-    // Do not use the TimeHasChanged check here, because blend interpolators
-    // should always update their interpolators.
-
     bool bReturnValue = false;
     if (m_ucInterpCount == 1)
     {
@@ -555,6 +553,35 @@ bool NiBlendTransformInterpolator::_Update(float fTime, NiObjectNET* pkInterpTar
     
     m_fLastTime = fTime;
     return bReturnValue;
+}
+
+bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
+{
+    bool bReturnValue = false;
+    if (m_ucInterpCount == 1)
+    {
+        bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
+    }
+    else if (m_ucInterpCount > 0)
+    {
+        const auto hasAdditiveTransforms = GetHasAdditiveTransforms();
+        if (hasAdditiveTransforms)
+        {
+            CalculatePrioritiesAdditive(pkInterpTarget);
+            ComputeNormalizedWeightsAdditive(pkInterpTarget);
+        }
+        else
+            ComputeNormalizedWeights();
+        if (g_pluginSettings.blendSmoothing)
+            BlendSmoothing::Apply(this, pkInterpTarget);
+        bReturnValue = g_pluginSettings.fixSpiderHands ?
+            BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kValue) : BlendValues(fTime, pkInterpTarget, kValue);
+        if (hasAdditiveTransforms)
+            ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
+    }
+    
+    m_fLastTime = fTime;
+    return !kValue.IsTransformInvalid() && bReturnValue;
 }
 
 // underscore needed since vtable
@@ -1002,27 +1029,14 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 #endif
 }
 
-static NiAVObject* GetTarget(NiControllerManager* manager, NiInterpController* controller, const NiControllerSequence::IDTag& idTag)
-{
-    if (auto* target = manager->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName))
-        return target;
-    if (auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
-    {
-        auto targets = multiTarget->GetTargets();
-        auto iter = std::ranges::find_if(targets, [&](const auto& target)
-        {
-            return target->m_pcName == idTag.m_kAVObjectName;
-        });
-        if (iter != targets.end())
-        {
-            return *iter;
-        }
-    }
-    return nullptr;
-}
-
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
+    if (AdditiveManager::IsAdditiveSequence(this))
+    {
+        AdditiveManager::MarkInterpolatorsAsAdditive(this);
+        AttachInterpolatorsAdditive(cPriority);
+        return;
+    }
     if (!g_pluginSettings.blendSmoothing)
     {
         AttachInterpolators(cPriority);
@@ -1037,7 +1051,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             continue;
         const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
         auto& idTag = kItem.GetIDTag(this);
-        auto* target = GetTarget(m_pkOwner, kItem.m_spInterpCtlr, idTag);
+        auto* target = m_pkOwner->GetTarget( kItem.m_spInterpCtlr, idTag);
         if (!target) 
         {
             // hello "Ripper" from 1hmidle.kf
@@ -1106,8 +1120,6 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         }
     }
 }
-
-UInt32 g_lastActivateCall = 0;
 
 bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
                                     NiControllerSequence* pkTimeSyncSeq, bool bTransition)
@@ -1607,6 +1619,26 @@ bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, f
 #endif
 }
 
+NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
+    const NiControllerSequence::IDTag& idTag)
+{
+    if (auto* target = m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName))
+        return target;
+    if (auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
+    {
+        auto targets = multiTarget->GetTargets();
+        auto iter = std::ranges::find_if(targets, [&](const auto& target)
+        {
+            return target->m_pcName == idTag.m_kAVObjectName;
+        });
+        if (iter != targets.end())
+        {
+            return *iter;
+        }
+    }
+    return nullptr;
+}
+
 void NiControllerSequence::DetachInterpolators() const
 {
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
@@ -1816,6 +1848,7 @@ namespace NiHooks
         WriteRelJump(0xA330AB, &PoseSequenceIDTagHook);
         WriteRelJump(0xA30900, &NiControllerSequence::AttachInterpolatorsHooked);
         WriteRelJump(0xA30540, &NiControllerSequence::DetachInterpolatorsHooked);
+        ReplaceVtableEntry(0x1097598, &NiBlendTransformInterpolator::UpdateHooked);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant);
