@@ -1002,6 +1002,25 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 #endif
 }
 
+static NiAVObject* GetTarget(NiControllerManager* manager, NiInterpController* controller, const NiControllerSequence::IDTag& idTag)
+{
+    if (auto* target = manager->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName))
+        return target;
+    if (auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
+    {
+        auto targets = multiTarget->GetTargets();
+        auto iter = std::ranges::find_if(targets, [&](const auto& target)
+        {
+            return target->m_pcName == idTag.m_kAVObjectName;
+        });
+        if (iter != targets.end())
+        {
+            return *iter;
+        }
+    }
+    return nullptr;
+}
+
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
     if (!g_pluginSettings.blendSmoothing)
@@ -1018,7 +1037,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             continue;
         const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
         auto& idTag = kItem.GetIDTag(this);
-        auto* target = m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName);
+        auto* target = GetTarget(m_pkOwner, kItem.m_spInterpCtlr, idTag);
         if (!target) 
         {
             // hello "Ripper" from 1hmidle.kf
@@ -1081,7 +1100,8 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
                 DebugAssert(poseItem.m_spInterpolator);
                 auto* poseInterp = NI_DYNAMIC_CAST(NiTransformInterpolator, poseItem.m_spInterpolator);
                 DebugAssert(poseInterp);
-                poseInterp->m_kTransformValue = target->m_kLocal;
+                if (poseInterp)
+                    poseInterp->m_kTransformValue = target->m_kLocal;
             }
         }
     }

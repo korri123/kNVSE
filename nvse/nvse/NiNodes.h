@@ -2375,6 +2375,8 @@ public:
 class NiMultiTargetTransformController : public NiInterpController
 {
 public:
+	NIRTTI_ADDRESS(0xF1F098);
+	
 	NiBlendTransformInterpolator* m_pkBlendInterps;
 	NiAVObject** m_ppkTargets;
 	UInt16 m_usNumInterps;

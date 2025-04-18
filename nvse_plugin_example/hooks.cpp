@@ -823,13 +823,16 @@ void ApplyHooks()
 		*reinterpret_cast<AnimData**>(parentEbp - 0x24) = animData;
 		
 		const auto sequenceId = *reinterpret_cast<eAnimSequence*>(parentEbp + 0x8);
-		const auto result = InterceptStopSequence::Dispatch(animData->actor, sequenceId);
-		if (result && *result)
-		{
-			// jump to end of function
-			*addressOfReturn = 0x49979C;
-			return static_cast<eAnimSequence>(0);
+		[[msvc::noinline_calls]] {
+			const auto result = InterceptStopSequence::Dispatch(animData->actor, sequenceId);
+			if (result && *result)
+			{
+				// jump to end of function
+				*addressOfReturn = 0x49979C;
+				return static_cast<eAnimSequence>(0);
+			}
 		}
+		
 		*addressOfReturn = 0x4994FC;
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
 	}));
@@ -1167,45 +1170,5 @@ void WriteDelayedHooks()
 			return true;
 		};
 	}
-
-
-#if _DEBUG && 1
-
-#if 0
-	// AnimData::ResetSequenceState
-	WriteRelCall(0x494D86, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, UInt32 sequenceId, float fEaseOut)
-	{
-		if (sequenceId == kSequence_Movement)
-		{
-#if 1
-			auto* anim = animData->animSequence[sequenceId];
-			if (anim)
-			{
-				fEaseOut = anim->GetEaseOutTime();
-			}
-			else
-			{
-				fEaseOut = 0.2f;
-			}
-#endif
-		}
-		ThisStdCall(0x496080, animData, sequenceId, fEaseOut);
-	}));
-	//SafeWriteBuf(0xA35093, "\xEB\x15\x90", 3);
-#endif
-	
-
-#if 0
-	// BSAnimGroupSequence::Deactivate when easing out
-	WriteVirtualCall(0x494BCB, INLINE_HOOK(bool, __fastcall, BSAnimGroupSequence* sequence, void*, float fEaseOutTime, bool bTransition)
-	{
-		if (sequence->animGroup->GetSequenceType() == kSequence_Movement && sequence->m_eState == NiControllerSequence::EASEOUT)
-		{
-			return true;
-		}
-		return sequence->Deactivate(fEaseOutTime, bTransition);
-	}));
-#endif
-#endif
 	
 }
