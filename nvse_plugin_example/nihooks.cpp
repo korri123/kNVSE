@@ -1052,7 +1052,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             continue;
         const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
         auto& idTag = kItem.GetIDTag(this);
-        auto* target = m_pkOwner->GetTarget( kItem.m_spInterpCtlr, idTag);
+        auto* target = m_pkOwner->GetTarget(kItem.m_spInterpCtlr, idTag);
         if (!target) 
         {
             // hello "Ripper" from 1hmidle.kf
@@ -1623,6 +1623,8 @@ bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, f
 NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
     const NiControllerSequence::IDTag& idTag)
 {
+    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene)
+        return nullptr;
     if (auto* target = m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName))
         return target;
     if (auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
@@ -1705,7 +1707,8 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         if (auto* blendInterp = kItem.m_pkBlendInterp; blendInterp && kItem.m_spInterpolator)
         {
             const auto& idTag = kItem.GetIDTag(this);
-            auto* target = m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName);
+            DebugAssert(m_pkOwner && m_pkOwner->m_spObjectPalette);
+            auto* target = m_pkOwner->m_spObjectPalette ? m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName) : nullptr;
             const auto blendIndex = kItem.m_ucBlendIdx;
             if (!target)
             {
