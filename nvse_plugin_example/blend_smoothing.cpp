@@ -28,6 +28,8 @@ void PopulateVtable(kBlendInterpolatorExtraData* extraData)
 void kBlendInterpolatorExtraData::Destroy(bool freeMem)
 {
     this->items.~vector();
+    if (this->poseInterp)
+        this->poseInterp->DecrementRefCount();
     ThisStdCall(0xA7B300, this);
     if ((freeMem & 1) != 0)
         NiDelete(this);
@@ -135,6 +137,13 @@ kBlendInterpItem* kBlendInterpolatorExtraData::GetPoseInterpItem()
         }
     }
     return nullptr;
+}
+
+NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObject* target)
+{
+    if (!poseInterp)
+        poseInterp = NiTransformInterpolator::Create(target->m_kLocal);
+    return poseInterp;
 }
 
 void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target)

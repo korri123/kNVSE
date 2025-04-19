@@ -80,6 +80,10 @@
     <ClCompile Include="decompiled\AnimDataHooks.cpp" />
     <ClCompile Include="knvse_events.cpp" />
     <ClCompile Include="blend_fixes.cpp" />
+    <ClCompile Include="additive_anims.cpp" />
+    <ClCompile Include="blend_smoothing.cpp" />
+    <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
+    <ClCompile Include="movement_blend_fixes.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">
@@ -177,6 +181,11 @@
     <ClInclude Include="lib\json\json.h" />
     <ClInclude Include="blend_fixes.h" />
     <ClInclude Include="string_view_util.h" />
+    <ClInclude Include="additive_anims.h" />
+    <ClInclude Include="blend_smoothing.h" />
+    <ClInclude Include="containers.h" />
+    <ClInclude Include="lib\memory_pool\MemoryPool.h" />
+    <ClInclude Include="movement_blend_fixes.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

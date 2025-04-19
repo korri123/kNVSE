@@ -1952,7 +1952,7 @@ bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm)
 
 void CreateCommands(NVSECommandBuilder& builder)
 {
-	constexpr auto getAnimBySequenceTypeParams = {
+	const auto getAnimBySequenceTypeParams = {
 		ParamInfo{"sequence id", kParamType_Integer, false},
 		ParamInfo{"bIsFirstPerson", kParamType_Integer, true}
 	};
@@ -2020,7 +2020,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	}, nullptr, "GetAnimAttrs");
 
-	constexpr auto getAnimsByAnimGroupParams = {
+	const auto getAnimsByAnimGroupParams = {
 		ParamInfo{"anim group id", kParamType_AnimationGroup, false},
 		ParamInfo{"bIsFirstPerson", kParamType_Integer, true}
 	};
@@ -2227,7 +2227,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	constexpr auto activateAnimParams = {
+	const auto activateAnimParams = {
 		ParamInfo{"anim sequence path", kParamType_String, false},
 		ParamInfo{"bIsFirstPerson", kParamType_Integer, true},
 		ParamInfo{"iPriority", kParamType_Integer, true},
@@ -2298,7 +2298,7 @@ void CreateCommands(NVSECommandBuilder& builder)
         NiControllerSequence *pkSequence,
         float fEaseOutTime)
 	 */
-	constexpr auto deactivateAnimParams = {
+	const auto deactivateAnimParams = {
 			ParamInfo{"anim sequence path", kParamType_String, false},
 			ParamInfo{"fEaseOutTime", kParamType_Float, true}
 	};
@@ -2329,7 +2329,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	constexpr auto crossFadeParams = {
+	const auto crossFadeParams = {
 		ParamInfo{"source sequence path", kParamType_String, false},
 		ParamInfo{"dest sequence path", kParamType_String, false},
 		ParamInfo{"bFirstPerson", kParamType_Integer, true},
@@ -2401,7 +2401,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	constexpr auto blendToAnimSequenceParams = {
+	const auto blendToAnimSequenceParams = {
 		ParamInfo{"sequence path", kParamType_String, false},
 		ParamInfo{"bFirstPerson", kParamType_Integer, true},
 		ParamInfo{"fDuration", kParamType_Float, true},
@@ -2458,7 +2458,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	constexpr auto blendFromAnimSequenceParams = {
+	const auto blendFromAnimSequenceParams = {
 		ParamInfo{"source sequence path", kParamType_String, false},
 		ParamInfo{"dest sequence path", kParamType_String, false},
 		ParamInfo{"bFirstPerson", kParamType_Integer, true},

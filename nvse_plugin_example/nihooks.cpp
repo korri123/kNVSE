@@ -1101,23 +1101,8 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 
         if (g_pluginSettings.poseInterpolators)
         {
-            auto* existingPoseInterp = extraData->GetPoseInterpItem();
-            if (existingPoseInterp)
-            {
-                DebugAssert(existingPoseInterp->poseInterpIndex < pkBlendInterp->m_ucArraySize
-                    && existingPoseInterp->blendInterp == pkBlendInterp);
-            }
-            if (!existingPoseInterp)
-                extraData->CreatePoseInterpItem(pkBlendInterp, this, target);
-            else
-            {
-                auto& poseItem = pkBlendInterp->m_pkInterpArray[existingPoseInterp->poseInterpIndex];
-                DebugAssert(poseItem.m_spInterpolator);
-                auto* poseInterp = NI_DYNAMIC_CAST(NiTransformInterpolator, poseItem.m_spInterpolator);
-                DebugAssert(poseInterp);
-                if (poseInterp)
-                    poseInterp->m_kTransformValue = target->m_kLocal;
-            }
+            auto* poseInterp = extraData->ObtainPoseInterp(target);
+            poseInterp->m_kTransformValue = target->m_kLocal;
         }
     }
 }
@@ -1668,7 +1653,8 @@ void NiControllerManager::CleanObjectPalette() const
             }
         }
     });
-    std::vector<const char*> toRemove;
+    thread_local std::vector<const char*> toRemove; 
+    toRemove.clear();
     for (auto& mapItem : m_spObjectPalette->m_kHash)
     {
         auto& name = mapItem.m_key;
@@ -1760,6 +1746,12 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                 extraInterpItem.debugState = kInterpDebugState::DetachedButSmoothing;
             }
             kItem.m_ucBlendIdx = INVALID_INDEX;
+
+            if (g_pluginSettings.poseInterpolators)
+            {
+                auto* poseInterp = extraData->ObtainPoseInterp(target);
+                poseInterp->m_kTransformValue = target->m_kLocal;
+            }
         }
     }
 }
