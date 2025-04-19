@@ -1646,7 +1646,14 @@ void NiControllerManager::CleanObjectPalette() const
     thread_local std::unordered_map<const char*, NiAVObject*> toKeepMap;
     toKeep.clear();
     toKeepMap.clear();
-    m_spObjectPalette->m_pkScene->GetAsNiNode()->RecurseTree([&](NiAVObject* node)
+    DebugAssert(m_spObjectPalette && m_spObjectPalette->m_pkScene);
+    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene) 
+        return;
+    auto* scene = m_spObjectPalette->m_pkScene->GetAsNiNode();
+    DebugAssert(scene);
+    if (!scene)
+        return;
+    scene->RecurseTree([&](NiAVObject* node)
     {
         toKeepMap.emplace(node->m_pcName, node);
         NiTFixedStringMap<NiAVObject*>::NiTMapItem* mapItem;
