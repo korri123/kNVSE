@@ -1544,7 +1544,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 
 bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 {
-	std::unordered_set<Actor*> actors;
+	bool refresh = false;
 	for (auto& [nameAndAnimData, context] : g_cachedAnimMap)
 	{
 		auto name = NiFixedString(nameAndAnimData.first);
@@ -1577,8 +1577,8 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 		const auto newKfCount = kfMap->GetCount();
 		DebugAssert(newKfCount == kfCount - 1);
 
-		if (animData->actor && wasActive)
-			actors.insert(animData->actor);
+		if (wasActive && animData->actor == g_thePlayer)
+			refresh = true;
 	}
 	
 	g_animGroupFirstPersonMap.clear();
@@ -1594,10 +1594,8 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 	// HandleGarbageCollection();
 	LoadFileAnimPaths();
 
-	for (auto* actor : actors)
-	{
-		actor->RestartAnims();
-	}
+	if (refresh)
+		g_thePlayer->RestartAnims();
 	
 	if (!IsConsoleMode())
 		Console_Print("kNVSEReset called from a script! This is a DEBUG function that maybe leak memory");
