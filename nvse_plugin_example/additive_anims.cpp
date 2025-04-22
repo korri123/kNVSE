@@ -492,6 +492,15 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(NiObjectNET* target)
         return;
     }
 
+    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(target);
+    DebugAssert(kExtraData);
+
+    if (!kExtraData) 
+    {
+        ComputeNormalizedWeights();
+        return;
+    }
+
     SetComputeNormalizedWeights(false);
 
     thread_local std::vector<InterpArrayItem*> kItems;
@@ -501,9 +510,6 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(NiObjectNET* target)
     
     kItems.reserve(m_ucArraySize);
     kIndices.reserve(m_ucArraySize);
-
-    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(target);
-    DebugAssert(kExtraData);
 
     for (int i = 0; i < m_ucArraySize; i++)
     {
@@ -684,6 +690,12 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority) const
 
 void NiBlendInterpolator::CalculatePrioritiesAdditive(NiObjectNET* target)
 {
+    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(target);
+    DebugAssert(kExtraData);
+    if (!kExtraData)
+    {
+        return;
+    }
     m_cNextHighPriority = INVALID_INDEX;
     m_cHighPriority = INVALID_INDEX;
 
@@ -692,8 +704,6 @@ void NiBlendInterpolator::CalculatePrioritiesAdditive(NiObjectNET* target)
         m_cHighPriority = m_pkInterpArray[m_ucSingleIdx].m_cPriority;
         return;
     }
-    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(target);
-    DebugAssert(kExtraData);
     for (auto& item : GetItems())
     {
         if (item.m_spInterpolator != nullptr && !IsAdditiveInterpolator(kExtraData, item.m_spInterpolator))

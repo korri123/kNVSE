@@ -1052,7 +1052,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             continue;
         const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
         auto& idTag = kItem.GetIDTag(this);
-        auto* target = m_pkOwner->GetTarget( kItem.m_spInterpCtlr, idTag);
+        auto* target = m_pkOwner->GetTarget(kItem.m_spInterpCtlr, idTag);
         if (!target) 
         {
             // hello "Ripper" from 1hmidle.kf
@@ -1101,23 +1101,8 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 
         if (g_pluginSettings.poseInterpolators)
         {
-            auto* existingPoseInterp = extraData->GetPoseInterpItem();
-            if (existingPoseInterp)
-            {
-                DebugAssert(existingPoseInterp->poseInterpIndex < pkBlendInterp->m_ucArraySize
-                    && existingPoseInterp->blendInterp == pkBlendInterp);
-            }
-            if (!existingPoseInterp)
-                extraData->CreatePoseInterpItem(pkBlendInterp, this, target);
-            else
-            {
-                auto& poseItem = pkBlendInterp->m_pkInterpArray[existingPoseInterp->poseInterpIndex];
-                DebugAssert(poseItem.m_spInterpolator);
-                auto* poseInterp = NI_DYNAMIC_CAST(NiTransformInterpolator, poseItem.m_spInterpolator);
-                DebugAssert(poseInterp);
-                if (poseInterp)
-                    poseInterp->m_kTransformValue = target->m_kLocal;
-            }
+            auto* poseInterp = extraData->ObtainPoseInterp(target);
+            poseInterp->m_kTransformValue = target->m_kLocal;
         }
     }
 }
@@ -1623,6 +1608,8 @@ bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, f
 NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
     const NiControllerSequence::IDTag& idTag)
 {
+    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene)
+        return nullptr;
     if (auto* target = m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName))
         return target;
     if (auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
@@ -1646,7 +1633,14 @@ void NiControllerManager::CleanObjectPalette() const
     thread_local std::unordered_map<const char*, NiAVObject*> toKeepMap;
     toKeep.clear();
     toKeepMap.clear();
-    m_spObjectPalette->m_pkScene->GetAsNiNode()->RecurseTree([&](NiAVObject* node)
+    DebugAssert(m_spObjectPalette && m_spObjectPalette->m_pkScene);
+    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene) 
+        return;
+    auto* scene = m_spObjectPalette->m_pkScene->GetAsNiNode();
+    DebugAssert(scene);
+    if (!scene)
+        return;
+    scene->RecurseTree([&](NiAVObject* node)
     {
         toKeepMap.emplace(node->m_pcName, node);
         NiTFixedStringMap<NiAVObject*>::NiTMapItem* mapItem;
@@ -1659,7 +1653,8 @@ void NiControllerManager::CleanObjectPalette() const
             }
         }
     });
-    std::vector<const char*> toRemove;
+    thread_local std::vector<const char*> toRemove; 
+    toRemove.clear();
     for (auto& mapItem : m_spObjectPalette->m_kHash)
     {
         auto& name = mapItem.m_key;
@@ -1698,7 +1693,8 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         if (auto* blendInterp = kItem.m_pkBlendInterp; blendInterp && kItem.m_spInterpolator)
         {
             const auto& idTag = kItem.GetIDTag(this);
-            auto* target = m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName);
+            DebugAssert(m_pkOwner && m_pkOwner->m_spObjectPalette);
+            auto* target = m_pkOwner->m_spObjectPalette ? m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName) : nullptr;
             const auto blendIndex = kItem.m_ucBlendIdx;
             if (!target)
             {
@@ -1750,6 +1746,12 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                 extraInterpItem.debugState = kInterpDebugState::DetachedButSmoothing;
             }
             kItem.m_ucBlendIdx = INVALID_INDEX;
+
+            if (g_pluginSettings.poseInterpolators)
+            {
+                auto* poseInterp = extraData->ObtainPoseInterp(target);
+                poseInterp->m_kTransformValue = target->m_kLocal;
+            }
         }
     }
 }

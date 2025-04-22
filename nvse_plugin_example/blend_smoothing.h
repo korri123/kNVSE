@@ -66,6 +66,8 @@ class kBlendInterpolatorExtraData : public NiExtraData
 {
 public:
     std::vector<kBlendInterpItem> items;
+    NiPointer<NiTransformInterpolator> poseInterp = nullptr;
+    float poseInterpUpdatedTime = -NI_INFINITY;
 
     NiNewRTTI(kBlendInterpolatorExtraData, NiExtraData)
 
@@ -80,8 +82,9 @@ public:
     kBlendInterpItem& ObtainItem(NiInterpolator* interpolator);
     kBlendInterpItem& CreatePoseInterpItem(NiBlendInterpolator* blendInterp, NiControllerSequence* sequence, NiAVObject* target);
     kBlendInterpItem* GetItem(NiInterpolator* interpolator);
-
     kBlendInterpItem* GetPoseInterpItem();
+
+    NiTransformInterpolator* ObtainPoseInterp(NiAVObject* target);
 };
 
 namespace BlendSmoothing
