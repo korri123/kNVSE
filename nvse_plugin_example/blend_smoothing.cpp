@@ -151,7 +151,9 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
     const auto deltaTime = g_timeGlobal->secondsPassed;
     const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
     const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
+    
     constexpr float MIN_WEIGHT = 0.001f;
+    constexpr float MAX_WEIGHT = 1.0f - MIN_WEIGHT;
     
     float totalWeight = 0.0f;
     auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
@@ -185,10 +187,18 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
             targetWeight = 0.0f;
         const auto smoothedWeight = std::lerp(extraItem.lastSmoothedWeight, targetWeight, smoothingRate);
 
-        if (smoothedWeight < MIN_WEIGHT && extraItem.state == kInterpState::Deactivating)
+        if (smoothedWeight < MIN_WEIGHT)
         {
             extraItem.lastSmoothedWeight = 0.0f;
             item.m_fNormalizedWeight = 0.0f;
+        }
+        else 
+        {
+            extraItem.lastSmoothedWeight = smoothedWeight;
+            item.m_fNormalizedWeight = smoothedWeight;
+        }
+        if (smoothedWeight < MIN_WEIGHT && extraItem.state == kInterpState::Deactivating)
+        {
             if (extraItem.detached)
             {
                 const auto ucIndex = item.GetIndex(blendInterp);
@@ -209,10 +219,7 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
             continue;
         }
         
-        extraItem.lastSmoothedWeight = smoothedWeight;
-        item.m_fNormalizedWeight = smoothedWeight;
-
-        if (smoothedWeight > 0.999f && extraItem.state == kInterpState::Activating)
+        if (smoothedWeight > MAX_WEIGHT)
         {
             extraItem.lastSmoothedWeight = 1.0f;
             item.m_fNormalizedWeight = 1.0f;

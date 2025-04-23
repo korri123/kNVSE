@@ -371,7 +371,8 @@ public:
 	void RecurseTree(F&& predicate)
 	{
 		predicate(this);
-		for (const auto& child : m_children)
+		auto* children = m_children.m_pBase;
+		for (auto* child : m_children)
 		{
 			if (!child)
 				continue;

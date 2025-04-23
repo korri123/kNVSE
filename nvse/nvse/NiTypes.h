@@ -4,7 +4,7 @@
 #include "Utilities.h"
 
 #define ASSERT_SIZE(name, size) static_assert(sizeof(name) == size, "Size mismatch for " #name)
-#define NI_DYNAMIC_CAST(type, ptr) ThisStdCall<type*>(0x653290, ptr, type::ms_RTTI)
+#define NI_DYNAMIC_CAST(type, ptr) ptr ? ThisStdCall<type*>(0x653290, ptr, type::ms_RTTI) : nullptr
 
 #define NIRTTI_ADDRESS(address) \
 	static inline const NiRTTI* const ms_RTTI = (NiRTTI*)address;
@@ -241,6 +241,11 @@ struct NiQuaternion
 			   p.m_fY * q.m_fY + p.m_fZ * q.m_fZ;
 	}
 
+	void FastNormalize();
+	
+	static NiQuaternion Slerp(float t, const NiQuaternion& p,
+	                          const NiQuaternion& q);
+
 	void Normalize()
 	{
 		float fLength = m_fW * m_fW + m_fX * m_fX + m_fY * m_fY + m_fZ * m_fZ;
@@ -421,7 +426,6 @@ struct NiQuaternion
 		rot.SetCol(2, txz+twy, tyz-twx, 1.0f-(txx+tyy));
 	}
 };
-
 
 
 // 34

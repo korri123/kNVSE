@@ -1125,6 +1125,43 @@ void ApplyHooks()
 		return result;
 	}));
 
+	static UInt32 uiNiRTTIDynamicCastAddr = 0x653270;
+	WriteRelCall(0x49918B, INLINE_HOOK(NiTimeController*, __cdecl, NiRTTI* rtti, NiTimeController* controller)
+	{
+		if (g_pluginSettings.fixDeactivateControllerManagers)
+		{
+			if (auto* manager = NI_DYNAMIC_CAST(NiControllerManager, controller))
+			{
+				manager->DeactivateAll();
+
+				// clear dangling pointers
+				for (auto& sequence : manager->sequences)
+				{
+					for (auto& block: sequence->GetControlledBlocks())
+					{
+						if (block.m_spInterpCtlr && block.m_spInterpCtlr->GetType() == NiMultiTargetTransformController::ms_RTTI)
+							block.m_pkBlendInterp = nullptr;
+					}
+					if (!sequence->m_spTextKeys)
+						sequence->m_spTextKeys = NiTextKeyExtraData::CreateObject();
+					const static NiFixedString sTargetsCleared = "__TargetsCleared__";
+					sequence->m_spTextKeys->SetOrAddKey(sTargetsCleared, 1.0f);
+				}
+				return nullptr;
+			}
+		}
+		return CdeclCall<NiTimeController*>(uiNiRTTIDynamicCastAddr, rtti, controller);
+	}), &uiNiRTTIDynamicCastAddr);
+
+	// HighProcess::SetQueuedIdleFlag
+	// prevent race condition
+	ReplaceVTableEntry(0x1087E78, INLINE_HOOK(void, __fastcall, Decoding::HighProcess* process, void*, bool bFlag)
+	{
+		if (!process->animData || !process->animData->nSceneRoot || !process->animData->controllerManager)
+			return;
+		ThisStdCall(0x903180, process, bFlag);
+	}));
+
 	if (g_pluginSettings.blendSmoothing)
 		BlendSmoothing::WriteHooks();
 }

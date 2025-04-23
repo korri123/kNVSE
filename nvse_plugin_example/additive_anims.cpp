@@ -215,26 +215,6 @@ void AdditiveManager::SetAdditiveInterpWeightMult(NiObjectNET* target, NiInterpo
     }
 }
 
-void check_float(float value) {
-#if _DEBUG
-    if (std::isnan(value)) {
-        DebugBreakIfDebuggerPresent();
-    }
-    else if (std::isinf(value)) {
-        DebugBreakIfDebuggerPresent();
-    }
-    else if (value == FLT_MAX) {
-        DebugBreakIfDebuggerPresent();
-    }
-    else if (std::isfinite(value)) {
-        return;
-    }
-    else {
-        DebugBreakIfDebuggerPresent();
-    }
-#endif
-}
-
 void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
     float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue) const
 {

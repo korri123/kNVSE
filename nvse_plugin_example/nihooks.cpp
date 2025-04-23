@@ -16,7 +16,7 @@
 #include "blend_smoothing.h"
 
 #define BETHESDA_MODIFICATIONS 1
-#define NI_OVERRIDE 0
+#define NI_OVERRIDE 1
 
 void NiOutputDebugString(const char* text)
 {
@@ -419,9 +419,9 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
 bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime, NiObjectNET* pkInterpTarget,
     NiQuatTransform& kValue)
 {
-    // Accumulate weights positively instead of subtracting
     double dTotalTransWeight = 0.0;
     double dTotalScaleWeight = 0.0;
+    double dTotalRotWeight = 0.0;
 
     NiPoint3 kFinalTranslate = NiPoint3::ZERO;
     NiQuaternion kFinalRotate = NiQuaternion(0.0f, 0.0f, 0.0f, 0.0f);
@@ -449,7 +449,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
             if (bSuccess)
             {
-                // Use double for weight calculations
                 double dWeight = kItem.m_fNormalizedWeight;
                 
                 if (kTransform.IsTranslateValid())
@@ -480,6 +479,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                     }
 
                     kRotValue = kRotValue * kItem.m_fNormalizedWeight;
+                    dTotalRotWeight += kItem.m_fNormalizedWeight;
 
                     kFinalRotate.SetValues(
                         kRotValue.GetW() + kFinalRotate.GetW(), 
@@ -505,27 +505,23 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     if (bTransChanged || bRotChanged || bScaleChanged)
     {
         constexpr double EPSILON = 1e-10;
-        // Use epsilon checks for safer divisions
         if (bTransChanged && dTotalTransWeight > EPSILON)
         {
-            // Convert back to float for the division
             float fInverseWeight = static_cast<float>(1.0 / dTotalTransWeight);
             kFinalTranslate *= fInverseWeight;  // Use multiplication instead of division
             kValue.SetTranslate(kFinalTranslate);
         }
         
-        if (bRotChanged)
+        if (bRotChanged && dTotalRotWeight > EPSILON)
         {
-            // Quaternion normalization handles the weighting implicitly
             kFinalRotate.Normalize();
             kValue.SetRotate(kFinalRotate);
         }
         
         if (bScaleChanged && dTotalScaleWeight > EPSILON)
         {
-            // Convert back to float for the division
             float fInverseWeight = static_cast<float>(1.0 / dTotalScaleWeight);
-            fFinalScale *= fInverseWeight;  // Use multiplication instead of division
+            fFinalScale *= fInverseWeight;
             kValue.SetScale(fFinalScale);
         }
     }
@@ -557,10 +553,15 @@ bool NiBlendTransformInterpolator::_Update(float fTime, NiObjectNET* pkInterpTar
 
 bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 {
+#if _DEBUG
+    NiQuatTransform kRealValue = kValue;
+#else
+    NiQuatTransform& kRealValue = kValue;
+#endif
     bool bReturnValue = false;
     if (m_ucInterpCount == 1)
     {
-        bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
+        bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kRealValue);
     }
     else if (m_ucInterpCount > 0)
     {
@@ -575,11 +576,18 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
         if (g_pluginSettings.blendSmoothing)
             BlendSmoothing::Apply(this, pkInterpTarget);
         bReturnValue = g_pluginSettings.fixSpiderHands ?
-            BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kValue) : BlendValues(fTime, pkInterpTarget, kValue);
+            BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kRealValue) : BlendValues(fTime, pkInterpTarget, kRealValue);
         if (hasAdditiveTransforms)
-            ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
+            ApplyAdditiveTransforms(fTime, pkInterpTarget, kRealValue);
     }
-    
+
+#if _DEBUG
+    static NiFixedString sString = "Bip01 L UpperArm";
+    if (sString == pkInterpTarget->m_pcName)
+        int i = 0;
+    kValue = kRealValue;
+#endif
+
     m_fLastTime = fTime;
     return !kValue.IsTransformInvalid() && bReturnValue;
 }
@@ -1031,6 +1039,20 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
+    const static NiFixedString sTargetsCleared = "__TargetsCleared__";
+
+    if (m_spTextKeys)
+    {
+        if (auto* textKey = m_spTextKeys->FindFirstByName(sTargetsCleared); textKey && textKey->m_fTime == 1.0f)
+        {
+            auto* target = NI_DYNAMIC_CAST(NiAVObject, this->m_pkOwner->m_pkTarget);
+            DebugAssert(target);
+            if (target)
+                StoreTargets(target);
+            textKey->m_fTime = 0.0f;
+        }
+    }
+    
     if (AdditiveManager::IsAdditiveSequence(this))
     {
         AdditiveManager::MarkInterpolatorsAsAdditive(this);
@@ -1152,7 +1174,7 @@ bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeig
     m_fSeqWeight = fWeight;
     
     // Attach the interpolators to their blend interpolators.
-    AttachInterpolators(cPriority);
+    AttachInterpolatorsHooked(cPriority);
 
     if (fEaseInTime > 0.0f)
     {
@@ -1883,7 +1905,7 @@ namespace NiHooks
         WriteRelJump(0xA330AB, &PoseSequenceIDTagHook);
         WriteRelJump(0xA30900, &NiControllerSequence::AttachInterpolatorsHooked);
         WriteRelJump(0xA30540, &NiControllerSequence::DetachInterpolatorsHooked);
-        ReplaceVtableEntry(0x1097598, &NiBlendTransformInterpolator::UpdateHooked);
+        ReplaceVTableEntry(0x1097598, &NiBlendTransformInterpolator::UpdateHooked);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant);

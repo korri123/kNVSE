@@ -64,26 +64,6 @@ void WriteRelCall(UInt32 jumpSrc, Ret (C::*jumpTgt)(Args...)) {
 	WriteRelCall(jumpSrc, conversion.funcPtr);
 }
 
-template <typename C, typename Ret, typename... Args>
-void ReplaceVtableEntry(UInt32 address, Ret(C::* const target)(Args...) const) {
-	union {
-		Ret(C::* tgt)(Args...) const;
-		UInt32 funcPtr;
-	} conversion;
-	conversion.tgt = target;
-	SafeWrite32(address, conversion.funcPtr);
-}
-
-template <typename C, typename Ret, typename... Args>
-void ReplaceVtableEntry(UInt32 address, Ret(C::* const target)(Args...)) {
-	union {
-		Ret(C::* tgt)(Args...);
-		UInt32 funcPtr;
-	} conversion;
-	conversion.tgt = target;
-	SafeWrite32(address, conversion.funcPtr);
-}
-
 template <typename T>
 void WriteVirtualCall(UInt32 jumpSrc, T jumpTgt)
 {
@@ -126,4 +106,30 @@ void ReplaceVTableEntry(void** apVTable, uint32_t auiPosition, Ret(C::* const ta
 	conversion.tgt = target;
 
 	apVTable[auiPosition] = (void*)conversion.funcPtr;
+}
+
+template <typename C, typename Ret, typename... Args>
+void ReplaceVTableEntry(UInt32 address, Ret(C::* const target)(Args...) const) {
+	union {
+		Ret(C::* tgt)(Args...) const;
+		UInt32 funcPtr;
+	} conversion;
+	conversion.tgt = target;
+	SafeWrite32(address, conversion.funcPtr);
+}
+
+template <typename C, typename Ret, typename... Args>
+void ReplaceVTableEntry(UInt32 address, Ret(C::* const target)(Args...)) {
+	union {
+		Ret(C::* tgt)(Args...);
+		UInt32 funcPtr;
+	} conversion;
+	conversion.tgt = target;
+	SafeWrite32(address, conversion.funcPtr);
+}
+
+template <typename T>
+void ReplaceVTableEntry(UInt32 address, T target)
+{
+	SafeWrite32(address, (UInt32)target);
 }

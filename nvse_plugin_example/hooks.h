@@ -30,6 +30,8 @@ struct PluginINISettings
     bool fixSpiderHands = true;
     bool poseInterpolators = false;
     float blendSmoothingRate = 0.075f;
+
+    bool fixDeactivateControllerManagers = true;
     std::vector<std::string> legacyAnimTimePaths;
 };
 extern PluginINISettings g_pluginSettings;

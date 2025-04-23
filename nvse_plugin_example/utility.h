@@ -387,3 +387,21 @@ inline void DebugBreakIfDebuggerPresent()
 		DebugBreak();
 }
 #endif
+
+inline bool IsFloatInvalid(float value)
+{
+	if (std::isnan(value)) {
+		return false;
+	}
+	if (std::isinf(value)) {
+		return false;
+	}
+	if (value == FLT_MAX) {
+		return false;
+	}
+	if (std::isfinite(value)) {
+		return true;
+	}
+	return false;
+
+}

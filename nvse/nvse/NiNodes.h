@@ -2377,7 +2377,7 @@ public:
 class NiMultiTargetTransformController : public NiInterpController
 {
 public:
-	NIRTTI_ADDRESS(0xF1F098);
+	NIRTTI_ADDRESS(0x11F36BC)
 	
 	NiBlendTransformInterpolator* m_pkBlendInterps;
 	NiAVObject** m_ppkTargets;
@@ -2880,6 +2880,9 @@ class NiDefaultAVObjectPalette;
 class NiControllerManager : public NiTimeController
 {
 public:
+	CREATE_OBJECT(NiControllerManager, 0xA2F6C0);
+	NIRTTI_ADDRESS(0x11F36AC);
+	
 	virtual void	Unk_2D(void);
 
 	NiTArray<NiPointer<NiControllerSequence>>	sequences;		// 34
@@ -2909,6 +2912,11 @@ public:
 	bool AddSequence(NiControllerSequence* pkSequence, const NiFixedString& kName, bool bStoreTargets)
 	{
 		return ThisStdCall(0xA2F0C0, this, pkSequence, &kName, bStoreTargets);
+	}
+
+	void DeactivateAll(float fEaseOutTime = 0.0f)
+	{
+		ThisStdCall(0x48FEF0, this, fEaseOutTime);
 	}
 
 	template <typename T>
@@ -3476,7 +3484,8 @@ public:
 	NiTextKey* SetOrAddKey(NiFixedString name, float time, bool* isNew = nullptr)
 	{
 		auto* key = FindFirstByName(name);
-		*isNew = key == nullptr;
+		if (isNew)
+			*isNew = key == nullptr;
 		if (key)
 			key->SetTime(time);
 		else
@@ -3487,7 +3496,8 @@ public:
 	NiTextKey* GetOrAddKey(NiFixedString name, float time, bool* isNew = nullptr)
 	{
 		auto* key = FindFirstByName(name);
-		*isNew = key == nullptr;
+		if (isNew)
+			*isNew = key == nullptr;
 		if (key)
 			return key;
 		return AddKey(name, time);
