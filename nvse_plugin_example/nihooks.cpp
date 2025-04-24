@@ -432,9 +432,16 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     bool bScaleChanged = false;
 
     bool bFirstRotation = true;
+    NiQuaternion kFirstValidRotate;
+
+    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
+    
     for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
     {
         InterpArrayItem& kItem = m_pkInterpArray[uc];
+        kBlendInterpItem* kBlendItem = nullptr;
+        if (kExtraData)
+            kBlendItem = kExtraData->GetItem(kItem.m_spInterpolator);
         if (kItem.m_spInterpolator && kItem.m_fNormalizedWeight > 0.0f)
         {
             float fUpdateTime = fTime;
@@ -443,6 +450,13 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                 continue;
             }
 
+#if _DEBUG
+            const static NiFixedString sTempBlendSequence = "__TempBlendSequence__";
+            const static NiFixedString sBip01LUpperArm = "Bip01 L UpperArm";
+            if (pkInterpTarget->m_pcName == sBip01LUpperArm && kBlendItem && kBlendItem->sequence && kBlendItem->sequence->m_kName == sTempBlendSequence)
+                int i = 0;
+#endif
+
             NiQuatTransform kTransform;
             bool bSuccess = kItem.m_spInterpolator->Update(fUpdateTime, 
                 pkInterpTarget, kTransform);
@@ -450,6 +464,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             if (bSuccess)
             {
                 double dWeight = kItem.m_fNormalizedWeight;
+
                 
                 if (kTransform.IsTranslateValid())
                 {
@@ -465,28 +480,44 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
                     if (!bFirstRotation)
                     {
-                        float fCos = NiQuaternion::Dot(kFinalRotate,
-                            kRotValue);
-
-                        if (fCos < 0.0f)
+                        // Use the accumulated kFinalRotate for dot product check
+                        // Ensure kFinalRotate is not zero before dotting
+                        if (kFinalRotate.GetW() != 0.0f || kFinalRotate.GetX() != 0.0f || 
+                            kFinalRotate.GetY() != 0.0f || kFinalRotate.GetZ() != 0.0f)
                         {
-                            kRotValue = -kRotValue;
+                            float fCos = NiQuaternion::Dot(kFinalRotate, kRotValue); 
+                            if (fCos < 0.0f)
+                            {
+                                kRotValue = -kRotValue;
+                            }
+                        }
+                        else
+                        {
+                            // If kFinalRotate is still zero, use the kFirstValidRotate 
+                            // This handles the case where the first few items had invalid rotations
+                            float fCos = NiQuaternion::Dot(kFirstValidRotate, kRotValue); 
+                            if (fCos < 0.0f)
+                            {
+                                kRotValue = -kRotValue;
+                            }                       
                         }
                     }
                     else
                     {
+                        // Store the first valid rotation encountered
+                        kFirstValidRotate = kRotValue; 
                         bFirstRotation = false;
                     }
 
-                    kRotValue = kRotValue * kItem.m_fNormalizedWeight;
-                    dTotalRotWeight += kItem.m_fNormalizedWeight;
-
+                    // Accumulate weighted quaternion components
+                    kRotValue = kRotValue * kItem.m_fNormalizedWeight; 
                     kFinalRotate.SetValues(
                         kRotValue.GetW() + kFinalRotate.GetW(), 
                         kRotValue.GetX() + kFinalRotate.GetX(), 
                         kRotValue.GetY() + kFinalRotate.GetY(),
                         kRotValue.GetZ() + kFinalRotate.GetZ());
 
+                    dTotalRotWeight += kItem.m_fNormalizedWeight; // Add weight only if valid
                     bRotChanged = true;
                 }
 
@@ -508,11 +539,11 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         if (bTransChanged && dTotalTransWeight > EPSILON)
         {
             float fInverseWeight = static_cast<float>(1.0 / dTotalTransWeight);
-            kFinalTranslate *= fInverseWeight;  // Use multiplication instead of division
+            kFinalTranslate *= fInverseWeight;
             kValue.SetTranslate(kFinalTranslate);
         }
         
-        if (bRotChanged && dTotalRotWeight > EPSILON)
+        if (bRotChanged && dTotalRotWeight > EPSILON && kFinalRotate.MagnitudeSquared() > EPSILON * EPSILON)
         {
             kFinalRotate.Normalize();
             kValue.SetRotate(kFinalRotate);

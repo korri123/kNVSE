@@ -241,6 +241,11 @@ struct NiQuaternion
 			   p.m_fY * q.m_fY + p.m_fZ * q.m_fZ;
 	}
 
+	double MagnitudeSquared() const
+	{
+		return m_fW * m_fW + m_fX * m_fX + m_fY * m_fY + m_fZ * m_fZ;
+	}
+
 	void FastNormalize();
 	
 	static NiQuaternion Slerp(float t, const NiQuaternion& p,

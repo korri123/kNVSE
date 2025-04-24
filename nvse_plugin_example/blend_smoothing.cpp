@@ -187,10 +187,17 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
             targetWeight = 0.0f;
         const auto smoothedWeight = std::lerp(extraItem.lastSmoothedWeight, targetWeight, smoothingRate);
 
-        if (smoothedWeight < MIN_WEIGHT)
+        if (smoothedWeight < MIN_WEIGHT && extraItem.lastSmoothedWeight != 0.0f)
         {
             extraItem.lastSmoothedWeight = 0.0f;
             item.m_fNormalizedWeight = 0.0f;
+#if _DEBUG
+            const static NiFixedString sBip01LUpperArm = NiFixedString("Bip01 L UpperArm");
+            if (target->m_pcName == sBip01LUpperArm)
+            {
+                Console_Print("UpperArm 0.0");
+            }
+#endif
         }
         else 
         {
@@ -219,8 +226,15 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
             continue;
         }
         
-        if (smoothedWeight > MAX_WEIGHT)
+        if (smoothedWeight > MAX_WEIGHT && extraItem.lastSmoothedWeight != 1.0f)
         {
+#if _DEBUG
+            const static NiFixedString sBip01LUpperArm = NiFixedString("Bip01 L UpperArm");
+            if (target->m_pcName == sBip01LUpperArm)
+            {
+                Console_Print("UpperArm 1.0");
+            }
+#endif
             extraItem.lastSmoothedWeight = 1.0f;
             item.m_fNormalizedWeight = 1.0f;
         }
@@ -237,7 +251,7 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
         const auto invTotalWeight = 1.0f / totalWeight;
         for (auto& item : blendInterpItems)
         {
-            if (!item.m_spInterpolator || AdditiveManager::IsAdditiveInterpolator(item.m_spInterpolator))
+            if (!item.m_spInterpolator || AdditiveManager::IsAdditiveInterpolator(target, item.m_spInterpolator))
                 continue;
             item.m_fNormalizedWeight *= invTotalWeight;
             newTotalWeight += item.m_fNormalizedWeight;
