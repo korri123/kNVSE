@@ -432,9 +432,14 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     bool bScaleChanged = false;
 
     bool bFirstRotation = true;
-    NiQuaternion kFirstValidRotate;
 
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
+
+#if _DEBUG
+    const static NiFixedString sBip01LUpperArm = "Bip01 L UpperArm";
+    if (pkInterpTarget->m_pcName == sBip01LUpperArm)
+        int i = 0;
+#endif
     
     for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
     {
@@ -452,7 +457,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
 #if _DEBUG
             const static NiFixedString sTempBlendSequence = "__TempBlendSequence__";
-            const static NiFixedString sBip01LUpperArm = "Bip01 L UpperArm";
             if (pkInterpTarget->m_pcName == sBip01LUpperArm && kBlendItem && kBlendItem->sequence && kBlendItem->sequence->m_kName == sTempBlendSequence)
                 int i = 0;
 #endif
@@ -464,7 +468,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             if (bSuccess)
             {
                 double dWeight = kItem.m_fNormalizedWeight;
-
                 
                 if (kTransform.IsTranslateValid())
                 {
@@ -480,47 +483,32 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
                     if (!bFirstRotation)
                     {
-                        // Use the accumulated kFinalRotate for dot product check
-                        // Ensure kFinalRotate is not zero before dotting
-                        if (kFinalRotate.GetW() != 0.0f || kFinalRotate.GetX() != 0.0f || 
-                            kFinalRotate.GetY() != 0.0f || kFinalRotate.GetZ() != 0.0f)
+                        float fCos = NiQuaternion::Dot(kFinalRotate,
+                                                       kRotValue);
+
+                        if (fCos < 0.0f)
                         {
-                            float fCos = NiQuaternion::Dot(kFinalRotate, kRotValue); 
-                            if (fCos < 0.0f)
-                            {
-                                kRotValue = -kRotValue;
-                            }
-                        }
-                        else
-                        {
-                            // If kFinalRotate is still zero, use the kFirstValidRotate 
-                            // This handles the case where the first few items had invalid rotations
-                            float fCos = NiQuaternion::Dot(kFirstValidRotate, kRotValue); 
-                            if (fCos < 0.0f)
-                            {
-                                kRotValue = -kRotValue;
-                            }                       
+                            kRotValue = -kRotValue;
                         }
                     }
                     else
                     {
-                        // Store the first valid rotation encountered
-                        kFirstValidRotate = kRotValue; 
                         bFirstRotation = false;
                     }
 
-                    // Accumulate weighted quaternion components
-                    kRotValue = kRotValue * kItem.m_fNormalizedWeight; 
+                    kRotValue = kRotValue * kItem.m_fNormalizedWeight;
+
+                    dTotalRotWeight += kItem.m_fNormalizedWeight;
+
                     kFinalRotate.SetValues(
-                        kRotValue.GetW() + kFinalRotate.GetW(), 
-                        kRotValue.GetX() + kFinalRotate.GetX(), 
+                        kRotValue.GetW() + kFinalRotate.GetW(),
+                        kRotValue.GetX() + kFinalRotate.GetX(),
                         kRotValue.GetY() + kFinalRotate.GetY(),
                         kRotValue.GetZ() + kFinalRotate.GetZ());
-
-                    dTotalRotWeight += kItem.m_fNormalizedWeight; // Add weight only if valid
+                    
                     bRotChanged = true;
                 }
-
+                
                 if (kTransform.IsScaleValid())
                 {
                     fFinalScale += kTransform.GetScale() *
@@ -543,7 +531,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             kValue.SetTranslate(kFinalTranslate);
         }
         
-        if (bRotChanged && dTotalRotWeight > EPSILON && kFinalRotate.MagnitudeSquared() > EPSILON * EPSILON)
+        if (bRotChanged && dTotalRotWeight > EPSILON)
         {
             kFinalRotate.Normalize();
             kValue.SetRotate(kFinalRotate);
@@ -2052,4 +2040,5 @@ void __fastcall NiControllerSequenceUpdateHook(NiControllerSequence* sequence, v
 void ApplyNiHooks()
 {
     NiHooks::WriteHooks();
+
 }

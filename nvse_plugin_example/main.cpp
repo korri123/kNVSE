@@ -27,6 +27,7 @@
 #include "commands_misc.h"
 #endif
 #include "knvse_events.h"
+#include "gamebryo/NiStream.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
 #define REG_CMD_TYPED(name, type) 	nvse->RegisterTypedCommand(&kCommandInfo_ ##name, type)

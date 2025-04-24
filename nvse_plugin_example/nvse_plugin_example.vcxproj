@@ -414,6 +414,7 @@
       </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="file_animations.cpp" />
+    <ClCompile Include="gamebryo\NiStream.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="knvse_events.cpp" />
@@ -459,6 +460,7 @@
     <ClInclude Include="containers.h" />
     <ClInclude Include="decompiled\AnimDataHooks.h" />
     <ClInclude Include="file_animations.h" />
+    <ClInclude Include="gamebryo\NiStream.h" />
     <ClInclude Include="hooks.h" />
     <ClInclude Include="game_types.h" />
     <ClInclude Include="knvse_events.h" />

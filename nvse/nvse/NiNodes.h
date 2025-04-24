@@ -1569,7 +1569,7 @@ public:
 	NiPoint3			m_kDefaultTranslate;
 	bool				bPose;
 	
-	NIRTTI_ADDRESS(0x11F3E50);
+	NIRTTI_ADDRESS(0x11F3E50)
 	
 	NiFloatKey* GetScaleData(unsigned int& uiNumKeys, NiFloatKey::KeyType& eType, unsigned char& ucSize) const
 	{

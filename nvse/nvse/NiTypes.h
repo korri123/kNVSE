@@ -229,8 +229,14 @@ struct NiQuaternion
 	float m_fY;
 	float m_fZ;
 
-	NiQuaternion()  { }
+	NiQuaternion(): m_fW(-FLT_MAX), m_fX(-FLT_MAX), m_fY(-FLT_MAX), m_fZ(-FLT_MAX)
+	{ }
 	NiQuaternion(float w, float x, float y, float z) : m_fW(w), m_fX(x), m_fY(y), m_fZ(z) { }
+
+	bool IsValid() const
+	{
+		return m_fW != -FLT_MAX;
+	}
 
 	const static NiQuaternion IDENTITY;
 	const static NiQuaternion INVALID_QUATERNION;
