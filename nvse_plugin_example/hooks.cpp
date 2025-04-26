@@ -1145,6 +1145,8 @@ void ApplyHooks()
 				// clear dangling pointers
 				for (auto& sequence : manager->sequences)
 				{
+					if (!sequence)
+						continue;
 					for (auto& block: sequence->GetControlledBlocks())
 					{
 						if (block.m_spInterpCtlr && block.m_spInterpCtlr->GetType() == NiMultiTargetTransformController::ms_RTTI)
