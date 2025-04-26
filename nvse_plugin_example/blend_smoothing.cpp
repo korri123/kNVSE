@@ -159,8 +159,76 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, kBlendInterpolatorE
     {
         items.push_back(&item);
     }
-    ApplyForItems(extraData, items);
+    ApplyForItems(extraData, items, kWeightType::Translate);
+    ApplyForItems(extraData, items, kWeightType::Rotate);
+    ApplyForItems(extraData, items, kWeightType::Scale);
 
+    DetachZeroWeightItems(extraData, blendInterp);
+}
+
+void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
+    std::span<NiBlendInterpolator::InterpArrayItem*> items, kWeightType type)
+{
+    if (!g_pluginSettings.blendSmoothing)
+        return;
+    const auto deltaTime = g_timeGlobal->secondsPassed;
+    const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
+    const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
+    
+    constexpr float MIN_WEIGHT = 0.001f;
+    constexpr float MAX_WEIGHT = 1.0f - MIN_WEIGHT;
+
+    for (auto* itemPtr : items)
+    {
+        auto& item = *itemPtr;
+        if (!item.m_spInterpolator)
+            continue;
+        auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
+        if (!extraItemPtr || extraItemPtr->isAdditive)
+            continue;
+        auto& extraItem = *extraItemPtr;
+        DebugAssert(extraItem.state != kInterpState::NotSet);
+        if (extraItem.debugState == kInterpDebugState::NotSet)
+            continue;
+        auto& weightState = *extraItem.GetWeightState(type);
+        if (weightState.lastSmoothedWeight == -NI_INFINITY)
+        {
+            weightState.lastSmoothedWeight = item.m_fNormalizedWeight;
+            continue;
+        }
+        
+        auto targetWeight = item.m_fNormalizedWeight;
+        weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
+        weightState.calculatedNormalizedWeight = targetWeight;
+        if (extraItem.detached)
+            targetWeight = 0.0f;
+        const auto smoothedWeight = std::lerp(weightState.lastSmoothedWeight, targetWeight, smoothingRate);
+
+        if (smoothedWeight < MIN_WEIGHT)
+        {
+            if (weightState.lastSmoothedWeight != 0.0f || item.m_fNormalizedWeight != 0.0f)
+            {
+                weightState.lastSmoothedWeight = 0.0f;
+                item.m_fNormalizedWeight = 0.0f;
+            }
+        }
+        else 
+        {
+            weightState.lastSmoothedWeight = smoothedWeight;
+            item.m_fNormalizedWeight = smoothedWeight;
+        }
+        
+        if (smoothedWeight > MAX_WEIGHT && weightState.lastSmoothedWeight != 1.0f)
+        {
+            weightState.lastSmoothedWeight = 1.0f;
+            item.m_fNormalizedWeight = 1.0f;
+        }
+    }
+}
+
+void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp)
+{
+    auto blendInterpItems = blendInterp->GetItems();
     for (auto& item : blendInterpItems)
     {
         auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
@@ -186,61 +254,6 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, kBlendInterpolatorE
                     }
                 }
             }
-        }
-    }
-}
-
-void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
-    std::span<NiBlendInterpolator::InterpArrayItem*> items)
-{
-    const auto deltaTime = g_timeGlobal->secondsPassed;
-    const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
-    const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
-    
-    constexpr float MIN_WEIGHT = 0.001f;
-    constexpr float MAX_WEIGHT = 1.0f - MIN_WEIGHT;
-
-    for (auto* itemPtr : items)
-    {
-        auto& item = *itemPtr;
-        if (!item.m_spInterpolator)
-            continue;
-        auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
-        if (!extraItemPtr || extraItemPtr->isAdditive)
-            continue;
-        auto& extraItem = *extraItemPtr;
-        DebugAssert(extraItem.state != kInterpState::NotSet);
-        if (extraItem.debugState == kInterpDebugState::NotSet)
-            continue;
-        auto& weightState = extraItem.weightState;
-        if (weightState.lastSmoothedWeight == -NI_INFINITY)
-        {
-            weightState.lastSmoothedWeight = item.m_fNormalizedWeight;
-            continue;
-        }
-        
-        auto targetWeight = item.m_fNormalizedWeight;
-        weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
-        weightState.calculatedNormalizedWeight = targetWeight;
-        if (extraItem.detached)
-            targetWeight = 0.0f;
-        const auto smoothedWeight = std::lerp(weightState.lastSmoothedWeight, targetWeight, smoothingRate);
-
-        if (smoothedWeight < MIN_WEIGHT && weightState.lastSmoothedWeight != 0.0f)
-        {
-            weightState.lastSmoothedWeight = 0.0f;
-            item.m_fNormalizedWeight = 0.0f;
-        }
-        else 
-        {
-            weightState.lastSmoothedWeight = smoothedWeight;
-            item.m_fNormalizedWeight = smoothedWeight;
-        }
-        
-        if (smoothedWeight > MAX_WEIGHT && weightState.lastSmoothedWeight != 1.0f)
-        {
-            weightState.lastSmoothedWeight = 1.0f;
-            item.m_fNormalizedWeight = 1.0f;
         }
     }
 }

@@ -437,43 +437,90 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
 #if _DEBUG
     const static NiFixedString sBip01LUpperArm = "Bip01 L UpperArm";
-    if (pkInterpTarget->m_pcName == sBip01LUpperArm)
+    if (pkInterpTarget->m_pcName == sBip01LUpperArm && g_thePlayer && kExtraData && kExtraData->owner == g_thePlayer->baseProcess->animData->controllerManager)
         int i = 0;
 #endif
 
-#define EXCLUDE_INVALID_ROTATIONS 1
+#define EXCLUDE_INVALIDS 1
 
-#if EXCLUDE_INVALID_ROTATIONS
+#if EXCLUDE_INVALIDS
+
+    struct ValidTranslate
+    {
+        NiPoint3 translate;
+        InterpArrayItem* item;
+    };
+    bool invalidTranslates = false;
+    thread_local std::vector<ValidTranslate> validTranslates;
+    validTranslates.clear();
+    
     struct ValidRotation
     {
         NiQuaternion rotation;
-        NiBlendInterpolator::InterpArrayItem* item;
+        InterpArrayItem* item;
     };
+    bool invalidRotations = false;
     thread_local std::vector<ValidRotation> validRotations;
     validRotations.clear();
 
-    float totalRotWeight = 0.0f;
+    struct ValidScale
+    {
+        float scale;
+        InterpArrayItem* item;
+    };
+    bool invalidScales = false;
+    thread_local std::vector<ValidScale> validScales;
+    validScales.clear();
+
     for (auto& item : GetItems())
     {
-        if (!item.m_spInterpolator || item.m_fNormalizedWeight <= 0.0f || !GetUpdateTimeForItem(fTime, item))
+        if (!item.m_spInterpolator || !GetUpdateTimeForItem(fTime, item))
             continue;
         
         NiQuatTransform kTransform;
-        item.m_spInterpolator->Update(fTime, pkInterpTarget, kTransform);
+        if (!item.m_spInterpolator->Update(fTime, pkInterpTarget, kTransform))
+            continue;
+        if (kTransform.IsTranslateValid())
+        {
+            validTranslates.emplace_back(kTransform.GetTranslate(), &item);
+        }
+        else
+            invalidTranslates = true;
         if (kTransform.IsRotateValid())
         {
             validRotations.emplace_back(kTransform.GetRotate(), &item);
-            totalRotWeight += item.m_fNormalizedWeight;
         }
+        else
+            invalidRotations = true;
+        if (kTransform.IsScaleValid())
+        {
+            validScales.emplace_back(kTransform.GetScale(), &item);
+        }
+        else
+            invalidScales = true;
     }
 
-    thread_local std::vector<InterpArrayItem*> temp;
-    temp.clear();
+    thread_local std::vector<InterpArrayItem*> items;
+    items.clear();
+    
+    for (auto& item : validTranslates)
+        items.emplace_back(item.item);
+    ComputeNormalizedWeights(items);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Translate);
 
-    //for (auto& item : validRotations)
-    //    temp.emplace_back(item.item);
-    //ComputeNormalizedWeights(temp);
-    //BlendSmoothing::ApplyForItems(kExtraData, temp);
+    for (auto& translation : validTranslates)
+    {
+        kFinalTranslate += translation.translate *
+                       translation.item->m_fNormalizedWeight;
+        dTotalTransWeight += translation.item->m_fNormalizedWeight;
+        bTransChanged = true;
+    }
+    items.clear();
+
+    for (auto& item : validRotations)
+        items.emplace_back(item.item);
+    ComputeNormalizedWeights(items);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate);
     
     for (auto& rotation : validRotations)
     {
@@ -504,8 +551,26 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             kRotValue.GetZ() + kFinalRotate.GetZ());
         bRotChanged = true;
     }
-#endif
     
+    items.clear();
+    for (auto& scale : validScales)
+        items.emplace_back(scale.item);
+
+    ComputeNormalizedWeights(items);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Scale);
+
+    for (auto& scale : validScales)
+    {
+        fFinalScale += scale.scale *
+                       scale.item->m_fNormalizedWeight;
+        dTotalScaleWeight += scale.item->m_fNormalizedWeight;
+        bScaleChanged = true;
+    }
+
+    BlendSmoothing::DetachZeroWeightItems(kExtraData, this);
+#endif
+
+#if !EXCLUDE_INVALIDS
     for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
     {
         InterpArrayItem& kItem = m_pkInterpArray[uc];
@@ -536,7 +601,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                     bTransChanged = true;
                 }
 
-#if !EXCLUDE_INVALID_ROTATIONS
                 if (kTransform.IsRotateValid())
                 {
                     NiQuaternion kRotValue = kTransform.GetRotate();
@@ -568,7 +632,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                     
                     bRotChanged = true;
                 }
-#endif
                 
                 if (kTransform.IsScaleValid())
                 {
@@ -580,6 +643,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             }
         }
     }
+#endif
 
     kValue.MakeInvalid();
     if (bTransChanged || bRotChanged || bScaleChanged)
@@ -654,8 +718,8 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
         }
         else
             ComputeNormalizedWeights();
-        if (g_pluginSettings.blendSmoothing)
-            BlendSmoothing::Apply(this, kExtraData);
+        //if (g_pluginSettings.blendSmoothing)
+        //    BlendSmoothing::Apply(this, kExtraData);
         bReturnValue = g_pluginSettings.fixSpiderHands ?
             BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kRealValue) : BlendValues(fTime, pkInterpTarget, kRealValue);
         if (hasAdditiveTransforms)
@@ -896,24 +960,20 @@ void NiBlendInterpolator::ComputeNormalizedWeights(std::vector<InterpArrayItem*>
         return;
     }
 
-    unsigned char ucHighPriority = INVALID_INDEX;
-    unsigned char ucNextHighPriority = INVALID_INDEX;
-
+    char cHighPriority = INVALID_INDEX;
+    char cNextHighPriority = INVALID_INDEX;
     for (auto& item : items)
     {
         if (item->m_spInterpolator != nullptr)
         {
-            if (item->m_cPriority > ucNextHighPriority)
+            if (item->m_cPriority > cHighPriority)
             {
-                if (item->m_cPriority >= ucHighPriority)
-                {
-                    ucNextHighPriority = ucHighPriority;
-                    ucHighPriority = item->m_cPriority;
-                }
-                else
-                {
-                    ucNextHighPriority = item->m_cPriority;
-                }
+                cNextHighPriority = cHighPriority;
+                cHighPriority = item->m_cPriority;
+            }
+            else if (item->m_cPriority > cNextHighPriority && item->m_cPriority < cHighPriority)
+            {
+                cNextHighPriority = item->m_cPriority;
             }
         }
     }
@@ -927,7 +987,7 @@ void NiBlendInterpolator::ComputeNormalizedWeights(std::vector<InterpArrayItem*>
         if (kItem.m_spInterpolator != nullptr)
         {
             float fRealWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
-            if (kItem.m_cPriority == ucHighPriority)
+            if (kItem.m_cPriority == cHighPriority)
             {
                 fHighSumOfWeights += fRealWeight;
                 if (kItem.m_fEaseSpinner > fHighEaseSpinner)
@@ -935,7 +995,7 @@ void NiBlendInterpolator::ComputeNormalizedWeights(std::vector<InterpArrayItem*>
                     fHighEaseSpinner = kItem.m_fEaseSpinner;
                 }
             }
-            else if (kItem.m_cPriority == ucNextHighPriority)
+            else if (kItem.m_cPriority == cNextHighPriority)
             {
                 fNextHighSumOfWeights += fRealWeight;
             }
@@ -954,13 +1014,13 @@ void NiBlendInterpolator::ComputeNormalizedWeights(std::vector<InterpArrayItem*>
         auto& kItem = *kItemPtr;
         if (kItem.m_spInterpolator != nullptr)
         {
-            if (kItem.m_cPriority == ucHighPriority)
+            if (kItem.m_cPriority == cHighPriority)
             {
                 kItem.m_fNormalizedWeight = fHighEaseSpinner *
                     kItem.m_fWeight * kItem.m_fEaseSpinner *
                     fOneOverTotalSumOfWeights;
             }
-            else if (kItem.m_cPriority == ucNextHighPriority)
+            else if (kItem.m_cPriority == cNextHighPriority)
             {
                 kItem.m_fNormalizedWeight = fOneMinusHighEaseSpinner *
                     kItem.m_fWeight * kItem.m_fEaseSpinner *
@@ -1258,6 +1318,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         DebugAssert(target && target->m_pcName == idTag.m_kAVObjectName);
 
         auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+        extraData->owner = m_pkOwner;
         DebugAssert(extraData);
         
         auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
@@ -1890,7 +1951,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         {
             const auto& idTag = kItem.GetIDTag(this);
             DebugAssert(m_pkOwner && m_pkOwner->m_spObjectPalette);
-            auto* target = m_pkOwner->m_spObjectPalette ? m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName) : nullptr;
+            auto* target = m_pkOwner && m_pkOwner->m_spObjectPalette ? m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName) : nullptr;
             const auto blendIndex = kItem.m_ucBlendIdx;
             if (!target)
             {
@@ -1917,7 +1978,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
             DebugAssert(blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator
                 && extraInterpItem.interpolator == kItem.m_spInterpolator && kItem.m_spInterpolator != nullptr);
 
-            if (extraInterpItem.IsSmoothedWeightZero() || !extraInterpItem.IsSmoothedWeightValid())
+            if (extraInterpItem.IsSmoothedWeightZero())
             {
                 DebugAssert(!extraInterpItem.detached && blendIndex != INVALID_INDEX);
                 if (blendIndex != INVALID_INDEX)

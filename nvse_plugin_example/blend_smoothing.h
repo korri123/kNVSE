@@ -39,12 +39,19 @@ struct kWeightState
     }
 };
 
+enum class kWeightType: UInt8
+{
+    Translate, Rotate, Scale
+};
+
 struct kBlendInterpItem
 {
     NiPointer<NiInterpolator> interpolator = nullptr;
     NiControllerSequence* sequence = nullptr;
     NiBlendInterpolator* blendInterp = nullptr;
-    kWeightState weightState;
+    kWeightState translateWeight;
+    kWeightState rotateWeight;
+    kWeightState scaleWeight;
     bool detached = false;
     unsigned char blendIndex = INVALID_INDEX;
     kInterpDebugState debugState = kInterpDebugState::NotSet;
@@ -56,19 +63,37 @@ struct kBlendInterpItem
 
     bool IsSmoothedWeightZero() const
     {
-        return weightState.lastSmoothedWeight == 0.0f;
+        return (translateWeight.lastSmoothedWeight == 0.0f || translateWeight.lastSmoothedWeight == -NI_INFINITY) && 
+            (rotateWeight.lastSmoothedWeight == 0.0f || rotateWeight.lastSmoothedWeight ==  -NI_INFINITY) && 
+            (scaleWeight.lastSmoothedWeight == 0.0f || scaleWeight.lastSmoothedWeight == -NI_INFINITY);
     }
 
     bool IsSmoothedWeightValid() const
     {
-        return weightState.lastSmoothedWeight != -NI_INFINITY;
+        return translateWeight.lastSmoothedWeight != -NI_INFINITY && rotateWeight.lastSmoothedWeight != -NI_INFINITY && scaleWeight.lastSmoothedWeight != -NI_INFINITY;
+    }
+
+    kWeightState* GetWeightState(kWeightType type)
+    {
+        switch (type)
+        {
+        case kWeightType::Translate:
+            return &translateWeight;
+        case kWeightType::Rotate:
+            return &rotateWeight;
+        case kWeightType::Scale:
+            return &scaleWeight;
+        }
+        return nullptr;
     }
 
     void ClearValues()
     {
         interpolator = nullptr;
         sequence = nullptr;
-        weightState.ClearValues();
+        translateWeight.ClearValues();
+        rotateWeight.ClearValues();
+        scaleWeight.ClearValues();
         blendInterp = nullptr;
         detached = false;
         blendIndex = INVALID_INDEX;
@@ -77,6 +102,7 @@ struct kBlendInterpItem
         isPoseInterp = false;
         isAdditive = false;
         additiveMetadata.ClearValues();
+        
     }
 };
 
@@ -86,6 +112,7 @@ public:
     std::vector<kBlendInterpItem> items;
     NiPointer<NiTransformInterpolator> poseInterp = nullptr;
     float poseInterpUpdatedTime = -NI_INFINITY;
+    NiControllerManager* owner = nullptr;
 
     NiNewRTTI(kBlendInterpolatorExtraData, NiExtraData)
 
@@ -108,7 +135,7 @@ public:
 namespace BlendSmoothing
 {
     void Apply(NiBlendInterpolator* blendInterp, kBlendInterpolatorExtraData* extraData);
-    void ApplyForItems(kBlendInterpolatorExtraData* extraData, std::span<NiBlendInterpolator::InterpArrayItem*> items);
-
+    void ApplyForItems(kBlendInterpolatorExtraData* extraData, std::span<NiBlendInterpolator::InterpArrayItem*> items, kWeightType type);
+    void DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp);
     void WriteHooks();
 }

@@ -2153,7 +2153,7 @@ public:
 	bool GetUpdateTimeForItem(float& fTime, InterpArrayItem& kItem)
 	{
 		NiInterpolator* pkInterpolator = kItem.m_spInterpolator.data;
-		if (pkInterpolator && (kItem.m_fNormalizedWeight != 0.0f))
+		if (pkInterpolator)
 		{
 			if (GetManagerControlled())
 			{
