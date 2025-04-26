@@ -25,15 +25,26 @@ struct kAdditiveInterpMetadata
     }
 };
 
+struct kWeightState
+{
+    float lastSmoothedWeight = -NI_INFINITY;
+    float calculatedNormalizedWeight = -NI_INFINITY;
+    float lastCalculatedNormalizedWeight = -NI_INFINITY;
+
+    void ClearValues()
+    {
+        lastSmoothedWeight = -NI_INFINITY;
+        calculatedNormalizedWeight = -NI_INFINITY;
+        lastCalculatedNormalizedWeight = -NI_INFINITY;
+    }
+};
+
 struct kBlendInterpItem
 {
     NiPointer<NiInterpolator> interpolator = nullptr;
-    float lastSmoothedWeight = -NI_INFINITY;
     NiControllerSequence* sequence = nullptr;
     NiBlendInterpolator* blendInterp = nullptr;
-    float lastNormalizedWeight = -NI_INFINITY;
-    float calculatedNormalizedWeight = -NI_INFINITY;
-    float lastCalculatedNormalizedWeight = -NI_INFINITY;
+    kWeightState weightState;
     bool detached = false;
     unsigned char blendIndex = INVALID_INDEX;
     kInterpDebugState debugState = kInterpDebugState::NotSet;
@@ -43,15 +54,22 @@ struct kBlendInterpItem
     bool isAdditive = false;
     kAdditiveInterpMetadata additiveMetadata;
 
+    bool IsSmoothedWeightZero() const
+    {
+        return weightState.lastSmoothedWeight == 0.0f;
+    }
+
+    bool IsSmoothedWeightValid() const
+    {
+        return weightState.lastSmoothedWeight != -NI_INFINITY;
+    }
+
     void ClearValues()
     {
         interpolator = nullptr;
-        lastSmoothedWeight = -NI_INFINITY;
         sequence = nullptr;
+        weightState.ClearValues();
         blendInterp = nullptr;
-        lastNormalizedWeight = -NI_INFINITY;
-        calculatedNormalizedWeight = -NI_INFINITY;
-        lastCalculatedNormalizedWeight = -NI_INFINITY;
         detached = false;
         blendIndex = INVALID_INDEX;
         state = kInterpState::NotSet;

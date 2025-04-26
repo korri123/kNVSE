@@ -361,7 +361,7 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
 #endif
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeightsFor2(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const
+void NiBlendInterpolator::ComputeNormalizedWeightsFor2(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2)
 {
     // Calculate the real weight of each item.
     float fRealWeight1 = pkItem1->m_fWeight * pkItem1->m_fEaseSpinner;
@@ -414,55 +414,7 @@ void NiBlendInterpolator::ComputeNormalizedWeightsFor2(InterpArrayItem* pkItem1,
         pkItem1->m_fNormalizedWeight = fRealWeight1 * fOneOverSumOfWeights;
         pkItem2->m_fNormalizedWeight = fRealWeight2 * fOneOverSumOfWeights;
     }
-
-    // Only use the highest weight, if so desired.
-    if (GetOnlyUseHighestWeight())
-    {
-        if (pkItem1->m_fNormalizedWeight >= pkItem2->m_fNormalizedWeight)
-        {
-            pkItem1->m_fNormalizedWeight = 1.0f;
-            pkItem2->m_fNormalizedWeight = 0.0f;
-        }
-        else
-        {
-            pkItem1->m_fNormalizedWeight = 0.0f;
-            pkItem2->m_fNormalizedWeight = 1.0f;
-        }
-        return;
-    }
-
-    // Exclude weights below threshold.
-    if (m_fWeightThreshold > 0.0f)
-    {
-        bool bReduced1 = false;
-        if (pkItem1->m_fNormalizedWeight < m_fWeightThreshold)
-        {
-            pkItem1->m_fNormalizedWeight = 0.0f;
-            bReduced1 = true;
-        }
-
-        bool bReduced2 = false;
-        if (pkItem2->m_fNormalizedWeight < m_fWeightThreshold)
-        {
-            pkItem2->m_fNormalizedWeight = 0.0f;
-            bReduced1 = true;
-        }
-
-        if (bReduced1 && bReduced2)
-        {
-            return;
-        }
-        else if (bReduced1)
-        {
-            pkItem2->m_fNormalizedWeight = 1.0f;
-            return;
-        }
-        else if (bReduced2)
-        {
-            pkItem1->m_fNormalizedWeight = 1.0f;
-            return;
-        }
-    }
+    
 }
 
 void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(kBlendInterpolatorExtraData* kExtraData)

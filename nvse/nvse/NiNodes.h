@@ -2089,7 +2089,7 @@ public:
 		return nullptr;
 	}
 
-	void ComputeNormalizedWeightsFor2(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const;
+	static void ComputeNormalizedWeightsFor2(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2);
 	
 	std::span<InterpArrayItem> GetItems() const
 	{
@@ -2170,7 +2170,7 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
-	void ComputeNormalizedWeights(std::vector<InterpArrayItem*> items) const;
+	static void ComputeNormalizedWeights(std::vector<InterpArrayItem*> items);
 	void ComputeNormalizedWeightsHighPriorityDominant();
 
 	void ClearWeightSums()

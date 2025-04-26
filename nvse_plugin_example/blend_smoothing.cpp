@@ -167,7 +167,7 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, kBlendInterpolatorE
         if (!extraItemPtr || extraItemPtr->isAdditive)
             continue;
         auto& extraItem = *extraItemPtr;
-        if (extraItem.lastSmoothedWeight == 0.0f && extraItem.state == kInterpState::Deactivating)
+        if (extraItem.IsSmoothedWeightZero() && extraItem.state == kInterpState::Deactivating)
         {
             if (extraItem.detached)
             {
@@ -212,33 +212,34 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
         DebugAssert(extraItem.state != kInterpState::NotSet);
         if (extraItem.debugState == kInterpDebugState::NotSet)
             continue;
-        if (extraItem.lastSmoothedWeight == -NI_INFINITY)
+        auto& weightState = extraItem.weightState;
+        if (weightState.lastSmoothedWeight == -NI_INFINITY)
         {
-            extraItem.lastSmoothedWeight = item.m_fNormalizedWeight;
+            weightState.lastSmoothedWeight = item.m_fNormalizedWeight;
             continue;
         }
         
         auto targetWeight = item.m_fNormalizedWeight;
-        extraItem.lastCalculatedNormalizedWeight = extraItem.calculatedNormalizedWeight;
-        extraItem.calculatedNormalizedWeight = targetWeight;
+        weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
+        weightState.calculatedNormalizedWeight = targetWeight;
         if (extraItem.detached)
             targetWeight = 0.0f;
-        const auto smoothedWeight = std::lerp(extraItem.lastSmoothedWeight, targetWeight, smoothingRate);
+        const auto smoothedWeight = std::lerp(weightState.lastSmoothedWeight, targetWeight, smoothingRate);
 
-        if (smoothedWeight < MIN_WEIGHT && extraItem.lastSmoothedWeight != 0.0f)
+        if (smoothedWeight < MIN_WEIGHT && weightState.lastSmoothedWeight != 0.0f)
         {
-            extraItem.lastSmoothedWeight = 0.0f;
+            weightState.lastSmoothedWeight = 0.0f;
             item.m_fNormalizedWeight = 0.0f;
         }
         else 
         {
-            extraItem.lastSmoothedWeight = smoothedWeight;
+            weightState.lastSmoothedWeight = smoothedWeight;
             item.m_fNormalizedWeight = smoothedWeight;
         }
         
-        if (smoothedWeight > MAX_WEIGHT && extraItem.lastSmoothedWeight != 1.0f)
+        if (smoothedWeight > MAX_WEIGHT && weightState.lastSmoothedWeight != 1.0f)
         {
-            extraItem.lastSmoothedWeight = 1.0f;
+            weightState.lastSmoothedWeight = 1.0f;
             item.m_fNormalizedWeight = 1.0f;
         }
     }
