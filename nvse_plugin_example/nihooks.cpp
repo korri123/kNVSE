@@ -440,6 +440,64 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     if (pkInterpTarget->m_pcName == sBip01LUpperArm)
         int i = 0;
 #endif
+
+#define EXCLUDE_INVALID_ROTATIONS 1
+
+#if EXCLUDE_INVALID_ROTATIONS
+    struct ValidRotation
+    {
+        NiQuaternion rotation;
+        float weight;
+        NiFixedString name;
+    };
+    thread_local std::vector<ValidRotation> validRotations;
+    validRotations.clear();
+
+    float totalRotWeight = 0.0f;
+    for (auto& item : GetItems())
+    {
+        auto* extraItem = kExtraData ? kExtraData->GetItem(item.m_spInterpolator) : nullptr;
+        if (!item.m_spInterpolator || item.m_fNormalizedWeight <= 0.0f || !GetUpdateTimeForItem(fTime, item))
+            continue;
+        
+        NiQuatTransform kTransform;
+        item.m_spInterpolator->Update(fTime, pkInterpTarget, kTransform);
+        if (kTransform.IsRotateValid())
+        {
+            validRotations.emplace_back(kTransform.GetRotate(), item.m_fNormalizedWeight, extraItem && extraItem->sequence ? extraItem->sequence->m_kName : nullptr);
+            totalRotWeight += item.m_fNormalizedWeight;
+        }
+    }
+    for (auto& rotation : validRotations)
+    {
+        NiQuaternion kRotValue = rotation.rotation;
+
+        if (!bFirstRotation)
+        {
+            float fCos = NiQuaternion::Dot(kFinalRotate, kRotValue);
+            if (fCos < 0.0f)
+            {
+                kRotValue = -kRotValue;
+            }
+        }
+        else
+        {
+            bFirstRotation = false;
+        }
+
+        float weight = rotation.weight;
+        
+        kRotValue = kRotValue * weight;
+        dTotalRotWeight += weight;
+
+        kFinalRotate.SetValues(
+            kRotValue.GetW() + kFinalRotate.GetW(),
+            kRotValue.GetX() + kFinalRotate.GetX(),
+            kRotValue.GetY() + kFinalRotate.GetY(),
+            kRotValue.GetZ() + kFinalRotate.GetZ());
+        bRotChanged = true;
+    }
+#endif
     
     for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
     {
@@ -454,12 +512,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             {
                 continue;
             }
-
-#if _DEBUG
-            const static NiFixedString sTempBlendSequence = "__TempBlendSequence__";
-            if (pkInterpTarget->m_pcName == sBip01LUpperArm && kBlendItem && kBlendItem->sequence && kBlendItem->sequence->m_kName == sTempBlendSequence)
-                int i = 0;
-#endif
 
             NiQuatTransform kTransform;
             bool bSuccess = kItem.m_spInterpolator->Update(fUpdateTime, 
@@ -477,6 +529,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                     bTransChanged = true;
                 }
 
+#if !EXCLUDE_INVALID_ROTATIONS
                 if (kTransform.IsRotateValid())
                 {
                     NiQuaternion kRotValue = kTransform.GetRotate();
@@ -508,6 +561,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                     
                     bRotChanged = true;
                 }
+#endif
                 
                 if (kTransform.IsScaleValid())
                 {
@@ -585,15 +639,16 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
     else if (m_ucInterpCount > 0)
     {
         const auto hasAdditiveTransforms = GetHasAdditiveTransforms();
+        auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
         if (hasAdditiveTransforms)
         {
-            CalculatePrioritiesAdditive(pkInterpTarget);
-            ComputeNormalizedWeightsAdditive(pkInterpTarget);
+            CalculatePrioritiesAdditive(kExtraData);
+            ComputeNormalizedWeightsAdditive(kExtraData);
         }
         else
             ComputeNormalizedWeights();
         if (g_pluginSettings.blendSmoothing)
-            BlendSmoothing::Apply(this, pkInterpTarget);
+            BlendSmoothing::Apply(this, kExtraData);
         bReturnValue = g_pluginSettings.fixSpiderHands ?
             BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kRealValue) : BlendValues(fTime, pkInterpTarget, kRealValue);
         if (hasAdditiveTransforms)
@@ -817,6 +872,98 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
 
         // Set the highest index to 1.0
         m_pkInterpArray[ucHighIndex].m_fNormalizedWeight = 1.0f;
+    }
+}
+
+void NiBlendInterpolator::ComputeNormalizedWeights(std::vector<InterpArrayItem*> items) const
+{
+    if (items.size() == 1)
+    {
+        m_pkInterpArray[m_ucSingleIdx].m_fNormalizedWeight = 1.0f;
+        return;
+    }
+
+    if (items.size() == 2)
+    {
+        ComputeNormalizedWeightsFor2(items.front(), items.back());
+        return;
+    }
+
+    unsigned char ucHighPriority = INVALID_INDEX;
+    unsigned char ucNextHighPriority = INVALID_INDEX;
+
+    for (auto& item : items)
+    {
+        if (item->m_spInterpolator != nullptr)
+        {
+            if (item->m_cPriority > ucNextHighPriority)
+            {
+                if (item->m_cPriority >= ucHighPriority)
+                {
+                    ucNextHighPriority = ucHighPriority;
+                    ucHighPriority = item->m_cPriority;
+                }
+                else
+                {
+                    ucNextHighPriority = item->m_cPriority;
+                }
+            }
+        }
+    }
+
+    float fHighSumOfWeights = 0.0f;
+    float fNextHighSumOfWeights = 0.0f;
+    float fHighEaseSpinner = 0.0f;
+    for (auto& kItemPtr : items)
+    {
+        auto& kItem = *kItemPtr;
+        if (kItem.m_spInterpolator != nullptr)
+        {
+            float fRealWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
+            if (kItem.m_cPriority == ucHighPriority)
+            {
+                fHighSumOfWeights += fRealWeight;
+                if (kItem.m_fEaseSpinner > fHighEaseSpinner)
+                {
+                    fHighEaseSpinner = kItem.m_fEaseSpinner;
+                }
+            }
+            else if (kItem.m_cPriority == ucNextHighPriority)
+            {
+                fNextHighSumOfWeights += fRealWeight;
+            }
+        }
+    }
+
+    float fOneMinusHighEaseSpinner = 1.0f - fHighEaseSpinner;
+    float fTotalSumOfWeights = fHighEaseSpinner * fHighSumOfWeights +
+        fOneMinusHighEaseSpinner * fNextHighSumOfWeights;
+    float fOneOverTotalSumOfWeights =
+        (fTotalSumOfWeights > 0.0f) ? (1.0f / fTotalSumOfWeights) : 0.0f;
+
+    // Compute normalized weights.
+    for (auto& kItemPtr : items)
+    {
+        auto& kItem = *kItemPtr;
+        if (kItem.m_spInterpolator != nullptr)
+        {
+            if (kItem.m_cPriority == ucHighPriority)
+            {
+                kItem.m_fNormalizedWeight = fHighEaseSpinner *
+                    kItem.m_fWeight * kItem.m_fEaseSpinner *
+                    fOneOverTotalSumOfWeights;
+            }
+            else if (kItem.m_cPriority == ucNextHighPriority)
+            {
+                kItem.m_fNormalizedWeight = fOneMinusHighEaseSpinner *
+                    kItem.m_fWeight * kItem.m_fEaseSpinner *
+                    fOneOverTotalSumOfWeights;
+            }
+            else
+            {
+                kItem.m_fNormalizedWeight = 0.0f;
+            }
+        }
     }
 }
 
@@ -1078,6 +1225,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         AttachInterpolatorsAdditive(cPriority);
         return;
     }
+    
     if (!g_pluginSettings.blendSmoothing)
     {
         AttachInterpolators(cPriority);
@@ -1747,8 +1895,14 @@ void NiControllerSequence::DetachInterpolatorsHooked()
             }
             DebugAssert(target->m_pcName == idTag.m_kAVObjectName);
             
-            auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
-            DebugAssert(extraData);
+            auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
+            if (!extraData)
+            {
+                if (blendIndex != INVALID_INDEX)
+                    blendInterp->RemoveInterpInfo(blendIndex);
+                kItem.m_ucBlendIdx = INVALID_INDEX;
+                continue;
+            }
 
             auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
             extraInterpItem.state = kInterpState::Deactivating;
@@ -1900,7 +2054,29 @@ unsigned int __fastcall AddInterpHook(NiControllerSequence* poseSequence, UInt32
 {
     auto idx = offset / 0x10;
     const auto& newIdTag = pkSequence->m_pkIDTagArray[idx];
-    return poseSequence->AddInterpolator(interpolator, newIdTag, priority);
+    const auto result = poseSequence->AddInterpolator(interpolator, newIdTag, priority);
+
+#if 0
+    if (auto* poseTransformInterp = NI_DYNAMIC_CAST(NiTransformInterpolator, interpolator))
+    {
+        if (auto* block = pkSequence->GetControlledBlock(newIdTag.m_kAVObjectName))
+        {
+            if (auto* seqTransformInterp = NI_DYNAMIC_CAST(NiTransformInterpolator, block->m_spInterpolator))
+            {
+                if (!seqTransformInterp->m_kTransformValue.IsTranslateValid()
+                    && (!poseTransformInterp->m_spData || poseTransformInterp->m_spData->m_ucPosSize == 0))
+                    poseTransformInterp->m_kTransformValue.m_kTranslate = NiPoint3::INVALID_POINT;
+                if (!seqTransformInterp->m_kTransformValue.IsRotateValid()
+                    && (!poseTransformInterp->m_spData || poseTransformInterp->m_spData->m_ucRotSize == 0))
+                    poseTransformInterp->m_kTransformValue.m_kRotate = NiQuaternion::INVALID_QUATERNION;
+                if (!seqTransformInterp->m_kTransformValue.IsScaleValid()
+                    && (!poseTransformInterp->m_spData || poseTransformInterp->m_spData->m_ucScaleSize == 0))
+                    poseTransformInterp->m_kTransformValue.m_fScale = -NI_INFINITY;
+            }
+        }
+    }
+#endif
+    return result;
 }
 
 __declspec(naked) void PoseSequenceIDTagHook()

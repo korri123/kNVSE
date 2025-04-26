@@ -1996,6 +1996,8 @@ public:
 	BSAnimGroupSequence();
 	~BSAnimGroupSequence();
 
+	NIRTTI_ADDRESS(0x11C7D74)
+
 	NiPointer<TESAnimGroup> animGroup;	//068
 
 	BSAnimGroupSequence* Get3rdPersonCounterpart() const;
@@ -2024,6 +2026,8 @@ public:
 	NiAVObject* GetTargetNode(const NiControllerSequence::IDTag& idTag) const;
 };
 
+class kBlendInterpolatorExtraData;
+
 class NiBlendInterpolator : public NiInterpolator
 {
 public:
@@ -2034,8 +2038,8 @@ public:
 
 	static constexpr unsigned char INVALID_INDEX = 0xFF;
 
-	void ComputeNormalizedWeightsAdditive(NiObjectNET* target);
-	void CalculatePrioritiesAdditive(NiObjectNET* target);
+	void ComputeNormalizedWeightsAdditive(kBlendInterpolatorExtraData* kExtraData);
+	void CalculatePrioritiesAdditive(kBlendInterpolatorExtraData* kExtraData);
 
 	enum
 	{
@@ -2085,7 +2089,7 @@ public:
 		return nullptr;
 	}
 
-	void ComputeNormalizedWeightsFor2Additive(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const;
+	void ComputeNormalizedWeightsFor2(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const;
 	
 	std::span<InterpArrayItem> GetItems() const
 	{
@@ -2166,6 +2170,7 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
+	void ComputeNormalizedWeights(std::vector<InterpArrayItem*> items) const;
 	void ComputeNormalizedWeightsHighPriorityDominant();
 
 	void ClearWeightSums()

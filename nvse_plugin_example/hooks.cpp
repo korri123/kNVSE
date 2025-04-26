@@ -111,6 +111,14 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	
 	if (g_pluginSettings.blendSmoothing && destAnim && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
+	else if (destAnim && destAnim->animGroup && destAnim->animGroup->GetBaseGroupID() == kAnimGroup_PipBoy)
+	{
+		const auto easeInTime = destAnim->GetEaseInTime();
+		destAnim->Activate(0, true, destAnim->m_fSeqWeight, easeInTime, nullptr, false);
+		// destAnim->m_pkOwner->BlendFromPose(destAnim, 0.0f, easeInTime, 0, nullptr);
+		animData->SetCurrentSequence(destAnim, true);
+		result = destAnim;
+	}
 	else
 		result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
 	

@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "NiObjects.h"
+#include "GameAPI.h"
 
 enum class kInterpDebugState: UInt8
 {
@@ -89,6 +89,8 @@ public:
 
 namespace BlendSmoothing
 {
-    void Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target);
+    void Apply(NiBlendInterpolator* blendInterp, kBlendInterpolatorExtraData* extraData);
+    void ApplyForItems(kBlendInterpolatorExtraData* extraData, std::span<NiBlendInterpolator::InterpArrayItem*> items);
+
     void WriteHooks();
 }

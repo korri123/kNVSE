@@ -56,14 +56,14 @@ bool IsAnimGroupWeaponDown(AnimGroupID groupId)
 	return groupInfo->sequenceType == kSequence_WeaponDown;
 }
 
-void SetCurrentSequence(AnimData* animData, BSAnimGroupSequence* destAnim, bool resetSequenceState)
+void AnimData::SetCurrentSequence(BSAnimGroupSequence* destAnim, bool resetSequenceState)
 {
 	const auto sequenceId = destAnim->animGroup->GetGroupInfo()->sequenceType;
 	const auto animGroupId = destAnim->animGroup->groupID;
-	animData->animSequence[sequenceId] = destAnim;
-	animData->groupIDs[sequenceId] = animGroupId;
+	animSequence[sequenceId] = destAnim;
+	groupIDs[sequenceId] = animGroupId;
 	if (resetSequenceState)
-		animData->sequenceState1[sequenceId] = 0;
+		sequenceState1[sequenceId] = 0;
 }
 
 template <typename F>
@@ -146,7 +146,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 			destAnim->m_fSeqWeight = currentAnim->m_fSeqWeight;
 	}
 
-	SetCurrentSequence(animData, destAnim, true);
+	animData->SetCurrentSequence(destAnim, true);
 
 	const auto blendTime = destAnim->GetEaseInTime();
 	

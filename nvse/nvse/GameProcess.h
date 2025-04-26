@@ -181,6 +181,8 @@ struct AnimData
 		}
 		return nullptr;
 	}
+
+	void SetCurrentSequence(BSAnimGroupSequence* destAnim, bool resetSequenceState);
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);
 enum WeaponModFlags: UInt32;

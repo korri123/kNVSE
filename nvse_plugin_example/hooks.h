@@ -29,6 +29,7 @@ struct PluginINISettings
     bool blendSmoothing = true;
     bool fixSpiderHands = true;
     bool poseInterpolators = false;
+    bool fixAnimPriorities = true;
     float blendSmoothingRate = 0.075f;
 
     bool fixDeactivateControllerManagers = true;

@@ -121,7 +121,6 @@ kBlendInterpItem* kBlendInterpolatorExtraData::GetItem(NiInterpolator* interpola
     {
         if (item.interpolator == interpolator)
             return &item;
-        
     }
     return nullptr;
 }
@@ -146,65 +145,29 @@ NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObjec
     return poseInterp;
 }
 
-void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target)
+void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, kBlendInterpolatorExtraData* extraData)
 {
-    const auto deltaTime = g_timeGlobal->secondsPassed;
-    const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
-    const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
-    
-    constexpr float MIN_WEIGHT = 0.001f;
-    constexpr float MAX_WEIGHT = 1.0f - MIN_WEIGHT;
-    
-    float totalWeight = 0.0f;
-    auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
     if (!extraData)
         return;
-
     auto blendInterpItems = blendInterp->GetItems();
-    
+
+    thread_local std::vector<NiBlendInterpolator::InterpArrayItem*> items;
+    items.clear();
+    items.reserve(blendInterpItems.size());
+
     for (auto& item : blendInterpItems)
     {
-        if (!item.m_spInterpolator)
-            continue;
+        items.push_back(&item);
+    }
+    ApplyForItems(extraData, items);
+
+    for (auto& item : blendInterpItems)
+    {
         auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
         if (!extraItemPtr || extraItemPtr->isAdditive)
             continue;
         auto& extraItem = *extraItemPtr;
-        DebugAssert(extraItem.state != kInterpState::NotSet);
-        if (extraItem.debugState == kInterpDebugState::NotSet)
-            continue;
-        if (extraItem.lastSmoothedWeight == -NI_INFINITY)
-        {
-            extraItem.lastSmoothedWeight = item.m_fNormalizedWeight;
-            totalWeight += item.m_fNormalizedWeight;
-            continue;
-        }
-        
-        auto targetWeight = item.m_fNormalizedWeight;
-        extraItem.lastCalculatedNormalizedWeight = extraItem.calculatedNormalizedWeight;
-        extraItem.calculatedNormalizedWeight = targetWeight;
-        if (extraItem.detached)
-            targetWeight = 0.0f;
-        const auto smoothedWeight = std::lerp(extraItem.lastSmoothedWeight, targetWeight, smoothingRate);
-
-        if (smoothedWeight < MIN_WEIGHT && extraItem.lastSmoothedWeight != 0.0f)
-        {
-            extraItem.lastSmoothedWeight = 0.0f;
-            item.m_fNormalizedWeight = 0.0f;
-#if _DEBUG
-            const static NiFixedString sBip01LUpperArm = NiFixedString("Bip01 L UpperArm");
-            if (target->m_pcName == sBip01LUpperArm)
-            {
-                Console_Print("UpperArm 0.0");
-            }
-#endif
-        }
-        else 
-        {
-            extraItem.lastSmoothedWeight = smoothedWeight;
-            item.m_fNormalizedWeight = smoothedWeight;
-        }
-        if (smoothedWeight < MIN_WEIGHT && extraItem.state == kInterpState::Deactivating)
+        if (extraItem.lastSmoothedWeight == 0.0f && extraItem.state == kInterpState::Deactivating)
         {
             if (extraItem.detached)
             {
@@ -223,59 +186,62 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, NiObjectNET* target
                     }
                 }
             }
+        }
+    }
+}
+
+void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
+    std::span<NiBlendInterpolator::InterpArrayItem*> items)
+{
+    const auto deltaTime = g_timeGlobal->secondsPassed;
+    const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
+    const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
+    
+    constexpr float MIN_WEIGHT = 0.001f;
+    constexpr float MAX_WEIGHT = 1.0f - MIN_WEIGHT;
+
+    for (auto* itemPtr : items)
+    {
+        auto& item = *itemPtr;
+        if (!item.m_spInterpolator)
             continue;
+        auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
+        if (!extraItemPtr || extraItemPtr->isAdditive)
+            continue;
+        auto& extraItem = *extraItemPtr;
+        DebugAssert(extraItem.state != kInterpState::NotSet);
+        if (extraItem.debugState == kInterpDebugState::NotSet)
+            continue;
+        if (extraItem.lastSmoothedWeight == -NI_INFINITY)
+        {
+            extraItem.lastSmoothedWeight = item.m_fNormalizedWeight;
+            continue;
+        }
+        
+        auto targetWeight = item.m_fNormalizedWeight;
+        extraItem.lastCalculatedNormalizedWeight = extraItem.calculatedNormalizedWeight;
+        extraItem.calculatedNormalizedWeight = targetWeight;
+        if (extraItem.detached)
+            targetWeight = 0.0f;
+        const auto smoothedWeight = std::lerp(extraItem.lastSmoothedWeight, targetWeight, smoothingRate);
+
+        if (smoothedWeight < MIN_WEIGHT && extraItem.lastSmoothedWeight != 0.0f)
+        {
+            extraItem.lastSmoothedWeight = 0.0f;
+            item.m_fNormalizedWeight = 0.0f;
+        }
+        else 
+        {
+            extraItem.lastSmoothedWeight = smoothedWeight;
+            item.m_fNormalizedWeight = smoothedWeight;
         }
         
         if (smoothedWeight > MAX_WEIGHT && extraItem.lastSmoothedWeight != 1.0f)
         {
-#if _DEBUG
-            const static NiFixedString sBip01LUpperArm = NiFixedString("Bip01 L UpperArm");
-            if (target->m_pcName == sBip01LUpperArm)
-            {
-                Console_Print("UpperArm 1.0");
-            }
-#endif
             extraItem.lastSmoothedWeight = 1.0f;
             item.m_fNormalizedWeight = 1.0f;
         }
-        totalWeight += item.m_fNormalizedWeight;
     }
-
-#define NORMALIZE_WEIGHTS 0
-#if NORMALIZE_WEIGHTS
-    float newTotalWeight = 0.0f;
-	
-    if (totalWeight > 0.0f)
-    {
-        // renormalize weights
-        const auto invTotalWeight = 1.0f / totalWeight;
-        for (auto& item : blendInterpItems)
-        {
-            if (!item.m_spInterpolator || AdditiveManager::IsAdditiveInterpolator(target, item.m_spInterpolator))
-                continue;
-            item.m_fNormalizedWeight *= invTotalWeight;
-            newTotalWeight += item.m_fNormalizedWeight;
-        }
-    }
-
-#if 0
-    for (auto& item : blendInterpItems)
-    {
-        if (!item.m_spInterpolator)
-            continue;
-        auto& extraItem = extraData->GetItem(item.m_spInterpolator);
-        if (extraItem.lastNormalizedWeight == -NI_INFINITY)
-        {
-            extraItem.lastNormalizedWeight = item.m_fNormalizedWeight;
-            continue;
-        }
-        DebugAssert(std::abs(extraItem.lastNormalizedWeight - item.m_fNormalizedWeight) < 0.5f);
-        extraItem.lastNormalizedWeight = item.m_fNormalizedWeight;
-    }
-#endif
-    
-    DebugAssert(newTotalWeight == 0.0f || std::abs(newTotalWeight - 1.0f) < 0.001f);
-#endif
 }
 
 void BlendSmoothing::WriteHooks()

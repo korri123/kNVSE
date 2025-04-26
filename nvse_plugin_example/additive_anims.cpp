@@ -361,7 +361,7 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
 #endif
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeightsFor2Additive(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const
+void NiBlendInterpolator::ComputeNormalizedWeightsFor2(InterpArrayItem* pkItem1, InterpArrayItem* pkItem2) const
 {
     // Calculate the real weight of each item.
     float fRealWeight1 = pkItem1->m_fWeight * pkItem1->m_fEaseSpinner;
@@ -465,14 +465,13 @@ void NiBlendInterpolator::ComputeNormalizedWeightsFor2Additive(InterpArrayItem* 
     }
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(NiObjectNET* target)
+void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(kBlendInterpolatorExtraData* kExtraData)
 {
     if (!GetComputeNormalizedWeights())
     {
         return;
     }
 
-    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(target);
     DebugAssert(kExtraData);
 
     if (!kExtraData) 
@@ -521,7 +520,7 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(NiObjectNET* target)
 
     if (kItems.size() == 2)
     {
-        ComputeNormalizedWeightsFor2Additive(kItems[0], kItems[1]);
+        ComputeNormalizedWeightsFor2(kItems[0], kItems[1]);
         return;
     }
     
@@ -668,9 +667,8 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority) const
     }
 }
 
-void NiBlendInterpolator::CalculatePrioritiesAdditive(NiObjectNET* target)
+void NiBlendInterpolator::CalculatePrioritiesAdditive(kBlendInterpolatorExtraData* kExtraData)
 {
-    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(target);
     DebugAssert(kExtraData);
     if (!kExtraData)
     {
