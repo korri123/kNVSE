@@ -1677,14 +1677,11 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 		builder.Add("offset", anim->m_fOffset);
 		builder.Add("startTime", anim->m_fStartTime);
 		builder.Add("endTime", anim->m_fEndTime);
-		if (animData)
+		builder.Add("calculatedTime", GetAnimTime(animData, anim));
+		if (anim->animGroup)
 		{
-			builder.Add("calculatedTime", GetAnimTime(animData, anim));
-			if (anim->animGroup)
-			{
-				builder.Add("multiplier", GetAnimMult(animData, anim->animGroup->groupID));
+			builder.Add("multiplier", GetAnimMult(animData, anim->animGroup->groupID));
 
-			}
 		}
 	}
 	builder.Add("accumRootName", anim->m_kAccumRootName.CStr());
@@ -1754,10 +1751,10 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const char* p
 	return nullptr;
 }
 
-BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path)
+BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path, POVSwitchState pov = POVSwitchState::NotSet)
 {
 	AnimData* animData = nullptr;
-	if (actor == g_thePlayer && g_thePlayer->IsFirstPerson())
+	if ((actor == g_thePlayer && g_thePlayer->IsFirstPerson() && pov == POVSwitchState::NotSet) || (pov == POVSwitchState::POV1st && actor == g_thePlayer))
 		animData = g_thePlayer->firstPersonAnimData;
 	else if (actor->baseProcess)
 		animData = actor->baseProcess->GetAnimData();
@@ -1772,12 +1769,12 @@ BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path)
 	return anim;
 }
 
-BSAnimGroupSequence* FindActiveAnimationForRef(TESObjectREFR* thisObj, const char* path)
+BSAnimGroupSequence* FindActiveAnimationForRef(TESObjectREFR* thisObj, const char* path, POVSwitchState povState = POVSwitchState::NotSet)
 {
 	if (!thisObj)
 		return GetAnimationByPath(path);
 	if (thisObj->IsActor())
-		return FindActiveAnimationForActor(static_cast<Actor*>(thisObj), path);
+		return FindActiveAnimationForActor(static_cast<Actor*>(thisObj), path, povState);
 	auto* ninode = thisObj->GetNiNode();
 	if (!ninode)
 		return nullptr;
@@ -2008,8 +2005,10 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!ExtractArgs(EXTRACT_ARGS, &path))
 			return true;
 		SetLowercase(path);
-		BSAnimGroupSequence* anim = FindOrLoadAnim(thisObj, path);
+		BSAnimGroupSequence* anim = FindActiveAnimationForRef(thisObj, path);
 
+		if (!anim)
+			anim = GetAnimationByPath(path);
 		if (!anim)
 			return true;
 		const auto* animData = GetAnimDataForAnim(thisObj, anim);
@@ -2080,17 +2079,25 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
-	builder.Create("SetAnimTextKeys", kRetnType_Default, { ParamInfo{"anim path", kNVSEParamType_String, false}, ParamInfo{"text key times", kNVSEParamType_Array, false}, ParamInfo{"text key values", kNVSEParamType_Array, false} }, false, [](COMMAND_ARGS)
+	builder.Create("SetAnimTextKeys", kRetnType_Default, { 
+		ParamInfo{"anim path", kNVSEParamType_String, false}, 
+		ParamInfo{"text key times", kNVSEParamType_Array, false}, 
+		ParamInfo{"text key values", kNVSEParamType_Array, false},
+		ParamInfo{"point of view", kNVSEParamType_Number, true}
+	}, false, [](COMMAND_ARGS)
 	{
 		*result = 0;
 		PluginExpressionEvaluator eval(PASS_COMMAND_ARGS);
-		if (!eval.ExtractArgs() || eval.NumArgs() != 3)
+		if (!eval.ExtractArgs() || eval.NumArgs() < 3)
 			return true;
 		auto* path = eval.GetNthArg(0)->GetString();
 		auto* textKeyTimesArray = eval.GetNthArg(1)->GetArrayVar();
 		auto* textKeyValuesArray = eval.GetNthArg(2)->GetArrayVar();
 		if (!path || !textKeyTimesArray || !textKeyValuesArray)
 			return true;
+		POVSwitchState povState = POVSwitchState::NotSet;
+		if (auto* firstPersonArg = eval.GetNthArg(3))
+			povState = static_cast<POVSwitchState>(firstPersonArg->GetInt());
 		const auto lowerPath = ToLower(path);
 		auto* anim = FindActiveAnimationForRef(thisObj, lowerPath.c_str());
 				
@@ -3138,6 +3145,75 @@ void CreateCommands(NVSECommandBuilder& builder)
 		return true;
 	});
 
+#define PARAM(name, type) ParamInfo{name, kParamType_##type, false}
+#define OPT_PARAM(name, type) ParamInfo{name, kParamType_##type, true}
+
+	builder.Create("PlayAnimSequenceEx", kRetnType_Default, {
+		PARAM("sequence name", String),
+		OPT_PARAM("node name", String),
+		OPT_PARAM("priority", Integer),
+		OPT_PARAM("ease in time", Float)
+	}, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> sequenceName;
+		sv::stack_string<0x400> nodeName;
+		int priority = 0;
+		float easeInTime = 0.0f;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequenceName, &nodeName, &priority, &easeInTime) || !thisObj)
+			return true;
+		auto* sceneRoot = thisObj->GetNiNode();
+		if (!sceneRoot)
+			return true;
+		auto* node = nodeName.empty() ? sceneRoot :
+			BSUtilities::GetObjectByName(sceneRoot, nodeName.c_str());
+		if (!node)
+			return true;
+		auto* controller = static_cast<NiControllerManager*>(node->GetController(NiControllerManager::ms_RTTI));
+		if (!controller)
+			return true;
+		auto* sequence = controller->GetSequenceByName(sequenceName.c_str());
+		if (!sequence)
+			return true;
+		*result = controller->ActivateSequence(sequence, priority, true, sequence->m_fSeqWeight, easeInTime, nullptr);
+		return true;
+	});
+
+	builder.Create("SetAnimSequenceFrequencyAlt", kRetnType_Default, {
+		PARAM("sequence name", String),
+		PARAM("frequency", Float),
+		OPT_PARAM("node name", String),
+	}, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> sequenceName;
+		sv::stack_string<0x400> nodeName;
+		float frequency = 1.0f;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequenceName, &frequency, &nodeName) || !thisObj)
+			return true;
+		auto* sceneRoot = thisObj->GetNiNode();
+		if (!sceneRoot)
+			return true;
+		auto* node = nodeName.empty() ? sceneRoot :
+			BSUtilities::GetObjectByName(sceneRoot, nodeName.c_str());
+		if (!node)
+			return true;
+		auto* controller = static_cast<NiControllerManager*>(node->GetController(NiControllerManager::ms_RTTI));
+		if (!controller)
+			return true;
+		auto* sequence = controller->GetSequenceByName(sequenceName.c_str());
+		if (!sequence)
+			return true;
+		sequence->m_fFrequency = frequency;
+		*result = 1.0;
+		return true;
+	});
+
+#undef PARAM
+#undef OPT_PARAM
+
+#if _DEBUG
+
 	builder.Create("kNVSEToggleSetting", kRetnType_Default, { ParamInfo{"sFeatureName", kParamType_String, false} }, false, [](COMMAND_ARGS)
 	{
 		sv::stack_string<0x400> featureName;
@@ -3154,8 +3230,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		
 		return true;
 	});
-
-#if _DEBUG
 	
 	static std::initializer_list<ParamInfo> kParams_ThisCall = {
 		{ "address", kNVSEParamType_Number, 0 },

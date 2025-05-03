@@ -761,6 +761,15 @@ public:
 	virtual void	Unk_1EC();
 	virtual void	Unk_1ED();	// Leads to Last Target
 
+	enum ProcessLevel {
+		INVALID = -1,
+		HIGH = 0,
+		MIDDLE_HIGH = 1,
+		MIDDLE_LOW = 2,
+		LOW = 3,
+		COUNT = 4
+	};
+
 	// data
 
 	Data004		data004;		// current package ?

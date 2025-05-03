@@ -2,6 +2,19 @@
 #include "GameProcess.h"
 #include "NiNodes.h"
 
+inline const char* sAdditiveSequenceMetadata = "AdditiveSequenceMetadata";
+
+struct AdditiveSequenceMetadata
+{
+    const char* type = sAdditiveSequenceMetadata;
+    NiFixedString referencePoseSequenceName;
+    float referenceTimePoint;
+    bool ignorePriorities;
+    NiControllerManager* controllerManager;
+    bool firstPerson;
+    bool operator==(const AdditiveSequenceMetadata& other) const = default;
+};
+
 namespace AdditiveManager
 {
     bool IsAdditiveSequence(NiControllerSequence* sequence);

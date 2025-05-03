@@ -4,20 +4,8 @@
 #include "blend_smoothing.h"
 #include "hooks.h"
 #include "SafeWrite.h"
+#include "sequence_extradata.h"
 #include "utility.h"
-
-const char* sAdditiveSequenceMetadata = "AdditiveSequenceMetadata";
-
-struct AdditiveSequenceMetadata
-{
-    const char* type = sAdditiveSequenceMetadata;
-    NiFixedString referencePoseSequenceName;
-    float referenceTimePoint;
-    bool ignorePriorities;
-    NiControllerManager* controllerManager;
-    bool firstPerson;
-    bool operator==(const AdditiveSequenceMetadata& other) const = default;
-};
 
 namespace
 {
@@ -81,15 +69,6 @@ namespace
     }
 }
 
-namespace
-{
-    const NiFixedString& sAdditiveMetadata()
-    {
-        const static NiFixedString sAdditiveMetadata = "__AdditiveMetadata__";
-        return sAdditiveMetadata;
-    }
-}
-
 void AdditiveManager::MarkInterpolatorsAsAdditive(const NiControllerSequence* additiveSequence)
 {
     for (const auto& block : additiveSequence->GetControlledBlocks())
@@ -110,26 +89,17 @@ void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSeque
         .firstPerson = animData == g_thePlayer->firstPersonAnimData
     };
 
-    if (!additiveSequence->m_spTextKeys)
-        additiveSequence->m_spTextKeys = NiTextKeyExtraData::CreateObject();
-    
-    bool isNew;
-    if (auto* textKey = additiveSequence->m_spTextKeys->GetOrAddKey(sAdditiveMetadata(), 0.0f, &isNew))
+    auto* sequenceExtraData = SequenceExtraDatas::Get(additiveSequence);
+
+    if (sequenceExtraData->additiveMetadata)
     {
-        if (!isNew && textKey->m_fTime != 0.0f)
-        {
-            auto* existingMetadata = *reinterpret_cast<AdditiveSequenceMetadata**>(&textKey->m_fTime);
-            DebugAssert(existingMetadata->type == sAdditiveSequenceMetadata);
-            if (metadata == *existingMetadata)
-                return;
-            
-            *existingMetadata = metadata;
-        }
-        else 
-        {
-            auto* newMetadata = new AdditiveSequenceMetadata(metadata);
-            textKey->m_fTime = reinterpret_cast<float&>(newMetadata);
-        }
+        if (metadata == *sequenceExtraData->additiveMetadata)
+            return;
+        *sequenceExtraData->additiveMetadata = metadata;
+    }
+    else
+    {
+        sequenceExtraData->additiveMetadata = std::make_unique<AdditiveSequenceMetadata>(metadata);
     }
     AddReferencePoseTransforms(animData, additiveSequence, referencePoseSequence, timePoint, ignorePriorities);
     MarkInterpolatorsAsAdditive(additiveSequence);
@@ -169,21 +139,12 @@ bool AdditiveManager::IsAdditiveSequence(NiControllerSequence* sequence)
 {
     if (!sequence->m_spTextKeys)
         return false;
-    auto textKey = sequence->m_spTextKeys->FindFirstByName(sAdditiveMetadata());
-    return textKey != nullptr && textKey->m_fTime != 0.0f;
+    auto* sequenceExtraData = SequenceExtraDatas::Get(sequence);
+    return sequenceExtraData->additiveMetadata != nullptr;
 }
 
 void AdditiveManager::EraseAdditiveSequence(NiControllerSequence* sequence)
 {
-    if (sequence->m_spTextKeys && sequence->m_spTextKeys->m_uiRefCount == 1)
-    {
-        if (auto textKey = sequence->m_spTextKeys->FindFirstByName(sAdditiveMetadata()); textKey->m_fTime != 0.0f)
-        {
-            auto* metadata = *reinterpret_cast<AdditiveSequenceMetadata**>(&textKey->m_fTime);
-            DebugAssert(metadata->type == sAdditiveSequenceMetadata);
-            delete metadata;
-        }
-    }
     for (auto& item : sequence->GetControlledBlocks())
     {
         if (item.m_pkBlendInterp)

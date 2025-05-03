@@ -583,6 +583,9 @@ struct NiTArray
 	
 };
 
+template <typename T>
+using NiTPrimitiveArray = NiTArray<T>;
+
 
 #if RUNTIME
 

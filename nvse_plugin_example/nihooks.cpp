@@ -14,6 +14,7 @@
 
 #include "additive_anims.h"
 #include "blend_smoothing.h"
+#include "sequence_extradata.h"
 
 #define BETHESDA_MODIFICATIONS 1
 #define NI_OVERRIDE 1
@@ -1272,18 +1273,15 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
-    const static NiFixedString sTargetsCleared = "__TargetsCleared__";
+    auto* sequenceExtraData = SequenceExtraDatas::Get(this);
 
-    if (m_spTextKeys)
+    if (sequenceExtraData->needsStoreTargets)
     {
-        if (auto* textKey = m_spTextKeys->FindFirstByName(sTargetsCleared); textKey && textKey->m_fTime == 1.0f)
-        {
-            auto* target = NI_DYNAMIC_CAST(NiAVObject, this->m_pkOwner->m_pkTarget);
-            DebugAssert(target);
-            if (target)
-                StoreTargets(target);
-            textKey->m_fTime = 0.0f;
-        }
+        auto* target = NI_DYNAMIC_CAST(NiAVObject, this->m_pkOwner->m_pkTarget);
+        DebugAssert(target);
+        if (target)
+            StoreTargets(target);
+        sequenceExtraData->needsStoreTargets = false;
     }
     
     if (AdditiveManager::IsAdditiveSequence(this))
@@ -2188,6 +2186,7 @@ namespace NiHooks
     {
 #if _DEBUG
         WriteRelCall(0x4F0087, &NiMultiTargetTransformController::_Update);
+        WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
 #endif
     }
 }

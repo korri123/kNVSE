@@ -49,6 +49,18 @@ void NiFixedString::Set(const char* newString)
     data = NiGlobalStringTable::AddString(newString);
 }
 
+NiTimeController* NiObjectNET::GetController(const NiRTTI* arRTTI) const
+{
+    auto* curr = m_controller;
+    while (curr)
+    {
+        if (curr->GetType() == arRTTI)
+            return curr;
+        curr = curr->m_spNext;
+    }
+    return nullptr;
+}
+
 float CounterWarp(float t, float fCos) 
 {
     const float ATTENUATION = 0.82279687f;

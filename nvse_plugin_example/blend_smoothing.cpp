@@ -169,7 +169,7 @@ void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, kBlendInterpolatorE
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     std::span<NiBlendInterpolator::InterpArrayItem*> items, kWeightType type)
 {
-    if (!g_pluginSettings.blendSmoothing)
+    if (!g_pluginSettings.blendSmoothing || !extraData)
         return;
     const auto deltaTime = g_timeGlobal->secondsPassed;
     const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
@@ -228,6 +228,8 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
 
 void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp)
 {
+    if (!extraData || !g_pluginSettings.blendSmoothing)
+        return;
     auto blendInterpItems = blendInterp->GetItems();
     for (auto& item : blendInterpItems)
     {

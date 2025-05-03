@@ -1291,6 +1291,13 @@ public:
 	}
 };
 
+namespace BSUtilities
+{
+	inline NiAVObject* GetObjectByName(const NiAVObject* apScene, const char* apName)
+	{
+		return CdeclCall<NiAVObject*>(0x4AAE30, apScene, apName);
+	}
+}
 
 
 

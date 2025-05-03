@@ -157,7 +157,7 @@ namespace sv
 
         bool empty() const
         {
-            return size_ == 0;
+            return data_[0] == '\0';
         }
 
         size_t size() const

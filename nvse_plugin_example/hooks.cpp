@@ -19,6 +19,7 @@
 #include "blend_smoothing.h"
 #include "knvse_events.h"
 #include "movement_blend_fixes.h"
+#include "sequence_extradata.h"
 
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
@@ -777,6 +778,7 @@ void ApplyHooks()
 	{
 		if (AdditiveManager::IsAdditiveSequence(anim))
 			AdditiveManager::EraseAdditiveSequence(anim);
+		SequenceExtraDatas::Delete(anim);
 		// EraseTimeTrackedAnim(anim); we do store a smart pointer to the anim in g_timeTrackedAnims
 		// hooked call
 		ThisStdCall(0xA35640, anim);
@@ -1152,10 +1154,8 @@ void ApplyHooks()
 						if (block.m_spInterpCtlr && block.m_spInterpCtlr->GetType() == NiMultiTargetTransformController::ms_RTTI)
 							block.m_pkBlendInterp = nullptr;
 					}
-					if (!sequence->m_spTextKeys)
-						sequence->m_spTextKeys = NiTextKeyExtraData::CreateObject();
-					const static NiFixedString sTargetsCleared = "__TargetsCleared__";
-					sequence->m_spTextKeys->SetOrAddKey(sTargetsCleared, 1.0f);
+					auto* sequenceExtraData = SequenceExtraDatas::Get(sequence);
+					sequenceExtraData->needsStoreTargets = true;
 				}
 				return nullptr;
 			}

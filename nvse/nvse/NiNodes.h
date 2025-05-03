@@ -664,6 +664,8 @@ public:
 	{
 		return ThisStdCall<NiExtraData*>(0xA5BDD0, this, &arKey);
 	}
+
+	NiTimeController* GetController(const NiRTTI* arRTTI) const;
 };
 STATIC_ASSERT(sizeof(NiObjectNET) == 0x18);
 
@@ -2922,6 +2924,11 @@ public:
 	void DeactivateAll(float fEaseOutTime = 0.0f)
 	{
 		ThisStdCall(0x48FEF0, this, fEaseOutTime);
+	}
+
+	NiControllerSequence* GetSequenceByName(NiFixedString name) const
+	{
+		return ThisStdCall<NiControllerSequence*>(0x47A520, this, &name);
 	}
 
 	template <typename T>

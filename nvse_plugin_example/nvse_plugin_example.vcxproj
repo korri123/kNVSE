@@ -424,6 +424,7 @@
     <ClCompile Include="movement_blend_fixes.cpp" />
     <ClCompile Include="nihooks.cpp" />
     <ClCompile Include="blend_fixes.cpp" />
+    <ClCompile Include="sequence_extradata.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -477,6 +478,7 @@
     <ClInclude Include="movement_blend_fixes.h" />
     <ClInclude Include="nihooks.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="sequence_extradata.h" />
     <ClInclude Include="SimpleINILibrary.h" />
     <ClInclude Include="blend_fixes.h" />
     <ClInclude Include="stack_allocator.h" />
