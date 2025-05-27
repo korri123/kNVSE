@@ -2396,6 +2396,21 @@ public:
 	{
 		return std::span(m_ppkTargets, m_usNumInterps);
 	}
+
+	std::span<NiBlendTransformInterpolator> GetBlendInterps() const
+	{
+		return std::span(m_pkBlendInterps, m_usNumInterps);
+	}
+
+	bool ContainsBlendInterp(NiBlendTransformInterpolator* interpolator) const
+	{
+		for (auto& item : GetBlendInterps())
+		{
+			if (&item == interpolator)
+				return true;
+		}
+		return false;
+	}
 };
 
 const auto s = sizeof(BSAnimGroupSequence);

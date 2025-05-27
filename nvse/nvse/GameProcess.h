@@ -174,7 +174,7 @@ struct AnimData
 	{
 		for (auto* controller = nSceneRoot->m_controller; controller; controller = controller->m_spNext)
 		{
-			if (IS_TYPE(controller, NiMultiTargetTransformController))
+			if (NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
 			{
 				return static_cast<NiMultiTargetTransformController*>(controller);
 			}
