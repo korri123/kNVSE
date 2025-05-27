@@ -306,7 +306,7 @@ std::string_view GetTextAfterColon(std::string_view in)
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptLineExecutions;
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptCallExecutions;
 std::unordered_map<BSAnimGroupSequence*, TimedExecution<BSSoundHandle>> g_scriptSoundExecutions;
-std::mutex g_animTimeMutex;
+std::recursive_mutex g_animTimeMutex;
 
 AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, bool createIfNoKeys)
 {

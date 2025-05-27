@@ -615,7 +615,7 @@ std::string_view GetBaseAnimGroupName(std::string_view name);
 
 AnimGroupID GroupNameToId(std::string_view name);
 
-extern std::mutex g_animTimeMutex;
+extern std::recursive_mutex g_animTimeMutex;
 
 extern "C" { 
 	__declspec(dllexport) void PluginOverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition);
