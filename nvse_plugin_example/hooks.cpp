@@ -112,7 +112,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	
 	if (g_pluginSettings.blendSmoothing && destAnim && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
-	else if (destAnim && destAnim->animGroup && destAnim->animGroup->GetBaseGroupID() == kAnimGroup_PipBoy)
+	else if (destAnim && destAnim->animGroup && destAnim->animGroup->GetBaseGroupID() == kAnimGroup_PipBoy && g_pluginSettings.blendSmoothing)
 	{
 		const auto easeInTime = destAnim->GetEaseInTime();
 		destAnim->Activate(0, true, destAnim->m_fSeqWeight, easeInTime, nullptr, false);
