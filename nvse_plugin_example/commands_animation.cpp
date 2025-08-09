@@ -1088,19 +1088,6 @@ bool OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson)
 	return SetOverrideAnimation(data, map);
 }
 
-void PluginOverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition)
-{
-	AnimOverrideData animOverrideData = {
-		.path = AddStringToPool(path),
-		.identifier = form->refID,
-		.enable = enable,
-		.conditionScript = conditionScript,
-		.pollCondition = pollCondition,
-		.matchBaseGroupId = false
-	};
-	OverrideFormAnimation(animOverrideData, firstPerson);
-}
-
 bool ClearFormAnimations(TESForm* form)
 {
 	std::unique_lock lock(g_overrideMapMutex);
@@ -1340,6 +1327,28 @@ bool OverrideAnimsFromScript(char* path, const F& overrideAnim)
 		numAnims += overrideAnim(animPath);
 	}
 	return numAnims != 0;
+}
+
+void PluginOverrideFormAnimation(const TESForm* form, char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition)
+{
+	AnimOverrideData baseData{};
+	baseData.identifier = form->refID;
+	baseData.enable = enable;
+	if (conditionScript) {
+		baseData.conditionScriptText = conditionScript->text;
+		baseData.conditionScript = conditionScript;
+	}
+	baseData.pollCondition = pollCondition;
+	baseData.matchBaseGroupId = false;
+
+	auto extractFilePaths = [baseData, firstPerson](const char* animPath) -> bool {
+		AnimOverrideData data = baseData;				// copy to avoid shared mutation
+		data.path = AddStringToPool(ToLower(animPath));
+		return OverrideFormAnimation(data, firstPerson);
+		};
+
+	OverrideAnimsFromScript(path, extractFilePaths);
+
 }
 
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
@@ -1912,36 +1921,48 @@ NiControllerSequence::InterpArrayItem* FindAnimInterp(TESObjectREFR* thisObj, co
 
 bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm)
 {
+
 	bool applied = false;
-	for (auto* map : {&g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap})
+	std::unique_lock lock(g_overrideMapMutex);
+
+	for (auto* overrideMap : { &g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap })
 	{
-		if (const auto iter = map->find(fromForm->refID); iter != map->end())
+		const auto srcIt = overrideMap->find(fromForm->refID);
+		if (srcIt == overrideMap->end())
+			continue;
+
+		const auto& srcGroup = srcIt->second;
+		auto& destGroup = (*overrideMap)[toForm->refID];
+
+		for (const auto& [groupId, srcStacks] : srcGroup.stacks)
 		{
-			AnimOverrideData animOverrideData = {
-				.identifier = toForm->refID,
-				.enable = true,
-			};
-			auto& entry = iter->second;
-			for (auto& stacks : entry.stacks | std::views::values)
+			auto& destStacks = destGroup.stacks[groupId];
+
+			// Append each SavedAnims block in order
+			for (const auto& srcSavedPtr : srcStacks.anims)
 			{
-				auto& stack = stacks.anims;
-				for (auto& anims : stack)
-				{
-					for (const auto& anim : anims->anims)
-					{
-						animOverrideData.path = anim->path;
-						animOverrideData.conditionScript = *anims->conditionScript;
-						animOverrideData.conditionScriptText = anims->conditionScriptText;
-						animOverrideData.pollCondition = anims->pollCondition;
-						animOverrideData.matchBaseGroupId = anims->matchBaseGroupId;
-						SetOverrideAnimation(animOverrideData, *map);
-					}
-				}
+				const auto& srcSaved = *srcSavedPtr;
+
+				auto newSaved = std::make_unique<SavedAnims>();
+				newSaved->additiveAnimPath = srcSaved.additiveAnimPath;
+				newSaved->matchBaseGroupId = srcSaved.matchBaseGroupId;
+				newSaved->conditionScript = *srcSaved.conditionScript;
+				newSaved->conditionScriptText = srcSaved.conditionScriptText;
+				newSaved->pollCondition = srcSaved.pollCondition;
+				newSaved->folderConditionType = srcSaved.folderConditionType;
+				newSaved->folderCondition = srcSaved.folderCondition;
+				newSaved->disabled = srcSaved.disabled;
+
+				newSaved->anims.reserve(srcSaved.anims.size());
+				for (const auto& animPath : srcSaved.anims)
+					newSaved->anims.emplace_back(std::make_unique<AnimPath>(*animPath));
+
+				destStacks.anims.emplace_back(std::move(newSaved));
+				applied = true;
 			}
 		}
-		
 	}
-	
+
 	return applied;
 }
 
