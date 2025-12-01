@@ -23,6 +23,8 @@ SequenceExtraData* SequenceExtraDatas::Get(NiControllerSequence* sequence)
 
 void SequenceExtraDatas::Delete(NiControllerSequence* sequence)
 {
+    if (!sequence->m_spTextKeys)
+        return;
     static const NiFixedString sExtraData = "__kNVSEExtraData__";
     auto* textKeyExtraData = sequence->m_spTextKeys->FindFirstByName(sExtraData);
     if (!textKeyExtraData)
@@ -38,3 +40,4 @@ void SequenceExtraDatas::Delete(NiControllerSequence* sequence)
         textKeyExtraData->m_fTime = 0.0f;
     }
 }
+
