@@ -436,22 +436,14 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
 
-#if _DEBUG
-    const static NiFixedString sBip01LUpperArm = "Bip01 L UpperArm";
-    if (pkInterpTarget->m_pcName == sBip01LUpperArm && g_thePlayer && kExtraData && kExtraData->owner == g_thePlayer->baseProcess->animData->controllerManager)
-        int i = 0;
-#endif
-
 #define EXCLUDE_INVALIDS 1
 
 #if EXCLUDE_INVALIDS
-
     struct ValidTranslate
     {
         NiPoint3 translate;
         InterpArrayItem* item;
     };
-    bool invalidTranslates = false;
     thread_local std::vector<ValidTranslate> validTranslates;
     validTranslates.clear();
     
@@ -460,7 +452,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         NiQuaternion rotation;
         InterpArrayItem* item;
     };
-    bool invalidRotations = false;
     thread_local std::vector<ValidRotation> validRotations;
     validRotations.clear();
 
@@ -469,7 +460,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         float scale;
         InterpArrayItem* item;
     };
-    bool invalidScales = false;
     thread_local std::vector<ValidScale> validScales;
     validScales.clear();
 
@@ -483,16 +473,10 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             continue;
         if (kTransform.IsTranslateValid())
             validTranslates.emplace_back(kTransform.GetTranslate(), &item);
-        else
-            invalidTranslates = true;
         if (kTransform.IsRotateValid())
             validRotations.emplace_back(kTransform.GetRotate(), &item);
-        else
-            invalidRotations = true;
         if (kTransform.IsScaleValid())
             validScales.emplace_back(kTransform.GetScale(), &item);
-        else
-            invalidScales = true;
     }
 
     thread_local std::vector<InterpArrayItem*> items;
@@ -565,81 +549,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     BlendSmoothing::DetachZeroWeightItems(kExtraData, this);
 #endif
 
-#if !EXCLUDE_INVALIDS
-    for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
-    {
-        InterpArrayItem& kItem = m_pkInterpArray[uc];
-        kBlendInterpItem* kBlendItem = nullptr;
-        if (kExtraData)
-            kBlendItem = kExtraData->GetItem(kItem.m_spInterpolator);
-        if (kItem.m_spInterpolator && kItem.m_fNormalizedWeight > 0.0f)
-        {
-            float fUpdateTime = fTime;
-            if (!GetUpdateTimeForItem(fUpdateTime, kItem))
-            {
-                continue;
-            }
-
-            NiQuatTransform kTransform;
-            bool bSuccess = kItem.m_spInterpolator->Update(fUpdateTime, 
-                pkInterpTarget, kTransform);
-
-            if (bSuccess)
-            {
-                double dWeight = kItem.m_fNormalizedWeight;
-                
-                if (kTransform.IsTranslateValid())
-                {
-                    kFinalTranslate += kTransform.GetTranslate() *
-                        kItem.m_fNormalizedWeight;
-                    dTotalTransWeight += dWeight;
-                    bTransChanged = true;
-                }
-
-                if (kTransform.IsRotateValid())
-                {
-                    NiQuaternion kRotValue = kTransform.GetRotate();
-
-                    if (!bFirstRotation)
-                    {
-                        float fCos = NiQuaternion::Dot(kFinalRotate,
-                                                       kRotValue);
-
-                        if (fCos < 0.0f)
-                        {
-                            kRotValue = -kRotValue;
-                        }
-                    }
-                    else
-                    {
-                        bFirstRotation = false;
-                    }
-
-                    kRotValue = kRotValue * kItem.m_fNormalizedWeight;
-
-                    dTotalRotWeight += kItem.m_fNormalizedWeight;
-
-                    kFinalRotate.SetValues(
-                        kRotValue.GetW() + kFinalRotate.GetW(),
-                        kRotValue.GetX() + kFinalRotate.GetX(),
-                        kRotValue.GetY() + kFinalRotate.GetY(),
-                        kRotValue.GetZ() + kFinalRotate.GetZ());
-                    
-                    bRotChanged = true;
-                }
-                
-                if (kTransform.IsScaleValid())
-                {
-                    fFinalScale += kTransform.GetScale() *
-                        kItem.m_fNormalizedWeight;
-                    dTotalScaleWeight += dWeight;
-                    bScaleChanged = true;
-                }
-            }
-        }
-    }
-#endif
-
     kValue.MakeInvalid();
     if (bTransChanged || bRotChanged || bScaleChanged)
     {
@@ -698,14 +607,25 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
     NiQuatTransform& kRealValue = kValue;
 #endif
     bool bReturnValue = false;
+    auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
     if (m_ucInterpCount == 1)
     {
         bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kRealValue);
+        // remove last interp
+        if (g_pluginSettings.blendSmoothing && !g_pluginSettings.poseInterpolators)
+        {
+            auto* kExtraItem = kExtraData->GetItem(this->m_pkSingleInterpolator);
+            if (kExtraItem && kExtraItem->detached)
+            {
+                this->RemoveInterpInfo(this->m_ucSingleIdx);
+                kExtraItem->ClearValues();
+                kExtraItem->debugState = kInterpDebugState::RemovedInStoreSingle;
+            }
+        }
     }
     else if (m_ucInterpCount > 0)
     {
         const auto hasAdditiveTransforms = GetHasAdditiveTransforms();
-        auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
         if (hasAdditiveTransforms)
         {
             CalculatePrioritiesAdditive(kExtraData);
@@ -1291,7 +1211,6 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         return;
     }
     m_pkOwner->CleanObjectPalette();
-    // BlendFixes::AttachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
