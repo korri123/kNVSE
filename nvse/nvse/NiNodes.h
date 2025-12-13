@@ -2172,7 +2172,7 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
-	static void ComputeNormalizedWeights(std::vector<InterpArrayItem*> items);
+	static void ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items);
 	void ComputeNormalizedWeightsHighPriorityDominant();
 
 	void ClearWeightSums()

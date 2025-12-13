@@ -84,6 +84,8 @@
     <ClCompile Include="blend_smoothing.cpp" />
     <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
     <ClCompile Include="movement_blend_fixes.cpp" />
+    <ClCompile Include="gamebryo\NiStream.cpp" />
+    <ClCompile Include="sequence_extradata.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">
@@ -186,6 +188,8 @@
     <ClInclude Include="containers.h" />
     <ClInclude Include="lib\memory_pool\MemoryPool.h" />
     <ClInclude Include="movement_blend_fixes.h" />
+    <ClInclude Include="gamebryo\NiStream.h" />
+    <ClInclude Include="sequence_extradata.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

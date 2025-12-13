@@ -145,27 +145,6 @@ NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObjec
     return poseInterp;
 }
 
-void BlendSmoothing::Apply(NiBlendInterpolator* blendInterp, kBlendInterpolatorExtraData* extraData)
-{
-    if (!extraData)
-        return;
-    auto blendInterpItems = blendInterp->GetItems();
-
-    thread_local std::vector<NiBlendInterpolator::InterpArrayItem*> items;
-    items.clear();
-    items.reserve(blendInterpItems.size());
-
-    for (auto& item : blendInterpItems)
-    {
-        items.push_back(&item);
-    }
-    ApplyForItems(extraData, items, kWeightType::Translate);
-    ApplyForItems(extraData, items, kWeightType::Rotate);
-    ApplyForItems(extraData, items, kWeightType::Scale);
-
-    DetachZeroWeightItems(extraData, blendInterp);
-}
-
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     std::span<NiBlendInterpolator::InterpArrayItem*> items, kWeightType type)
 {

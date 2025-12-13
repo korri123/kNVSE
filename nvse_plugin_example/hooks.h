@@ -15,7 +15,7 @@ void ApplyDestFrame(NiControllerSequence* sequence, float destFrame);
 
 struct PluginINISettings
 {
-    bool fixSpineBlendBug = false;
+    bool fixSpineBlendBug = true;
     bool fixAttackISTransition = false;
     bool fixBlendSamePriority = false;
     bool fixLoopingReloadStart = false;
@@ -26,7 +26,7 @@ struct PluginINISettings
     bool fixWrongAnimName = false;
     bool fixMissingPrnKey = false;
     bool fixReloadStartAllowReloadTweak = false;
-    bool blendSmoothing = false;
+    bool blendSmoothing = true;
     bool fixSpiderHands = true;
     bool poseInterpolators = false;
     float blendSmoothingRate = 0.075f;

@@ -482,21 +482,15 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         if (!item.m_spInterpolator->Update(fTime, pkInterpTarget, kTransform))
             continue;
         if (kTransform.IsTranslateValid())
-        {
             validTranslates.emplace_back(kTransform.GetTranslate(), &item);
-        }
         else
             invalidTranslates = true;
         if (kTransform.IsRotateValid())
-        {
             validRotations.emplace_back(kTransform.GetRotate(), &item);
-        }
         else
             invalidRotations = true;
         if (kTransform.IsScaleValid())
-        {
             validScales.emplace_back(kTransform.GetScale(), &item);
-        }
         else
             invalidScales = true;
     }
@@ -947,7 +941,7 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeights(std::vector<InterpArrayItem*> items)
+void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items)
 {
     if (items.size() == 1)
     {
@@ -1316,8 +1310,8 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         DebugAssert(target && target->m_pcName == idTag.m_kAVObjectName);
 
         auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
-        extraData->owner = m_pkOwner;
         DebugAssert(extraData);
+        extraData->owner = m_pkOwner;
         
         auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
         extraInterpItem.sequence = this;
@@ -1326,17 +1320,8 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             DebugAssert(extraInterpItem.blendInterp == pkBlendInterp);
         if (!extraInterpItem.blendInterp)
             extraInterpItem.blendInterp = pkBlendInterp;
-        
-        const auto detached = extraInterpItem.detached;
 
-        const auto prevDebugState = extraInterpItem.debugState;
-        if (!detached)
-        {
-            DebugAssert(extraInterpItem.blendIndex == INVALID_INDEX);
-            kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(kItem.m_spInterpolator, 0.0f, cInterpPriority);
-            extraInterpItem.debugState = kInterpDebugState::AttachedNormally;
-        }
-        else
+        if (extraInterpItem.detached)
         {
             extraInterpItem.detached = false;
             DebugAssert(extraInterpItem.blendIndex < pkBlendInterp->m_ucArraySize
@@ -1348,6 +1333,12 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             DebugAssert(kItem.m_ucBlendIdx < pkBlendInterp->m_ucArraySize);
             pkBlendInterp->SetPriority(cInterpPriority, kItem.m_ucBlendIdx);
             extraInterpItem.debugState = kInterpDebugState::ReattachedWhileSmoothing;
+        }
+        else
+        {
+            DebugAssert(extraInterpItem.blendIndex == INVALID_INDEX);
+            kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(kItem.m_spInterpolator, 0.0f, cInterpPriority);
+            extraInterpItem.debugState = kInterpDebugState::AttachedNormally;
         }
         DebugAssert(pkBlendInterp->m_pkInterpArray[kItem.m_ucBlendIdx].m_spInterpolator == kItem.m_spInterpolator &&
             extraInterpItem.interpolator == kItem.m_spInterpolator &&
