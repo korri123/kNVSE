@@ -601,16 +601,11 @@ bool NiBlendTransformInterpolator::_Update(float fTime, NiObjectNET* pkInterpTar
 
 bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue)
 {
-#if _DEBUG
-    NiQuatTransform kRealValue = kValue;
-#else
-    NiQuatTransform& kRealValue = kValue;
-#endif
     bool bReturnValue = false;
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
     if (m_ucInterpCount == 1)
     {
-        bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kRealValue);
+        bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
         // remove last interp
         if (g_pluginSettings.blendSmoothing && !g_pluginSettings.poseInterpolators)
         {
@@ -636,9 +631,9 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
         //if (g_pluginSettings.blendSmoothing)
         //    BlendSmoothing::Apply(this, kExtraData);
         bReturnValue = g_pluginSettings.fixSpiderHands ?
-            BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kRealValue) : BlendValues(fTime, pkInterpTarget, kRealValue);
+            BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kValue) : BlendValues(fTime, pkInterpTarget, kValue);
         if (hasAdditiveTransforms)
-            ApplyAdditiveTransforms(fTime, pkInterpTarget, kRealValue);
+            ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
     }
     m_fLastTime = fTime;
     return !kValue.IsTransformInvalid() && bReturnValue;
