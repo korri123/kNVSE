@@ -153,7 +153,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	if (srcAnim->m_eState != NiControllerSequence::EASEIN)
 	{
 		srcAnim->Deactivate(blendTime, false);
-		destAnim->ActivateBlended(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
+		destAnim->Activate(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
 		return SKIP;
 	}
 
@@ -165,11 +165,12 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 		return SKIP;
 	}
 
-	destAnim->ActivateBlended(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
+	destAnim->Activate(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
 	return SKIP;
 }
 
-#if 0
+#if 1
+
 void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGroupID targetGroupId)
 {
 	auto* currentSequence = GetAnimByGroupID(animData, currentGroupId);
@@ -178,25 +179,18 @@ void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGrou
 		return;
 	const auto blend = GetIniBlend();
 	const auto currentTime = currentSequence->m_fLastScaledTime;
-#if USE_BLEND_FROM_POSE
-	if (targetSequence->m_eState != NiControllerSequence::INACTIVE)
-		targetSequence->m_pkOwner->DeactivateSequence(targetSequence, 0.0f);
-	targetSequence->m_pkOwner->BlendFromPose(targetSequence, currentTime, blend, 0, nullptr);
-	if (currentSequence->m_eState != NiControllerSequence::INACTIVE)
-		targetSequence->m_pkOwner->DeactivateSequence(currentSequence, 0.0f);
-#else
-	if (attackISSequence->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(attackISSequence->owner, attackISSequence, blend);
-	if (attackSequence->state != kAnimState_Inactive)
-		GameFuncs::DeactivateSequence(attackSequence->owner, attackSequence, 0.0f);
-	ApplyDestFrame(attackSequence, attackISTime / attackSequence->frequency);
-	GameFuncs::ActivateSequence(attackSequence->owner, attackSequence, 0, true, attackSequence->seqWeight, blend, nullptr);
-	FixConflictingPriorities(attackISSequence, attackSequence);
-#endif
-	//GameFuncs::CrossFade(attackISSequence->owner, attackISSequence, attackSequence, blend, 0, false, attackSequence->seqWeight, nullptr);
+	
+	if (currentSequence->m_eState == NiControllerSequence::ANIMATING && targetSequence->m_eState == NiControllerSequence::INACTIVE)
+	{
+		currentSequence->StartBlend(targetSequence, blend, currentTime, 0, currentSequence->m_fSeqWeight, targetSequence->m_fSeqWeight, nullptr);
+	}
+	else
+	{
+		return;
+	}
 
 	HandleExtraOperations(animData, targetSequence);
-	SetCurrentSequence(animData, targetSequence, false);
+	animData->SetCurrentSequence(targetSequence, false);
 
 	const auto sequenceType = targetSequence->animGroup->GetGroupInfo()->sequenceType;
 	if (animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon && sequenceType <= kSequence_WeaponDown)
@@ -217,7 +211,9 @@ float GetKeyTime(BSAnimGroupSequence* anim, SequenceState1 keyTime)
 	return anim->animGroup->keyTimes[keyTime];
 }
 
-#if 0
+#if 1
+
+
 void BlendFixes::ApplyAttackISToAttackFix()
 {
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
@@ -232,7 +228,7 @@ void BlendFixes::ApplyAttackISToAttackFix()
 	if (animData3rd->sequenceState1[kSequence_Weapon] < kSeqState_HitOrDetach)
 		return;
 
-	ThisStdCall(0x8BB650, g_thePlayer, false, false, false); // Actor::AimWeapon
+	// ThisStdCall(0x8BB650, g_thePlayer, false, false, false); // Actor::AimWeapon
 
 	const auto attackGroupId = static_cast<AnimGroupID>(curGroupId - 3);
 	const auto attackISGroupId = static_cast<AnimGroupID>(curGroupId);
@@ -263,7 +259,7 @@ void BlendFixes::ApplyAttackToAttackISFix()
 	if (animData3rd->sequenceState1[kSequence_Weapon] < kSeqState_HitOrDetach)
 		return;
 
-	ThisStdCall(0x8BB650, g_thePlayer, true, false, false); // Actor::AimWeapon
+	// ThisStdCall(0x8BB650, g_thePlayer, true, false, false); // Actor::AimWeapon
 
 	const auto attackGroupId = static_cast<AnimGroupID>(curGroupId);
 	const auto attackISGroupId = static_cast<AnimGroupID>(curGroupId + 3);

@@ -17,7 +17,7 @@
 #include "sequence_extradata.h"
 
 #define BETHESDA_MODIFICATIONS 1
-#define NI_OVERRIDE 1
+#define NI_OVERRIDE 0
 
 void NiOutputDebugString(const char* text)
 {
@@ -640,14 +640,6 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
         if (hasAdditiveTransforms)
             ApplyAdditiveTransforms(fTime, pkInterpTarget, kRealValue);
     }
-
-#if _DEBUG
-    static NiFixedString sString = "Bip01 L UpperArm";
-    if (sString == pkInterpTarget->m_pcName)
-        int i = 0;
-    kValue = kRealValue;
-#endif
-
     m_fLastTime = fTime;
     return !kValue.IsTransformInvalid() && bReturnValue;
 }
@@ -1352,48 +1344,9 @@ bool NiControllerSequence::Activate(char cPriority, bool bStartOver, float fWeig
 #endif
 }
 
-bool NiControllerSequence::ActivateBlended(char cPriority, bool bStartOver, float fWeight, float fEaseInTime,
-    NiControllerSequence* pkTimeSyncSeq, bool bTransition)
+bool NiControllerSequence::Activate(float fEaseInTime, bool bTransition)
 {
-    if (m_eState != INACTIVE)
-        return false;
-
-#if 0
-    bool createTempBlendSequence = false;
-    for (auto& controlledBlock : GetControlledBlocks())
-    {
-        if (!controlledBlock.m_spInterpolator || !controlledBlock.m_pkBlendInterp)
-          continue;
-        if (controlledBlock.m_pkBlendInterp->m_ucInterpCount == 0)
-        {
-            createTempBlendSequence = true;
-            break;
-        }
-    }
-    if (createTempBlendSequence)
-    {
-        auto* tempBlendSequence = m_pkOwner->CreateTempBlendSequence(this, pkTimeSyncSeq);
-        const sv::stack_string<0x400> name("__TempBlendSequence_%s__", sv::get_file_name(m_kName.CStr()).data());
-        tempBlendSequence->m_kName = name.c_str();
-        for (auto& controlledBlock : tempBlendSequence->GetControlledBlocks())
-        {
-            if (!controlledBlock.m_spInterpolator || !controlledBlock.m_pkBlendInterp)
-              continue;
-            auto& idTag = controlledBlock.GetIDTag(tempBlendSequence);
-            if (controlledBlock.m_pkBlendInterp->m_ucInterpCount != 0)
-            {
-                controlledBlock.ClearValues();
-            }
-            else
-            {
-                controlledBlock.m_ucPriority = 0;
-            }
-        }
-        tempBlendSequence->Activate(cPriority, bStartOver, fWeight, 0.0f, pkTimeSyncSeq, bTransition);
-        tempBlendSequence->Deactivate(fEaseInTime, false);
-    }
-#endif
-    return Activate(cPriority, bStartOver, fWeight, fEaseInTime, pkTimeSyncSeq, bTransition);
+    return Activate(0, false, this->m_fSeqWeight, fEaseInTime, nullptr, bTransition);
 }
 
 bool NiControllerSequence::ActivateNoReset(float fEaseInTime)
@@ -2121,14 +2074,6 @@ void __fastcall NiControllerSequence_DetachInterpolatorsHook(NiControllerSequenc
     {
         g_interpsToSequenceMap.erase(interp.m_spInterpolator);
     }
-}
-
-std::unordered_set<NiControllerSequence*> g_appliedDestFrameAnims;
-
-void ApplyDestFrame(NiControllerSequence* sequence, float destFrame)
-{
-    sequence->m_fDestFrame = destFrame;
-    g_appliedDestFrameAnims.insert(sequence);
 }
 
 bool IsTempBlendSequence(const NiControllerSequence* sequence)

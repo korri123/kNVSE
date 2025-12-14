@@ -157,7 +157,7 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 			
 		}
 #endif
-		if (!pkSequence->ActivateBlended(0, true, pkSequence->m_fSeqWeight, fDuration, nullptr, false))
+		if (!pkSequence->Activate(0, true, pkSequence->m_fSeqWeight, fDuration, nullptr, false))
 			return pkSequence;
 	}
 

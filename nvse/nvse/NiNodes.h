@@ -1929,9 +1929,9 @@ public:
 	bool Activate(char cPriority, bool bStartOver, float fWeight,
 	              float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
 	              bool bTransition);
-	bool ActivateBlended(char cPriority, bool bStartOver, float fWeight,
-				  float fEaseInTime, NiControllerSequence* pkTimeSyncSeq,
-				  bool bTransition);
+
+	bool Activate(float fEaseInTime, bool bTransition);
+	
 	bool ActivateNoReset(float fEaseInTime);
 
 	NiControllerManager* GetOwner() const

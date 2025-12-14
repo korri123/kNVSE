@@ -717,8 +717,8 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			HandleBurstFire();
 			HandleAnimTimes();
 			HandleMisc();
-#if 0 // experimental fixes
-			if (g_fixAttackISTransition)
+#if 1 // experimental fixes
+			if (g_pluginSettings.fixAttackISTransition)
 			{
 				BlendFixes::ApplyAttackISToAttackFix();
 				BlendFixes::ApplyAttackToAttackISFix();
