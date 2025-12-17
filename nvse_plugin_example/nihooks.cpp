@@ -433,7 +433,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     bool bScaleChanged = false;
 
     bool bFirstRotation = true;
-
+    auto interpItems = GetItems();
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
 
 #define EXCLUDE_INVALIDS 1
@@ -463,7 +463,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     thread_local std::vector<ValidScale> validScales;
     validScales.clear();
 
-    for (auto& item : GetItems())
+    for (auto& item : interpItems)
     {
         if (!item.m_spInterpolator || !GetUpdateTimeForItem(fTime, item))
             continue;
@@ -1385,7 +1385,42 @@ bool NiControllerSequence::ActivateNoReset(float fEaseInTime)
 bool NiControllerSequence::StartBlend(NiControllerSequence* pkDestSequence, float fDuration, float fDestFrame,
                                       int iPriority, float fSourceWeight, float fDestWeight, NiControllerSequence* pkTimeSyncSeq)
 {
+#if 0
+    // thanks stewie
     return ThisStdCall<bool>(0xA350D0, this, pkDestSequence, fDuration, fDestFrame, iPriority, fSourceWeight, fDestWeight, pkTimeSyncSeq);
+#else
+    // Deactivate source sequence first.
+    Deactivate(0.0f, true);
+
+    if (fDuration <= 0.0f)
+    {
+        fDuration = 0.0001f;
+    }
+
+    // The following "Frame" variables must be divided by frequency
+    // because they are eventually passed into ComputeScaledTime.
+    // Must set them here because they are the only way to figure out if
+    // we are in a blend transition, and the activation callbacks might
+    // need that info.
+    m_fDestFrame = m_fLastScaledTime;
+    m_fDestFrame /= m_fFrequency;
+
+    fDestFrame /= m_fFrequency;
+    pkDestSequence->m_fDestFrame = fDestFrame;
+
+    // Activate source and destination sequences.
+    if (!Activate(iPriority, false, fSourceWeight, 0.0f, NULL, true) ||
+        !pkDestSequence->Activate(iPriority, false, fDestWeight, fDuration,
+        pkTimeSyncSeq, true))
+    {
+        return false;
+    }
+
+    // Ease out source sequence.
+    Deactivate(fDuration, true);
+
+    return true;
+#endif
 }
 
 bool NiControllerSequence::StartMorph(NiControllerSequence* pkDestSequence, float fDuration, int iPriority,

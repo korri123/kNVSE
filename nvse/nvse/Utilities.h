@@ -1,8 +1,6 @@
 #pragma once
 #include <string>
 #include <vector>
-
-
 #include "common/ICriticalSection.h"
 
 class Script;

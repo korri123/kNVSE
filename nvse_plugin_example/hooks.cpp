@@ -1162,6 +1162,22 @@ void ApplyHooks()
 		}
 		return CdeclCall<NiTimeController*>(uiNiRTTIDynamicCastAddr, rtti, controller);
 	}), &uiNiRTTIDynamicCastAddr);
+	
+
+	// prevent i.e. hunting rifle sound playing twice
+	WriteRelJump(0x4EEC60, INLINE_HOOK(float, __fastcall, BSAnimGroupSequence* sequence, void*, float fTime)
+	{
+		if (sequence->m_eState == NiControllerSequence::TRANSDEST)
+		{
+			if (sequence->m_fDestFrame != -NI_INFINITY)
+				return sequence->m_fDestFrame - 0.0001f;
+			return 0.0f;
+		}
+		if (sequence->m_eState <= NiControllerSequence::INACTIVE || sequence->m_eState >= NiControllerSequence::EASEOUT)
+			return 0.0f;
+		return sequence->ComputeScaledTime(fTime + sequence->m_fOffset, true);
+	}));
+
 
 	// HighProcess::SetQueuedIdleFlag
 	// prevent race condition

@@ -1946,7 +1946,7 @@ public:
 
 	float ComputeScaledTime(float fTime, bool bStoreResult)
 	{
-		return ThisStdCall(0xA30970, this, fTime, bStoreResult);
+		return ThisStdCall<float>(0xA30970, this, fTime, bStoreResult);
 	}
 
 	bool StartBlend(NiControllerSequence* pkDestSequence, float fDuration,

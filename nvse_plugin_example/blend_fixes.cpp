@@ -2,17 +2,13 @@
 
 #include "commands_animation.h"
 #include "GameObjects.h"
-#include "GameRTTI.h"
 #include "hooks.h"
 #include "main.h"
 #include "nihooks.h"
 #include <array>
 
-#include "additive_anims.h"
 #include "SafeWrite.h"
 #include "anim_fixes.h"
-#include "blend_smoothing.h"
-#include "NiObjects.h"
 
 
 bool IsAnimGroupAim(AnimGroupID groupId)
@@ -83,7 +79,7 @@ std::vector<BSAnimGroupSequence*> GetActiveAttackSequences(AnimData* animData)
 {
 	return GetActiveSequencesWhere(animData, [&](BSAnimGroupSequence* sequence)
 	{
-		return IsAnimGroupAttack(static_cast<AnimGroupID>(sequence->animGroup->GetBaseGroupID()));
+		return IsAnimGroupAttack(sequence->animGroup->GetBaseGroupID());
 	});
 }
 
@@ -171,22 +167,22 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 
 #if 1
 
-void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGroupID targetGroupId)
+bool TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGroupID targetGroupId)
 {
 	auto* currentSequence = GetAnimByGroupID(animData, currentGroupId);
 	auto* targetSequence = GetAnimByGroupID(animData, targetGroupId);
 	if (!targetSequence || !currentSequence || !currentSequence->animGroup)
-		return;
-	const auto blend = GetIniBlend();
-	const auto currentTime = currentSequence->m_fLastScaledTime;
-	
+		return false;
+	const auto blend = GetDefaultBlendTime(targetSequence, currentSequence);
+
 	if (currentSequence->m_eState == NiControllerSequence::ANIMATING && targetSequence->m_eState == NiControllerSequence::INACTIVE)
 	{
-		currentSequence->StartBlend(targetSequence, blend, currentTime, 0, currentSequence->m_fSeqWeight, targetSequence->m_fSeqWeight, nullptr);
+		const auto destFrame = currentSequence->m_fLastScaledTime / currentSequence->m_fEndKeyTime * targetSequence->m_fEndKeyTime;
+		currentSequence->StartBlend(targetSequence, blend, destFrame, 0, currentSequence->m_fSeqWeight, targetSequence->m_fSeqWeight, nullptr);
 	}
 	else
 	{
-		return;
+		return false;
 	}
 
 	HandleExtraOperations(animData, targetSequence);
@@ -203,13 +199,9 @@ void TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGrou
 			highProcess->weaponSequence[sequenceType - kSequence_Weapon] = targetSequence;
 		}
 	}
+	return true;
 }
 #endif
-
-float GetKeyTime(BSAnimGroupSequence* anim, SequenceState1 keyTime)
-{
-	return anim->animGroup->keyTimes[keyTime];
-}
 
 #if 1
 
@@ -217,7 +209,10 @@ float GetKeyTime(BSAnimGroupSequence* anim, SequenceState1 keyTime)
 void BlendFixes::ApplyAttackISToAttackFix()
 {
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
-	auto* curWeaponAnim = animData3rd->animSequence[kSequence_Weapon];
+	auto* animData1st = g_thePlayer->firstPersonAnimData;
+	auto* animData = g_thePlayer->IsThirdPerson() ? animData3rd : animData1st;
+	
+	auto* curWeaponAnim = animData->animSequence[kSequence_Weapon];
 	if (!curWeaponAnim || !curWeaponAnim->animGroup || !curWeaponAnim->animGroup->IsAttackIS())
 		return;
 	auto* highProcess = g_thePlayer->GetHighProcess();
@@ -233,11 +228,15 @@ void BlendFixes::ApplyAttackISToAttackFix()
 	const auto attackGroupId = static_cast<AnimGroupID>(curGroupId - 3);
 	const auto attackISGroupId = static_cast<AnimGroupID>(curGroupId);
 	
-	TransitionToAttack(animData3rd, attackISGroupId, attackGroupId);
+	auto result = TransitionToAttack(animData3rd, attackISGroupId, attackGroupId);
+	if (!result && g_thePlayer->IsThirdPerson())
+		return;
 	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackISGroupId + 1), static_cast<AnimGroupID>(attackGroupId + 1)); // up
 	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackISGroupId + 2), static_cast<AnimGroupID>(attackGroupId + 2)); // down
 
-	TransitionToAttack(g_thePlayer->firstPersonAnimData, attackISGroupId, attackGroupId);
+	result = TransitionToAttack(animData1st, attackISGroupId, attackGroupId);
+	if (!result && !g_thePlayer->IsThirdPerson())
+		return;
 	
 	auto* attackSequence = GetAnimByGroupID(animData3rd, attackGroupId);
 	const auto currentAnimAction = static_cast<Decoding::AnimAction>(g_thePlayer->GetHighProcess()->GetCurrentAnimAction());
@@ -264,12 +263,17 @@ void BlendFixes::ApplyAttackToAttackISFix()
 	const auto attackGroupId = static_cast<AnimGroupID>(curGroupId);
 	const auto attackISGroupId = static_cast<AnimGroupID>(curGroupId + 3);
 	
-	TransitionToAttack(animData3rd, attackGroupId, attackISGroupId);
+	auto result = TransitionToAttack(animData3rd, attackGroupId, attackISGroupId);
+	if (!result && g_thePlayer->IsThirdPerson())
+		return;
+
 	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackGroupId + 1), static_cast<AnimGroupID>(attackISGroupId + 1)); // up
 	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackGroupId + 2), static_cast<AnimGroupID>(attackISGroupId + 2)); // down
 
-	TransitionToAttack(g_thePlayer->firstPersonAnimData, attackGroupId, attackISGroupId);
-	
+	result = TransitionToAttack(g_thePlayer->firstPersonAnimData, attackGroupId, attackISGroupId);
+	if (!result && !g_thePlayer->IsThirdPerson())
+		return;
+
 	auto* attackISSequence = GetAnimByGroupID(animData3rd, attackISGroupId);
 	const auto currentAnimAction = static_cast<Decoding::AnimAction>(g_thePlayer->GetHighProcess()->GetCurrentAnimAction());
 	GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, currentAnimAction, attackISSequence);
@@ -302,7 +306,7 @@ void FixConflictingPriorities(NiControllerSequence* pkSource, NiControllerSequen
         if (ra::contains(s_ignoredInterps, tag.m_kAVObjectName))
             continue;
     	const auto sourceInterp = pkSource->GetControlledBlock(tag.m_kAVObjectName);
-    	const auto idleInterp = pkIdle->GetControlledBlock(tag.m_kAVObjectName);
+    	const auto idleInterp = pkIdle ? pkIdle->GetControlledBlock(tag.m_kAVObjectName) : nullptr;
         if (sourceInterp && idleInterp)
         {
             if (destBlock.m_ucPriority != sourceInterp->m_ucPriority
