@@ -102,7 +102,6 @@ struct kBlendInterpItem
         isPoseInterp = false;
         isAdditive = false;
         additiveMetadata.ClearValues();
-        
     }
 };
 
@@ -113,6 +112,7 @@ public:
     NiPointer<NiTransformInterpolator> poseInterp = nullptr;
     float poseInterpUpdatedTime = -NI_INFINITY;
     NiControllerManager* owner = nullptr;
+    UInt32 noBlendSmoothRequesterCount = 0;
 
     NiNewRTTI(kBlendInterpolatorExtraData, NiExtraData)
 

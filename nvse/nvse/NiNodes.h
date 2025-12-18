@@ -1786,6 +1786,7 @@ public:
 	void RemoveInterpolator(const NiFixedString& name) const;
 	void RemoveInterpolator(unsigned int index) const;
 	float GetEaseSpinner() const;
+	bool DisabledBlendSmoothing() const;
 
 	
 	static NiControllerSequence* Create()

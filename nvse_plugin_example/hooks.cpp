@@ -204,7 +204,7 @@ bool __fastcall IsCustomAnimKey(const char* key)
 {
 	const static auto customKeys = {
 		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:",
-		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion"
+		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion", "noBlendSmoothing"
 	};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }

@@ -1148,6 +1148,12 @@ float NiControllerSequence::GetEaseSpinner() const
     return blendItemIter->m_fEaseSpinner;
 }
 
+bool NiControllerSequence::DisabledBlendSmoothing() const
+{
+    const static NiFixedString key = "noBlendSmoothing";
+    return m_spTextKeys && m_spTextKeys->FindFirstByName(key);
+}
+
 void NiControllerSequence::AttachInterpolators(char cPriority)
 {
 #if (!_DEBUG || !NI_OVERRIDE) && 0
@@ -1197,6 +1203,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         AttachInterpolators(cPriority);
         return;
     }
+    const auto disabledBlendSmoothing = DisabledBlendSmoothing();
     m_pkOwner->CleanObjectPalette();
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
@@ -1218,8 +1225,10 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
         DebugAssert(extraData);
         extraData->owner = m_pkOwner;
-        
+        if (disabledBlendSmoothing)
+            ++extraData->noBlendSmoothRequesterCount;
         auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
+        
         extraInterpItem.sequence = this;
         extraInterpItem.state = kInterpState::Activating;
         if (extraInterpItem.blendInterp)
@@ -1834,6 +1843,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         DetachInterpolators();
         return;
     }
+    const auto disabledBlendSmoothing = DisabledBlendSmoothing();
     // BlendFixes::DetachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
@@ -1862,6 +1872,8 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                 kItem.m_ucBlendIdx = INVALID_INDEX;
                 continue;
             }
+            if (extraData->noBlendSmoothRequesterCount && disabledBlendSmoothing)
+                --extraData->noBlendSmoothRequesterCount;
 
             auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
             extraInterpItem.state = kInterpState::Deactivating;

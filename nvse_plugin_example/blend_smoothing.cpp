@@ -148,7 +148,7 @@ NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObjec
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     std::span<NiBlendInterpolator::InterpArrayItem*> items, kWeightType type)
 {
-    if (!g_pluginSettings.blendSmoothing || !extraData)
+    if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount)
         return;
     const auto deltaTime = g_timeGlobal->secondsPassed;
     const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
