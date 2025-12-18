@@ -51,37 +51,35 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
 {
 	const auto baseAnimGroup = static_cast<AnimGroupID>(animGroupId);
+	if (!animData || !animData->actor)
+		return nullptr;
+	std::optional<AnimationResult> animResult;
+	BlendFixes::ApplyMissingUpDownAnims(animData);
 
-	if (animData && animData->actor)
+	if (auto* queuedAnim = GetQueuedAnim(animData, animGroupId))
 	{
-		std::optional<AnimationResult> animResult;
-		BlendFixes::ApplyMissingUpDownAnims(animData);
-
-		if (auto* queuedAnim = GetQueuedAnim(animData, animGroupId))
+		destAnim = queuedAnim;
+		HandleExtraOperations(animData, queuedAnim);
+	}
+	// first check matchBaseGroupId
+	else if (const auto lResult = GetActorAnimation(animGroupId & 0xFF, animData); lResult && lResult->animBundle->matchBaseGroupId)
+	{
+		if (auto* newAnim = LoadAnimationPath(*lResult, animData, animGroupId))
 		{
-			destAnim = queuedAnim;
-			HandleExtraOperations(animData, queuedAnim);
+			destAnim = newAnim;
 		}
-		// first check matchBaseGroupId
-		else if (const auto lResult = GetActorAnimation(animGroupId & 0xFF, animData); lResult && lResult->animBundle->matchBaseGroupId)
+	}
+	else if ((animResult = GetActorAnimation(animGroupId, animData)))
+	{
+		if (auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId))
 		{
-			if (auto* newAnim = LoadAnimationPath(*lResult, animData, animGroupId))
-			{
-				destAnim = newAnim;
-			}
+			destAnim = newAnim;
 		}
-		else if ((animResult = GetActorAnimation(animGroupId, animData)))
-		{
-			if (auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId))
-			{
-				destAnim = newAnim;
-			}
-		}
-		else if (destAnim)
-		{
-			// allow non AnimGroupOverride anims to use custom text keys
-			HandleExtraOperations(animData, destAnim);
-		}
+	}
+	else if (destAnim)
+	{
+		// allow non AnimGroupOverride anims to use custom text keys
+		HandleExtraOperations(animData, destAnim);
 	}
 
 	bool bSkip = false;
@@ -610,6 +608,7 @@ SynchronizedQueue g_aiLinearTask1Queue;
 
 void ApplyHooks()
 {
+
 	const auto iniPath = R"(Data\NVSE\Plugins\kNVSE.ini)";
 	CSimpleIniA ini;
 	ini.SetUnicode();
@@ -1179,17 +1178,19 @@ void ApplyHooks()
 	}));
 
 
+
 	// HighProcess::SetQueuedIdleFlag
 	// prevent race condition
-	ReplaceVTableEntry(0x1087E78, INLINE_HOOK(void, __fastcall, Decoding::HighProcess* process, void*, bool bFlag)
+	WriteRelJump(0x903180, INLINE_HOOK(void, __fastcall, Decoding::HighProcess* process, void*, UInt32 bFlag)
 	{
 		if (!process->animData || !process->animData->nSceneRoot || !process->animData->controllerManager)
 			return;
-		ThisStdCall(0x903180, process, bFlag);
+		process->queuedIdleFlags |= bFlag;
 	}));
 
 	if (g_pluginSettings.blendSmoothing)
 		BlendSmoothing::WriteHooks();
+
 }
 
 void WriteDelayedHooks()
