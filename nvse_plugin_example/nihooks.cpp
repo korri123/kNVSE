@@ -436,9 +436,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     auto interpItems = GetItems();
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
 
-#define EXCLUDE_INVALIDS 1
-
-#if EXCLUDE_INVALIDS
     struct ValidTranslate
     {
         NiPoint3 translate;
@@ -547,7 +544,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     }
 
     BlendSmoothing::DetachZeroWeightItems(kExtraData, this);
-#endif
 
     kValue.MakeInvalid();
     if (bTransChanged || bRotChanged || bScaleChanged)

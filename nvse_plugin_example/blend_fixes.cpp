@@ -385,3 +385,40 @@ void BlendFixes::ApplyMissingUpDownAnims(AnimData* animData)
 		baseProcess->weaponSequence[2] = GetAnimByGroupID(animData, kAnimGroup_AimDown);
 	}
 }
+
+void BlendFixes::AddMissingMTIdleInterps(const AnimData* animData, BSAnimGroupSequence* anim)
+{
+	static bool s_doOnce = false;
+	if (s_doOnce || !anim || animData != g_thePlayer->firstPersonAnimData)
+		return;
+	s_doOnce = true;
+
+	const auto addMissingInterpolator = [&](const char* name) -> bool
+	{
+		NiFixedString nodeName(name);
+		if (anim->GetControlledBlock(nodeName))
+			return false;
+
+		const auto* object = BSUtilities::GetObjectByName(animData->nBip01, nodeName);
+		if (!object)
+			return false;
+
+		const auto* node = NI_DYNAMIC_CAST(NiNode, object);
+		if (!node)
+			return false;
+
+		auto* interp = NiTransformInterpolator::Create(node->m_kLocal);
+		const auto idTag = NiControllerSequence::IDTag {
+			nodeName, nullptr, "NiTransformController", nullptr, nullptr
+		};
+		anim->AddInterpolator(interp, idTag, 0);
+		return true;
+	};
+
+	bool result = false;
+	result |= addMissingInterpolator("Bip01 Translate");
+	result |= addMissingInterpolator("Bip01 Rotate");
+	auto* target = NI_DYNAMIC_CAST(NiAVObject, animData->controllerManager->m_pkTarget);
+	if (result && target)
+		anim->StoreTargets(target);
+}

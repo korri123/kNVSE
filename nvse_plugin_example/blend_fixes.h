@@ -19,6 +19,7 @@ namespace BlendFixes
 	void ApplyHooks();
 	void FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim);
 	void ApplyMissingUpDownAnims(AnimData* animData);
+	void AddMissingMTIdleInterps(const AnimData* animData, BSAnimGroupSequence* anim);
 }
 
 template <typename F>

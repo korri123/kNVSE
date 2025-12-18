@@ -108,13 +108,15 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	BSAnimGroupSequence* result;
 	
+	if (g_pluginSettings.blendSmoothing && destAnim && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Idle)
+		BlendFixes::AddMissingMTIdleInterps(animData, destAnim);
+	
 	if (g_pluginSettings.blendSmoothing && destAnim && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
 	else if (destAnim && destAnim->animGroup && destAnim->animGroup->GetBaseGroupID() == kAnimGroup_PipBoy && g_pluginSettings.blendSmoothing)
 	{
 		const auto easeInTime = destAnim->GetEaseInTime();
 		destAnim->Activate(0, true, destAnim->m_fSeqWeight, easeInTime, nullptr, false);
-		// destAnim->m_pkOwner->BlendFromPose(destAnim, 0.0f, easeInTime, 0, nullptr);
 		animData->SetCurrentSequence(destAnim, true);
 		result = destAnim;
 	}
@@ -710,9 +712,9 @@ void ApplyHooks()
 	// WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
 	// WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>); no go - causes stack overflow in PickAnimations since it calls LoadCustomAnimation that calls this
 	// WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
-	//WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
-	//WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
-	//WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
+	// WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
+	// WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
+	// WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
 	/* experimental end */
 
 	// AnimData::GetSequenceBaseFromMap
@@ -767,7 +769,8 @@ void ApplyHooks()
 	// stop dumb limitation on CLAMP sequences not being allowed to locomotion
 	WriteRelCall(0x4909BC, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* anim)
 	{
-		if (anim->m_spTextKeys->FindFirstByName("allowClampInLocomotion"))
+		const static NiFixedString key = "allowClampInLocomotion";
+		if (anim->m_spTextKeys->FindFirstByName(key))
 			return NiControllerSequence::kCycle_Loop;
 		return anim->m_eCycleType;
 	}));
@@ -811,7 +814,8 @@ void ApplyHooks()
 	{
 		if (fDestFrame == 0.0f)
 		{
-			auto* destFrameKey = seq->m_spTextKeys->FindFirstByName("fDestFrame");
+			const static NiFixedString key = "fDestFrame";
+			auto* destFrameKey = seq->m_spTextKeys->FindFirstByName(key);
 			if (destFrameKey && destFrameKey->m_fTime != -NI_INFINITY)
 			{
 				fDestFrame = destFrameKey->m_fTime;
@@ -1008,7 +1012,7 @@ void ApplyHooks()
 	WriteRelCall(0x645F51, INLINE_HOOK(uint32_t, __cdecl, uint32_t a1)
 	{
 		return CdeclCall<uint32_t>(0x5F2440, a1) & 0xFF;
-	}), & uiGetAttackSpeedMultGetGroupAddr);
+	}), &uiGetAttackSpeedMultGetGroupAddr);
 
 	static UInt32 uiGetAttackSpeedMultGetAnimAttackMultAddr;
 	WriteRelCall(0x645EE0, INLINE_HOOK(double, __fastcall, TESObjectWEAP* weap, void*, bool hasMod)
@@ -1039,7 +1043,7 @@ void ApplyHooks()
 	// NiControllerManager::DeactivateSequence
 	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
 	{
-		if (g_pluginSettings.blendSmoothing &&pkSequence->animGroup->GetSequenceType() == kSequence_Movement &&
+		if (g_pluginSettings.blendSmoothing && pkSequence->animGroup->GetSequenceType() == kSequence_Movement &&
 			pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
 		{
 			return pkSequence->DeactivateNoReset(fEaseOut);
@@ -1096,17 +1100,17 @@ void ApplyHooks()
 					return animGroup->IsBaseMovement();
 				});
 			}
-				if (!moveSequence)
+			if (!moveSequence)
+			{
+				if (turningLeft)
 				{
-					if (turningLeft)
-					{
-						*groupId = kAnimGroup_TurnLeft;
-					}
-					else if (turningRight)
-					{
-						*groupId = kAnimGroup_TurnRight;
-					}
+					*groupId = kAnimGroup_TurnLeft;
 				}
+				else if (turningRight)
+				{
+					*groupId = kAnimGroup_TurnRight;
+				}
+			}
 		}
 		*addrOfRetn = 0x896C9A;
 	}));
