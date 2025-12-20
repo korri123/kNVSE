@@ -164,120 +164,95 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	return SKIP;
 }
 
-#if 1
-
-bool TransitionToAttack(AnimData* animData, AnimGroupID currentGroupId, AnimGroupID targetGroupId)
+namespace
 {
-	auto* currentSequence = GetAnimByGroupID(animData, currentGroupId);
-	auto* targetSequence = GetAnimByGroupID(animData, targetGroupId);
-	if (!targetSequence || !currentSequence || !currentSequence->animGroup)
-		return false;
-	const auto blend = GetDefaultBlendTime(targetSequence, currentSequence);
-
-	if (currentSequence->m_eState == NiControllerSequence::ANIMATING && targetSequence->m_eState == NiControllerSequence::INACTIVE)
+	bool TransitionToAttack(AnimData* animData, AnimGroupID sourceGroupId, AnimGroupID targetGroupId)
 	{
-		const auto destFrame = currentSequence->m_fLastScaledTime / currentSequence->m_fEndKeyTime * targetSequence->m_fEndKeyTime;
-		currentSequence->StartBlend(targetSequence, blend, destFrame, 0, currentSequence->m_fSeqWeight, targetSequence->m_fSeqWeight, nullptr);
-	}
-	else
-	{
-		return false;
-	}
+		auto* sourceSeq = GetAnimByGroupID(animData, sourceGroupId);
+		auto* targetSeq = GetAnimByGroupID(animData, targetGroupId);
+		if (!targetSeq || !sourceSeq || !sourceSeq->animGroup)
+			return false;
+		if (sourceSeq->m_eState != NiControllerSequence::ANIMATING || targetSeq->m_eState != NiControllerSequence::INACTIVE)
+			return false;
 
-	HandleExtraOperations(animData, targetSequence);
-	animData->SetCurrentSequence(targetSequence, false);
+		const auto blend = GetDefaultBlendTime(targetSeq, sourceSeq);
+		const auto destFrame = sourceSeq->m_fLastScaledTime / sourceSeq->m_fEndKeyTime * targetSeq->m_fEndKeyTime;
+		sourceSeq->StartBlend(targetSeq, blend, destFrame, 0, sourceSeq->m_fSeqWeight, targetSeq->m_fSeqWeight,
+		                      nullptr);
 
-	const auto sequenceType = targetSequence->animGroup->GetGroupInfo()->sequenceType;
-	if (animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon && sequenceType <= kSequence_WeaponDown)
-	{
-		// handle up down variant weights
-		targetSequence->m_fSeqWeight = currentSequence->m_fSeqWeight;
-		auto* highProcess = animData->actor->baseProcess;
-		if (IS_TYPE(highProcess, HighProcess))
+		HandleExtraOperations(animData, targetSeq);
+		animData->SetCurrentSequence(targetSeq, false);
+
+		const auto sequenceType = targetSeq->animGroup->GetGroupInfo()->sequenceType;
+		if (animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon && sequenceType <=
+			kSequence_WeaponDown)
 		{
-			highProcess->weaponSequence[sequenceType - kSequence_Weapon] = targetSequence;
+			targetSeq->m_fSeqWeight = sourceSeq->m_fSeqWeight;
+			if (auto* highProcess = animData->actor->baseProcess; IS_TYPE(highProcess, HighProcess))
+				highProcess->weaponSequence[sequenceType - kSequence_Weapon] = targetSeq;
 		}
+		return true;
 	}
-	return true;
-}
-#endif
 
-#if 1
+	bool TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID sourceGroupId,
+	                                  AnimGroupID targetGroupId)
+	{
+		const auto result = TransitionToAttack(animData3rd, sourceGroupId, targetGroupId);
+		if (!result)
+			return false;
 
+		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(sourceGroupId + 1), static_cast<AnimGroupID>(targetGroupId + 1)); // up
+		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(sourceGroupId + 2), static_cast<AnimGroupID>(targetGroupId + 2)); // down
+
+		TransitionToAttack(animData1st, sourceGroupId, targetGroupId);
+		return true;
+	}
+
+	void ApplyAttackTransitionFix(bool toIronSights)
+	{
+		auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
+		auto* animData1st = g_thePlayer->firstPersonAnimData;
+		auto* animData = g_thePlayer->IsThirdPerson() ? animData3rd : animData1st;
+
+		auto* curWeaponAnim = animData->animSequence[kSequence_Weapon];
+
+		if (!curWeaponAnim || !curWeaponAnim->animGroup)
+			return;
+
+		const bool isValidSource = toIronSights ? curWeaponAnim->animGroup->IsAttack() && curWeaponAnim->animGroup->IsAttackNonIS() : curWeaponAnim->animGroup->IsAttackIS();
+		if (!isValidSource)
+			return;
+
+		auto* highProcess = g_thePlayer->GetHighProcess();
+		if (highProcess->isAiming != toIronSights)
+			return;
+
+		if (animData3rd->sequenceState1[kSequence_Weapon] < kSeqState_HitOrDetach)
+			return;
+
+		const auto curGroupId = curWeaponAnim->animGroup->groupID;
+		const auto sourceGroupId = static_cast<AnimGroupID>(curGroupId);
+		const auto targetGroupId = static_cast<AnimGroupID>(toIronSights ? curGroupId + 3 : curGroupId - 3);
+
+		if (!TransitionAttackWithVariants(animData3rd, animData1st, sourceGroupId, targetGroupId))
+			return;
+
+		auto* finalSequence = GetAnimByGroupID(animData3rd, targetGroupId);
+		const auto animAction = static_cast<Decoding::AnimAction>(highProcess->GetCurrentAnimAction());
+		GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, animAction, finalSequence);
+	}
+} // end namespace
 
 void BlendFixes::ApplyAttackISToAttackFix()
 {
-	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
-	auto* animData1st = g_thePlayer->firstPersonAnimData;
-	auto* animData = g_thePlayer->IsThirdPerson() ? animData3rd : animData1st;
-	
-	auto* curWeaponAnim = animData->animSequence[kSequence_Weapon];
-	if (!curWeaponAnim || !curWeaponAnim->animGroup || !curWeaponAnim->animGroup->IsAttackIS())
-		return;
-	auto* highProcess = g_thePlayer->GetHighProcess();
-	const auto curGroupId = curWeaponAnim->animGroup->groupID;
-	if (highProcess->isAiming)
-		return;
-
-	if (animData3rd->sequenceState1[kSequence_Weapon] < kSeqState_HitOrDetach)
-		return;
-
-	// ThisStdCall(0x8BB650, g_thePlayer, false, false, false); // Actor::AimWeapon
-
-	const auto attackGroupId = static_cast<AnimGroupID>(curGroupId - 3);
-	const auto attackISGroupId = static_cast<AnimGroupID>(curGroupId);
-	
-	auto result = TransitionToAttack(animData3rd, attackISGroupId, attackGroupId);
-	if (!result && g_thePlayer->IsThirdPerson())
-		return;
-	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackISGroupId + 1), static_cast<AnimGroupID>(attackGroupId + 1)); // up
-	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackISGroupId + 2), static_cast<AnimGroupID>(attackGroupId + 2)); // down
-
-	result = TransitionToAttack(animData1st, attackISGroupId, attackGroupId);
-	if (!result && !g_thePlayer->IsThirdPerson())
-		return;
-	
-	auto* attackSequence = GetAnimByGroupID(animData3rd, attackGroupId);
-	const auto currentAnimAction = static_cast<Decoding::AnimAction>(g_thePlayer->GetHighProcess()->GetCurrentAnimAction());
-	GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, currentAnimAction, attackSequence);
+	ApplyAttackTransitionFix(false);
 }
-
 
 void BlendFixes::ApplyAttackToAttackISFix()
 {
-	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
-	auto* curWeaponAnim = animData3rd->animSequence[kSequence_Weapon];
-	if (!curWeaponAnim || !curWeaponAnim->animGroup || !curWeaponAnim->animGroup->IsAttack() || !curWeaponAnim->animGroup->IsAttackNonIS())
-		return;
-	auto* highProcess = g_thePlayer->GetHighProcess();
-	const auto curGroupId = curWeaponAnim->animGroup->groupID;
-	if (!highProcess->isAiming)
-		return;
-
-	if (animData3rd->sequenceState1[kSequence_Weapon] < kSeqState_HitOrDetach)
-		return;
-
-	// ThisStdCall(0x8BB650, g_thePlayer, true, false, false); // Actor::AimWeapon
-
-	const auto attackGroupId = static_cast<AnimGroupID>(curGroupId);
-	const auto attackISGroupId = static_cast<AnimGroupID>(curGroupId + 3);
-	
-	auto result = TransitionToAttack(animData3rd, attackGroupId, attackISGroupId);
-	if (!result && g_thePlayer->IsThirdPerson())
-		return;
-
-	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackGroupId + 1), static_cast<AnimGroupID>(attackISGroupId + 1)); // up
-	TransitionToAttack(animData3rd, static_cast<AnimGroupID>(attackGroupId + 2), static_cast<AnimGroupID>(attackISGroupId + 2)); // down
-
-	result = TransitionToAttack(g_thePlayer->firstPersonAnimData, attackGroupId, attackISGroupId);
-	if (!result && !g_thePlayer->IsThirdPerson())
-		return;
-
-	auto* attackISSequence = GetAnimByGroupID(animData3rd, attackISGroupId);
-	const auto currentAnimAction = static_cast<Decoding::AnimAction>(g_thePlayer->GetHighProcess()->GetCurrentAnimAction());
-	GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, currentAnimAction, attackISSequence);
+	ApplyAttackTransitionFix(true);
 }
-#endif
+
 void BlendFixes::ApplyAimBlendHooks()
 {
 	// JMP 0x4996E7 -> 0x499709
