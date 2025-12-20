@@ -50,10 +50,9 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 // UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
 BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
 {
-	const auto baseAnimGroup = static_cast<AnimGroupID>(animGroupId);
 	if (!animData || !animData->actor)
 		return nullptr;
-	std::optional<AnimationResult> animResult;
+
 	BlendFixes::ApplyMissingUpDownAnims(animData);
 
 	if (auto* queuedAnim = GetQueuedAnim(animData, animGroupId))
@@ -61,20 +60,16 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		destAnim = queuedAnim;
 		HandleExtraOperations(animData, queuedAnim);
 	}
-	// first check matchBaseGroupId
-	else if (const auto lResult = GetActorAnimation(animGroupId & 0xFF, animData); lResult && lResult->animBundle->matchBaseGroupId)
+	else if (const auto baseResult = GetActorAnimation(animGroupId & 0xFF, animData);
+	         baseResult && baseResult->animBundle->matchBaseGroupId)
 	{
-		if (auto* newAnim = LoadAnimationPath(*lResult, animData, animGroupId))
-		{
+		if (auto* newAnim = LoadAnimationPath(*baseResult, animData, animGroupId))
 			destAnim = newAnim;
-		}
 	}
-	else if ((animResult = GetActorAnimation(animGroupId, animData)))
+	else if (const auto animResult = GetActorAnimation(animGroupId, animData))
 	{
 		if (auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId))
-		{
 			destAnim = newAnim;
-		}
 	}
 	else if (destAnim)
 	{
@@ -82,38 +77,51 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		HandleExtraOperations(animData, destAnim);
 	}
 
+	// Handle event interception
 	bool bSkip = false;
 	if (auto* interceptedAnim = InterceptPlayAnimGroup::Dispatch(animData, destAnim, bSkip);
-		interceptedAnim && interceptedAnim->animGroup)
+	    interceptedAnim && interceptedAnim->animGroup)
 	{
 		destAnim = interceptedAnim;
 		animGroupId = destAnim->animGroup->groupID;
 	}
 	else if (bSkip)
-		return destAnim;
-
-	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug && BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 	{
-		// BlendFixes::FixAimPriorities(animData, destAnim);
 		return destAnim;
 	}
 
+	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug &&
+	    BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
+	{
+		return destAnim;
+	}
+
+	TESAnimGroup* const destAnimGroup = destAnim ? destAnim->animGroup : nullptr;
 	BSAnimGroupSequence* currentAnim = nullptr;
-	if (destAnim && destAnim->animGroup)
-		if (auto* groupInfo = destAnim->animGroup->GetGroupInfo())
+	if (destAnimGroup)
+	{
+		if (auto* groupInfo = destAnimGroup->GetGroupInfo())
 			currentAnim = animData->animSequence[groupInfo->sequenceType];
+	}
+
 	if (currentAnim)
 		BlendFixes::FixPrematureFirstPersonEnd(animData, currentAnim);
 	Apply3rdPersonRespectEndKeyEaseInFix(animData, destAnim);
 
-	BSAnimGroupSequence* result;
-	
-	if (g_pluginSettings.blendSmoothing && destAnim && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Idle)
+	if (g_pluginSettings.blendSmoothing && destAnimGroup &&
+	    destAnimGroup->GetSequenceType() == kSequence_Idle)
+	{
 		BlendFixes::AddMissingMTIdleInterps(animData, destAnim);
-	
-	if (g_pluginSettings.blendSmoothing && destAnim && destAnim->animGroup && destAnim->animGroup->GetSequenceType() == kSequence_Movement)
+	}
+
+	const bool useSpecialBlend = g_pluginSettings.blendSmoothing && destAnimGroup;
+	BSAnimGroupSequence* result;
+
+	if (useSpecialBlend && destAnimGroup->GetSequenceType() == kSequence_Movement)
+	{
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
-	else if (destAnim && destAnim->animGroup && destAnim->animGroup->GetBaseGroupID() == kAnimGroup_PipBoy && g_pluginSettings.blendSmoothing)
+	}
+	else if (useSpecialBlend && destAnimGroup->GetBaseGroupID() == kAnimGroup_PipBoy)
 	{
 		const auto easeInTime = destAnim->GetEaseInTime();
 		destAnim->Activate(0, true, destAnim->m_fSeqWeight, easeInTime, nullptr, false);
@@ -121,14 +129,16 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		result = destAnim;
 	}
 	else
+	{
 		result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
-	
+	}
+
 	if (destAnim && currentAnim)
 	{
-		auto* idle = animData->animSequence[kSequence_Idle];
-		if (idle && idle->m_eState == NiControllerSequence::ANIMATING)
+		if (auto* idle = animData->animSequence[kSequence_Idle]; idle && idle->m_eState == NiControllerSequence::ANIMATING)
 			BlendFixes::FixConflictingPriorities(currentAnim, destAnim, idle);
 	}
+
 	return result;
 }
 
