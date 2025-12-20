@@ -435,7 +435,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     bool bFirstRotation = true;
     auto interpItems = GetItems();
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
-
+    
     struct ValidTranslate
     {
         NiPoint3 translate;
@@ -849,12 +849,6 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<InterpArray
     if (items.size() == 1)
     {
         items.front()->m_fNormalizedWeight = 1.0f;
-        return;
-    }
-
-    if (items.size() == 2)
-    {
-        ComputeNormalizedWeightsFor2(items.front(), items.back());
         return;
     }
 
