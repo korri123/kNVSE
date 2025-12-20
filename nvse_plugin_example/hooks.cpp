@@ -1056,7 +1056,7 @@ void ApplyHooks()
 		if (g_pluginSettings.blendSmoothing && pkSequence->animGroup->GetSequenceType() == kSequence_Movement &&
 			pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
 		{
-			return pkSequence->DeactivateNoReset(fEaseOut);
+			return pkSequence->DeactivateNoReset(fEaseOut, false);
 		}
 		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
 	}));

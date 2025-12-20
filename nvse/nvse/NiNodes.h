@@ -1917,7 +1917,7 @@ public:
 
 	virtual bool Deactivate(float fEaseOutTime, bool bTransition);
 	bool Deactivate_(float fEaseOutTime, bool bTransition);
-	bool DeactivateNoReset(float fEaseOutTime);
+	bool DeactivateNoReset(float fEaseOutTime, bool bTransition);
 	
 	void ResetSequence()
 	{
@@ -1933,7 +1933,7 @@ public:
 
 	bool Activate(float fEaseInTime, bool bTransition);
 	
-	bool ActivateNoReset(float fEaseInTime);
+	bool ActivateNoReset(float fEaseInTime, bool bTransition);
 
 	NiControllerManager* GetOwner() const
 	{

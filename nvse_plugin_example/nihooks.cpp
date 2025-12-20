@@ -1349,9 +1349,9 @@ bool NiControllerSequence::Activate(float fEaseInTime, bool bTransition)
     return Activate(0, false, this->m_fSeqWeight, fEaseInTime, nullptr, bTransition);
 }
 
-bool NiControllerSequence::ActivateNoReset(float fEaseInTime)
+bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition)
 {
-    if (m_eState != EASEOUT || fEaseInTime == 0.0f)
+    if ((m_eState != EASEOUT && m_eState != TRANSSOURCE) || fEaseInTime == 0.0f)
     {
 #if _DEBUG
         DebugBreak();
@@ -1382,7 +1382,7 @@ bool NiControllerSequence::ActivateNoReset(float fEaseInTime)
         return false;
     }
         
-    m_eState = EASEIN;
+    m_eState = bTransition ? TRANSDEST : EASEIN;
     m_fLastTime = -NI_INFINITY;
     return true;
 }
@@ -1980,9 +1980,9 @@ bool NiControllerSequence::Deactivate_(float fEaseOutTime, bool bTransition)
     return true;
 }
 
-bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime)
+bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime, bool bTransition)
 {
-    if (m_eState != EASEIN || fEaseOutTime == 0.0f)
+    if ((m_eState != EASEIN && m_eState != TRANSDEST) || fEaseOutTime == 0.0f)
     {
 #if _DEBUG
         DebugBreak();
@@ -2012,7 +2012,7 @@ bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime)
         return false;
     }
     
-    m_eState = EASEOUT;
+    m_eState = bTransition ? TRANSSOURCE : EASEOUT;
     return true;
 }
 

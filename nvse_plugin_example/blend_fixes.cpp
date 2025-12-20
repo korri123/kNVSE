@@ -145,7 +145,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	animData->SetCurrentSequence(destAnim, true);
 
 	const auto blendTime = destAnim->GetEaseInTime();
-	
+
 	if (srcAnim->m_eState != NiControllerSequence::EASEIN)
 	{
 		srcAnim->Deactivate(blendTime, false);
@@ -153,15 +153,14 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 		return SKIP;
 	}
 
-	srcAnim->DeactivateNoReset(blendTime);
-
 	if (destAnim->m_eState == NiControllerSequence::EASEOUT)
 	{
-		destAnim->ActivateNoReset(blendTime);
+		srcAnim->DeactivateNoReset(blendTime, false);
+		destAnim->ActivateNoReset(blendTime, false);
 		return SKIP;
 	}
 
-	destAnim->Activate(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
+	animData->controllerManager->CrossFade(srcAnim, destAnim, blendTime, 0, true, destAnim->m_fSeqWeight);
 	return SKIP;
 }
 
