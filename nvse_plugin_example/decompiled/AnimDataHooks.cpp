@@ -32,7 +32,7 @@ bool AnimData::IsAnimSequenceQueued(const BSAnimGroupSequence* apSequence) const
 }
 
 // Function
-BSAnimGroupSequence *AnimData::MorphOrBlendToSequence(BSAnimGroupSequence *apDestSequence, UInt16 usAnimGroup, eAnimSequence aSequenceType)
+BSAnimGroupSequence *AnimData::StartGroup(BSAnimGroupSequence *apDestSequence, UInt16 usAnimGroup, eAnimSequence aSequenceType)
 {
 #if 1
   return ThisStdCall<BSAnimGroupSequence*>(0x4949A0, this, apDestSequence, usAnimGroup, aSequenceType);

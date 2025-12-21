@@ -121,16 +121,9 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	{
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
 	}
-	else if (useSpecialBlend && destAnimGroup->GetBaseGroupID() == kAnimGroup_PipBoy)
-	{
-		const auto easeInTime = destAnim->GetEaseInTime();
-		animData->controllerManager->BlendFromPose(destAnim, 0.0f, easeInTime, 0);
-		animData->SetCurrentSequence(destAnim, true);
-		result = destAnim;
-	}
 	else
 	{
-		result = animData->MorphOrBlendToSequence(destAnim, animGroupId, animSequence);
+		result = animData->StartGroup(destAnim, animGroupId, animSequence);
 	}
 
 	if (destAnim && currentAnim)

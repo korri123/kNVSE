@@ -154,7 +154,7 @@ struct AnimData
 
 	AnimGroupID GetNextAttackGroupID() const;
 
-	BSAnimGroupSequence* MorphOrBlendToSequence(BSAnimGroupSequence *apDestSequence,
+	BSAnimGroupSequence* StartGroup(BSAnimGroupSequence *apDestSequence,
 		UInt16 groupID,
 		eAnimSequence sequenceID);
 
