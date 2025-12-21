@@ -603,7 +603,7 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
     {
         bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
         // remove last interp
-        if (g_pluginSettings.blendSmoothing && !g_pluginSettings.poseInterpolators)
+        if (g_pluginSettings.blendSmoothing && !g_pluginSettings.poseInterpolators && kExtraData)
         {
             auto* kExtraItem = kExtraData->GetItem(this->m_pkSingleInterpolator);
             if (kExtraItem && kExtraItem->detached)
@@ -622,8 +622,6 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
             CalculatePrioritiesAdditive(kExtraData);
             ComputeNormalizedWeightsAdditive(kExtraData);
         }
-        else
-            ComputeNormalizedWeights();
         //if (g_pluginSettings.blendSmoothing)
         //    BlendSmoothing::Apply(this, kExtraData);
         bReturnValue = g_pluginSettings.fixSpiderHands ?

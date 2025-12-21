@@ -124,7 +124,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	else if (useSpecialBlend && destAnimGroup->GetBaseGroupID() == kAnimGroup_PipBoy)
 	{
 		const auto easeInTime = destAnim->GetEaseInTime();
-		destAnim->Activate(0, true, destAnim->m_fSeqWeight, easeInTime, nullptr, false);
+		animData->controllerManager->BlendFromPose(destAnim, 0.0f, easeInTime, 0);
 		animData->SetCurrentSequence(destAnim, true);
 		result = destAnim;
 	}
@@ -876,6 +876,8 @@ void ApplyHooks()
 			// AnimFixes::EraseNegativeAnimKeys(anim);
 			AnimFixes::FixWrongKFName(anim, fileName);
 			AnimFixes::FixMissingPrnKey(anim, fileName);
+			//AnimFixes::AddNoBlendSmoothingKeys(anim, fileName);
+			
 		}
 		return &anim->m_kName;
 	}));

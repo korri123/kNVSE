@@ -181,6 +181,8 @@ namespace
 		                      nullptr);
 
 		HandleExtraOperations(animData, targetSeq);
+		HandleCustomTextKeys(); // since dest frame is there lets run any sounds
+		
 		animData->SetCurrentSequence(targetSeq, false);
 
 		const auto sequenceType = targetSeq->animGroup->GetGroupInfo()->sequenceType;

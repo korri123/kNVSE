@@ -288,6 +288,14 @@ void AnimFixes::FixMissingPrnKey(BSAnimGroupSequence* anim, const char* filePath
 	anim->m_spTextKeys->AddKey(prnName, 0.0f);
 }
 
+void AnimFixes::AddNoBlendSmoothingKeys(BSAnimGroupSequence* anim, const char* fileName)
+{
+	if (_stricmp(fileName, "characters\\_1stperson\\2hmattackspin.kf") == 0)
+	{
+		anim->m_spTextKeys->AddKey("noBlendSmoothing", 0.0f);
+	}
+}
+
 NiFixedString* __fastcall WrongPrnKeyHook(BSAnimGroupSequence* anim)
 {
 	if (!g_pluginSettings.fixWrongPrnKey || HasNoFixTextKey(anim) || !HasRespectEndKey(anim))

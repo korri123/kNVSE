@@ -448,7 +448,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 			});
 		}
 		auto& animTime = getAnimTimeStruct();
-		animTime.scriptCalls = scriptCallKeys->CreateContext();
+		animTime.scriptCalls = scriptCallKeys->CreateContext(GetAnimTime(anim));
 	}
 	if (hasKey({"SoundPath:"}, KeyCheckType::KeyStartsWith))
 	{
@@ -467,7 +467,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 				return false;
 			return true;
 		});
-		animTime.soundPaths = animTime.soundPathsBase->CreateContext();
+		animTime.soundPaths = animTime.soundPathsBase->CreateContext(GetAnimTime(anim));
 	}
 	if (hasKey({"blendToReloadLoop"}))
 	{
@@ -505,7 +505,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 				return true;
 			});
 		}
-		animTime.scriptLines = scriptLineKeys->CreateContext();
+		animTime.scriptLines = scriptLineKeys->CreateContext(GetAnimTime(anim));
 	}
 	float time;
 	if (hasKey({"allowAttack"}, KeyCheckType::KeyEquals, &time))
@@ -1677,7 +1677,7 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 		builder.Add("offset", anim->m_fOffset);
 		builder.Add("startTime", anim->m_fStartTime);
 		builder.Add("endTime", anim->m_fEndTime);
-		builder.Add("calculatedTime", GetAnimTime(animData, anim));
+		builder.Add("calculatedTime", GetAnimTime(anim));
 		if (anim->animGroup)
 		{
 			builder.Add("multiplier", GetAnimMult(animData, anim->animGroup->groupID));

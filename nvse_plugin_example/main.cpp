@@ -64,8 +64,14 @@ std::recursive_mutex g_pollConditionMutex;
 
 bool isEditor = false;
 
-float GetAnimTime(const AnimData* animData, const NiControllerSequence* anim)
+float GetAnimTime(const NiControllerSequence* anim)
 {
+	if (anim->m_eState == NiControllerSequence::TRANSDEST)
+	{
+		if (anim->m_fDestFrame != -NI_INFINITY)
+			return anim->m_fDestFrame - 0.001f;
+		return 0.0f;
+	}
 	if (anim->m_fLastTime != -NI_INFINITY)
 		return anim->m_fLastScaledTime;
 	return 0.0f;
@@ -374,7 +380,7 @@ void HandleCustomTextKeys()
 			continue;
 		}
 
-		const auto time = animTime.useLegacyTime ? GetAnimTimeLegacy(animData, anim) : GetAnimTime(animData, anim);
+		const auto time = animTime.useLegacyTime ? GetAnimTimeLegacy(animData, anim) : GetAnimTime(anim);
 	
 		if (animTime.respectEndKey && anim->animGroup)
 		{

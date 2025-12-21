@@ -103,8 +103,8 @@ public:
 
 	class Context
 	{
-		float lastTime = 0;
 	public:
+		float lastTime = 0;
 		TimedExecution* execution = nullptr;
 		size_t index = 0;
 
@@ -166,9 +166,17 @@ public:
 
 	TimedExecution() = default;
 
-	Context CreateContext()
+	Context CreateContext(float fStartTime = 0.0f)
 	{
-		return Context(this);
+		auto context = Context(this);
+		for (auto& item : items)
+		{
+			if (fStartTime > item.second)
+				++context.index;
+			else break;
+		}
+		context.lastTime = fStartTime;
+		return context;
 	}
 };
 
