@@ -103,6 +103,16 @@ struct NiPoint3
 		return x * x + y * y + z * z;
 	}
 
+	float Distance(const NiPoint3& pt) const
+	{
+		return (*this - pt).Length();
+	}
+
+	float SqrDistance(const NiPoint3& pt) const
+	{
+		return (*this - pt).SqrLength();
+	}
+
 	NiPoint3 operator-(const NiPoint3& pt) const
 	{
 		return NiPoint3{ x - pt.x, y - pt.y, z - pt.z };

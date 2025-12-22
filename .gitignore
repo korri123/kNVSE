@@ -398,3 +398,5 @@ ipch
 *.recipe
 
 **/.idea
+
+types.txt

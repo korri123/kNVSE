@@ -90,6 +90,11 @@ public:
 	{
 		return CdeclCall<char>(0x702680, menuCode, unk);
 	}
+	
+	static bool IsMenuInStack(MenuCode menuCode)
+	{
+		return ThisStdCall<bool>(0x714F90, GetSingleton(), menuCode);
+	}
 
 	UInt32 GetTopVisibleMenuID();
 	Tile *GetActiveTile();

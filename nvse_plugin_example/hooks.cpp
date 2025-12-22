@@ -611,9 +611,54 @@ thread_local bool g_isThreadCacheEnabled = false;
 
 SynchronizedQueue g_aiLinearTask1Queue;
 
+
+#if _DEBUG
+static HHOOK hHook = nullptr;
+LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode == HC_ACTION) {
+        if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+            KBDLLHOOKSTRUCT* pKey = (KBDLLHOOKSTRUCT*)lParam;
+
+            HWND hForeground = GetForegroundWindow();
+            DWORD targetThreadId = GetWindowThreadProcessId(hForeground, NULL);
+            HKL hKL = GetKeyboardLayout(targetThreadId);
+
+            BYTE keyState[256];
+            if (GetKeyboardState(keyState)) {
+                keyState[VK_SHIFT] = static_cast<BYTE>(GetKeyState(VK_SHIFT));
+                keyState[VK_MENU] = static_cast<BYTE>(GetKeyState(VK_MENU)); // Alt
+                keyState[VK_CONTROL] = static_cast<BYTE>(GetKeyState(VK_CONTROL));
+            }
+
+            WCHAR buffer[2] = {};
+            
+            int result = ToUnicodeEx(
+                pKey->vkCode,
+                pKey->scanCode,
+                keyState,
+                buffer,
+                2,
+                0,
+                hKL
+            );
+
+            if (result == -1) {
+                if (buffer[0] == 0x00B0) {
+                    return 1; 
+                }
+            }
+        }
+    }
+    return CallNextHookEx(hHook, nCode, wParam, lParam);
+}
+#endif
+
 void ApplyHooks()
 {
-
+#if _DEBUG
+	// stop ° in console
+	hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
+#endif
 	const auto iniPath = R"(Data\NVSE\Plugins\kNVSE.ini)";
 	CSimpleIniA ini;
 	ini.SetUnicode();
@@ -1185,9 +1230,7 @@ void ApplyHooks()
 			return 0.0f;
 		return sequence->ComputeScaledTime(fTime + sequence->m_fOffset, true);
 	}));
-
-
-
+	
 	// HighProcess::SetQueuedIdleFlag
 	// prevent race condition
 	WriteRelJump(0x903180, INLINE_HOOK(void, __fastcall, Decoding::HighProcess* process, void*, UInt32 bFlag)
@@ -1244,4 +1287,13 @@ void WriteDelayedHooks()
 		};
 	}
 	
+	
+#if _DEBUG
+	WriteRelCall(0x86F96A, INLINE_HOOK(bool, __cdecl)
+	{
+		if (InterfaceManager::IsMenuInStack(Console))
+			return false;
+		return CdeclCall<bool>(0x709BC0);
+	}));	
+#endif
 }
