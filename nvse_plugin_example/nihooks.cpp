@@ -462,7 +462,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
     for (auto& item : interpItems)
     {
-        if (!item.m_spInterpolator || !GetUpdateTimeForItem(fTime, item))
+        if (!item.m_spInterpolator || !GetUpdateTimeForItem(fTime, item) || AdditiveManager::IsAdditiveInterpolator(pkInterpTarget, item.m_spInterpolator))
             continue;
         
         NiQuatTransform kTransform;
@@ -620,7 +620,6 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
         if (hasAdditiveTransforms)
         {
             CalculatePrioritiesAdditive(kExtraData);
-            ComputeNormalizedWeightsAdditive(kExtraData);
         }
         //if (g_pluginSettings.blendSmoothing)
         //    BlendSmoothing::Apply(this, kExtraData);
@@ -1778,7 +1777,6 @@ void NiControllerManager::CleanObjectPalette() const
     thread_local std::unordered_map<const char*, NiAVObject*> toKeepMap;
     toKeep.clear();
     toKeepMap.clear();
-    DebugAssert(m_spObjectPalette && m_spObjectPalette->m_pkScene);
     if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene) 
         return;
     auto* scene = m_spObjectPalette->m_pkScene->GetAsNiNode();
