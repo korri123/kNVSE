@@ -1899,6 +1899,8 @@ UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId)
 {
 	const auto fullGroupId = GetActorRealAnimGroup(animData->actor, animGroupId);
 	const auto nearestGroupId = GameFuncs::GetNearestGroupID(animData, fullGroupId, false);
+	if ((animGroupId & 0xFF) != 0 && nearestGroupId == 0)
+		return 0xFFFF; // bethesda returns 0 in Animation::PickBestAnimation when it can't find one when it's actually the group id for idle...
 	return nearestGroupId;
 }
 
