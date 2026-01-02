@@ -2037,6 +2037,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!animData)
 			return true;
 		const auto nearestGroupId = GetNearestGroupID(animData, static_cast<AnimGroupID>(animGroupId));
+		if (nearestGroupId == 0xFFFF)
+			return true;
 		const auto customAnims = FindCustomAnimations(animData, nearestGroupId);
 		if (!customAnims.empty())
 		{

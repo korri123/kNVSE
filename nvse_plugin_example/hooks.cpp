@@ -963,7 +963,8 @@ void ApplyHooks()
 				return;
 
 			const auto groupId = GetNearestGroupID(animData, kAnimGroup_Aim);
-			GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
+			if (groupId != 0xFFFF)
+				GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
 		}));
 
 		// Plays AimIS directly instead of AttackLoopIS when ammo is depleted and aim is pressed
@@ -978,7 +979,8 @@ void ApplyHooks()
 				return;
 
 			const auto groupId = GetNearestGroupID(animData, kAnimGroup_AimIS);
-			GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
+			if (groupId != 0xFFFF)
+				GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
 		}));
 	};
 	writeAttackLoopToAimHooks();
