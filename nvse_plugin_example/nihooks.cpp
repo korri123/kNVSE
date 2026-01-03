@@ -462,7 +462,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
     for (auto& item : interpItems)
     {
-        if (!item.m_spInterpolator || !GetUpdateTimeForItem(fTime, item) || AdditiveManager::IsAdditiveInterpolator(pkInterpTarget, item.m_spInterpolator))
+        if (!item.m_spInterpolator || !GetUpdateTimeForItem(fTime, item) || AdditiveManager::IsAdditiveInterpolator(kExtraData, item.m_spInterpolator))
             continue;
         
         NiQuatTransform kTransform;
@@ -484,13 +484,18 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     ComputeNormalizedWeights(items);
     BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Translate);
 
+    float fFinalWeight = 0.0f;
     for (auto& translation : validTranslates)
     {
         kFinalTranslate += translation.translate *
                        translation.item->m_fNormalizedWeight;
         dTotalTransWeight += translation.item->m_fNormalizedWeight;
         bTransChanged = true;
+        fFinalWeight += translation.item->m_fNormalizedWeight;
     }
+    
+    //if (!items.empty())
+    //    DebugAssert(std::abs(1.0f - fFinalWeight) < 0.001f);
     items.clear();
 
     for (auto& item : validRotations)
@@ -498,6 +503,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     ComputeNormalizedWeights(items);
     BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate);
     
+    fFinalWeight = 0.0f;
     for (auto& rotation : validRotations)
     {
         NiQuaternion kRotValue = rotation.rotation;
@@ -526,8 +532,10 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             kRotValue.GetY() + kFinalRotate.GetY(),
             kRotValue.GetZ() + kFinalRotate.GetZ());
         bRotChanged = true;
+        fFinalWeight += weight;
     }
-    
+    //if (!items.empty())
+    //    DebugAssert(std::abs(1.0f - fFinalWeight) < 0.001f);
     items.clear();
     for (auto& scale : validScales)
         items.emplace_back(scale.item);
@@ -1215,6 +1223,11 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         if (disabledBlendSmoothing)
             ++extraData->noBlendSmoothRequesterCount;
         auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
+        if (pkBlendInterp->m_ucArraySize == 0 && extraInterpItem.blendIndex != INVALID_INDEX)
+        {
+            extraInterpItem.ClearValues();
+            extraInterpItem.interpolator = kItem.m_spInterpolator;
+        }
         
         extraInterpItem.sequence = this;
         extraInterpItem.state = kInterpState::Activating;
@@ -1352,7 +1365,10 @@ bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition)
     
     const auto fTime = m_fLastTime - m_fOffset;
     const auto fCurrentEaseTime = m_fEndTime - m_fStartTime;
-    const auto fEaseOutProgress = (fTime - m_fStartTime) / fCurrentEaseTime;
+
+    auto fAnimTime = fTime - m_fStartTime;
+    fAnimTime = max(fAnimTime, 0.0f); // floating point inaccuracy fix
+    const auto fEaseOutProgress = fAnimTime / fCurrentEaseTime;
             
     // Calculate current animation level (1.0 at start of EASEOUT, 0.0 at end)
     const float fCurrentAnimLevel = 1.0f - fEaseOutProgress;
@@ -1982,9 +1998,11 @@ bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime, bool bTransitio
     
     // Store the current animation state for a smooth transition
     const float fCurrentTime = m_fLastTime - m_fOffset;
-        
+
+    float fAnimTime = fCurrentTime - m_fStartTime;
+    fAnimTime = max(fAnimTime, 0.0f);
     // Calculate current ease level if we were easing in
-    const float fCurrentEaseLevel = (fCurrentTime - m_fStartTime) / (m_fEndTime - m_fStartTime);
+    const float fCurrentEaseLevel = fAnimTime / (m_fEndTime - m_fStartTime);
     // Adjust timing to create a smooth transition from EASEIN to EASEOUT
     if (fCurrentEaseLevel >= 0.0f && fCurrentEaseLevel <= 1.0f)
     {

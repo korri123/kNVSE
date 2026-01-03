@@ -915,7 +915,6 @@ void ApplyHooks()
 			AnimFixes::FixWrongKFName(anim, fileName);
 			AnimFixes::FixMissingPrnKey(anim, fileName);
 			//AnimFixes::AddNoBlendSmoothingKeys(anim, fileName);
-			
 		}
 		return &anim->m_kName;
 	}));

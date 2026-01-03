@@ -24,6 +24,6 @@ namespace AdditiveManager
     void PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim);
     void SetAdditiveInterpWeightMult(NiObjectNET* target, NiInterpolator* interpolator, float weightMult);
     void WriteHooks();
-    bool IsAdditiveInterpolator(NiObjectNET* target, NiInterpolator* interpolator);
+    bool IsAdditiveInterpolator(kBlendInterpolatorExtraData* extraData, NiInterpolator* interpolator);
     void MarkInterpolatorsAsAdditive(const NiControllerSequence* additiveSequence);
 }

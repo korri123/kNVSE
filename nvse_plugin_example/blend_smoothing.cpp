@@ -146,7 +146,7 @@ NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObjec
 }
 
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
-    std::span<NiBlendInterpolator::InterpArrayItem*> items, kWeightType type)
+    const std::vector<NiBlendInterpolator::InterpArrayItem*>& items, kWeightType type)
 {
     if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount)
         return;

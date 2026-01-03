@@ -152,9 +152,8 @@ void AdditiveManager::EraseAdditiveSequence(NiControllerSequence* sequence)
     }
 }
 
-bool AdditiveManager::IsAdditiveInterpolator(NiObjectNET* target, NiInterpolator* interpolator)
+bool AdditiveManager::IsAdditiveInterpolator(kBlendInterpolatorExtraData* extraData, NiInterpolator* interpolator)
 {
-    auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
     if (!extraData)
         return false;
     return ::IsAdditiveInterpolator(extraData, interpolator);

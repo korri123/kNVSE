@@ -134,7 +134,7 @@ public:
 
 namespace BlendSmoothing
 {
-    void ApplyForItems(kBlendInterpolatorExtraData* extraData, std::span<NiBlendInterpolator::InterpArrayItem*> items, kWeightType type);
+    void ApplyForItems(kBlendInterpolatorExtraData* extraData, const std::vector<NiBlendInterpolator::InterpArrayItem*>& items, kWeightType type);
     void DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp);
     void WriteHooks();
 }

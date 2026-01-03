@@ -2188,6 +2188,8 @@ public:
 #ifdef _DEBUG
 		NIASSERT(ucIndex < m_ucArraySize);
 #endif
+		if (ucIndex >= m_ucArraySize)
+			return;
 		// Only set priority if it differs from the current priority.
 		if (m_pkInterpArray[ucIndex].m_cPriority == cPriority)
 		{
