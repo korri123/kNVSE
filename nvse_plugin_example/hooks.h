@@ -27,7 +27,6 @@ struct PluginINISettings
     bool fixMissingPrnKey = false;
     bool fixReloadStartAllowReloadTweak = false;
     bool blendSmoothing = true;
-    bool fixSpiderHands = true;
     bool poseInterpolators = false;
     float blendSmoothingRate = 0.075f;
 

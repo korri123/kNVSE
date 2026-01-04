@@ -462,7 +462,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
     for (auto& item : interpItems)
     {
-        if (!item.m_spInterpolator || !GetUpdateTimeForItem(fTime, item) || AdditiveManager::IsAdditiveInterpolator(kExtraData, item.m_spInterpolator))
+        if (!item.m_spInterpolator || AdditiveManager::IsAdditiveInterpolator(kExtraData, item.m_spInterpolator) || !GetUpdateTimeForItem(fTime, item))
             continue;
         
         NiQuatTransform kTransform;
@@ -624,16 +624,8 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
     }
     else if (m_ucInterpCount > 0)
     {
-        const auto hasAdditiveTransforms = GetHasAdditiveTransforms();
-        if (hasAdditiveTransforms)
-        {
-            CalculatePrioritiesAdditive(kExtraData);
-        }
-        //if (g_pluginSettings.blendSmoothing)
-        //    BlendSmoothing::Apply(this, kExtraData);
-        bReturnValue = g_pluginSettings.fixSpiderHands ?
-            BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kValue) : BlendValues(fTime, pkInterpTarget, kValue);
-        if (hasAdditiveTransforms)
+        bReturnValue = BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kValue);
+        if (GetHasAdditiveTransforms())
             ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
     }
     m_fLastTime = fTime;
@@ -1960,7 +1952,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
             DebugAssert(blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator
                 && extraInterpItem.interpolator == kItem.m_spInterpolator && kItem.m_spInterpolator != nullptr);
 
-            if (extraInterpItem.IsSmoothedWeightZero())
+            if (extraInterpItem.IsSmoothedWeightZero() || extraInterpItem.isAdditive)
             {
                 DebugAssert(!extraInterpItem.detached && blendIndex != INVALID_INDEX);
                 if (blendIndex != INVALID_INDEX)

@@ -2103,9 +2103,6 @@ public:
 
 	static constexpr unsigned char INVALID_INDEX = 0xFF;
 
-	void ComputeNormalizedWeightsAdditive(kBlendInterpolatorExtraData* kExtraData);
-	void CalculatePrioritiesAdditive(kBlendInterpolatorExtraData* kExtraData);
-
 	enum
 	{
 		MANAGER_CONTROLLED_MASK = 0x0001,

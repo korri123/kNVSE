@@ -197,8 +197,14 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
             continue;
             
         auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
-        if (!extraItemPtr || extraItemPtr->isAdditive)
+        if (!extraItemPtr)
             continue;
+        
+        if (extraItemPtr->isAdditive)
+        {
+            DebugAssert(false);
+            continue;
+        }
             
         auto& extraItem = *extraItemPtr;
         if (extraItem.debugState == kInterpDebugState::NotSet)
@@ -242,8 +248,14 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
                 continue;
                 
             auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
-            if (!extraItemPtr || extraItemPtr->isAdditive)
+            if (!extraItemPtr)
                 continue;
+            
+            if (extraItemPtr->isAdditive)
+            {
+                DebugAssert(false);
+                continue;
+            }
                 
             auto& extraItem = *extraItemPtr;
             if (extraItem.debugState == kInterpDebugState::NotSet)

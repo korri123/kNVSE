@@ -40,10 +40,16 @@ void AdditiveManager::AddReferencePoseTransforms(NiControllerSequence* additiveS
 {
     const auto refBlocks = referencePoseSequence->GetControlledBlocks();
     if (!additiveSequence->m_pkOwner || !additiveSequence->m_pkOwner->m_spObjectPalette)
+    {
+        DebugAssert(false);
         return;
+    }
     auto* node = additiveSequence->m_pkOwner->m_spObjectPalette->m_pkScene;
     if (!node)
+    {
+        DebugAssert(false);
         return;
+    }
     for (auto& refBlock : refBlocks)
     {
         const auto& idTag = refBlock.GetIDTag(referencePoseSequence);
@@ -71,6 +77,7 @@ void AdditiveManager::AddReferencePoseTransforms(NiControllerSequence* additiveS
             DebugAssert(extraData);
             auto& extraInterpItem = extraData->ObtainItem(additiveInterp);
             extraInterpItem.isAdditive = true;
+            extraInterpItem.sequence = additiveSequence;
             extraInterpItem.additiveMetadata.refTransform = refTransform;
             extraInterpItem.additiveMetadata.ignorePriorities = ignorePriorities;
         }
@@ -369,185 +376,6 @@ void NiBlendInterpolator::ComputeNormalizedWeightsFor2(InterpArrayItem* pkItem1,
     
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(kBlendInterpolatorExtraData* kExtraData)
-{
-    if (!GetComputeNormalizedWeights())
-    {
-        return;
-    }
-
-    DebugAssert(kExtraData);
-
-    if (!kExtraData) 
-    {
-        ComputeNormalizedWeights();
-        return;
-    }
-
-    SetComputeNormalizedWeights(false);
-
-    thread_local std::vector<InterpArrayItem*> kItems;
-    thread_local std::vector<unsigned int> kIndices;
-    kItems.clear();
-    kIndices.clear();
-    
-    kItems.reserve(m_ucArraySize);
-    kIndices.reserve(m_ucArraySize);
-
-    for (int i = 0; i < m_ucArraySize; i++)
-    {
-        auto& item = m_pkInterpArray[i];
-        if (item.m_spInterpolator != nullptr)
-        {
-            if (!IsAdditiveInterpolator(kExtraData, item.m_spInterpolator))
-            {
-                kItems.push_back(&item);
-                kIndices.push_back(i);
-            }
-            else
-            {
-                item.m_fNormalizedWeight = 0.0f;
-            }
-        }
-    }
-
-    if (kItems.empty())
-    {
-        return;
-    }
-
-    if (kItems.size() == 1)
-    {
-        kItems[0]->m_fNormalizedWeight = 1.0f;
-        return;
-    }
-
-    if (kItems.size() == 2)
-    {
-        ComputeNormalizedWeightsFor2(kItems[0], kItems[1]);
-        return;
-    }
-    
-    if (m_fHighSumOfWeights == -NI_INFINITY)
-    {
-        // Compute sum of weights for highest and next highest priorities,
-        // along with highest ease spinner for the highest priority.
-        m_fHighSumOfWeights = 0.0f;
-        m_fNextHighSumOfWeights = 0.0f;
-        m_fHighEaseSpinner = 0.0f;
-        for (auto* kItemPtr : kItems)
-        {
-            auto& kItem = *kItemPtr;
-            if (kItem.m_spInterpolator != NULL)
-            {
-                float fRealWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
-                if (kItem.m_cPriority == m_cHighPriority)
-                {
-                    m_fHighSumOfWeights += fRealWeight;
-                    if (kItem.m_fEaseSpinner > m_fHighEaseSpinner)
-                    {
-                        m_fHighEaseSpinner = kItem.m_fEaseSpinner;
-                    }
-                }
-                else if (kItem.m_cPriority == m_cNextHighPriority)
-                {
-                    m_fNextHighSumOfWeights += fRealWeight;
-                }
-            }
-        }
-    }
-
-
-    const float fOneMinusHighEaseSpinner = 1.0f - m_fHighEaseSpinner;
-    const float fTotalSumOfWeights = m_fHighEaseSpinner * m_fHighSumOfWeights +
-        fOneMinusHighEaseSpinner * m_fNextHighSumOfWeights;
-    const float fOneOverTotalSumOfWeights =
-        fTotalSumOfWeights > 0.0f ? 1.0f / fTotalSumOfWeights : 0.0f;
-
-
-    // Compute normalized weights.
-    for (auto* kItemPtr : kItems)
-    {
-        auto& kItem = *kItemPtr;
-        if (kItem.m_spInterpolator != nullptr)
-        {
-            if (kItem.m_cPriority == m_cHighPriority)
-            {
-                kItem.m_fNormalizedWeight = m_fHighEaseSpinner *
-                    kItem.m_fWeight * kItem.m_fEaseSpinner *
-                    fOneOverTotalSumOfWeights;
-            }
-            else if (kItem.m_cPriority == m_cNextHighPriority)
-            {
-                kItem.m_fNormalizedWeight = fOneMinusHighEaseSpinner *
-                    kItem.m_fWeight * kItem.m_fEaseSpinner *
-                    fOneOverTotalSumOfWeights;
-            }
-            else
-            {
-                kItem.m_fNormalizedWeight = 0.0f;
-            }
-        }
-    }
-
-    // Exclude weights below threshold, computing new sum in the process.
-    float fSumOfNormalizedWeights = 1.0f;
-    if (m_fWeightThreshold > 0.0f)
-    {
-        fSumOfNormalizedWeights = 0.0f;
-        for (auto* kItemPtr : kItems)
-        {
-            auto& kItem = *kItemPtr;
-            if (kItem.m_spInterpolator != nullptr &&
-                kItem.m_fNormalizedWeight != 0.0f)
-            {
-                if (kItem.m_fNormalizedWeight < m_fWeightThreshold)
-                {
-                    kItem.m_fNormalizedWeight = 0.0f;
-                }
-                fSumOfNormalizedWeights += kItem.m_fNormalizedWeight;
-            }
-        }
-    }
-
-    // Renormalize weights if any were excluded earlier.
-    if (fSumOfNormalizedWeights != 1.0f)
-    {
-        // Renormalize weights.
-        float fOneOverSumOfNormalizedWeights =
-            (fSumOfNormalizedWeights > 0.0f) ? (1.0f / fSumOfNormalizedWeights) : 0.0f;
-
-        for (auto* kItemPtr : kItems)
-        {
-            auto& kItem = *kItemPtr;
-            if (kItem.m_fNormalizedWeight != 0.0f)
-            {
-                kItem.m_fNormalizedWeight = kItem.m_fNormalizedWeight *
-                    fOneOverSumOfNormalizedWeights;
-            }
-        }
-    }
-
-    // Only use the highest weight, if so directed.
-    if (GetOnlyUseHighestWeight())
-    {
-        float fHighest = -1.0f;
-        unsigned char ucHighIndex = INVALID_INDEX;
-        for (auto uc : kIndices)
-        {
-            if (m_pkInterpArray[uc].m_fNormalizedWeight > fHighest)
-            {
-                ucHighIndex = uc;
-                fHighest = m_pkInterpArray[uc].m_fNormalizedWeight;
-            }
-            m_pkInterpArray[uc].m_fNormalizedWeight = 0.0f;
-        }
-
-        // Set the highest index to 1.0
-        m_pkInterpArray[ucHighIndex].m_fNormalizedWeight = 1.0f;
-    }
-}
-
 void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority, SequenceExtraData* sequenceExtraData)
 {
     DebugAssert(sequenceExtraData && sequenceExtraData->additiveMetadata);
@@ -585,56 +413,22 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority, SequenceE
             
             auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
             DebugAssert(extraData);
+            if (extraData->owner)
+                DebugAssert(extraData->owner == m_pkOwner);
             extraData->owner = m_pkOwner;
             auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
             if (!extraInterpItem.isAdditive)
-                DebugAssert(false);
-            if (pkBlendInterp->m_ucArraySize == 0 && extraInterpItem.blendIndex != INVALID_INDEX)
             {
-                extraInterpItem.ClearValues();
-                extraInterpItem.interpolator = kItem.m_spInterpolator;
+                kItem.m_ucBlendIdx = INVALID_INDEX;
+                kItem.m_pkBlendInterp = nullptr;
+                DebugAssert(false);
+                continue;
             }
-            
             kItem.m_ucBlendIdx = kItem.m_pkBlendInterp->AddInterpInfo(
                 kItem.m_spInterpolator,
                 m_fSeqWeight,
                 kItem.m_ucPriority != INVALID_INDEX ? kItem.m_ucPriority : cPriority,
                 1.0f);
-        }
-    }
-}
-
-void NiBlendInterpolator::CalculatePrioritiesAdditive(kBlendInterpolatorExtraData* kExtraData)
-{
-    DebugAssert(kExtraData);
-    if (!kExtraData)
-    {
-        return;
-    }
-    m_cNextHighPriority = INVALID_INDEX;
-    m_cHighPriority = INVALID_INDEX;
-
-    if (m_ucInterpCount == 1 && m_ucSingleIdx != INVALID_INDEX)
-    {
-        m_cHighPriority = m_pkInterpArray[m_ucSingleIdx].m_cPriority;
-        return;
-    }
-    for (auto& item : GetItems())
-    {
-        if (item.m_spInterpolator != nullptr && !IsAdditiveInterpolator(kExtraData, item.m_spInterpolator))
-        {
-            if (item.m_cPriority > m_cNextHighPriority)
-            {
-                if (item.m_cPriority > m_cHighPriority)
-                {
-                    m_cNextHighPriority = m_cHighPriority;
-                    m_cHighPriority = item.m_cPriority;
-                }
-                else if (item.m_cPriority < m_cHighPriority)
-                {
-                    m_cNextHighPriority = item.m_cPriority;
-                }
-            }
         }
     }
 }
