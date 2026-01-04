@@ -14,7 +14,8 @@ class SequenceExtraDatas
 {
     std::vector<std::pair<NiControllerSequence*, SequenceExtraData>> extraData;
 public:
-    static SequenceExtraData* Get(NiControllerSequence* sequence);
+    static SequenceExtraData* Get(const NiControllerSequence* sequence);
+    static SequenceExtraData* GetOrCreate(NiControllerSequence* sequence);
 
     static void Delete(NiControllerSequence* sequence);
 };

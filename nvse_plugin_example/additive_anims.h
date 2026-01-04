@@ -7,7 +7,7 @@ inline const char* sAdditiveSequenceMetadata = "AdditiveSequenceMetadata";
 struct AdditiveSequenceMetadata
 {
     const char* type = sAdditiveSequenceMetadata;
-    NiFixedString referencePoseSequenceName;
+    NiPointer<NiControllerSequence> referencePoseSequence;
     float referenceTimePoint;
     bool ignorePriorities;
     NiControllerManager* controllerManager;
@@ -26,4 +26,5 @@ namespace AdditiveManager
     void WriteHooks();
     bool IsAdditiveInterpolator(kBlendInterpolatorExtraData* extraData, NiInterpolator* interpolator);
     void MarkInterpolatorsAsAdditive(const NiControllerSequence* additiveSequence);
+    void AddReferencePoseTransforms(NiControllerSequence* additiveSequence, NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities);
 }

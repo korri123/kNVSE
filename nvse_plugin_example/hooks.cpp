@@ -823,17 +823,22 @@ void ApplyHooks()
 		return anim->m_eCycleType;
 	}));
 
-	// BSAnimGroupSequence* destructor
-	WriteRelCall(0x4EEB4B, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim)
+	// NiControllerSequence destructor
+	WriteRelCall(0xA35649, INLINE_HOOK(void, __fastcall, NiControllerSequence* anim)
 	{
+		// hooked call
+		*reinterpret_cast<UInt32*>(anim) = kVtbl_NiControllerSequence;
+		auto* retnAddr = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
 		if (AdditiveManager::IsAdditiveSequence(anim))
 			AdditiveManager::EraseAdditiveSequence(anim);
 		SequenceExtraDatas::Delete(anim);
+		kBlendInterpolatorExtraData::EraseSequence(anim);
 		// EraseTimeTrackedAnim(anim); we do store a smart pointer to the anim in g_timeTrackedAnims
-		// hooked call
-		ThisStdCall(0xA35640, anim);
+		if (anim->m_eState != NiControllerSequence::INACTIVE)
+			anim->Deactivate(0.0f, false);
+		*retnAddr = 0xA3565E;
 	}));
-
+	SafeWrite8(0xA35649 + 5, 0x90); // nop byte 6
 	
 
 #if 0
@@ -1208,7 +1213,7 @@ void ApplyHooks()
 						if (block.m_spInterpCtlr && block.m_spInterpCtlr->GetType() == NiMultiTargetTransformController::ms_RTTI)
 							block.m_pkBlendInterp = nullptr;
 					}
-					auto* sequenceExtraData = SequenceExtraDatas::Get(sequence);
+					auto* sequenceExtraData = SequenceExtraDatas::GetOrCreate(sequence);
 					sequenceExtraData->needsStoreTargets = true;
 				}
 				return nullptr;

@@ -1,6 +1,23 @@
 ﻿#include "sequence_extradata.h"
 
-SequenceExtraData* SequenceExtraDatas::Get(NiControllerSequence* sequence)
+SequenceExtraData* SequenceExtraDatas::Get(const NiControllerSequence* sequence)
+{
+    if (!sequence->m_spTextKeys)
+        return nullptr;
+    static const NiFixedString sExtraData = "__kNVSEExtraData__";
+    auto* textKeyExtraData = sequence->m_spTextKeys->FindFirstByName(sExtraData);
+    if (!textKeyExtraData || textKeyExtraData->m_fTime == 0.0f)
+        return nullptr;
+    auto* datum = *reinterpret_cast<SequenceExtraDatas**>(&textKeyExtraData->m_fTime);
+    for (auto& iter : datum->extraData)
+    {
+        if (iter.first == sequence)
+            return &iter.second;
+    }
+    return nullptr;
+}
+
+SequenceExtraData* SequenceExtraDatas::GetOrCreate(NiControllerSequence* sequence)
 {
     if (!sequence->m_spTextKeys)
         sequence->m_spTextKeys = NiTextKeyExtraData::CreateObject();
@@ -27,7 +44,7 @@ void SequenceExtraDatas::Delete(NiControllerSequence* sequence)
         return;
     static const NiFixedString sExtraData = "__kNVSEExtraData__";
     auto* textKeyExtraData = sequence->m_spTextKeys->FindFirstByName(sExtraData);
-    if (!textKeyExtraData)
+    if (!textKeyExtraData || textKeyExtraData->m_fTime == 0.0f)
         return;
     auto* datum = *reinterpret_cast<SequenceExtraDatas**>(&textKeyExtraData->m_fTime);
     std::erase_if(datum->extraData, [&](auto& pair) 

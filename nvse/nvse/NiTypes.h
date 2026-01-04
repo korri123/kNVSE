@@ -3,8 +3,8 @@
 
 #include "Utilities.h"
 
-#define ASSERT_SIZE(name, size) static_assert(sizeof(name) == size, "Size mismatch for " #name)
-#define NI_DYNAMIC_CAST(type, ptr) ptr ? ThisStdCall<type*>(0x653290, ptr, type::ms_RTTI) : nullptr
+#define ASSERT_SIZE(name, size) static_assert(sizeof(name) == (size), "Size mismatch for " #name)
+#define NI_DYNAMIC_CAST(type, ptr) ((ptr) ? ThisStdCall<type*>(0x653290, ptr, type::ms_RTTI) : nullptr)
 
 #define NIRTTI_ADDRESS(address) \
 	static inline const NiRTTI* const ms_RTTI = (NiRTTI*)address;

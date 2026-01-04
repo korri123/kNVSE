@@ -1773,14 +1773,78 @@ ASSERT_SIZE(NiGlobalStringTable, 0x2100);
 
 class NiInterpController;
 class NiBlendInterpolator;
+class NiTextKey;
 
+class BSAnimNote : public NiObject 
+{
+public:
+	virtual ~BSAnimNote();
+
+	virtual void ParseTextKey(NiTextKey* apTextKey);
+	
+	enum Type {
+		kGrabIK		= 1,
+		kAnimNode	= 2,
+	};
+
+	Type	eType;
+	float	fTime;
+
+	NIRTTI_ADDRESS(0x11F3EF8);
+};
+
+class BSAnimNotes : public NiObject 
+{
+public:
+	BSAnimNote**	ppNotes;
+	uint16_t		usCount;
+
+	CREATE_OBJECT(BSAnimNotes, 0xA44940);
+	NIRTTI_ADDRESS(0x11F3F00);
+};
+
+ASSERT_SIZE(BSAnimNote, 0x10);
+
+class IBSAnimNoteReceiver {
+public:
+	virtual ~IBSAnimNoteReceiver();
+	virtual void Update(BSAnimNote* apNote);
+};
+
+class BSAnimNoteReceiver : public IBSAnimNoteReceiver {
+public:
+	struct BSAnimNoteReceiverType {
+		BSAnimNote::Type	eType;
+		void*				pCallback;
+	};
+
+	Actor* pActor;
+	NiTPrimitiveArray<BSAnimNoteReceiverType*> kReceiverTypes;
+};
+
+class BSAnimNoteListener {
+public:
+	struct BSAnimReceiverType {
+		BSAnimNote::Type	eNoteType;
+		BSAnimNoteReceiver*	pReceiver;
+	};
+
+	NiTPrimitiveArray<BSAnimReceiverType*>	kReceivers;
+	
+	void Update(BSAnimNote* apNote) const
+	{
+		ThisStdCall(0xA41410, this, apNote);
+	}
+};
+
+class SequenceExtraData;
 // 068
 class NiControllerSequence : public NiObject
 {
 public:
 	NiControllerSequence();
 	~NiControllerSequence();
-	void AttachInterpolatorsAdditive(char cPriority) const;
+	void AttachInterpolatorsAdditive(char cPriority, SequenceExtraData* sequenceExtraData);
 	void DetachInterpolators() const;
 	void DetachInterpolatorsHooked();
 	void RemoveInterpolator(const NiFixedString& name) const;
@@ -1857,8 +1921,6 @@ public:
 		}
 	};
 
-	
-
 	enum AnimState
 	{
 		INACTIVE,
@@ -1906,7 +1968,7 @@ public:
 	UInt32 m_pkAccumRoot;
 	UInt32 m_spDeprecatedStringPalette; // deprecated string palette
 	UInt16 usCurAnimNIdx;
-	void* spAnimNotes;
+	BSAnimNote* spAnimNotes;
 	UInt16 usNumNotes;
 	bool bRemovableObjects;
 
@@ -2034,7 +2096,7 @@ class kBlendInterpolatorExtraData;
 class NiBlendInterpolator : public NiInterpolator
 {
 public:
-	virtual UInt8 AddInterpInfo(NiInterpolator *pkInterpolator, float fWeight, char cPriority, float fEaseSpinner = 1.0f);
+	virtual UInt8	AddInterpInfo(NiInterpolator *pkInterpolator, float fWeight, char cPriority, float fEaseSpinner = 1.0f);
 	virtual NiInterpolator* RemoveInterpInfo(unsigned char ucIndex);
 	virtual void *Unk_39();
 	virtual void *Unk_3A();
@@ -2173,7 +2235,7 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
-	static void ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items);
+	void ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items);
 	void ComputeNormalizedWeightsHighPriorityDominant();
 
 	void ClearWeightSums()
@@ -2913,7 +2975,7 @@ public:
 	NiTArray<NiPointer<NiControllerSequence>>	sequences;		// 34
 	NiTSet<NiControllerSequence*> m_kActiveSequences;
 	NiTStringPointerMap<NiControllerSequence*> m_kSequenceMap;
-	NiTArray<void*> *pListener;
+	BSAnimNoteListener*	pListener;
 	bool m_bCumulitive;
 	NiTSet<NiPointer<NiControllerSequence>> m_kTempBlendSeqs;
 	NiDefaultAVObjectPalette* m_spObjectPalette;

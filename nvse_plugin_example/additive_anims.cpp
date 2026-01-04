@@ -9,49 +9,7 @@
 
 namespace
 {
-    void AddReferencePoseTransforms(AnimData* animData, NiControllerSequence* additiveSequence,
-                                       NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities)
-    {
-        const auto refBlocks = referencePoseSequence->GetControlledBlocks();
-
-        NiNode* node = animData->nBip01;
-        if (!node)
-            return;
-        for (auto& refBlock : refBlocks)
-        {
-            const auto& idTag = refBlock.GetIDTag(referencePoseSequence);
-            NiInterpolator* refInterp = refBlock.m_spInterpolator;
-            const auto* additiveBlock = additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
-            if (!refInterp || !refBlock.m_pkBlendInterp || !NI_DYNAMIC_CAST(NiBlendTransformInterpolator, refBlock.m_pkBlendInterp) || !additiveBlock)
-                continue;
-            NiInterpolator* additiveInterp = additiveBlock->m_spInterpolator;
-            if (!additiveInterp)
-                continue;
-
-            auto* target = animData->controllerManager->GetTarget(refBlock.m_spInterpCtlr, idTag);
-            if (!target)
-                continue;
-        
-            NiAVObject* targetNode = node->GetObjectByName(idTag.m_kAVObjectName);
-            if (!targetNode)
-                continue;
-
-            const float fOldTime = refInterp->m_fLastTime;
-            NiQuatTransform refTransform;
-            const bool bSuccess = refInterp->Update(timePoint, targetNode, refTransform);
-            refInterp->m_fLastTime = fOldTime;
-            if (bSuccess)
-            {
-                auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
-                DebugAssert(extraData);
-                auto& extraInterpItem = extraData->ObtainItem(additiveInterp);
-                extraInterpItem.isAdditive = true;
-                extraInterpItem.additiveMetadata.refTransform = refTransform;
-                extraInterpItem.additiveMetadata.ignorePriorities = ignorePriorities;
-            }
-        }
-    }
-
+    
     bool IsAdditiveInterpolator(kBlendInterpolatorExtraData* extraData, NiInterpolator* interpolator)
     {
         auto* kExtraItem = extraData->GetItem(interpolator);
@@ -78,18 +36,59 @@ void AdditiveManager::MarkInterpolatorsAsAdditive(const NiControllerSequence* ad
     }
 }
 
+void AdditiveManager::AddReferencePoseTransforms(NiControllerSequence* additiveSequence, NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities)
+{
+    const auto refBlocks = referencePoseSequence->GetControlledBlocks();
+    if (!additiveSequence->m_pkOwner || !additiveSequence->m_pkOwner->m_spObjectPalette)
+        return;
+    auto* node = additiveSequence->m_pkOwner->m_spObjectPalette->m_pkScene;
+    if (!node)
+        return;
+    for (auto& refBlock : refBlocks)
+    {
+        const auto& idTag = refBlock.GetIDTag(referencePoseSequence);
+        NiInterpolator* refInterp = refBlock.m_spInterpolator;
+        const auto* additiveBlock = 
+            additiveSequence == referencePoseSequence ? &refBlock :
+            additiveSequence->GetControlledBlock(idTag.m_kAVObjectName);
+        if (!refInterp || !refBlock.m_pkBlendInterp || !NI_DYNAMIC_CAST(NiBlendTransformInterpolator, refBlock.m_pkBlendInterp) || !additiveBlock)
+            continue;
+        NiInterpolator* additiveInterp = additiveBlock->m_spInterpolator;
+        if (!additiveInterp)
+            continue;
+        
+        NiAVObject* targetNode = BSUtilities::GetObjectByName(node, idTag.m_kAVObjectName);
+        if (!targetNode)
+            continue;
+
+        const float fOldTime = refInterp->m_fLastTime;
+        NiQuatTransform refTransform;
+        const bool bSuccess = refInterp->Update(timePoint, targetNode, refTransform);
+        refInterp->m_fLastTime = fOldTime;
+        if (bSuccess)
+        {
+            auto* extraData = kBlendInterpolatorExtraData::Obtain(targetNode);
+            DebugAssert(extraData);
+            auto& extraInterpItem = extraData->ObtainItem(additiveInterp);
+            extraInterpItem.isAdditive = true;
+            extraInterpItem.additiveMetadata.refTransform = refTransform;
+            extraInterpItem.additiveMetadata.ignorePriorities = ignorePriorities;
+        }
+    }
+}
+
 void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSequence* additiveSequence, NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities)
 {
     auto metadata = AdditiveSequenceMetadata {
         .type = sAdditiveSequenceMetadata,
-        .referencePoseSequenceName = referencePoseSequence->m_kName,
+        .referencePoseSequence = referencePoseSequence,
         .referenceTimePoint = timePoint,
         .ignorePriorities = ignorePriorities,
         .controllerManager = animData->controllerManager,
         .firstPerson = animData == g_thePlayer->firstPersonAnimData
     };
 
-    auto* sequenceExtraData = SequenceExtraDatas::Get(additiveSequence);
+    auto* sequenceExtraData = SequenceExtraDatas::GetOrCreate(additiveSequence);
 
     if (sequenceExtraData->additiveMetadata)
     {
@@ -101,7 +100,6 @@ void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSeque
     {
         sequenceExtraData->additiveMetadata = std::make_unique<AdditiveSequenceMetadata>(metadata);
     }
-    AddReferencePoseTransforms(animData, additiveSequence, referencePoseSequence, timePoint, ignorePriorities);
     MarkInterpolatorsAsAdditive(additiveSequence);
 }
 
@@ -140,6 +138,8 @@ bool AdditiveManager::IsAdditiveSequence(NiControllerSequence* sequence)
     if (!sequence->m_spTextKeys)
         return false;
     auto* sequenceExtraData = SequenceExtraDatas::Get(sequence);
+    if (!sequenceExtraData)
+        return false;
     return sequenceExtraData->additiveMetadata != nullptr;
 }
 
@@ -159,17 +159,10 @@ bool AdditiveManager::IsAdditiveInterpolator(kBlendInterpolatorExtraData* extraD
     return ::IsAdditiveInterpolator(extraData, interpolator);
 }
 
-static kAdditiveInterpMetadata* GetAdditiveInterpMetadata(NiObjectNET* target, NiInterpolator* interpolator)
-{
-    auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
-    if (!extraData)
-        return nullptr;
-    return GetAdditiveInterpMetadata(extraData, interpolator);
-}
-
 void AdditiveManager::SetAdditiveInterpWeightMult(NiObjectNET* target, NiInterpolator* interpolator, float weightMult)
 {
-    if (auto* metadata = GetAdditiveInterpMetadata(target, interpolator); metadata)
+    auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+    if (auto* metadata = GetAdditiveInterpMetadata(extraData, interpolator); metadata)
     {
         metadata->weightMultiplier = weightMult;
     }
@@ -190,19 +183,18 @@ void NiBlendTransformInterpolator::ApplyAdditiveTransforms(
     bool bTransChanged = false;
     bool bRotChanged = false;
     bool bScaleChanged = false;
+    
+    auto* extraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
+    DebugAssert(extraData);
+    if (!extraData)
+        return;
 
-#if _DEBUG
-    if (false)
-    {
-        kValue = originalTransform;
-    }
-#endif
     unsigned int uiNumAdditiveInterps = 0;
     for (auto& kItem : GetItems())
     {
         if (!kItem.m_spInterpolator)
             continue;
-        const auto* kContext = GetAdditiveInterpMetadata(pkInterpTarget, kItem.m_spInterpolator.data);
+        const auto* kContext = GetAdditiveInterpMetadata(extraData, kItem.m_spInterpolator.data);
         if (!kContext)
             continue; // not an additive interpolator
         if (kItem.m_fNormalizedWeight != 0.0f)
@@ -556,12 +548,20 @@ void NiBlendInterpolator::ComputeNormalizedWeightsAdditive(kBlendInterpolatorExt
     }
 }
 
-void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority) const
+void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority, SequenceExtraData* sequenceExtraData)
 {
+    DebugAssert(sequenceExtraData && sequenceExtraData->additiveMetadata);
+    if (!sequenceExtraData || !sequenceExtraData->additiveMetadata)
+        return;
+
+    auto& metadata = *sequenceExtraData->additiveMetadata;
+    AdditiveManager::AddReferencePoseTransforms(this, metadata.referencePoseSequence.data, metadata.referenceTimePoint, metadata.ignorePriorities);
+    
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem& kItem = m_pkInterpArray[ui];
-        if (kItem.m_spInterpolator != nullptr && kItem.m_pkBlendInterp != nullptr)
+        auto* pkBlendInterp = kItem.m_pkBlendInterp;
+        if (kItem.m_spInterpolator != nullptr && pkBlendInterp != nullptr)
         {
             if (!NI_DYNAMIC_CAST(NiBlendTransformInterpolator, kItem.m_pkBlendInterp))
             {
@@ -570,6 +570,31 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority) const
                 kItem.m_pkBlendInterp = nullptr;
                 continue;
             }
+            if (!kItem.m_spInterpolator || !pkBlendInterp)
+                continue;
+            const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
+
+            auto& idTag = kItem.GetIDTag(this);
+            auto* target = m_pkOwner->GetTarget(kItem.m_spInterpCtlr, idTag);
+            if (!target) 
+            {
+                // hello "Ripper" from 1hmidle.kf
+                kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(kItem.m_spInterpolator, 0.0f, cInterpPriority);
+                continue;
+            }
+            
+            auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+            DebugAssert(extraData);
+            extraData->owner = m_pkOwner;
+            auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
+            if (!extraInterpItem.isAdditive)
+                DebugAssert(false);
+            if (pkBlendInterp->m_ucArraySize == 0 && extraInterpItem.blendIndex != INVALID_INDEX)
+            {
+                extraInterpItem.ClearValues();
+                extraInterpItem.interpolator = kItem.m_spInterpolator;
+            }
+            
             kItem.m_ucBlendIdx = kItem.m_pkBlendInterp->AddInterpInfo(
                 kItem.m_spInterpolator,
                 m_fSeqWeight,

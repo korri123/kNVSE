@@ -40,6 +40,36 @@ bool kBlendInterpolatorExtraData::IsEqualEx(const kBlendInterpolatorExtraData* o
     return false;
 }
 
+void kBlendInterpolatorExtraData::EraseSequence(NiControllerSequence* anim)
+{
+    auto* owner = anim->GetOwner();
+    if (!owner)
+        return;
+    auto* palette = owner->m_spObjectPalette;
+    if (!palette)
+        return;
+    for (auto& block : anim->GetControlledBlocks())
+    {
+        auto* blendInterp = block.m_pkBlendInterp;
+        if (!blendInterp)
+            continue;
+        auto& idTag = block.GetIDTag(anim);
+        if (!idTag.m_kAVObjectName.data)
+            continue;
+        auto* target = palette->m_kHash.Lookup(idTag.m_kAVObjectName);
+        if (!target)
+            continue;
+        auto* extraData = GetExtraData(target);
+        if (!extraData)
+            continue;
+        for (auto& item : extraData->items)
+        {
+            if (item.sequence == anim)
+                item.ClearValues();
+        }
+    }
+}
+
 kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::Create()
 {
     auto* extraData = NiNew<kBlendInterpolatorExtraData>();
@@ -148,59 +178,98 @@ NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObjec
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     const std::vector<NiBlendInterpolator::InterpArrayItem*>& items, kWeightType type)
 {
-    if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount)
+    if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount || items.empty())
         return;
+    
     const auto deltaTime = g_timeGlobal->secondsPassed;
     const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
     const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
     
     constexpr float MIN_WEIGHT = 0.001f;
-    constexpr float MAX_WEIGHT = 1.0f - MIN_WEIGHT;
 
+    // First pass: compute smoothed weights and accumulate sum
+    float totalSmoothedWeight = 0.0f;
+    
     for (auto* itemPtr : items)
     {
         auto& item = *itemPtr;
         if (!item.m_spInterpolator)
             continue;
+            
         auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
         if (!extraItemPtr || extraItemPtr->isAdditive)
             continue;
+            
         auto& extraItem = *extraItemPtr;
-        DebugAssert(extraItem.state != kInterpState::NotSet);
         if (extraItem.debugState == kInterpDebugState::NotSet)
             continue;
+            
         auto& weightState = *extraItem.GetWeightState(type);
+        
+        // Initialize on first frame
         if (weightState.lastSmoothedWeight == -NI_INFINITY)
         {
             weightState.lastSmoothedWeight = item.m_fNormalizedWeight;
-            continue;
         }
         
-        auto targetWeight = item.m_fNormalizedWeight;
+        float targetWeight = item.m_fNormalizedWeight;
         weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
         weightState.calculatedNormalizedWeight = targetWeight;
+        
         if (extraItem.detached)
             targetWeight = 0.0f;
-        const auto smoothedWeight = std::lerp(weightState.lastSmoothedWeight, targetWeight, smoothingRate);
-
-        if (smoothedWeight < MIN_WEIGHT)
-        {
-            if (weightState.lastSmoothedWeight != 0.0f || item.m_fNormalizedWeight != 0.0f)
-            {
-                weightState.lastSmoothedWeight = 0.0f;
-                item.m_fNormalizedWeight = 0.0f;
-            }
-        }
-        else 
-        {
-            weightState.lastSmoothedWeight = smoothedWeight;
-            item.m_fNormalizedWeight = smoothedWeight;
-        }
         
-        if (smoothedWeight > MAX_WEIGHT && weightState.lastSmoothedWeight != 1.0f)
+        float smoothedWeight = std::lerp(weightState.lastSmoothedWeight, targetWeight, smoothingRate);
+        
+        // Snap to zero if below threshold (but don't normalize yet)
+        if (smoothedWeight < MIN_WEIGHT)
+            smoothedWeight = 0.0f;
+        
+        // Store temporarily in lastSmoothedWeight
+        weightState.lastSmoothedWeight = smoothedWeight;
+        totalSmoothedWeight += smoothedWeight;
+    }
+
+    // Second pass: renormalize to ensure sum = 1.0
+    if (totalSmoothedWeight > 0.0f)
+    {
+        const float normalizationFactor = 1.0f / totalSmoothedWeight;
+        
+        for (auto* itemPtr : items)
         {
-            weightState.lastSmoothedWeight = 1.0f;
-            item.m_fNormalizedWeight = 1.0f;
+            auto& item = *itemPtr;
+            if (!item.m_spInterpolator)
+                continue;
+                
+            auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
+            if (!extraItemPtr || extraItemPtr->isAdditive)
+                continue;
+                
+            auto& extraItem = *extraItemPtr;
+            if (extraItem.debugState == kInterpDebugState::NotSet)
+                continue;
+                
+            auto& weightState = *extraItem.GetWeightState(type);
+            
+            weightState.lastSmoothedWeight *= normalizationFactor;
+            item.m_fNormalizedWeight = weightState.lastSmoothedWeight;
+        }
+    }
+    else
+    {
+        DebugAssert(false); // All weights equal zero
+        bool setFirst = false;
+        for (auto* itemPtr : items)
+        {
+            if (!itemPtr->m_spInterpolator)
+                continue;
+            if (!setFirst)
+            {
+                itemPtr->m_fNormalizedWeight = 1.0f;
+                setFirst = true;
+                continue;
+            }
+            itemPtr->m_fNormalizedWeight = 0.0f;
         }
     }
 }

@@ -929,6 +929,65 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<InterpArray
             }
         }
     }
+    
+    // Exclude weights below threshold, computing new sum in the process.
+    float fSumOfNormalizedWeights = 1.0f;
+    if (m_fWeightThreshold > 0.0f)
+    {
+        fSumOfNormalizedWeights = 0.0f;
+        for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
+        {
+            InterpArrayItem& kItem = m_pkInterpArray[uc];
+            if (kItem.m_spInterpolator != NULL &&
+                kItem.m_fNormalizedWeight != 0.0f)
+            {
+                if (kItem.m_fNormalizedWeight < m_fWeightThreshold)
+                {
+                    kItem.m_fNormalizedWeight = 0.0f;
+                }
+                fSumOfNormalizedWeights += kItem.m_fNormalizedWeight;
+            }
+        }
+    }
+
+    // Renormalize weights if any were excluded earlier.
+    if (fSumOfNormalizedWeights != 1.0f)
+    {
+        // Renormalize weights.
+        float fOneOverSumOfNormalizedWeights = 
+            (fSumOfNormalizedWeights > 0.0f) ?
+            (1.0f / fSumOfNormalizedWeights) : 0.0f;
+
+        for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
+        {
+            InterpArrayItem& kItem = m_pkInterpArray[uc];
+            if (kItem.m_fNormalizedWeight != 0.0f)
+            {
+                kItem.m_fNormalizedWeight = kItem.m_fNormalizedWeight *
+                    fOneOverSumOfNormalizedWeights;
+            }
+        }
+    }
+
+    // Only use the highest weight, if so directed.
+    if (GetOnlyUseHighestWeight())
+    {
+        float fHighest = -1.0f;
+        unsigned char ucHighIndex = INVALID_INDEX;
+        for (unsigned char uc = 0; uc < m_ucArraySize; uc++)
+        {
+            if (m_pkInterpArray[uc].m_fNormalizedWeight > fHighest)
+            {
+                ucHighIndex = uc;
+                fHighest = m_pkInterpArray[uc].m_fNormalizedWeight;
+            }
+            m_pkInterpArray[uc].m_fNormalizedWeight = 0.0f;
+        }
+
+        NIASSERT(ucHighIndex != INVALID_INDEX);
+        // Set the highest index to 1.0
+        m_pkInterpArray[ucHighIndex].m_fNormalizedWeight = 1.0f;
+    }
 }
 
 void NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant()
@@ -1177,7 +1236,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
     auto* sequenceExtraData = SequenceExtraDatas::Get(this);
 
-    if (sequenceExtraData->needsStoreTargets)
+    if (sequenceExtraData && sequenceExtraData->needsStoreTargets)
     {
         auto* target = NI_DYNAMIC_CAST(NiAVObject, this->m_pkOwner->m_pkTarget);
         DebugAssert(target);
@@ -1186,10 +1245,10 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         sequenceExtraData->needsStoreTargets = false;
     }
     
-    if (AdditiveManager::IsAdditiveSequence(this))
+    if (sequenceExtraData && sequenceExtraData->additiveMetadata)
     {
         AdditiveManager::MarkInterpolatorsAsAdditive(this);
-        AttachInterpolatorsAdditive(cPriority);
+        AttachInterpolatorsAdditive(cPriority, sequenceExtraData);
         return;
     }
     
@@ -1483,7 +1542,7 @@ void NiControllerSequence::SetTimePassed(float fTime, bool bUpdateInterpolators)
 
 void NiControllerSequence::Update(float fTime, bool bUpdateInterpolators)
 {
-#if 1
+#if !_DEBUG
     ThisStdCall(0xA34BA0, this, fTime, bUpdateInterpolators);
 #else
     if (m_eState == INACTIVE)
@@ -1611,9 +1670,27 @@ void NiControllerSequence::Update(float fTime, bool bUpdateInterpolators)
         {
             fUpdateTime = m_fOffset + fTime;
         }
+        
+        float fTimeBefore = m_fLastScaledTime;
 
         SetInterpsWeightAndTime(m_fSeqWeight * fTransSpinner, fEaseSpinner,
                                 ComputeScaledTime(fUpdateTime, true));
+        
+        if (spAnimNotes)
+        {
+            if (m_fLastScaledTime < fTimeBefore)
+                usCurAnimNIdx = -1;
+
+            for (UInt16 i = usCurAnimNIdx + 1; i < usNumNotes; ++i)
+            {
+                auto* note = &spAnimNotes[i];
+                if (fUpdateTime <= note->fTime)
+                    break;
+
+                usCurAnimNIdx = i;
+                m_pkOwner->pListener->Update(note);
+            }
+        }
     }
 #endif
 }
@@ -1768,7 +1845,7 @@ bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, f
 NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
     const NiControllerSequence::IDTag& idTag)
 {
-    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene)
+    if (!m_spObjectPalette)
         return nullptr;
     if (auto* target = m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName))
         return target;
@@ -2030,27 +2107,6 @@ unsigned int __fastcall AddInterpHook(NiControllerSequence* poseSequence, UInt32
     auto idx = offset / 0x10;
     const auto& newIdTag = pkSequence->m_pkIDTagArray[idx];
     const auto result = poseSequence->AddInterpolator(interpolator, newIdTag, priority);
-
-#if 0
-    if (auto* poseTransformInterp = NI_DYNAMIC_CAST(NiTransformInterpolator, interpolator))
-    {
-        if (auto* block = pkSequence->GetControlledBlock(newIdTag.m_kAVObjectName))
-        {
-            if (auto* seqTransformInterp = NI_DYNAMIC_CAST(NiTransformInterpolator, block->m_spInterpolator))
-            {
-                if (!seqTransformInterp->m_kTransformValue.IsTranslateValid()
-                    && (!poseTransformInterp->m_spData || poseTransformInterp->m_spData->m_ucPosSize == 0))
-                    poseTransformInterp->m_kTransformValue.m_kTranslate = NiPoint3::INVALID_POINT;
-                if (!seqTransformInterp->m_kTransformValue.IsRotateValid()
-                    && (!poseTransformInterp->m_spData || poseTransformInterp->m_spData->m_ucRotSize == 0))
-                    poseTransformInterp->m_kTransformValue.m_kRotate = NiQuaternion::INVALID_QUATERNION;
-                if (!seqTransformInterp->m_kTransformValue.IsScaleValid()
-                    && (!poseTransformInterp->m_spData || poseTransformInterp->m_spData->m_ucScaleSize == 0))
-                    poseTransformInterp->m_kTransformValue.m_fScale = -NI_INFINITY;
-            }
-        }
-    }
-#endif
     return result;
 }
 
@@ -2087,7 +2143,9 @@ namespace NiHooks
         //WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
         //WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
         //WriteRelJump(0xA35030, &NiControllerSequence::Deactivate_);
-        //WriteRelJump(0xA34BA0, &NiControllerSequence::Update);
+#if _DEBUG
+        // WriteRelJump(0xA34BA0, &NiControllerSequence::Update);
+#endif
     }
 
     // override stewie's tweaks
@@ -2100,89 +2158,7 @@ namespace NiHooks
     }
 }
 
-std::unordered_map<NiInterpolator*, NiControllerSequence*> g_interpsToSequenceMap;
-
-void __fastcall NiControllerSequence_AttachInterpolatorsHook(NiControllerSequence* _this, void*,  char cPriority)
-{
-    std::span interpItems(_this->m_pkInterpArray, _this->m_uiArraySize);
-    for (auto& interp : interpItems)
-    {
-        g_interpsToSequenceMap[interp.m_spInterpolator] = _this;
-    }
-    ThisStdCall(0xA30900, _this, cPriority);
-}
-
-void __fastcall NiControllerSequence_DetachInterpolatorsHook(NiControllerSequence* _this, void*)
-{
-    ThisStdCall(0xA30540, _this);
-    std::span interpItems(_this->m_pkInterpArray, _this->m_uiArraySize);
-    for (auto& interp : interpItems)
-    {
-        g_interpsToSequenceMap.erase(interp.m_spInterpolator);
-    }
-}
-
-bool IsTempBlendSequence(const NiControllerSequence* sequence)
-{
-    return strncmp("__", sequence->m_kName.CStr(), 2) == 0;
-}
-
-std::string GetLastSubstringAfterSlash(const std::string& str)
-{
-    const auto pos = str.find_last_of('\\');
-    if (pos == std::string::npos)
-        return str;
-    return str.substr(pos + 1);
-}
-
-
-#define EXPERIMENTAL_HOOKS 0
-
-void __fastcall NiControllerSequenceUpdateHook(NiControllerSequence* sequence, void*, float fTime, bool bUpdateInterpolators)
-{
-    if (sequence->m_eState == NiControllerSequence::INACTIVE)
-    {
-        return;
-    }
-    if (sequence->m_fStartTime == -NI_INFINITY)
-    {
-        const auto fEaseSpinner = sequence->GetEaseSpinner();
-
-        if (sequence->m_eState == NiControllerSequence::EASEOUT)
-        {
-            if (fEaseSpinner == 0.0f)
-            {
-                sequence->Deactivate(0.0f, false);
-                return;
-            }
-
-            float fEaseOutTime = sequence->m_fEndTime;
-
-            // Choose a start and end time so that the ease spinner starts
-            // at the same value that it ended at.  Also, scale the total
-            // ease out time by the ease spinner.  If the sequence is
-            // X% eased out already, then reduce the ease out time by X%.
-            sequence->m_fEndTime = fTime + fEaseSpinner * fEaseOutTime;
-
-            // Note: Use the minimum here as the floating point math
-            // may work out such that fStartTime > fTime, which should
-            // never happen (and there are asserts about, below).
-            sequence->m_fStartTime = min(sequence->m_fEndTime - fEaseOutTime, fTime);
-        }
-        else if (sequence->m_eState == NiControllerSequence::EASEIN)
-        {
-            float fEaseInTime = sequence->m_fEndTime;
-            
-            // See comments above in EASEOUT case.
-            sequence->m_fEndTime = fTime + (1.0f - fEaseSpinner) * fEaseInTime;
-            sequence->m_fStartTime = min(sequence->m_fEndTime - fEaseInTime, fTime);
-        }
-    }
-    sequence->Update(fTime, bUpdateInterpolators);
-}
-
 void ApplyNiHooks()
 {
     NiHooks::WriteHooks();
-
 }

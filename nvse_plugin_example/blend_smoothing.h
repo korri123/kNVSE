@@ -118,6 +118,7 @@ public:
 
     void Destroy(bool freeMem);
     bool IsEqualEx(const kBlendInterpolatorExtraData* other) const;
+    static void EraseSequence(NiControllerSequence* anim);
 
     static kBlendInterpolatorExtraData* Create();
     static const NiFixedString& GetKey();

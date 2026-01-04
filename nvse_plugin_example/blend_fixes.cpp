@@ -179,6 +179,7 @@ namespace
 		const auto destFrame = sourceSeq->m_fLastScaledTime / sourceSeq->m_fEndKeyTime * targetSeq->m_fEndKeyTime;
 		sourceSeq->StartBlend(targetSeq, blend, destFrame, 0, sourceSeq->m_fSeqWeight, targetSeq->m_fSeqWeight,
 		                      nullptr);
+		targetSeq->Update(animData->timePassed, true);
 
 		HandleExtraOperations(animData, targetSeq);
 		HandleCustomTextKeys(); // since dest frame is there lets run any sounds
