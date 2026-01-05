@@ -653,6 +653,27 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 }
 #endif
 
+static char* stristr(const char* haystack, const char* needle) 
+{
+	// case insensitive strstr
+	if (!*needle) return const_cast<char*>(haystack);
+
+	const auto needleLen = strlen(needle);
+	const auto haystackLen = strlen(haystack);
+    
+	if (needleLen > haystackLen) return nullptr;
+    
+	const char* end = haystack + (haystackLen - needleLen + 1);
+    
+	while (haystack < end) 
+	{
+		if (_strnicmp(haystack, needle, needleLen) == 0)
+			return const_cast<char*>(haystack);
+		haystack++;
+	}
+	return nullptr;
+}
+
 void ApplyHooks()
 {
 #if _DEBUG
@@ -779,6 +800,8 @@ void ApplyHooks()
 		// hooked call
 		ThisStdCall(0x48FF50, animData);
 	}));
+	
+
 
 	// BSTasklet::SetData
 	// Runs when actor switches ammo type in Stewie Tweaks
@@ -903,9 +926,7 @@ void ApplyHooks()
 		return sequenceId; // this is kind of a hack because the next instruction is a mov eax, sequenceId
 	}));
 	PatchMemoryNop(0x4994F9 + 2, 1);
-
 	
-
 	// BSAnimGroupSequence::GetName
 	// apply text key fixes before AnimGroup is init
 	WriteRelCall(0x43B838, INLINE_HOOK(NiFixedString*, __fastcall, BSAnimGroupSequence* anim)
@@ -923,14 +944,35 @@ void ApplyHooks()
 		}
 		return &anim->m_kName;
 	}));
-
+	
 	// BSAnimGroupSequence::SetSequenceName
 	WriteRelCall(0x43B99A, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim, void*, NiFixedString* name)
 	{
-		// we want to force every animation to have lowercase names so we can look them up case insensitive in NiTPointerMap
+		// we want to force every animations with path names to have lowercase names so we can look them up case insensitive in NiTPointerMap
 		sv::stack_string<0x400> newName("%s", name->data);
-		newName.to_lower();
-		anim->m_kName = newName.c_str();
+		if (newName.ends_with_ci(".kf"))
+		{
+			newName.to_lower();
+			anim->m_kName = newName.c_str();
+		}
+	}));
+	
+	for (const auto addr : { 0x8B79EC, 0x8B7A05, 0x8B7A1E, 0x8B7A37 })
+	{
+		// replace case-sensitive anim name strstr's with case-insensitive
+		WriteRelCall(addr, stristr);
+	}
+	
+	// NiControllerManager::GetSequenceByName
+	WriteRelCall(0x47A53C, INLINE_HOOK(bool, __fastcall, NiTMapBase<const char*, NiControllerSequence*>* map, void*, const char* name, NiControllerSequence** out)
+	{
+		sv::stack_string<0x400> newName("%s", name);
+		if (newName.ends_with_ci(".kf"))
+		{
+			newName.to_lower();
+			return ThisStdCall<bool>(0x853130, map, newName.c_str(), out);
+		}
+		return ThisStdCall<bool>(0x853130, map, name, out);
 	}));
 
 	// AnimData::PlayAnimGroup
@@ -988,7 +1030,6 @@ void ApplyHooks()
 		}));
 	};
 	writeAttackLoopToAimHooks();
-	
 
 	const auto writeInterruptLoopAllowReloadHooks = []
 	{
@@ -1020,8 +1061,7 @@ void ApplyHooks()
 			return anim->m_fLastScaledTime;
 		return ThisStdCall<float>(0x493800, animData, anim);
 	}));
-
-
+	
 #if _DEBUG
 	// BSSimpleList<void *>::IsEmpty(ListMasters)
 	// stop game from not loading bsa files for mods with empty master list
@@ -1094,7 +1134,6 @@ void ApplyHooks()
 		// stop game from not ending move anims immediately
 		return NiControllerSequence::ANIMATING;
 	}));
-
 
 	// NiControllerManager::DeactivateSequence
 	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
@@ -1222,7 +1261,6 @@ void ApplyHooks()
 		return CdeclCall<NiTimeController*>(uiNiRTTIDynamicCastAddr, rtti, controller);
 	}), &uiNiRTTIDynamicCastAddr);
 	
-
 	// prevent i.e. hunting rifle sound playing twice
 	WriteRelJump(0x4EEC60, INLINE_HOOK(float, __fastcall, BSAnimGroupSequence* sequence, void*, float fTime)
 	{
@@ -1248,7 +1286,6 @@ void ApplyHooks()
 
 	if (g_pluginSettings.blendSmoothing)
 		BlendSmoothing::WriteHooks();
-
 }
 
 void WriteDelayedHooks()

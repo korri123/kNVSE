@@ -129,8 +129,10 @@ namespace sv
             return data_;
         }
 
-        operator std::string_view() const
+        operator std::string_view()
         {
+            if (!size_)
+                calculate_size();
             return { data_, size_ };
         }
 
@@ -144,8 +146,10 @@ namespace sv
             return data_;
         }
 
-        std::string_view str() const
+        std::string_view str()
         {
+            if (!size_)
+                calculate_size();
             return { data_, size_ };
         }
 
@@ -177,6 +181,8 @@ namespace sv
 
         void to_lower()
         {
+            if (!size_)
+                calculate_size();
             std::transform(data_, data_ + size_, data_, [](const unsigned char c) { return std::tolower(c); });
         }
 
@@ -199,7 +205,7 @@ namespace sv
             }
         }
 
-        bool starts_with(std::string_view str) const
+        bool starts_with_ci(std::string_view str) const
         {
             return sv::starts_with_ci(data_, str);
         }
@@ -207,6 +213,11 @@ namespace sv
         bool ends_with(char c) const
         {
             return size_ > 0 && data_[size_ - 1] == c;
+        }
+        
+        bool ends_with_ci(std::string_view str) const
+        {
+            return sv::ends_with_ci(data_, str);
         }
 
         stack_string& operator+=(char c)

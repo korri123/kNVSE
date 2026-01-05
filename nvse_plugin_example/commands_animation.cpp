@@ -1510,7 +1510,6 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 	
 	if (!ExtractArgs(EXTRACT_ARGS, &path.data_, &bIsFirstPerson))
 		return true;
-	path.calculate_size();
 	path.to_lower();
 
 	auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
@@ -2932,10 +2931,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath.data_, &firstPerson, &refPoseAnimPath.data_, &refPoseTimePoint, &ignorePriorities))
 			return true;
 		for (auto* path : {&animPath, &refPoseAnimPath})
-		{
-			path->calculate_size();
-			SetLowercase(path->data());
-		}
+			path->to_lower();
 		if (animPath.empty())
 			return true;
 		
@@ -2985,8 +2981,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		sv::stack_string<0x400> animPath;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
 			return true;
-		SetLowercase(animPath.data_);
-		animPath.calculate_size();
+		animPath.to_lower();
 		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
 		if (!actor)
 			return true;
@@ -3005,9 +3000,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto archiveType = ARCHIVE_TYPE_ALL;
 		if (!ExtractArgs(EXTRACT_ARGS, &path, &archiveType))
 			return true;
-		path.calculate_size();
 		std::string realPath;
-		if (!path.starts_with("data\\"))
+		if (!path.starts_with_ci("data\\"))
 		{
 			realPath = "data\\" + std::string(path.str());
 		}
@@ -3051,8 +3045,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		sv::stack_string<0x400> animPath;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath))
 			return true;
-		SetLowercase(animPath.data_);
-		animPath.calculate_size();
+		animPath.to_lower();
 		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
 		if (!actor)
 			return true;
@@ -3073,8 +3066,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		if (cycleType > NiControllerSequence::MAX_CYCLE_TYPES)
 			return true;
-		SetLowercase(animPath.data());
-		animPath.calculate_size();
+		animPath.to_lower();
 		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
 		if (!actor)
 			return true;
@@ -3099,9 +3091,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		int recursive = false;
 		if (!ExtractArgs(EXTRACT_ARGS, &animPath, &nodeName, &weight, &recursive, &firstPerson) || !thisObj)
 			return true;
-		SetLowercase(animPath.data());
-		animPath.calculate_size();
-		nodeName.calculate_size();
+		animPath.to_lower();
 		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
 		if (!actor)
 			return true;
@@ -3224,7 +3214,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = 0;
 		if (!ExtractArgs(EXTRACT_ARGS, &featureName))
 			return true;
-		featureName.calculate_size();
 
 		if (featureName.str() == "blendSmoothing")
 		{
