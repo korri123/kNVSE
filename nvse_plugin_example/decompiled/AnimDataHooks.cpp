@@ -133,21 +133,21 @@ BSAnimGroupSequence *AnimData::StartGroup(BSAnimGroupSequence *apDestSequence, U
           {
             if ( eOriginalSequenceId != eSequenceType || this->noBlend120 || apDestSequence->m_eState )
             {
-              this->ResetSequenceState(eOriginalSequenceId, 0.0);
+              this->ClearGroup(eOriginalSequenceId, 0.0);
             }
             else if ( eOriginalSequenceId == kSequence_Weapon
                    && (groupId <= kAnimGroup_Unequip || groupId > kAnimGroup_JamM)
                    && !AnimGroup::IsAim(groupId) )
             {
-              this->ResetSequenceState(kSequence_WeaponUp, 0.0);
-              this->ResetSequenceState(kSequence_WeaponDown, 0.0);
+              this->ClearGroup(kSequence_WeaponUp, 0.0);
+              this->ClearGroup(kSequence_WeaponDown, 0.0);
             }
           }
           else
           {
             if ( this->actor != pPlayer && eSequenceType == kSequence_Movement )
               return nullptr;
-            this->ResetSequenceState(eOriginalSequenceId, 0.0);
+            this->ClearGroup(eOriginalSequenceId, 0.0);
             pCurrentSequence = nullptr;
           }
         }
@@ -160,14 +160,14 @@ BSAnimGroupSequence *AnimData::StartGroup(BSAnimGroupSequence *apDestSequence, U
           && currGroupId >= kAnimGroup_HandGrip1
           && currGroupId <= kAnimGroup_HandGrip6 )
         {
-          this->ResetSequenceState(eOriginalSequenceId, 0.0);
+          this->ClearGroup(eOriginalSequenceId, 0.0);
           pCurrentSequence = nullptr;
         }
       }
     }
     else
     {
-      this->ResetSequenceState(eOriginalSequenceId, 0.0);
+      this->ClearGroup(eOriginalSequenceId, 0.0);
       pCurrentSequence = nullptr;
       this->noBlend120 = true;
     }

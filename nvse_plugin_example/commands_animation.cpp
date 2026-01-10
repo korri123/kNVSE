@@ -1556,7 +1556,7 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 		{
 			wasActive = true;
 			if (anim->animGroup)
-				animData->ResetSequenceState(anim->animGroup->GetSequenceType(), 0.0);
+				animData->ClearGroup(anim->animGroup->GetSequenceType(), 0.0);
 			manager->DeactivateSequence(anim, 0.0f);
 			NiUpdateData updateData{};
 			manager->Update(&updateData);
@@ -1844,13 +1844,20 @@ float GetIniFloat(UInt32 addr)
 	return ThisStdCall<SettingT::Info*>(0x403E20, reinterpret_cast<void*>(addr))->f;
 }
 
+float AnimData::GetBlendTime() const
+{
+	if (noBlend120)
+		return 0.0f;
+	return GetDefaultBlendTime() / 30.0f / GetDefaultAnimMult();
+}
+
 float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence)
 {
 	const static auto sNoBlend = NiFixedString("noBlend");
 	if (destSequence->m_spTextKeys->FindFirstByName(sNoBlend))
 		return 0.0f;
-	const auto defaultBlend = GetIniFloat(0x11C56FC);
-	const auto blendMult = GetIniFloat(0x11C5724);
+	const auto defaultBlend = GetDefaultBlendTime();
+	const auto blendMult = GetDefaultAnimMult();
 	if (!destSequence->animGroup)
 		return defaultBlend;
 	const auto blendOut = max(destSequence->animGroup->blendOut, destSequence->animGroup->blend);
@@ -1864,8 +1871,8 @@ float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimG
 	const static auto sNoBlend = NiFixedString("noBlend");
 	if (destSequence->m_spTextKeys->FindFirstByName(sNoBlend))
 		return 0.0f;
-	const auto defaultBlend = GetIniFloat(0x11C56FC);
-	const auto blendMult = GetIniFloat(0x11C5724);
+	const auto defaultBlend = GetDefaultBlendTime();
+	const auto blendMult = GetDefaultAnimMult();
 
 	if (!destSequence->animGroup)
 		return defaultBlend;

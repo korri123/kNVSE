@@ -49,3 +49,13 @@ namespace LoopingReloadPauseFix
 }
 
 void WriteDelayedHooks();
+
+inline float GetDefaultBlendTime()
+{
+    return GetIniFloat(0x11C56FC);
+}
+
+inline float GetDefaultAnimMult()
+{
+    return GetIniFloat(0x11C5724);
+}

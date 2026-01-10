@@ -48,8 +48,10 @@ BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroup
 void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequence* anim3rd);
 
 // UInt32 animGroupId, BSAnimGroupSequence** toMorph, UInt8* basePointer
-BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequence)
+BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*, BSAnimGroupSequence* destAnim, UInt16 animGroupId, eAnimSequence animSequencePass)
 {
+	const auto baseGroupId = AnimGroup::GetBaseGroupID(animGroupId);
+	const auto sequenceType = GetSequenceType(baseGroupId);
 	if (!animData || !animData->actor)
 		return nullptr;
 
@@ -90,10 +92,18 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		return destAnim;
 	}
 
-	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug &&
-	    BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
+	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug)
 	{
-		return destAnim;
+		if (BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
+			return destAnim;
+		if (!destAnim && (sequenceType == kSequence_WeaponUp || sequenceType == kSequence_WeaponDown))
+		{
+			// fix broken 2ha aimup/aimdown anims in vanilla (assault carbine)
+			// otherwise aimISUp/aimISDown gets stuck
+			const auto defaultBlend = animData->GetBlendTime();
+			animData->ClearGroup(kSequence_WeaponUp, defaultBlend);
+			animData->ClearGroup(kSequence_WeaponDown, defaultBlend);
+		}
 	}
 
 	TESAnimGroup* const destAnimGroup = destAnim ? destAnim->animGroup : nullptr;
@@ -123,7 +133,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	}
 	else
 	{
-		result = animData->StartGroup(destAnim, animGroupId, animSequence);
+		result = animData->StartGroup(destAnim, animGroupId, animSequencePass);
 	}
 
 	if (destAnim && currentAnim)
@@ -674,8 +684,22 @@ static char* stristr(const char* haystack, const char* needle)
 	return nullptr;
 }
 
+#if _DEBUG
+static HMODULE hJIP = 0;
+
+static size_t __fastcall GetJIPAddress(size_t aiAddress)
+{
+	return reinterpret_cast<size_t>(hJIP) + aiAddress - 0x10000000;
+}
+#endif
+
+
 void ApplyHooks()
 {
+#if _DEBUG
+	hJIP = GetModuleHandle("jip_nvse.dll");
+#endif
+	
 #if _DEBUG
 	// stop ° in console
 	hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
@@ -731,8 +755,6 @@ void ApplyHooks()
 	if (conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
 	BlendFixes::ApplyHooks();
-
-	
 	
 	if (ini.GetOrCreate("Engine Fixes", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{
@@ -1290,6 +1312,9 @@ void ApplyHooks()
 
 void WriteDelayedHooks()
 {
+#if _DEBUG
+	SafeWriteBuf(0x5719ED, "\x83\x7D\xF8\x00\x74\x16", 5);
+#endif
 	NiHooks::WriteDelayedHooks();
 	AllowAttackKey::ApplyHooks();
 

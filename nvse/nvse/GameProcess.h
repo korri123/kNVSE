@@ -160,7 +160,7 @@ struct AnimData
 
 	bool IsAnimSequenceQueued(const BSAnimGroupSequence* apSequence) const;
 
-	void ResetSequenceState(eAnimSequence seqID, float blendAmount)
+	void ClearGroup(eAnimSequence seqID, float blendAmount)
 	{
 		ThisStdCall(0x496080, this, seqID, blendAmount);
 	}
@@ -183,6 +183,8 @@ struct AnimData
 	}
 
 	void SetCurrentSequence(BSAnimGroupSequence* destAnim, bool resetSequenceState);
+	
+	float GetBlendTime() const;
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);
 enum WeaponModFlags: UInt32;
