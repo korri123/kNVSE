@@ -1438,38 +1438,24 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 template <typename Function>
 bool QueueScriptAnimOperation(Actor* actor, bool runImmediately, Function&& callback)
 {
-
 	if (runImmediately)
-	{
 		return callback();
-	}
 
 	const auto* pTaskManager = AILinearTaskManager::GetSingleton();
 
 	if (!pTaskManager->pThreads[1])
-	{
 		// iNumHWThreads is <= 1
 		return callback();
-	}
 		
 	const auto currentThreadId = GetCurrentThreadId();
 
-	if (actor == g_thePlayer)
-	{
-		if (currentThreadId == OSGlobals::GetSingleton()->mainThreadID)
-		{
-			return callback();
-		}
-		g_mainThreadQueue.Add(std::forward<Function>(callback));
-		return true;
-	}
+	if (actor == g_thePlayer && currentThreadId == OSGlobals::GetSingleton()->mainThreadID)
+		return callback();
 	const auto* aiLinearTaskThread = pTaskManager->pThreads[0];
 	// actor is not the player, so must be handled on AI Linear Task 1 thread
 	if (currentThreadId == aiLinearTaskThread->threadID)
-	{
 		return callback();
-	}
-	g_aiLinearTask1Queue.Add(std::forward<Function>(callback));
+	g_postAILinearTaskThreadQueue.Add(std::forward<Function>(callback));
 	return true;
 }
 

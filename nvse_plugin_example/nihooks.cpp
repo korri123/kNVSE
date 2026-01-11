@@ -1250,7 +1250,6 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         return;
     }
     const auto disabledBlendSmoothing = DisabledBlendSmoothing();
-    m_pkOwner->CleanObjectPalette();
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
@@ -1282,10 +1281,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         
         extraInterpItem.sequence = this;
         extraInterpItem.state = kInterpState::Activating;
-        if (extraInterpItem.blendInterp)
-            DebugAssert(extraInterpItem.blendInterp == pkBlendInterp);
-        if (!extraInterpItem.blendInterp)
-            extraInterpItem.blendInterp = pkBlendInterp;
+        extraInterpItem.blendInterp = pkBlendInterp;
 
         if (extraInterpItem.detached)
         {
@@ -1837,9 +1833,11 @@ bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, f
 NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
     const NiControllerSequence::IDTag& idTag)
 {
-    if (!m_spObjectPalette)
+    if (!GetObjectPalette())
         return nullptr;
     if (auto* target = m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName))
+        return target;
+    if (auto* target = m_spObjectPalette->m_pkScene->GetObjectByName(idTag.m_kAVObjectName))
         return target;
     if (auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
     {
@@ -1856,43 +1854,14 @@ NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
     return nullptr;
 }
 
-void NiControllerManager::CleanObjectPalette() const
+NiDefaultAVObjectPalette* NiControllerManager::GetObjectPalette() const
 {
-    thread_local std::unordered_set<const char*> toKeep;
-    thread_local std::unordered_map<const char*, NiAVObject*> toKeepMap;
-    toKeep.clear();
-    toKeepMap.clear();
-    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene) 
-        return;
-    auto* scene = m_spObjectPalette->m_pkScene->GetAsNiNode();
-    DebugAssert(scene);
-    if (!scene)
-        return;
-    scene->RecurseTree([&](NiAVObject* node)
-    {
-        toKeepMap.emplace(node->m_pcName, node);
-        NiTFixedStringMap<NiAVObject*>::NiTMapItem* mapItem;
-        if (m_spObjectPalette->m_kHash.GetAt(node->m_pcName, mapItem))
-        {
-            toKeep.insert(node->m_pcName);
-            if (mapItem->m_val != node)
-            {
-                mapItem->m_val = node;
-            }
-        }
-    });
-    thread_local std::vector<const char*> toRemove; 
-    toRemove.clear();
-    for (auto& mapItem : m_spObjectPalette->m_kHash)
-    {
-        auto& name = mapItem.m_key;
-        if (!toKeep.contains(name))
-            toRemove.emplace_back(name);
-    }
-    for (auto& name : toRemove)
-    {
-        m_spObjectPalette->m_kHash.RemoveAt(name);
-    }
+    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene)
+        return nullptr;
+    auto* scene = NI_DYNAMIC_CAST(NiNode, m_spObjectPalette->m_pkScene);
+    if (!scene || scene->m_children.m_usESize == 0)
+        return nullptr;
+    return m_spObjectPalette;
 }
 
 void NiControllerSequence::DetachInterpolators() const
@@ -1923,7 +1892,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         {
             const auto& idTag = kItem.GetIDTag(this);
             DebugAssert(m_pkOwner && m_pkOwner->m_spObjectPalette);
-            auto* target = m_pkOwner && m_pkOwner->m_spObjectPalette ? m_pkOwner->m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName) : nullptr;
+            auto* target = m_pkOwner ? m_pkOwner->GetTarget(kItem.m_spInterpCtlr, idTag) : nullptr;
             const auto blendIndex = kItem.m_ucBlendIdx;
             if (!target)
             {

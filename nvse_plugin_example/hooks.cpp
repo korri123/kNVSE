@@ -619,7 +619,7 @@ thread_local PluginGlobalData g_globals;
 
 thread_local bool g_isThreadCacheEnabled = false;
 
-SynchronizedQueue g_aiLinearTask1Queue;
+SynchronizedQueue g_postAILinearTaskThreadQueue;
 
 
 #if _DEBUG
@@ -1101,15 +1101,14 @@ void ApplyHooks()
 		CdeclCall<void>(uiScriptLocalsClearOptimizationsAddr);
 	}), &uiScriptLocalsClearOptimizationsAddr);
 
-#if 0
-	using ProcessManager = void;
-	static UInt32 uiUpdateHighProcessAnimationsAddr;
-	WriteRelCall(0x8C7DF3, INLINE_HOOK(void, __fastcall, ProcessManager* processManager)
+#if 1
+	// Runs after ProcessLists::UpdateNonRenderSafeStuff when both AILinearTaskThreads are done
+	static UInt32 uiGetPipBoyManager = 0x705990;
+	WriteRelCall(0x86F765, INLINE_HOOK(void, __cdecl)
 	{
-		g_isThreadCacheEnabled = true;
-		g_aiLinearTask1Queue.RunAllAndClear();
-		ThisStdCall(uiUpdateHighProcessAnimationsAddr, processManager);
-	}), &uiUpdateHighProcessAnimationsAddr);
+		g_postAILinearTaskThreadQueue.RunAllAndClear();
+		CdeclCall(uiGetPipBoyManager);
+	}), &uiGetPipBoyManager);
 #endif
 	AdditiveManager::WriteHooks();
 

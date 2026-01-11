@@ -2475,10 +2475,6 @@ public:
 	}
 };
 
-const auto s = sizeof(BSAnimGroupSequence);
-
-class NiNode;
-
 enum AnimGroupID : UInt8
 {
 	kAnimGroup_Idle					= 0x0,
@@ -2956,10 +2952,11 @@ class NiDefaultAVObjectPalette : public NiAVObjectPalette
 public:
 	NiTFixedStringMap<NiAVObject*> m_kHash;
 	NiAVObject* m_pkScene;
+	
+	NIRTTI_ADDRESS(0x11F4A04);
 };
 
 
-class NiDefaultAVObjectPalette;
 // 7C
 class NiControllerManager : public NiTimeController
 {
@@ -3039,7 +3036,7 @@ public:
 
 	NiAVObject* GetTarget(NiInterpController* controller, const NiControllerSequence::IDTag& idTag);
 
-	void CleanObjectPalette() const;
+	NiDefaultAVObjectPalette* GetObjectPalette() const;
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
 

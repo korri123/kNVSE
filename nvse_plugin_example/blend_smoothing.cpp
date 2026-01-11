@@ -45,7 +45,7 @@ void kBlendInterpolatorExtraData::EraseSequence(NiControllerSequence* anim)
     auto* owner = anim->GetOwner();
     if (!owner)
         return;
-    auto* palette = owner->m_spObjectPalette;
+    auto* palette = owner->GetObjectPalette();
     if (!palette)
         return;
     for (auto& block : anim->GetControlledBlocks())
@@ -322,59 +322,4 @@ void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraDat
 
 void BlendSmoothing::WriteHooks()
 {
-#if 1
-
-    WriteRelCall(0x499252, INLINE_HOOK(NiControllerManager*, __fastcall, NiControllerManager** managerPtr)
-    {
-        auto* manager = *managerPtr;
-        if (!manager)
-            return nullptr;
-
-        std::unordered_set<const char*> toKeep;
-        std::unordered_map<const char*, NiAVObject*> toKeepMap;
-        manager->m_spObjectPalette->m_pkScene->GetAsNiNode()->RecurseTree([&](NiAVObject* node)
-        {
-            toKeepMap.emplace(node->m_pcName, node);
-            NiTFixedStringMap<NiAVObject*>::NiTMapItem* mapItem;
-            if (manager->m_spObjectPalette->m_kHash.GetAt(node->m_pcName, mapItem))
-            {
-                toKeep.insert(node->m_pcName);
-                if (mapItem->m_val != node)
-                {
-                    mapItem->m_val = node;
-                }
-            }
-            if (auto* extraData = kBlendInterpolatorExtraData::GetExtraData(node))
-            {
-                auto& items = extraData->items;
-                for (auto& item : items)
-                {
-                    item.ClearValues();
-                }
-            }
-        });
-        std::vector<const char*> toRemove;
-        for (auto& mapItem : manager->m_spObjectPalette->m_kHash)
-        {
-            auto& name = mapItem.m_key;
-            if (!toKeep.contains(name))
-                toRemove.emplace_back(name);
-        }
-        for (auto& name : toRemove)
-        {
-            manager->m_spObjectPalette->m_kHash.RemoveAt(name);
-        }
-        return manager;
-    }));
-
-    static UInt32 uiNiControllerManagerDestroy = 0xA2EBB0;
-    // clear object palette in NiControllerManager destructor
-    WriteRelCall(0xA2EF83, INLINE_HOOK(void, __fastcall, NiControllerManager* manager)
-    {
-        manager->m_spObjectPalette->m_kHash.RemoveAll();
-        ThisStdCall(uiNiControllerManagerDestroy, manager);
-    }), &uiNiControllerManagerDestroy);
-
-
-#endif
 }

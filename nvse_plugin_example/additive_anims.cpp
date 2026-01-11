@@ -39,13 +39,13 @@ void AdditiveManager::MarkInterpolatorsAsAdditive(const NiControllerSequence* ad
 void AdditiveManager::AddReferencePoseTransforms(NiControllerSequence* additiveSequence, NiControllerSequence* referencePoseSequence, float timePoint, bool ignorePriorities)
 {
     const auto refBlocks = referencePoseSequence->GetControlledBlocks();
-    if (!additiveSequence->m_pkOwner || !additiveSequence->m_pkOwner->m_spObjectPalette)
+    if (!additiveSequence->m_pkOwner || !additiveSequence->m_pkOwner->GetObjectPalette())
     {
         DebugAssert(false);
         return;
     }
-    auto* node = additiveSequence->m_pkOwner->m_spObjectPalette->m_pkScene;
-    if (!node)
+    auto* owner = additiveSequence->m_pkOwner;
+    if (!owner)
     {
         DebugAssert(false);
         return;
@@ -63,7 +63,7 @@ void AdditiveManager::AddReferencePoseTransforms(NiControllerSequence* additiveS
         if (!additiveInterp)
             continue;
         
-        NiAVObject* targetNode = BSUtilities::GetObjectByName(node, idTag.m_kAVObjectName);
+        NiAVObject* targetNode = owner->GetTarget(refBlock.m_spInterpCtlr, idTag);
         if (!targetNode)
             continue;
 
