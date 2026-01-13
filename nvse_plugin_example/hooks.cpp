@@ -17,6 +17,7 @@
 #include "nihooks.h"
 #include "blend_fixes.h"
 #include "blend_smoothing.h"
+#include "jip_fixes.h"
 #include "knvse_events.h"
 #include "movement_blend_fixes.h"
 #include "sequence_extradata.h"
@@ -684,21 +685,8 @@ static char* stristr(const char* haystack, const char* needle)
 	return nullptr;
 }
 
-#if _DEBUG
-static HMODULE hJIP = 0;
-
-static size_t __fastcall GetJIPAddress(size_t aiAddress)
-{
-	return reinterpret_cast<size_t>(hJIP) + aiAddress - 0x10000000;
-}
-#endif
-
-
 void ApplyHooks()
 {
-#if _DEBUG
-	hJIP = GetModuleHandle("jip_nvse.dll");
-#endif
 	
 #if _DEBUG
 	// stop ° in console
@@ -822,8 +810,6 @@ void ApplyHooks()
 		// hooked call
 		ThisStdCall(0x48FF50, animData);
 	}));
-	
-
 
 	// BSTasklet::SetData
 	// Runs when actor switches ammo type in Stewie Tweaks
@@ -885,6 +871,14 @@ void ApplyHooks()
 	}));
 	SafeWrite8(0xA35649 + 5, 0x90); // nop byte 6
 	
+#if 0
+	static UInt32 uiNiMultiTargetTransformControllerDestroy = 0xA2FB70;
+	WriteRelCall(0xA30283, INLINE_HOOK(void, __fastcall, NiMultiTargetTransformController* pController)
+	{
+		kBlendInterpolatorExtraData::EraseController(pController);
+		ThisStdCall(uiNiMultiTargetTransformControllerDestroy, pController);
+	}), &uiNiMultiTargetTransformControllerDestroy);
+#endif
 
 #if 0
 	// AnimData::GetSequenceOffsetPlusTimePassed
@@ -1307,6 +1301,8 @@ void ApplyHooks()
 
 	if (g_pluginSettings.blendSmoothing)
 		BlendSmoothing::WriteHooks();
+	
+	// JIPFixes::Init();
 }
 
 void WriteDelayedHooks()

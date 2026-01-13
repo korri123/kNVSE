@@ -417,6 +417,7 @@
     <ClCompile Include="gamebryo\NiStream.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="hooks.cpp" />
+    <ClCompile Include="jip_fixes.cpp" />
     <ClCompile Include="knvse_events.cpp" />
     <ClCompile Include="LambdaVariableContext.cpp" />
     <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
@@ -464,6 +465,7 @@
     <ClInclude Include="gamebryo\NiStream.h" />
     <ClInclude Include="hooks.h" />
     <ClInclude Include="game_types.h" />
+    <ClInclude Include="jip_fixes.h" />
     <ClInclude Include="knvse_events.h" />
     <ClInclude Include="knvse_version.h" />
     <ClInclude Include="LambdaVariableContext.h" />

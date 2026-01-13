@@ -1435,28 +1435,39 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	return true;
 }
 
-template <typename Function>
-bool QueueScriptAnimOperation(Actor* actor, bool runImmediately, Function&& callback)
+enum class QueueScriptAnimResult
 {
-	if (runImmediately)
-		return callback();
+	IMMEDIATE, QUEUED
+};
 
+template <typename Function>
+static QueueScriptAnimResult QueueScriptAnimOperation(Actor* actor, double* result, Function&& callback)
+{
 	const auto* pTaskManager = AILinearTaskManager::GetSingleton();
 
 	if (!pTaskManager->pThreads[1])
+	{
 		// iNumHWThreads is <= 1
-		return callback();
+		*result = callback();
+		return QueueScriptAnimResult::IMMEDIATE;
+	}
 		
 	const auto currentThreadId = GetCurrentThreadId();
 
 	if (actor == g_thePlayer && currentThreadId == OSGlobals::GetSingleton()->mainThreadID)
-		return callback();
+	{
+		*result = callback();
+		return QueueScriptAnimResult::IMMEDIATE;
+	}
 	const auto* aiLinearTaskThread = pTaskManager->pThreads[0];
 	// actor is not the player, so must be handled on AI Linear Task 1 thread
 	if (currentThreadId == aiLinearTaskThread->threadID)
-		return callback();
+	{
+		*result = callback();
+		return QueueScriptAnimResult::IMMEDIATE;
+	}
 	g_postAILinearTaskThreadQueue.Add(std::forward<Function>(callback));
-	return true;
+	return QueueScriptAnimResult::QUEUED;
 }
 
 AnimData* GetAnimData(Actor* actor, int firstPerson)
@@ -1498,32 +1509,41 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 		return true;
 	path.to_lower();
 
-	auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
-	if (!actor)
+	auto* pActor = DYNAMIC_CAST(thisObj, TESForm, Actor);
+	if (!pActor)
 		return true;
-
-	auto* animData = GetAnimData(actor, bIsFirstPerson);
-	if (!animData)
-		return true;
-
-	if (const auto anim = FindOrLoadAnim(animData, path))
+	
+	const auto uiFormId = thisObj->refID;
+	const auto sPath = std::string(path.str());
+	
+	QueueScriptAnimOperation(pActor, result, [uiFormId, sPath, bIsFirstPerson]
 	{
-		if (anim->m_eState != NiControllerSequence::INACTIVE)
-			animData->controllerManager->DeactivateSequence(anim, 0.0f);
-		const auto easeInTime = anim->GetEaseInTime();
-		const auto activateResult = anim->Activate(0, true, anim->m_fSeqWeight, easeInTime, nullptr, false);
-		if (activateResult)
+		auto* actor = static_cast<Actor*>(LookupFormByID(uiFormId));
+		if (!actor->IsActor())
+			return 0.0;
+		auto* animData = GetAnimData(actor, bIsFirstPerson);
+		if (!animData)
+			return 0.0;
+
+		if (const auto anim = FindOrLoadAnim(animData, sPath.c_str()))
 		{
-			ApplyFootIK(actor);
-			if (auto* animTime = HandleExtraOperations(animData, anim, true); animTime && anim->m_eCycleType != NiControllerSequence::LOOP)
+			if (anim->m_eState != NiControllerSequence::INACTIVE)
+				animData->controllerManager->DeactivateSequence(anim, 0.0f);
+			const auto easeInTime = anim->GetEaseInTime();
+			if (anim->Activate(0, true, anim->m_fSeqWeight, easeInTime, nullptr, false))
 			{
-				animTime->trackEndTime = true;
-				animTime->endIfSequenceTypeChanges = false;
+				ApplyFootIK(actor);
+				if (auto* animTime = HandleExtraOperations(animData, anim, true); animTime && anim->m_eCycleType != NiControllerSequence::LOOP)
+				{
+					animTime->trackEndTime = true;
+					animTime->endIfSequenceTypeChanges = false;
+				}
+				return 1.0;
 			}
 		}
-		*result = activateResult;
-			
-	}
+		return 0.0;
+	});
+	
 	return true;
 }
 

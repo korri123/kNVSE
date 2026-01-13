@@ -185,6 +185,11 @@ struct AnimData
 	void SetCurrentSequence(BSAnimGroupSequence* destAnim, bool resetSequenceState);
 	
 	float GetBlendTime() const;
+	
+	void RemoveObject(NiAVObject* object)
+	{
+		ThisStdCall(0x49BD90, this, object);
+	}
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);
 enum WeaponModFlags: UInt32;

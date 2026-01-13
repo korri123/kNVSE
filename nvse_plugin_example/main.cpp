@@ -735,7 +735,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
 	{
-		// HandleGarbageCollection();
 	}
 }
 

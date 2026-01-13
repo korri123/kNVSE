@@ -345,7 +345,7 @@ public:
 	/*0DC*/virtual void		AddObject(NiAVObject* object, bool arg2);
 	/*0E0*/virtual void		AddObjectAt(UInt32 index, NiAVObject* object);
 	/*0E4*/virtual void		RemoveObject2(NiAVObject* toRemove, NiAVObject** arg2);
-	/*0E8*/virtual void		RemoveObject(NiAVObject* toRemove);	//	Calls RemoveObject2 with arg2 as ptr to NULL
+	/*0E8*/virtual void		DetachChild(NiAVObject* toRemove);	//	Calls RemoveObject2 with arg2 as ptr to NULL
 	/*0EC*/virtual void		RemoveNthObject2(UInt32 index, NiAVObject** arg2);
 	/*0F0*/virtual void		RemoveNthObject(UInt32 index);			//	Calls RemoveNthObject2 with arg2 as ptr to NULL
 	/*0F4*/virtual void		Unk_3D(UInt32 arg1, UInt32 arg2, UInt32 arg3);
@@ -354,24 +354,14 @@ public:
 
 	NiTArray<NiAVObject*>	m_children;		// 9C
 
-	static NiNode* __stdcall Create(const char* nameStr);		//	str of NiString
-	NiNode* CreateCopy();
 	NiAVObject* __fastcall GetBlockByName(const char* nameStr);	//	str of NiString
 	NiAVObject* __fastcall GetBlock(const char* blockName);
 	NiNode* __fastcall GetNode(const char* nodeName);
-	bool IsMovable();
-	void RemoveCollision();
-	void BulkSetMaterialPropertyTraitValue(UInt32 traitID, float value);
-	bool HasPhantom();
-	void GetBodyMass(float* totalMass);
-	void ApplyForce(NiVector4* forceVector);
-	void Dump();
 
 	template <typename F>
 	void RecurseTree(F&& predicate)
 	{
 		predicate(this);
-		auto* children = m_children.m_pBase;
 		for (auto* child : m_children)
 		{
 			if (!child)

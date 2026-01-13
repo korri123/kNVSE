@@ -163,6 +163,10 @@ public:
 	bool GetInventoryItems(InventoryItemsMap &invItems);
 
 	static TESObjectREFR* Create(bool bTemp = false);
+	static TESObjectREFR* FindReferenceFor3D(NiNode* apAVObjectIn)
+	{
+		return CdeclCall<TESObjectREFR*>(0x56F930, apAVObjectIn);
+	}
 
 	MEMBER_FN_PREFIX(TESObjectREFR);
 #if RUNTIME

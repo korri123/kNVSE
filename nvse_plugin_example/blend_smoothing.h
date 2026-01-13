@@ -113,11 +113,22 @@ public:
     float poseInterpUpdatedTime = -NI_INFINITY;
     NiControllerManager* owner = nullptr;
     UInt32 noBlendSmoothRequesterCount = 0;
+    
+    void ClearValues()
+    {
+        items.clear();
+        items.shrink_to_fit();
+        poseInterp = nullptr;
+        poseInterpUpdatedTime = -NI_INFINITY;
+        owner = nullptr;
+        noBlendSmoothRequesterCount = 0;
+    }
 
     NiNewRTTI(kBlendInterpolatorExtraData, NiExtraData)
 
     void Destroy(bool freeMem);
     bool IsEqualEx(const kBlendInterpolatorExtraData* other) const;
+    static void EraseController(NiMultiTargetTransformController* pController);
     static void EraseSequence(NiControllerSequence* anim);
 
     static kBlendInterpolatorExtraData* Create();

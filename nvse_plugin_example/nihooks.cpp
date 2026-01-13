@@ -1273,15 +1273,15 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         if (disabledBlendSmoothing)
             ++extraData->noBlendSmoothRequesterCount;
         auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
-        if (pkBlendInterp->m_ucArraySize == 0 && extraInterpItem.blendIndex != INVALID_INDEX)
+        if (pkBlendInterp->m_ucArraySize == 0 && extraInterpItem.blendIndex != INVALID_INDEX || extraInterpItem.blendInterp != pkBlendInterp)
         {
             extraInterpItem.ClearValues();
             extraInterpItem.interpolator = kItem.m_spInterpolator;
+            extraInterpItem.blendInterp = pkBlendInterp;
         }
         
         extraInterpItem.sequence = this;
         extraInterpItem.state = kInterpState::Activating;
-        extraInterpItem.blendInterp = pkBlendInterp;
 
         if (extraInterpItem.detached)
         {
@@ -1842,8 +1842,10 @@ NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
     if (auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
     {
         auto targets = multiTarget->GetTargets();
-        auto iter = std::ranges::find_if(targets, [&](const auto& target)
+        auto iter = std::ranges::find_if(targets, [&](const auto* target)
         {
+            if (!target)
+                return false;
             return target->m_pcName == idTag.m_kAVObjectName;
         });
         if (iter != targets.end())
