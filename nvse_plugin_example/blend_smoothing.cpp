@@ -288,23 +288,6 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
             item.m_fNormalizedWeight = weightState.lastSmoothedWeight;
         }
     }
-    else
-    {
-        DebugAssert(false); // All weights equal zero
-        bool setFirst = false;
-        for (auto* itemPtr : items)
-        {
-            if (!itemPtr->m_spInterpolator)
-                continue;
-            if (!setFirst)
-            {
-                itemPtr->m_fNormalizedWeight = 1.0f;
-                setFirst = true;
-                continue;
-            }
-            itemPtr->m_fNormalizedWeight = 0.0f;
-        }
-    }
 }
 
 void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp)
