@@ -108,6 +108,7 @@ struct kBlendInterpItem
 class kBlendInterpolatorExtraData : public NiExtraData
 {
 public:
+    NiAVObject* target = nullptr;
     std::vector<kBlendInterpItem> items;
     NiPointer<NiTransformInterpolator> poseInterp = nullptr;
     float poseInterpUpdatedTime = -NI_INFINITY;
@@ -116,6 +117,7 @@ public:
     
     void ClearValues()
     {
+        target = nullptr;
         items.clear();
         items.shrink_to_fit();
         poseInterp = nullptr;
@@ -133,10 +135,10 @@ public:
 
     static kBlendInterpolatorExtraData* Create();
     static const NiFixedString& GetKey();
-    static kBlendInterpolatorExtraData* Obtain(NiObjectNET* obj);
+    static kBlendInterpolatorExtraData* GetOrCreate(NiObjectNET* obj);
     static kBlendInterpolatorExtraData* GetExtraData(NiObjectNET* obj);
 
-    kBlendInterpItem& ObtainItem(NiInterpolator* interpolator);
+    kBlendInterpItem& GetOrCreateItem(NiInterpolator* interpolator);
     kBlendInterpItem& CreatePoseInterpItem(NiBlendInterpolator* blendInterp, NiControllerSequence* sequence, NiAVObject* target);
     kBlendInterpItem* GetItem(NiInterpolator* interpolator);
     kBlendInterpItem* GetPoseInterpItem();

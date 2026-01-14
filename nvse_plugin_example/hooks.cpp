@@ -872,6 +872,7 @@ void ApplyHooks()
 	SafeWrite8(0xA35649 + 5, 0x90); // nop byte 6
 	
 #if 0
+	// impossible as targets will contain deleted nodes
 	static UInt32 uiNiMultiTargetTransformControllerDestroy = 0xA2FB70;
 	WriteRelCall(0xA30283, INLINE_HOOK(void, __fastcall, NiMultiTargetTransformController* pController)
 	{

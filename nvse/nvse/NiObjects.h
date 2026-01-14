@@ -374,6 +374,16 @@ public:
 	}
 };
 STATIC_ASSERT(sizeof(NiNode) == 0xAC);
+
+class BSBipNode : public NiNode
+{
+public:
+	void RemoveObject(NiAVObject* object)
+	{
+		ThisStdCall(0x4F05C0, this, object);
+	}
+};
+
 #if 0
 
 // F0

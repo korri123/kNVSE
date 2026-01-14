@@ -73,9 +73,11 @@ void AdditiveManager::AddReferencePoseTransforms(NiControllerSequence* additiveS
         refInterp->m_fLastTime = fOldTime;
         if (bSuccess)
         {
-            auto* extraData = kBlendInterpolatorExtraData::Obtain(targetNode);
+            auto* extraData = kBlendInterpolatorExtraData::GetOrCreate(targetNode);
             DebugAssert(extraData);
-            auto& extraInterpItem = extraData->ObtainItem(additiveInterp);
+            extraData->owner = owner;
+
+            auto& extraInterpItem = extraData->GetOrCreateItem(additiveInterp);
             extraInterpItem.isAdditive = true;
             extraInterpItem.sequence = additiveSequence;
             extraInterpItem.additiveMetadata.refTransform = refTransform;
@@ -168,7 +170,7 @@ bool AdditiveManager::IsAdditiveInterpolator(kBlendInterpolatorExtraData* extraD
 
 void AdditiveManager::SetAdditiveInterpWeightMult(NiObjectNET* target, NiInterpolator* interpolator, float weightMult)
 {
-    auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+    auto* extraData = kBlendInterpolatorExtraData::GetOrCreate(target);
     if (auto* metadata = GetAdditiveInterpMetadata(extraData, interpolator); metadata)
     {
         metadata->weightMultiplier = weightMult;
@@ -410,13 +412,13 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority, SequenceE
                 kItem.m_ucBlendIdx = pkBlendInterp->AddInterpInfo(kItem.m_spInterpolator, 0.0f, cInterpPriority);
                 continue;
             }
-            
-            auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+
+            auto* extraData = kBlendInterpolatorExtraData::GetOrCreate(target);
             DebugAssert(extraData);
             if (extraData->owner)
                 DebugAssert(extraData->owner == m_pkOwner);
             extraData->owner = m_pkOwner;
-            auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
+            auto& extraInterpItem = extraData->GetOrCreateItem(kItem.m_spInterpolator);
             if (!extraInterpItem.isAdditive)
             {
                 kItem.m_ucBlendIdx = INVALID_INDEX;

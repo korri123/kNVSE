@@ -2473,6 +2473,11 @@ public:
 		}
 		return false;
 	}
+	
+	void RemoveNodeRecurse(NiAVObject* node)
+	{
+		ThisStdCall(0x4F0640, this, node);
+	}
 };
 
 enum AnimGroupID : UInt8
@@ -2954,6 +2959,11 @@ public:
 	NiAVObject* m_pkScene;
 	
 	NIRTTI_ADDRESS(0x11F4A04);
+	
+	void ResetAndFillFromScenegraph()
+	{
+		ThisStdCall(0xA6E960, this);
+	}
 };
 
 
@@ -3037,6 +3047,8 @@ public:
 	NiAVObject* GetTarget(NiInterpController* controller, const NiControllerSequence::IDTag& idTag);
 
 	NiDefaultAVObjectPalette* GetObjectPalette() const;
+	
+	NiMultiTargetTransformController* GetMultiTargetTransformController() const;
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
 

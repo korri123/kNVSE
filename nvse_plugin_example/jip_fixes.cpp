@@ -44,22 +44,46 @@ namespace
         return reinterpret_cast<size_t>(hJIP) + aiAddress - 0x10000000;
     }
     
+    void RemoveObjectFromController(NiAVObject* base, NiAVObject* obj)
+    {
+        if (auto* controller = base->GetController(NiMultiTargetTransformController::ms_RTTI))
+        {
+            auto* transCon = static_cast<NiMultiTargetTransformController*>(controller);
+            transCon->RemoveNodeRecurse(obj);
+            return;
+        }
+        if (base->m_pkParent)
+            RemoveObjectFromController(base->m_pkParent, obj);
+    }
+    
+    template <UInt32 ReturnAddress>
+    void __fastcall DetachChildHook(NiNode* pNode, void*, NiAVObject* pObject)
+    {
+        auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
+        RemoveObjectFromController(pNode, pObject);
+        pNode->DetachChild(pObject);
+        *addrOfRetn = GetJIPAddress(ReturnAddress);
+    }
+    
     void PatchReloadEquippedModels()
     {
         // NiNode::DetachChild
-        WriteRelCall(GetJIPAddress(0x10019C3E), INLINE_HOOK(void, __fastcall, NiNode* pNode, void*, NiAVObject* pObject)
-        {
-            auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-            if (auto* actor = static_cast<Actor*>(TESObjectREFR::FindReferenceFor3D(pNode)); actor && actor->IsActor() && actor->baseProcess)
-            {
-                if (auto* animData = actor->baseProcess->GetAnimData())
-                    animData->RemoveObject(pObject);
-                if (actor == g_thePlayer)
-                    g_thePlayer->firstPersonAnimData->RemoveObject(pObject);
-            }
-            pNode->DetachChild(pObject);
-            *addrOfRetn = GetJIPAddress(0x10019C44);
-        }));
+        
+        // ReloadBipedAnim
+        WriteRelCall(GetJIPAddress(0x10019C3E), DetachChildHook<0x10019C44>);
+        SafeWrite8(GetJIPAddress(0x10019C3E + 5), 0x90); // nop
+        
+        // RegisterInsertObject
+        WriteRelCall(GetJIPAddress(0x1002C239), DetachChildHook<0x1002C23F>);
+        SafeWrite8(GetJIPAddress(0x1002C239 + 5), 0x90); // nop
+        
+        // RegisterInsertObject
+        WriteRelCall(GetJIPAddress(0x1002C265), DetachChildHook<0x1002C26B>);
+        SafeWrite8(GetJIPAddress(0x1002C265 + 5), 0x90); // nop
+        
+        // RegisterInsertObject
+        WriteRelCall(GetJIPAddress(0x1002D39B), DetachChildHook<0x1002D3A1>);
+        SafeWrite8(GetJIPAddress(0x1002D39B + 5), 0x90); // nop
     }
 }
 

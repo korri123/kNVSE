@@ -190,6 +190,11 @@ struct AnimData
 	{
 		ThisStdCall(0x49BD90, this, object);
 	}
+
+	void ReloadTargets(bool abReload = true)
+	{
+		ThisStdCall(0x499240, this, abReload);
+	}
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);
 enum WeaponModFlags: UInt32;

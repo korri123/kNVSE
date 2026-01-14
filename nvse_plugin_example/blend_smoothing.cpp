@@ -46,18 +46,23 @@ void kBlendInterpolatorExtraData::EraseController(NiMultiTargetTransformControll
         // in NiObjectNET destructor, so targets are already deleted
         // we are handling ReloadTargets here mainly, which just destroys the controller
         return;
+
+    UInt32 idx = 0;
     for (auto* target : pController->GetTargets())
     {
         if (!target)
         {
+            ++idx;
             continue;
         }
         auto* extraData = GetExtraData(target);
         if (!extraData)
         {
+            ++idx;
             continue;
         }
         extraData->ClearValues();
+        ++idx;
     }
 }
 
@@ -107,12 +112,13 @@ const NiFixedString& kBlendInterpolatorExtraData::GetKey()
     return name;
 }
 
-kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::Obtain(NiObjectNET* obj)
+kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::GetOrCreate(NiObjectNET* obj)
 {
     if (auto* extraData = GetExtraData(obj))
         return extraData;
     auto* extraData = Create();
     obj->AddExtraData(extraData);
+    extraData->target = static_cast<NiAVObject*>(obj);
     return extraData;
 }
 
@@ -127,7 +133,7 @@ kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::GetExtraData(NiObjectN
     return nullptr;
 }
 
-kBlendInterpItem& kBlendInterpolatorExtraData::ObtainItem(NiInterpolator* interpolator)
+kBlendInterpItem& kBlendInterpolatorExtraData::GetOrCreateItem(NiInterpolator* interpolator)
 {
     kBlendInterpItem* freeItem = nullptr;
     for (auto& item : items)
@@ -157,7 +163,7 @@ kBlendInterpItem& kBlendInterpolatorExtraData::CreatePoseInterpItem(NiBlendInter
     auto* poseInterp = CreatePoseInterpolator(target);
     const auto poseIndex = blendInterp->AddInterpInfo(poseInterp, 1.0f, 0, 1.0f);
     DebugAssert(poseIndex != INVALID_INDEX);
-    auto& poseItem = ObtainItem(poseInterp);
+    auto& poseItem = GetOrCreateItem(poseInterp);
     poseItem.state = kInterpState::Activating;
     poseItem.sequence = sequence;
     poseItem.blendInterp = blendInterp;
@@ -324,6 +330,39 @@ void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraDat
     }
 }
 
+namespace
+{
+    void __fastcall HandleReloadTargets(NiControllerManager* manager)
+    {
+        if (manager->m_spObjectPalette)
+        {
+            for (auto& item : manager->m_spObjectPalette->m_kHash)
+            {
+                auto* target = item.m_val;
+                if (!target)
+                    continue;
+                auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target);
+                if (!extraData)
+                    continue;
+                extraData->ClearValues();
+            }
+        }
+        
+        manager->DeactivateAll();
+    }
+    
+    void __fastcall HandleSkipNextBlend(AnimData* animData)
+    {
+        animData->noBlend120 = true;
+        animData->ReloadTargets();
+    }
+}
+
 void BlendSmoothing::WriteHooks()
 {
+    // Animation::ReloadTargets
+    WriteRelCall(0x499322, HandleReloadTargets);
+    // Animation::SkipNextBlend
+    // noticed an issue that ReloadTargets wasn't being called from load game, so that means lingering extra data
+    WriteRelCall(0x49B1A7, HandleSkipNextBlend);
 }

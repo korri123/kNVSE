@@ -534,8 +534,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         bRotChanged = true;
         fFinalWeight += weight;
     }
-    //if (!items.empty())
-    //    DebugAssert(std::abs(1.0f - fFinalWeight) < 0.001f);
     items.clear();
     for (auto& scale : validScales)
         items.emplace_back(scale.item);
@@ -1236,14 +1234,14 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             StoreTargets(target);
         sequenceExtraData->needsStoreTargets = false;
     }
-    
+
     if (sequenceExtraData && sequenceExtraData->additiveMetadata)
     {
         AdditiveManager::MarkInterpolatorsAsAdditive(this);
         AttachInterpolatorsAdditive(cPriority, sequenceExtraData);
         return;
     }
-    
+
     if (!g_pluginSettings.blendSmoothing)
     {
         AttachInterpolators(cPriority);
@@ -1267,13 +1265,18 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         }
         DebugAssert(target && target->m_pcName == idTag.m_kAVObjectName);
 
-        auto* extraData = kBlendInterpolatorExtraData::Obtain(target);
+        auto* extraData = kBlendInterpolatorExtraData::GetOrCreate(target);
         DebugAssert(extraData);
+        extraData->target = target;
         extraData->owner = m_pkOwner;
         if (disabledBlendSmoothing)
             ++extraData->noBlendSmoothRequesterCount;
-        auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
-        if (pkBlendInterp->m_ucArraySize == 0 && extraInterpItem.blendIndex != INVALID_INDEX || extraInterpItem.blendInterp != pkBlendInterp)
+        auto& extraInterpItem = extraData->GetOrCreateItem(kItem.m_spInterpolator);
+        if (extraInterpItem.blendInterp != pkBlendInterp)
+            extraInterpItem.blendInterp = pkBlendInterp;
+        // this should ALWAYS BE TRUE, we CANNOT RELY ON POINTERS BEING THE SAME IF DELETED AS THEY MAY GET REALLOCATED TO SAME ADDRESS TO CLEAR THE VALUES
+        DebugAssert(extraInterpItem.blendInterp == pkBlendInterp);
+        if (pkBlendInterp->m_ucArraySize == 0 && extraInterpItem.blendIndex != INVALID_INDEX)
         {
             extraInterpItem.ClearValues();
             extraInterpItem.interpolator = kItem.m_spInterpolator;
@@ -1866,6 +1869,20 @@ NiDefaultAVObjectPalette* NiControllerManager::GetObjectPalette() const
     return m_spObjectPalette;
 }
 
+NiMultiTargetTransformController* NiControllerManager::GetMultiTargetTransformController() const
+{
+    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene)
+        return nullptr;
+    for (auto* controller = m_spObjectPalette->m_pkScene->m_controller; controller; controller = controller->m_spNext)
+    {
+        if (NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
+        {
+            return static_cast<NiMultiTargetTransformController*>(controller);
+        }
+    }
+    return nullptr;
+}
+
 void NiControllerSequence::DetachInterpolators() const
 {
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
@@ -1917,7 +1934,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
             if (extraData->noBlendSmoothRequesterCount && disabledBlendSmoothing)
                 --extraData->noBlendSmoothRequesterCount;
 
-            auto& extraInterpItem = extraData->ObtainItem(kItem.m_spInterpolator);
+            auto& extraInterpItem = extraData->GetOrCreateItem(kItem.m_spInterpolator);
             extraInterpItem.state = kInterpState::Deactivating;
 
             DebugAssert(blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator
