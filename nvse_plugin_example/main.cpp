@@ -703,7 +703,6 @@ void HandleMisc()
 }
 
 std::thread g_animFileThread;
-SynchronizedQueue g_mainThreadQueue;
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
@@ -731,6 +730,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 #endif
 		}
 		HandleSynchronizedExecutionQueue();
+		g_mainThreadQueue.RunAllAndClear(); // kMessage_MainGameLoop runs before AILinearTaskThreads start
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
 	{

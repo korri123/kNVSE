@@ -178,4 +178,3 @@ public:
 	void RunAllAndClear();
 };
 extern SynchronizedQueue g_mainThreadQueue;
-extern SynchronizedQueue g_postAILinearTaskThreadQueue;

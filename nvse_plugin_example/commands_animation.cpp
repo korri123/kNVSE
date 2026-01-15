@@ -1435,11 +1435,6 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	return true;
 }
 
-enum class QueueScriptAnimResult
-{
-	IMMEDIATE, QUEUED
-};
-
 template <typename Function>
 static void QueueScriptAnimOperation(Actor* actor, double* result, Function&& callback)
 {
@@ -1452,7 +1447,8 @@ static void QueueScriptAnimOperation(Actor* actor, double* result, Function&& ca
 		return;
 	}
 	*result = 1.0;
-	g_postAILinearTaskThreadQueue.Add(std::forward<Function>(callback));
+	// main thread queue runs before AILinearTaskManager threads are started and ended
+	g_mainThreadQueue.Add(std::forward<Function>(callback));
 }
 
 AnimData* GetAnimData(Actor* actor, int firstPerson)
