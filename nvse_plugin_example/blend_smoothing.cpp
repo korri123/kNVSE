@@ -4,7 +4,6 @@
 
 #include "additive_anims.h"
 #include "GameAPI.h"
-#include "GameRTTI.h"
 #include "hooks.h"
 #include "SafeWrite.h"
 #include "utility.h"

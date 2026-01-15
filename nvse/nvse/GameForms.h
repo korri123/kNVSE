@@ -293,6 +293,11 @@ public:
 	virtual char *		GetName(void) const;	// GetEditorID as in OBSE ?
 	virtual bool		SetEditorID(const char * edid);		// simply returns true at run-time
 	// 4E
+	
+	void SetTemporary()
+	{
+		ThisStdCall(0x484490, this);
+	}
 
 	struct EditorData {
 		BSString		editorID;			// 00

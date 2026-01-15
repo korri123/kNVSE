@@ -123,12 +123,8 @@ Script* CompileConditionScript(std::string_view condString)
 	if (!isNew)
 		return iter->second;
 	ScriptBuffer buffer;
-	const auto wasAssigningFormIDs = DataHandler::Get()->GetAssignFormIDs();
-	if (wasAssigningFormIDs)
-		DataHandler::Get()->SetAssignFormIDs(false);
 	auto condition = MakeUnique<Script, 0x5AA0F0, 0x5AA1A0>();
-	if (wasAssigningFormIDs)
-		DataHandler::Get()->SetAssignFormIDs(true);
+	condition->SetTemporary();
 	std::string scriptSource;
 	if (!FindStringCI(condString, "SetFunctionValue"))
 		scriptSource = FormatString("begin function{}\nSetFunctionValue (%s)\nend\n", condString.data());
