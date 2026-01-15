@@ -2100,7 +2100,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (auto* firstPersonArg = eval.GetNthArg(3))
 			povState = static_cast<POVSwitchState>(firstPersonArg->GetInt());
 		const auto lowerPath = ToLower(path);
-		auto* anim = FindActiveAnimationForRef(thisObj, lowerPath.c_str());
+		auto* anim = FindActiveAnimationForRef(thisObj, lowerPath.c_str(), povState);
 				
 		if (!anim)
 		{
