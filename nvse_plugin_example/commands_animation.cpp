@@ -2257,44 +2257,55 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!ExtractArgs(EXTRACT_ARGS, &sequencePath, &firstPerson, &priority, &startOver, &weight, &easeInTime, &timeSyncSequence))
 			return true;
 		SetLowercase(sequencePath);
+		SetLowercase(timeSyncSequence);
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
 		if (firstPerson == -1)
-		{
 			firstPerson = IsPlayerInFirstPerson(actor);
-		}
-		auto* anim = FindOrLoadAnim(actor, sequencePath, firstPerson);
-		if (!anim)
-			return true;
-		if (weight == INVALID_TIME)
-			weight = anim->m_fSeqWeight;
-		if (easeInTime == INVALID_TIME)
-		{
-			if (anim->animGroup && (anim->animGroup->blendIn || anim->animGroup->blend))
-				easeInTime = anim->GetEaseInTime();
-			else
-				easeInTime = 0.0f;
-		}
-		BSAnimGroupSequence* timeSyncSeq = nullptr;
-		if (timeSyncSequence[0])
-		{
-			SetLowercase(timeSyncSequence);
-			timeSyncSeq = FindOrLoadAnim(actor, timeSyncSequence, firstPerson);
-			if (!timeSyncSeq)
-				return true;
-		}
-		auto* animData = GetAnimData(actor, firstPerson);
 
-		auto* manager = anim->m_pkOwner;
-		if (anim->m_eState != NiControllerSequence::INACTIVE)
-			manager->DeactivateSequence(anim, 0.0);
+		const auto actorId = actor->refID;
+		const auto sSequencePath = std::string(sequencePath);
+		const auto sTimeSyncSequence = std::string(timeSyncSequence);
 
-		const auto activateResult = manager->ActivateSequence(anim, priority, startOver, weight, easeInTime, timeSyncSeq);
-		if (activateResult)
-			if (auto* animTime = HandleExtraOperations(animData, anim, true))
-				animTime->endIfSequenceTypeChanges = false;
-		*result = activateResult;
+		QueueScriptAnimOperation(actor, result, [=]
+		{
+			auto* actor = static_cast<Actor*>(LookupFormByID(actorId));
+			if (!actor || !actor->IsActor())
+				return false;
+			auto* anim = FindOrLoadAnim(actor, sSequencePath.c_str(), firstPerson);
+			if (!anim)
+				return false;
+			auto actualWeight = weight;
+			auto actualEaseInTime = easeInTime;
+			if (actualWeight == INVALID_TIME)
+				actualWeight = anim->m_fSeqWeight;
+			if (actualEaseInTime == INVALID_TIME)
+			{
+				if (anim->animGroup && (anim->animGroup->blendIn || anim->animGroup->blend))
+					actualEaseInTime = anim->GetEaseInTime();
+				else
+					actualEaseInTime = 0.0f;
+			}
+			BSAnimGroupSequence* timeSyncSeq = nullptr;
+			if (!sTimeSyncSequence.empty())
+			{
+				timeSyncSeq = FindOrLoadAnim(actor, sTimeSyncSequence.c_str(), firstPerson);
+				if (!timeSyncSeq)
+					return false;
+			}
+			auto* animData = GetAnimData(actor, firstPerson);
+
+			auto* manager = anim->m_pkOwner;
+			if (anim->m_eState != NiControllerSequence::INACTIVE)
+				manager->DeactivateSequence(anim, 0.0);
+
+			const auto activateResult = manager->ActivateSequence(anim, priority, startOver, actualWeight, actualEaseInTime, timeSyncSeq);
+			if (activateResult)
+				if (auto* animTime = HandleExtraOperations(animData, anim, true))
+					animTime->endIfSequenceTypeChanges = false;
+			return activateResult;
+		});
 		return true;
 	});
 
@@ -2320,18 +2331,29 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
-		auto* anim = FindActiveAnimationForActor(actor, sequencePath);
-		if (!anim)
-			return true;
-		if (easeOutTime == INVALID_TIME)
+
+		const auto actorId = actor->refID;
+		const auto sSequencePath = std::string(sequencePath);
+
+		QueueScriptAnimOperation(actor, result, [actorId, easeOutTime, sSequencePath]
 		{
-			if (anim->animGroup && (anim->animGroup->blendOut || anim->animGroup->blend))
-				easeOutTime = anim->GetEaseOutTime();
-			else
-				easeOutTime = 0.0f;
-		}
-		auto* manager = anim->m_pkOwner;
-		*result = manager->DeactivateSequence(anim, easeOutTime);
+			auto* actor = static_cast<Actor*>(LookupFormByID(actorId));
+			if (!actor || !actor->IsActor())
+				return false;
+			auto* anim = FindActiveAnimationForActor(actor, sSequencePath.c_str());
+			if (!anim)
+				return false;
+			auto actualEaseOutTime = easeOutTime;
+			if (actualEaseOutTime == INVALID_TIME)
+			{
+				if (anim->animGroup && (anim->animGroup->blendOut || anim->animGroup->blend))
+					actualEaseOutTime = anim->GetEaseOutTime();
+				else
+					actualEaseOutTime = 0.0f;
+			}
+			auto* manager = anim->m_pkOwner;
+			return manager->DeactivateSequence(anim, actualEaseOutTime);
+		});
 		return true;
 	});
 
@@ -2370,40 +2392,55 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		if (firstPerson == -1)
 			firstPerson = IsPlayerInFirstPerson(actor);
-		auto* sourceAnim = FindOrLoadAnim(actor, sourceSequence, firstPerson);
-		auto* destAnim = FindOrLoadAnim(actor, destSequence, firstPerson);
-		BSAnimGroupSequence* timeSyncAnim = nullptr;
 
-		if (strlen(timeSyncSequence))
+		const auto actorId = actor->refID;
+		const auto sSourceSequence = std::string(sourceSequence);
+		const auto sDestSequence = std::string(destSequence);
+		const auto sTimeSyncSequence = std::string(timeSyncSequence);
+
+		QueueScriptAnimOperation(actor, result, [=]
 		{
-			timeSyncAnim = FindOrLoadAnim(actor, timeSyncSequence, firstPerson);
-			if (!timeSyncAnim)
-				return true;
-		}
+			auto* actor = static_cast<Actor*>(LookupFormByID(actorId));
+			if (!actor || !actor->IsActor())
+				return false;
+			auto* sourceAnim = FindOrLoadAnim(actor, sSourceSequence.c_str(), firstPerson);
+			auto* destAnim = FindOrLoadAnim(actor, sDestSequence.c_str(), firstPerson);
+			BSAnimGroupSequence* timeSyncAnim = nullptr;
 
-		if (!sourceAnim || !destAnim)
-			return true;
+			if (!sTimeSyncSequence.empty())
+			{
+				timeSyncAnim = FindOrLoadAnim(actor, sTimeSyncSequence.c_str(), firstPerson);
+				if (!timeSyncAnim)
+					return false;
+			}
 
-		if (weight == FLT_MIN)
-			weight = destAnim->m_fSeqWeight;
+			if (!sourceAnim || !destAnim)
+				return false;
 
-		if (easeInTime == FLT_MIN)
-			easeInTime = GetDefaultBlendTime(destAnim, sourceAnim);
+			auto actualWeight = weight;
+			auto actualEaseInTime = easeInTime;
 
-		auto* manager = sourceAnim->m_pkOwner;
+			if (actualWeight == FLT_MIN)
+				actualWeight = destAnim->m_fSeqWeight;
 
-		if (destAnim->m_eState != kAnimState_Inactive)
-			GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
+			if (actualEaseInTime == FLT_MIN)
+				actualEaseInTime = GetDefaultBlendTime(destAnim, sourceAnim);
 
-		*result = manager->CrossFade(
-			sourceAnim,
-			destAnim,
-			easeInTime,
-			priority,
-			startOver,
-			weight,
-			timeSyncAnim
-		);
+			auto* manager = sourceAnim->m_pkOwner;
+
+			if (destAnim->m_eState != kAnimState_Inactive)
+				GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
+
+			return manager->CrossFade(
+				sourceAnim,
+				destAnim,
+				actualEaseInTime,
+				priority,
+				startOver,
+				actualWeight,
+				timeSyncAnim
+			);
+		});
 		return true;
 	});
 
@@ -2436,31 +2473,43 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		if (firstPerson == -1)
 			firstPerson = IsPlayerInFirstPerson(actor);
-		auto* anim = FindOrLoadAnim(actor, sequencePath, firstPerson);
-		if (!anim)
-			return true;
-		BSAnimGroupSequence* timeSyncAnim = nullptr;
-		if (strlen(timeSyncSequence))
+
+		const auto actorId = actor->refID;
+		const auto sSequencePath = std::string(sequencePath);
+		const auto sTimeSyncSequence = std::string(timeSyncSequence);
+
+		QueueScriptAnimOperation(actor, result, [actorId, firstPerson, duration, destFrame, priority, sSequencePath, sTimeSyncSequence]
 		{
-			timeSyncAnim = FindOrLoadAnim(actor, timeSyncSequence, firstPerson);
-			if (!timeSyncAnim)
-				return true;
-		}
-		if (duration == FLT_MIN)
-			duration = GetDefaultBlendTime(anim, nullptr);
-		auto* manager = anim->m_pkOwner;
-		if (anim->m_eState != kAnimState_Inactive)
-			GameFuncs::DeactivateSequence(manager, anim, 0.0f);
-		auto* animData = GetAnimData(actor, firstPerson);
-		HandleExtraOperations(animData, anim);
-		*result = GameFuncs::BlendFromPose(
-			manager,
-			anim,
-			destFrame,
-			duration,
-			priority,
-			timeSyncAnim
-		);
+			auto* actor = static_cast<Actor*>(LookupFormByID(actorId));
+			if (!actor || !actor->IsActor())
+				return false;
+			auto* anim = FindOrLoadAnim(actor, sSequencePath.c_str(), firstPerson);
+			if (!anim)
+				return false;
+			BSAnimGroupSequence* timeSyncAnim = nullptr;
+			if (!sTimeSyncSequence.empty())
+			{
+				timeSyncAnim = FindOrLoadAnim(actor, sTimeSyncSequence.c_str(), firstPerson);
+				if (!timeSyncAnim)
+					return false;
+			}
+			auto actualDuration = duration;
+			if (actualDuration == FLT_MIN)
+				actualDuration = GetDefaultBlendTime(anim, nullptr);
+			auto* manager = anim->m_pkOwner;
+			if (anim->m_eState != kAnimState_Inactive)
+				GameFuncs::DeactivateSequence(manager, anim, 0.0f);
+			auto* animData = GetAnimData(actor, firstPerson);
+			HandleExtraOperations(animData, anim);
+			return GameFuncs::BlendFromPose(
+				manager,
+				anim,
+				destFrame,
+				actualDuration,
+				priority,
+				timeSyncAnim
+			);
+		});
 		return true;
 	});
 
@@ -3232,62 +3281,5 @@ void CreateCommands(NVSECommandBuilder& builder)
 		
 		return true;
 	});
-	
-	static std::initializer_list<ParamInfo> kParams_ThisCall = {
-		{ "address", kNVSEParamType_Number, 0 },
-		{"arg0", kNVSEParamType_FormOrNumber, 1},
-		{"arg1", kNVSEParamType_FormOrNumber, 1},
-		{"arg2", kNVSEParamType_FormOrNumber, 1},
-		{"arg3", kNVSEParamType_FormOrNumber, 1},
-		{"arg4", kNVSEParamType_FormOrNumber, 1},
-		{"arg5", kNVSEParamType_FormOrNumber, 1},
-
-	};
-	builder.Create("ThisCall", kRetnType_Default, kParams_ThisCall, true, [](COMMAND_ARGS)
-	{
-		*result = 0;
-		if (PluginExpressionEvaluator eval(PASS_COMMAND_ARGS); eval.ExtractArgs() && thisObj)
-		{
-			const auto address = static_cast<UInt32>(eval.GetNthArg(0)->GetInt());
-			const auto* ref = thisObj;
-			std::vector<unsigned int> args;
-			for (int i = 1; i < eval.NumArgs(); ++i)
-			{
-				const auto arg = eval.GetNthArg(i);
-				if (arg->GetType() == kTokenType_Number)
-					args.push_back(arg->GetInt());
-				else if (arg->GetType() == kTokenType_Form)
-					args.push_back(reinterpret_cast<UInt32>(arg->GetTESForm()));
-				else
-					return true;
-			}
-			*result = 1;
-			switch (args.size())
-			{
-			case 0:
-				*result = ThisStdCall<UInt32>(address, ref);
-				break;
-			case 1:
-				*result = ThisStdCall<UInt32>(address, ref, args[0]);
-				break;
-			case 2:
-				*result = ThisStdCall<UInt32>(address, ref, args[0], args[1]);
-				break;
-			case 3:
-				*result = ThisStdCall<UInt32>(address, ref, args[0], args[1], args[2]);
-				break;
-			case 4:
-				*result = ThisStdCall<UInt32>(address, ref, args[0], args[1], args[2], args[3]);
-				break;
-			case 5:
-				*result = ThisStdCall<UInt32>(address, ref, args[0], args[1], args[2], args[3], args[4]);
-				break;
-			default:
-				*result = 0;
-				break;
-			}
-		}
-		return true;
-	}, Cmd_Expression_Plugin_Parse);
 #endif
 }
