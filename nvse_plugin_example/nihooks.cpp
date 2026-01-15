@@ -484,18 +484,14 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     ComputeNormalizedWeights(items);
     BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Translate);
 
-    float fFinalWeight = 0.0f;
     for (auto& translation : validTranslates)
     {
         kFinalTranslate += translation.translate *
                        translation.item->m_fNormalizedWeight;
         dTotalTransWeight += translation.item->m_fNormalizedWeight;
         bTransChanged = true;
-        fFinalWeight += translation.item->m_fNormalizedWeight;
     }
-    
-    //if (!items.empty())
-    //    DebugAssert(std::abs(1.0f - fFinalWeight) < 0.001f);
+
     items.clear();
 
     for (auto& item : validRotations)
@@ -503,7 +499,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     ComputeNormalizedWeights(items);
     BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate);
     
-    fFinalWeight = 0.0f;
     for (auto& rotation : validRotations)
     {
         NiQuaternion kRotValue = rotation.rotation;
@@ -532,7 +527,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             kRotValue.GetY() + kFinalRotate.GetY(),
             kRotValue.GetZ() + kFinalRotate.GetZ());
         bRotChanged = true;
-        fFinalWeight += weight;
     }
     items.clear();
     for (auto& scale : validScales)

@@ -717,8 +717,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{
-		const auto isMenuMode = CdeclCall<bool>(0x702360);
-		if (!isMenuMode)
+		if (!Interface::IsInMenuMode())
 		{
 			HandleBurstFire();
 			HandleAnimTimes();

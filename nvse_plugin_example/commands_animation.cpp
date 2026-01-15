@@ -1441,33 +1441,18 @@ enum class QueueScriptAnimResult
 };
 
 template <typename Function>
-static QueueScriptAnimResult QueueScriptAnimOperation(Actor* actor, double* result, Function&& callback)
+static void QueueScriptAnimOperation(Actor* actor, double* result, Function&& callback)
 {
-	const auto* pTaskManager = AILinearTaskManager::GetSingleton();
-
-	if (!pTaskManager->pThreads[1])
-	{
-		// iNumHWThreads is <= 1
-		*result = callback();
-		return QueueScriptAnimResult::IMMEDIATE;
-	}
-		
 	const auto currentThreadId = GetCurrentThreadId();
 
-	if (actor == g_thePlayer && currentThreadId == OSGlobals::GetSingleton()->mainThreadID)
+	const auto isPlayerOnMainThread = actor == g_thePlayer && currentThreadId == OSGlobals::GetSingleton()->mainThreadID;
+	if (isPlayerOnMainThread || !AILinearTaskManager::ShouldQueue3DTask())
 	{
 		*result = callback();
-		return QueueScriptAnimResult::IMMEDIATE;
+		return;
 	}
-	const auto* aiLinearTaskThread = pTaskManager->pThreads[0];
-	// actor is not the player, so must be handled on AI Linear Task 1 thread
-	if (currentThreadId == aiLinearTaskThread->threadID)
-	{
-		*result = callback();
-		return QueueScriptAnimResult::IMMEDIATE;
-	}
+	*result = 1.0;
 	g_postAILinearTaskThreadQueue.Add(std::forward<Function>(callback));
-	return QueueScriptAnimResult::QUEUED;
 }
 
 AnimData* GetAnimData(Actor* actor, int firstPerson)
@@ -3108,34 +3093,45 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor);
 		if (!actor)
 			return true;
-		const auto* animData = GetAnimData(actor, firstPerson);
-		if (!animData)
-			return true;
-		auto* baseNode = animData->nBip01;
-		if (!baseNode) return true;
-		auto* anim = FindOrLoadAnim(actor, animPath.c_str(), firstPerson);
-		if (!anim || !AdditiveManager::IsAdditiveSequence(anim))
-			return true;
-		auto* bone = baseNode->GetObjectByName(nodeName.c_str());
-		if (!bone)
-			return true;
-		const auto setNodeWeightMult = [&](this auto& self, NiAVObject* node) -> void
+		
+		const auto actorId = actor->refID;
+		const auto sAnimPath = std::string(animPath.str());
+		const auto sNodeName = std::string(nodeName.str());
+		
+		QueueScriptAnimOperation(actor, result, [actorId, firstPerson, weight, recursive, sAnimPath, sNodeName]
 		{
-			auto* block = anim->GetControlledBlock(node->m_pcName);
-			if (block)
-				AdditiveManager::SetAdditiveInterpWeightMult(node, block->m_spInterpolator, weight);
-			if (recursive)
+			auto* actor = static_cast<Actor*>(LookupFormByID(actorId));
+			if (!actor || !actor->IsActor())
+				return false;
+			const auto* animData = GetAnimData(actor, firstPerson);
+			if (!animData)
+				return false;
+			auto* baseNode = animData->nBip01;
+			if (!baseNode) return false;
+			auto* anim = FindOrLoadAnim(actor, sAnimPath.c_str(), firstPerson);
+			if (!anim || !AdditiveManager::IsAdditiveSequence(anim))
+				return false;
+			auto* bone = baseNode->GetObjectByName(sNodeName.c_str());
+			if (!bone)
+				return false;
+			const auto setNodeWeightMult = [&](this auto& self, NiAVObject* node) -> void
 			{
-				if (auto* niNode = node->GetAsNiNode())
+				if (auto* block = anim->GetControlledBlock(node->m_pcName))
+					AdditiveManager::SetAdditiveInterpWeightMult(node, block->m_spInterpolator, weight);
+				if (recursive)
 				{
-					for (auto* child : niNode->m_children)
-						if (child)
-							self(child);
+					if (auto* niNode = node->GetAsNiNode())
+					{
+						for (auto* child : niNode->m_children)
+							if (child)
+								self(child);
+					}
 				}
-			}
-		};
-		setNodeWeightMult(bone);
-		*result = 1;
+			};
+			setNodeWeightMult(bone);
+			return true;
+		});
+		
 		return true;
 	});
 

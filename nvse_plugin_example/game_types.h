@@ -1289,6 +1289,11 @@ public:
 	{
 		return reinterpret_cast<AILinearTaskManager*>(0x11DFA50);
 	}
+	
+	static bool ShouldQueue3DTask()
+	{
+		return CdeclCall<bool>(0x8C7AA0);
+	}
 };
 
 namespace BSUtilities
@@ -1300,4 +1305,12 @@ namespace BSUtilities
 }
 
 
+class Interface
+{
+public:
+	static bool IsInMenuMode()
+	{
+		return CdeclCall<bool>(0x702360);
+	}
+};
 

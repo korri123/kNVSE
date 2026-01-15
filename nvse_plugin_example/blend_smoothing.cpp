@@ -39,32 +39,6 @@ bool kBlendInterpolatorExtraData::IsEqualEx(const kBlendInterpolatorExtraData* o
     return false;
 }
 
-void kBlendInterpolatorExtraData::EraseController(NiMultiTargetTransformController* pController)
-{
-    if (!pController->m_pkTarget || !NI_DYNAMIC_CAST(NiNode, pController->m_pkTarget))
-        // in NiObjectNET destructor, so targets are already deleted
-        // we are handling ReloadTargets here mainly, which just destroys the controller
-        return;
-
-    UInt32 idx = 0;
-    for (auto* target : pController->GetTargets())
-    {
-        if (!target)
-        {
-            ++idx;
-            continue;
-        }
-        auto* extraData = GetExtraData(target);
-        if (!extraData)
-        {
-            ++idx;
-            continue;
-        }
-        extraData->ClearValues();
-        ++idx;
-    }
-}
-
 void kBlendInterpolatorExtraData::EraseSequence(NiControllerSequence* anim)
 {
     auto* owner = anim->GetOwner();

@@ -130,7 +130,6 @@ public:
 
     void Destroy(bool freeMem);
     bool IsEqualEx(const kBlendInterpolatorExtraData* other) const;
-    static void EraseController(NiMultiTargetTransformController* pController);
     static void EraseSequence(NiControllerSequence* anim);
 
     static kBlendInterpolatorExtraData* Create();
