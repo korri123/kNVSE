@@ -310,7 +310,7 @@ void Actor::RestartAnims()
 	}
 	auto* baseProcess = this->baseProcess;
 	auto* animData = baseProcess->GetAnimData();
-	auto* bipedAnim = this->GetValidBip01Names(animData, this);
+	auto* bipedAnim = this->GetBiped(animData, this);
 	auto weaponOut = baseProcess->IsWeaponOut();
 	baseProcess->LoadAnimData(weaponOut, bipedAnim, animData, this);
 }

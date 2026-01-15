@@ -1282,6 +1282,8 @@ void ApplyHooks()
 		return sequence->ComputeScaledTime(fTime + sequence->m_fOffset, true);
 	}));
 	
+	
+#if 0
 	// HighProcess::SetQueuedIdleFlag
 	// prevent race condition
 	WriteRelJump(0x903180, INLINE_HOOK(void, __fastcall, Decoding::HighProcess* process, void*, UInt32 bFlag)
@@ -1289,6 +1291,14 @@ void ApplyHooks()
 		if (!process->animData || !process->animData->nSceneRoot || !process->animData->controllerManager)
 			return;
 		process->queuedIdleFlags |= bFlag;
+	}));
+#endif
+	// Actor::HandlePostAnimationActions
+	WriteRelCall(0x978269, INLINE_HOOK(void, __fastcall, Actor* actor)
+	{
+		if (!actor->Get3D())
+			return;
+		ThisStdCall(0x8BA600, actor);
 	}));
 
 	if (g_pluginSettings.blendSmoothing)

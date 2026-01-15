@@ -668,8 +668,8 @@ public:
 	{
 		if (!actor)
 			return;
-		auto* pos = actor->GetPos();
-		auto* node = actor->GetNiNode();
+		auto* pos = actor->GetLocationOnReference();
+		auto* node = actor->Get3D();
 		if (pos && node)
 		{
 			// BSSoundHandle::SetPosition

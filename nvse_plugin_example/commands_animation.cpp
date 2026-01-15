@@ -51,7 +51,7 @@ AnimData* GetAnimDataForPov(UInt32 playerPov, Actor* actor)
 			return g_thePlayer->firstPersonAnimData;
 		return nullptr;
 	}
-	return actor->GetAnimData();
+	return actor->GetAnimation();
 }
 
 bool Cmd_ForcePlayIdle_Execute(COMMAND_ARGS)
@@ -1459,7 +1459,7 @@ AnimData* GetAnimData(Actor* actor, int firstPerson)
 	{
 	case -1:
 		if (actor != g_thePlayer)
-			return actor->GetAnimData();
+			return actor->GetAnimation();
 		return !g_thePlayer->IsThirdPerson() ? g_thePlayer->firstPersonAnimData : g_thePlayer->baseProcess->GetAnimData();
 	case 0:
 		return actor->baseProcess->GetAnimData();
@@ -1467,7 +1467,7 @@ AnimData* GetAnimData(Actor* actor, int firstPerson)
 	default:
 		if (actor == g_thePlayer)
 			return g_thePlayer->firstPersonAnimData;
-		return actor->GetAnimData();
+		return actor->GetAnimation();
 	}
 }
 
@@ -1601,7 +1601,7 @@ bool Cmd_PlayGroupAlt_Execute(COMMAND_ARGS)
 	const auto groupId = GameFuncs::GetActorAnimGroupId(actor, groupIdMinor, nullptr, false, nullptr);
 	if (groupId == 0xFF)
 		return true;
-	if (GameFuncs::PlayAnimGroup(actor->GetAnimData(), groupId, flags, -1, -1))
+	if (GameFuncs::PlayAnimGroup(actor->GetAnimation(), groupId, flags, -1, -1))
 		*result = 1;
 	return true;
 }
@@ -1761,7 +1761,7 @@ BSAnimGroupSequence* FindActiveAnimationForRef(TESObjectREFR* thisObj, const cha
 		return GetAnimationByPath(path);
 	if (thisObj->IsActor())
 		return FindActiveAnimationForActor(static_cast<Actor*>(thisObj), path, povState);
-	auto* ninode = thisObj->GetNiNode();
+	auto* ninode = thisObj->Get3D();
 	if (!ninode)
 		return nullptr;
 	auto* controller = ninode->m_controller;
@@ -2850,7 +2850,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
-		const auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : actor->GetAnimData();
+		const auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : actor->GetAnimation();
 		if (!animData)
 			return true;
 		if (groupId >= g_animGroupInfos.size())
@@ -3210,7 +3210,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		float easeInTime = 0.0f;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequenceName, &nodeName, &priority, &easeInTime) || !thisObj)
 			return true;
-		auto* sceneRoot = thisObj->GetNiNode();
+		auto* sceneRoot = thisObj->Get3D();
 		if (!sceneRoot)
 			return true;
 		auto* node = nodeName.empty() ? sceneRoot :
@@ -3239,7 +3239,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		float frequency = 1.0f;
 		if (!ExtractArgs(EXTRACT_ARGS, &sequenceName, &frequency, &nodeName) || !thisObj)
 			return true;
-		auto* sceneRoot = thisObj->GetNiNode();
+		auto* sceneRoot = thisObj->Get3D();
 		if (!sceneRoot)
 			return true;
 		auto* node = nodeName.empty() ? sceneRoot :

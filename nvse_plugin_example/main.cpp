@@ -195,7 +195,7 @@ bool IsAnimBundleEqual(const std::optional<AnimationResult>& animResult, const S
 
 bool IsActorInvalid(Actor* actor)
 {
-	return !actor || actor->IsDying(true) || actor->IsDeleted() || !actor->baseProcess;
+	return !actor || actor->IsDead(true) || actor->IsDeleted() || !actor->baseProcess;
 }
 
 void HandlePollConditionAnims()
@@ -560,7 +560,7 @@ void HandleBurstFire()
 			iter = g_burstFireQueue.erase(iter);
 		};
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
-		if (!actor || actor->IsDeleted() || actor->IsDying(true) || !anim || !anim->animGroup || anim->m_fLastScaledTime - lastNiTime < -0.01f && anim->m_eCycleType != NiControllerSequence::LOOP)
+		if (!actor || actor->IsDeleted() || actor->IsDead(true) || !anim || !anim->animGroup || anim->m_fLastScaledTime - lastNiTime < -0.01f && anim->m_eCycleType != NiControllerSequence::LOOP)
 		{
 			erase();
 			continue;

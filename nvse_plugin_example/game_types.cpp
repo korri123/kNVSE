@@ -64,7 +64,7 @@ AnimGroupID AnimData::GetNextAttackGroupID() const
 
 void Actor::FireWeapon()
 {
-	nextAttackAnimGroupId110 = static_cast<UInt32>(GetAnimData()->GetNextAttackGroupID());
+	nextAttackAnimGroupId110 = static_cast<UInt32>(GetAnimation()->GetNextAttackGroupID());
 	this->baseProcess->SetQueuedIdleFlag(kIdleFlag_FireWeapon);
 	GameFuncs::HandleQueuedAnimFlags(this); //Actor::HandleQueuedIdleFlags
 }
