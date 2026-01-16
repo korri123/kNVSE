@@ -182,7 +182,6 @@ namespace
 		targetSeq->Update(animData->timePassed, true);
 
 		HandleExtraOperations(animData, targetSeq);
-		HandleCustomTextKeys(); // since dest frame is there lets run any sounds
 		
 		animData->SetCurrentSequence(targetSeq, false);
 

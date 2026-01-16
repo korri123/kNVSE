@@ -200,7 +200,9 @@ bool IsActorInvalid(Actor* actor)
 
 void HandlePollConditionAnims()
 {
-	std::unique_lock lock(g_pollConditionMutex);
+	// std::unique_lock lock(g_pollConditionMutex);
+	// Not needed, runs on MainGameLoop event
+	DebugAssert(!AILinearTaskManager::ShouldQueue3DTask());
 	if (g_timeTrackedGroups.empty())
 		return;
 #if _DEBUG && 0
@@ -331,7 +333,9 @@ struct SetThisAnimScriptPath
 
 void HandleCustomTextKeys()
 {
-	std::unique_lock lock(g_animTimeMutex);
+	// std::unique_lock lock(g_animTimeMutex);
+	// not needed since this runs on MainGameLoop event which is before any threads are active
+	DebugAssert(!AILinearTaskManager::ShouldQueue3DTask());
 	for (auto it = g_timeTrackedAnims.begin(); it != g_timeTrackedAnims.end();)
 	{
 		auto& animTime = *it->second;
@@ -645,7 +649,7 @@ void HandleBurstFire()
 
 void HandleSynchronizedExecutionQueue()
 {
-	ScopedLock lock(g_executionQueueCS);
+	// ScopedLock lock(g_executionQueueCS);
 	while (!g_synchronizedExecutionQueue.empty())
 	{
 		g_synchronizedExecutionQueue.front()();
@@ -687,7 +691,9 @@ void SynchronizedQueue::Add(std::function<void()>&& func)
 
 void SynchronizedQueue::RunAllAndClear()
 {
-	std::unique_lock lock(mutex);
+	// std::unique_lock lock(mutex);
+	// Not needed
+	DebugAssert(!AILinearTaskManager::ShouldQueue3DTask());
 	while (!queue.empty())
 	{
 		queue.front()();

@@ -1282,7 +1282,6 @@ void ApplyHooks()
 		return sequence->ComputeScaledTime(fTime + sequence->m_fOffset, true);
 	}));
 	
-	
 #if 0
 	// HighProcess::SetQueuedIdleFlag
 	// prevent race condition
