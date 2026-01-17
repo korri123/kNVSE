@@ -2,6 +2,7 @@
 
 #include "NiNodes.h"
 #include "game_types.h"
+#include "string_view_util.h"
 
 class BSMemObject {
 };
@@ -288,7 +289,7 @@ public:
 
 	static ScopedList<char> GetDirectoryAnimPaths(std::string_view path)
 	{
-		const std::string searchPath = FormatString(R"(%s*.kf)", path.data());
+		const auto searchPath = sv::stack_string<0x400>(R"(%s*.kf)", path.data());
 		return GetDirectoryPaths(searchPath.c_str(), searchPath.c_str(), ARCHIVE_TYPE_MESHES);
 	}
 

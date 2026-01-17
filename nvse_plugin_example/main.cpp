@@ -649,7 +649,7 @@ void HandleBurstFire()
 
 void HandleSynchronizedExecutionQueue()
 {
-	// ScopedLock lock(g_executionQueueCS);
+	ScopedLock lock(g_executionQueueCS);
 	while (!g_synchronizedExecutionQueue.empty())
 	{
 		g_synchronizedExecutionQueue.front()();

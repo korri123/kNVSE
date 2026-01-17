@@ -30,11 +30,10 @@ struct JSONEntry
 	int loadPriority;
 	bool pollCondition;
 	bool matchBaseGroupId;
-	std::string_view bsa;
 
 	JSONEntry(std::string folderName, const TESForm* form, std::string_view condition, bool pollCondition, int priority, bool matchBaseGroupId, std::string_view bsa)
 		: folderName(std::move(folderName)), form(form), condition(condition), loadPriority(priority), pollCondition(pollCondition),
-	matchBaseGroupId(matchBaseGroupId), bsa(bsa)
+	matchBaseGroupId(matchBaseGroupId)
 	{
 	}
 };
@@ -195,7 +194,8 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 				{
 					continue;
 				}
-				const auto& folder = elem["folder"].get<std::string>();
+				auto folder = elem["folder"].get<std::string>();
+				ra::replace(folder, '/', '\\');
 				std::vector<int> formIds;
 				auto* formElem = elem.contains("form") ? &elem["form"] : nullptr;
 				if (formElem)
@@ -305,19 +305,6 @@ bool LoadDataFolderBSAPaths(JSONEntry& entry)
 	const auto childFolders = {"mod1\\", "mod2\\", "mod3\\", "hurt\\", "human\\", "male\\", "female\\"};
 	int numFound = 0;
 
-	if (!entry.bsa.empty())
-	{
-		sv::stack_string<0x400> bsaPath("DATA\\%s", entry.bsa.data());
-		auto* bsaArchive = ArchiveManager::OpenArchive(bsaPath.data(), ARCHIVE_TYPE_MESHES, false);
-		if (!bsaArchive)
-		{
-			bsaPath = sv::stack_string<0x400>(R"(DATA\Meshes\AnimGroupOverride\%s)", entry.bsa.data());
-			bsaArchive = ArchiveManager::OpenArchive(bsaPath.data(), ARCHIVE_TYPE_MESHES, false);
-		}
-		if (!bsaArchive)
-			ERROR_LOG(FormatString("BSA not found: %s", entry.bsa));
-	}
-
 	AnimOverrideData animOverrideData = {
 		.identifier = entry.form ? entry.form->refID : 0xFF,
 		.enable = true,
@@ -325,6 +312,11 @@ bool LoadDataFolderBSAPaths(JSONEntry& entry)
 		.pollCondition = entry.pollCondition,
 		.matchBaseGroupId = entry.matchBaseGroupId,
 	};
+	
+	auto* archiveLists = ArchiveManager::GetArchiveList();
+	std::vector<std::string_view> archives;
+	for (auto* archive : *archiveLists)
+		archives.emplace_back(archive->cFileName);
 
 	for (const auto& subfolder : subfolders)
 	{
@@ -342,7 +334,7 @@ bool LoadDataFolderBSAPaths(JSONEntry& entry)
 
 bool LoadJSONInBSAPaths(const std::vector<std::string_view>& bsaAnimPaths, JSONEntry& entry)
 {
-	const auto jsonFolderPath = "meshes\\animgroupoverride\\" + ToLower(entry.folderName) + "\\";
+	sv::stack_string<0x400> jsonFolderPath("meshes\\animgroupoverride\\%s\\", entry.folderName.data());
 	auto thisModsPaths = bsaAnimPaths | ra::views::filter([&](const std::string_view& bsaPath)
 	{
 		return sv::starts_with_ci(bsaPath, jsonFolderPath);
@@ -418,11 +410,8 @@ void LoadAnimPathsFromBSA(const fs::path& path, std::vector<std::string_view>& a
 			std::string_view fileName(fileStrings + fileOffset);
 			if (sv::get_file_extension(fileName) != ".kf")
 				continue;
-			char buffer[0x400]; 
-			if (const auto result = sprintf_s(buffer, "%s\\%s", directory.data(), fileName.data()); result != -1)
-				animPaths.emplace_back(AddStringToPool({buffer, static_cast<size_t>(result)}));
-			else [[unlikely]]
-				ERROR_LOG("Failed to format path: " + std::string(directory) + "\\" + std::string(fileName));
+			auto buffer = sv::stack_string<0x400>("%s\\%s", directory.data(), fileName.data());
+			animPaths.emplace_back(AddStringToPool(buffer));
 		}
 	}
 }
