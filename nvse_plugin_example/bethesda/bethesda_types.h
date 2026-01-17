@@ -276,6 +276,8 @@ public:
 	static bool GetRandomFileNameForDirectory(const char* apDirectory, char* apFileName, ARCHIVE_TYPE aeArchiveType);
 
 	static const char* TrimFileName(const char* apFileName);
+	
+	static bool RemoveArchive(Archive* apArchive);
 
 	static ScopedList<char> GetDirectoryPaths(const char* searchName, const char* baseName, ARCHIVE_TYPE aeArchiveType)
 	{
@@ -298,4 +300,3 @@ public:
 		pCriticalSection->Unlock();
 	}
 };
-

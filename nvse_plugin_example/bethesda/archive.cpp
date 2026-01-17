@@ -188,6 +188,12 @@ const char* ArchiveManager::TrimFileName(const char* apFileName) {
     return CdeclCall<const char*>(0xB014B0, apFileName);
 }
 
+// 0xAF5550
+bool ArchiveManager::RemoveArchive(Archive* apArchive)
+{
+    return CdeclCall<bool>(0xAF5550, apArchive);
+}
+
 // 0xAF7E80
 bool ArchiveManager::WildCardMatch(char* apSearchName, BSHash* apHash) {
     return CdeclCall<bool>(0xAF7E80, apSearchName, apHash);

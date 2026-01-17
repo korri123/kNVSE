@@ -30,10 +30,11 @@ struct JSONEntry
 	int loadPriority;
 	bool pollCondition;
 	bool matchBaseGroupId;
+	std::string_view bsa;
 
-	JSONEntry(std::string folderName, const TESForm* form, std::string_view condition, bool pollCondition, int priority, bool matchBaseGroupId)
+	JSONEntry(std::string folderName, const TESForm* form, std::string_view condition, bool pollCondition, int priority, bool matchBaseGroupId, std::string_view bsa)
 		: folderName(std::move(folderName)), form(form), condition(condition), loadPriority(priority), pollCondition(pollCondition),
-	matchBaseGroupId(matchBaseGroupId)
+	matchBaseGroupId(matchBaseGroupId), bsa(bsa)
 	{
 	}
 };
@@ -214,6 +215,13 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 					if (elem.contains("pollCondition"))
 						pollCondition = elem["pollCondition"].get<bool>();
 				}
+				
+				std::string_view bsa;
+				if (elem.contains("bsa"))
+				{
+					bsa = AddStringToPool(elem["bsa"].get<std::string_view>());
+				}
+				
 				auto matchBaseGroupId = false;
 				if (elem.contains("matchBaseAnimGroup"))
 				{
@@ -231,12 +239,12 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 							continue;
 						}
 						//LOG(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
-						jsonEntries.emplace_back(folder, form, condition, pollCondition, priority, matchBaseGroupId);
+						jsonEntries.emplace_back(folder, form, condition, pollCondition, priority, matchBaseGroupId, bsa);
 					}
 				}
 				else
 				{
-					jsonEntries.emplace_back(folder, nullptr, condition, pollCondition, priority, matchBaseGroupId);
+					jsonEntries.emplace_back(folder, nullptr, condition, pollCondition, priority, matchBaseGroupId, bsa);
 				}
 			}
 		}
@@ -252,8 +260,8 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 
 bool OverrideBSAPathAnim(AnimOverrideData& animOverrideData, const std::string_view path)
 {
-	const auto firstPerson = path.contains("_1stperson");
-	const auto thirdPerson = path.contains("_male");
+	const auto firstPerson = sv::contains_ci(path, "_1stperson");
+	const auto thirdPerson = sv::contains_ci(path, "_male");
 	if (!thirdPerson && !firstPerson)
 		return false;
 	animOverrideData.path = AddStringToPool(path);
@@ -282,7 +290,7 @@ int OverrideBSAPathAnimationsForList(AnimOverrideData& animOverrideData, std::st
 	for (const char* pPath : list)
 	{
 		const std::string_view path(pPath);
-		if (!path.starts_with(basePath))
+		if (!sv::starts_with_ci(path, basePath))
 			continue;
 		if (OverrideBSAPathAnim(animOverrideData, path))
 			++numFound;
@@ -297,11 +305,19 @@ bool LoadDataFolderBSAPaths(JSONEntry& entry)
 	const auto childFolders = {"mod1\\", "mod2\\", "mod3\\", "hurt\\", "human\\", "male\\", "female\\"};
 	int numFound = 0;
 
-	auto* archiveLists = ArchiveManager::GetArchiveList();
-	std::vector<std::string_view> archives;
-	for (auto* archive : *archiveLists)
-		archives.push_back(archive->cFileName);
-	
+	if (!entry.bsa.empty())
+	{
+		sv::stack_string<0x400> bsaPath("DATA\\%s", entry.bsa.data());
+		auto* bsaArchive = ArchiveManager::OpenArchive(bsaPath.data(), ARCHIVE_TYPE_MESHES, false);
+		if (!bsaArchive)
+		{
+			bsaPath = sv::stack_string<0x400>(R"(DATA\Meshes\AnimGroupOverride\%s)", entry.bsa.data());
+			bsaArchive = ArchiveManager::OpenArchive(bsaPath.data(), ARCHIVE_TYPE_MESHES, false);
+		}
+		if (!bsaArchive)
+			ERROR_LOG(FormatString("BSA not found: %s", entry.bsa));
+	}
+
 	AnimOverrideData animOverrideData = {
 		.identifier = entry.form ? entry.form->refID : 0xFF,
 		.enable = true,
@@ -309,7 +325,7 @@ bool LoadDataFolderBSAPaths(JSONEntry& entry)
 		.pollCondition = entry.pollCondition,
 		.matchBaseGroupId = entry.matchBaseGroupId,
 	};
-	
+
 	for (const auto& subfolder : subfolders)
 	{
 		std::string path = basePath + subfolder;
@@ -320,6 +336,7 @@ bool LoadDataFolderBSAPaths(JSONEntry& entry)
 			numFound += OverrideBSAPathAnimationsForList(animOverrideData, childPath);
 		}
 	}
+
 	return numFound != 0;
 }
 
@@ -328,7 +345,7 @@ bool LoadJSONInBSAPaths(const std::vector<std::string_view>& bsaAnimPaths, JSONE
 	const auto jsonFolderPath = "meshes\\animgroupoverride\\" + ToLower(entry.folderName) + "\\";
 	auto thisModsPaths = bsaAnimPaths | ra::views::filter([&](const std::string_view& bsaPath)
 	{
-		return bsaPath.starts_with(jsonFolderPath);
+		return sv::starts_with_ci(bsaPath, jsonFolderPath);
 	});
 	if (ra::empty(thisModsPaths))
 		return false;
@@ -376,7 +393,7 @@ void LoadJsonEntries(std::vector<JSONEntry>& jsonEntries, const std::vector<std:
 
 void LoadAnimPathsFromBSA(const fs::path& path, std::vector<std::string_view>& animPaths)
 {
-	ArchivePtr archive = ArchiveManager::OpenArchive(path.string().c_str(), ARCHIVE_TYPE_MESHES, false);
+	auto* archive = ArchiveManager::OpenArchive(path.string().c_str(), ARCHIVE_TYPE_MESHES, false);
 	
 	const char* dirStrings = archive->pDirectoryStringArray;
 	const char* fileStrings = archive->pFileNameStringArray;
@@ -420,30 +437,25 @@ void LoadFileAnimPaths()
 	std::vector<JSONEntry> jsonEntries;
 	if (exists(dir))
 	{
-		for (const auto& iter: fs::directory_iterator(dir))
+		for (const auto& iter : fs::directory_iterator(dir))
 		{
 			const auto& path = iter.path();
+			const auto ext = path.extension().string();
 			if (iter.is_directory())
 			{
-				const auto& fileName = path.filename();
-				const auto& extension = fileName.extension().string();
-				const auto isMod = _stricmp(extension.c_str(), ".esp") == 0 || _stricmp(extension.c_str(), ".esm") == 0;
-				const ModInfo* mod;
-				if (isMod)
+				if (sv::equals_ci(ext, ".esp") || sv::equals_ci(ext, ".esm"))
 				{
-					if ((mod = DataHandler::Get()->LookupModByName(fileName.string().c_str())))
+					const auto fileName = path.filename().string();
+					if (const auto* mod = DataHandler::Get()->LookupModByName(fileName.c_str()))
 						LoadModAnimPaths(path, mod);
 					else
-						ERROR_LOG(FormatString("Mod with name %s is not loaded!", fileName.string().c_str()));
+						ERROR_LOG(FormatString("Mod with name %s is not loaded!", fileName.c_str()));
 				}
-				
 			}
-			else if (_stricmp(path.extension().string().c_str(), ".json") == 0)
-				HandleJson(iter.path(), jsonEntries);
-			else if (path.extension() == ".bsa")
-			{
-				LoadAnimPathsFromBSA(iter.path(), bsaAnimPaths);
-			}
+			else if (sv::equals_ci(ext, ".json"))
+				HandleJson(path, jsonEntries);
+			else if (sv::equals_ci(ext, ".bsa"))
+				LoadAnimPathsFromBSA(path, bsaAnimPaths);
 		}
 	}
 	else
