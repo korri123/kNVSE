@@ -142,10 +142,8 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
     }
 }
 
-bool AdditiveManager::IsAdditiveSequence(NiControllerSequence* sequence)
+bool AdditiveManager::IsAdditiveSequence(const NiControllerSequence* sequence)
 {
-    if (!sequence->m_spTextKeys)
-        return false;
     auto* sequenceExtraData = SequenceExtraDatas::Get(sequence);
     if (!sequenceExtraData)
         return false;
@@ -437,33 +435,4 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority, SequenceE
 
 void AdditiveManager::WriteHooks()
 {
-    // AnimData::Refresh
-    // this function deactivates all active sequences but only reactivates the ones in AnimData::animSequence
-    // this will also reactivate unmanaged sequences (which additive anims are)
-    static UInt32 uiAnimDataRefreshAddr = 0x499240;
-    WriteRelCall(0x8B0B8C, INLINE_HOOK(UInt32, __fastcall, AnimData* animData, void*, char cUnk)
-    {
-        const auto doRefresh = [&]
-        {
-            return ThisStdCall<UInt32>(uiAnimDataRefreshAddr, animData, cUnk);
-        };
-        std::vector<NiControllerSequence*> sequences;
-        auto* controllerManager = animData->controllerManager;
-        if (!controllerManager || controllerManager->m_kActiveSequences.length == 0)
-            return doRefresh();
-        
-        sequences.reserve(controllerManager->m_kActiveSequences.length);
-        for (auto* item : controllerManager->m_kActiveSequences)
-        {
-            if (IsAdditiveSequence(item))
-                sequences.push_back(item);
-        }
-        const auto result = doRefresh();
-        for (auto* sequence : sequences)
-        {
-            if (sequence->m_eState == NiControllerSequence::INACTIVE)
-                controllerManager->ActivateSequence(sequence, 0, false, sequence->m_fSeqWeight, 0.0f, nullptr);
-        }
-        return result;
-    }), &uiAnimDataRefreshAddr);
 }

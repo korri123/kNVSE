@@ -6,6 +6,7 @@
 #include "GameAPI.h"
 #include "hooks.h"
 #include "SafeWrite.h"
+#include "sequence_extradata.h"
 #include "utility.h"
 
 void* g_vtblExtraData[37] = {};
@@ -305,6 +306,7 @@ void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraDat
 
 namespace
 {
+    thread_local std::vector<NiControllerSequence*> g_activeSequences;
     void __fastcall HandleReloadTargets(NiControllerManager* manager)
     {
         if (manager->m_spObjectPalette)
@@ -321,6 +323,13 @@ namespace
             }
         }
         
+        g_activeSequences.clear();
+        for (auto* sequence : manager->m_kActiveSequences)
+        {
+            if (auto* extraData = SequenceExtraDatas::Get(sequence); extraData && extraData->startInReloadTargets)
+                g_activeSequences.emplace_back(sequence);
+        }
+        
         manager->DeactivateAll();
     }
     
@@ -328,6 +337,22 @@ namespace
     {
         animData->noBlend120 = true;
         animData->ReloadTargets();
+    }
+    
+    void ReactivateSequencesHook()
+    {
+        auto* animData = GET_CALLER_VAR(AnimData*, -0x2C);
+        auto* idx = GET_CALLER_VAR_PTR(UInt32*, -0x28);
+        for (auto* sequence : g_activeSequences)
+        {
+            if (sequence->m_eState == NiControllerSequence::INACTIVE)
+                animData->controllerManager->ActivateSequence(sequence, 0, false, 1.0f, 0.0f, nullptr);
+        }
+        g_activeSequences.clear();
+        
+        
+        *idx = 0; // mov     [ebp+var_28], 0
+        *static_cast<UInt32*>(_AddressOfReturnAddress()) = 0x499493;
     }
 }
 
@@ -338,4 +363,6 @@ void BlendSmoothing::WriteHooks()
     // Animation::SkipNextBlend
     // noticed an issue that ReloadTargets wasn't being called from load game, so that means lingering extra data
     WriteRelCall(0x49B1A7, HandleSkipNextBlend);
+    WriteRelCall(0x499481, ReactivateSequencesHook);
+    PatchMemoryNop(0x499481 + 5, 4);
 }

@@ -29,6 +29,7 @@
 #include "NiObjects.h"
 #include "NiTypes.h"
 #include "ScriptUtils.h"
+#include "sequence_extradata.h"
 #include "string_view_util.h"
 
 std::span<AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<AnimGroupInfo*>(0x11977D8), 245 };
@@ -1519,6 +1520,8 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 					animTime->trackEndTime = true;
 					animTime->endIfSequenceTypeChanges = false;
 				}
+				auto* extraData = SequenceExtraDatas::GetOrCreate(anim);
+				extraData->startInReloadTargets = true;
 				return 1.0;
 			}
 		}

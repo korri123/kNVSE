@@ -6,6 +6,7 @@
 class SequenceExtraData 
 {
 public:
+    bool startInReloadTargets = false;
     bool needsStoreTargets = false;
     std::unique_ptr<AdditiveSequenceMetadata> additiveMetadata = nullptr;
 };

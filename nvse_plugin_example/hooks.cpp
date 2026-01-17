@@ -860,8 +860,6 @@ void ApplyHooks()
 		// hooked call
 		*reinterpret_cast<UInt32*>(anim) = kVtbl_NiControllerSequence;
 		auto* retnAddr = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		if (AdditiveManager::IsAdditiveSequence(anim))
-			AdditiveManager::EraseAdditiveSequence(anim);
 		SequenceExtraDatas::Delete(anim);
 		kBlendInterpolatorExtraData::EraseSequence(anim);
 		// EraseTimeTrackedAnim(anim); we do store a smart pointer to the anim in g_timeTrackedAnims
@@ -1300,8 +1298,7 @@ void ApplyHooks()
 		ThisStdCall(0x8BA600, actor);
 	}));
 
-	if (g_pluginSettings.blendSmoothing)
-		BlendSmoothing::WriteHooks();
+	BlendSmoothing::WriteHooks();
 	
 	// JIPFixes::Init();
 }

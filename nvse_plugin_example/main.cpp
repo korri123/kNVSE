@@ -195,7 +195,7 @@ bool IsAnimBundleEqual(const std::optional<AnimationResult>& animResult, const S
 
 bool IsActorInvalid(Actor* actor)
 {
-	return !actor || actor->IsDead(true) || actor->IsDeleted() || !actor->baseProcess;
+	return !actor || actor->IsDead(true) || actor->IsDeleted() || !actor->baseProcess || !actor->Get3D();
 }
 
 void HandlePollConditionAnims()
@@ -364,7 +364,7 @@ void HandleCustomTextKeys()
 #if _DEBUG
 		auto animTimeDupl = TempObject(animTime); // see vals in debugger after erase
 #endif
-		if (!actor || !actor->baseProcess)
+		if (!actor || !actor->baseProcess || !actor->Get3D())
 		{
 			erase();
 			continue;
