@@ -18,7 +18,7 @@ struct AdditiveSequenceMetadata
 namespace AdditiveManager
 {
     bool IsAdditiveSequence(const NiControllerSequence* sequence);
-    void EraseAdditiveSequence(NiControllerSequence* sequence);
+    void RemoveAdditiveTransformsFlags(NiControllerSequence* sequence);
     void InitAdditiveSequence(AnimData* animData, NiControllerSequence* additiveSequence, NiControllerSequence* referencePoseSequence, float
                               timePoint, bool ignorePriorities);
     void PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim);

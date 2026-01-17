@@ -242,8 +242,6 @@ void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
     }
 }
 
-#define ADDITIVE_ANIMS 0
-
 bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInterpTarget,
                                                NiQuatTransform& kValue)
 {

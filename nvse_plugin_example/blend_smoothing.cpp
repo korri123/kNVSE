@@ -311,7 +311,7 @@ namespace
     {
         if (manager->m_spObjectPalette)
         {
-            for (auto& item : manager->m_spObjectPalette->m_kHash)
+            for (const auto& item : manager->m_spObjectPalette->m_kHash)
             {
                 auto* target = item.m_val;
                 if (!target)
@@ -349,7 +349,6 @@ namespace
                 animData->controllerManager->ActivateSequence(sequence, 0, false, 1.0f, 0.0f, nullptr);
         }
         g_activeSequences.clear();
-        
         
         *idx = 0; // mov     [ebp+var_28], 0
         *static_cast<UInt32*>(_AddressOfReturnAddress()) = 0x499493;

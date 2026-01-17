@@ -249,6 +249,9 @@ AnimTime::~AnimTime()
 	Revert3rdPersonAnimTimes(this->respectEndKeyData.anim3rdCounterpart, this->anim);
 	if ((this->trackEndTime || this->isOverlayAdditiveAnim) && this->anim->m_eState != NiControllerSequence::EASEOUT && this->anim->m_eState != NiControllerSequence::TRANSSOURCE)
 	{
+		if (this->trackEndTime && !this->isOverlayAdditiveAnim && AdditiveManager::IsAdditiveSequence(this->anim))
+			// PlayAnimationPath anims
+			AdditiveManager::RemoveAdditiveTransformsFlags(this->anim);
 		const auto easeOutTime = this->anim->GetEaseOutTime();
 		this->anim->Deactivate(easeOutTime, false);
 	}
@@ -2350,6 +2353,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 				else
 					actualEaseOutTime = 0.0f;
 			}
+			if (AdditiveManager::IsAdditiveSequence(anim))
+				AdditiveManager::RemoveAdditiveTransformsFlags(anim);
 			auto* manager = anim->m_pkOwner;
 			return manager->DeactivateSequence(anim, actualEaseOutTime);
 		});
@@ -2980,29 +2985,39 @@ void CreateCommands(NVSECommandBuilder& builder)
 			path->to_lower();
 		if (animPath.empty())
 			return true;
+		if (!thisObj)
+			return true;
+		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
+		const auto actorId = actor->refID;
 		
-		if (auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor))
+		const auto sAnimPath = std::string(animPath.str());
+		const auto sRefPoseAnimPath = std::string(refPoseAnimPath.str());
+		if (firstPerson == -1)
+			firstPerson = IsPlayerInFirstPerson(actor);
+		
+		QueueScriptAnimOperation(actor, result, [firstPerson, actorId, sAnimPath, sRefPoseAnimPath, ignorePriorities, refPoseTimePoint]
 		{
-			if (firstPerson == -1)
-				firstPerson = IsPlayerInFirstPerson(actor);
+			auto* actor = static_cast<Actor*>(LookupFormByID(actorId));
+			if (!actor || !actor->IsActor() || !actor->Get3D())
+				return false;
 			auto* animData = GetAnimData(actor, firstPerson);
 			if (!animData)
-				return true;
-			auto* additiveAnim = FindOrLoadAnim(animData, animPath.c_str());
+				return false;
+			auto* additiveAnim = FindOrLoadAnim(animData, sAnimPath.c_str());
 			if (!additiveAnim)
-				return true;
+				return false;
+
 			BSAnimGroupSequence* refPoseAnim;
-			if (!refPoseAnimPath.empty())
-				refPoseAnim = FindOrLoadAnim(animData, refPoseAnimPath.c_str());
+			if (!sRefPoseAnimPath.empty())
+				refPoseAnim = FindOrLoadAnim(animData, sRefPoseAnimPath.c_str());
 			else
 				refPoseAnim = GetAnimByGroupID(animData, kAnimGroup_Idle);
 			if (!refPoseAnim)
-				return true;
+				return false;
 			const auto bIgnorePriorities = static_cast<bool>(ignorePriorities);
 			AdditiveManager::InitAdditiveSequence(animData, additiveAnim, refPoseAnim, refPoseTimePoint, bIgnorePriorities);
-			*result = 1;
 			return true;
-		}
+		});
 		return true;
 	});
 
@@ -3193,6 +3208,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!animData)
 			return true;
 		*result = animData->movementSpeedMult;
+		return true;
+	});
+	
+	builder.Create("CloneAnimation", kRetnType_Default, {}, true, [](COMMAND_ARGS)
+	{
 		return true;
 	});
 

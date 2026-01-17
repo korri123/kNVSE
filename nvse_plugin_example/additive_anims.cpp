@@ -109,7 +109,6 @@ void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSeque
     {
         sequenceExtraData->additiveMetadata = std::make_unique<AdditiveSequenceMetadata>(metadata);
     }
-    MarkInterpolatorsAsAdditive(additiveSequence);
 }
 
 void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim)
@@ -150,7 +149,7 @@ bool AdditiveManager::IsAdditiveSequence(const NiControllerSequence* sequence)
     return sequenceExtraData->additiveMetadata != nullptr;
 }
 
-void AdditiveManager::EraseAdditiveSequence(NiControllerSequence* sequence)
+void AdditiveManager::RemoveAdditiveTransformsFlags(NiControllerSequence* sequence)
 {
     for (auto& item : sequence->GetControlledBlocks())
     {
