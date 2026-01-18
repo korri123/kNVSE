@@ -423,6 +423,19 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority, SequenceE
                 DebugAssert(false);
                 continue;
             }
+            if (extraInterpItem.detached)
+            {
+                // happens if this sequence was non additive but is now additive
+                DebugAssert(extraInterpItem.blendIndex != 0xFF);
+                if (extraInterpItem.blendIndex != 0xFF)
+                    kItem.m_pkBlendInterp->RemoveInterpInfo(extraInterpItem.blendIndex);
+                extraInterpItem.blendIndex = 0xFF;
+                extraInterpItem.detached = false;
+                extraInterpItem.translateWeight = {};
+                extraInterpItem.rotateWeight = {};
+                extraInterpItem.scaleWeight = {};
+                extraInterpItem.debugState = kInterpDebugState::WasDetachedButNowAdditive;
+            }
             kItem.m_ucBlendIdx = kItem.m_pkBlendInterp->AddInterpInfo(
                 kItem.m_spInterpolator,
                 m_fSeqWeight,

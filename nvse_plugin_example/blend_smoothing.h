@@ -3,7 +3,8 @@
 
 enum class kInterpDebugState: UInt8
 {
-    NotSet, RemovedInBlendSmoothing, RemovedInDetachInterpolators, AttachedNormally, DetachedButSmoothing, ReattachedWhileSmoothing, RemovedInStoreSingle
+    NotSet, RemovedInBlendSmoothing, RemovedInDetachInterpolators, AttachedNormally, DetachedButSmoothing, ReattachedWhileSmoothing, RemovedInStoreSingle,
+    WasDetachedButNowAdditive
 };
 
 enum class kInterpState: UInt8
