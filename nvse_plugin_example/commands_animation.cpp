@@ -293,14 +293,6 @@ enum class KeyCheckType
 	KeyEquals, KeyStartsWith
 };
 
-std::string_view GetTextAfterColon(std::string_view in)
-{
-	auto str = in.substr(in.find_first_of(':') + 1);
-	while (!str.empty() && isspace(*str.begin()))
-		str = str.substr(1);
-	return str;
-}
-
 /*
  * 	std::unique_ptr<TimedExecution<Script*>> scriptLineKeys = nullptr;
 	std::unique_ptr<TimedExecution<Script*>> scriptCallKeys = nullptr;
@@ -460,15 +452,10 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 
 		animTime.soundPathsBase = TimedExecution<Sounds>(textKeys, [&](const char* key, Sounds& result)
 		{
-			if (!StartsWith(key, "SoundPath:"))
+			const auto sound = Sounds::FromTextKey(animData, key);
+			if (!sound)
 				return false;
-			const auto line = GetTextAfterColon(key);
-			if (line.empty())
-				return false;
-			const auto is3D = animData != g_thePlayer->firstPersonAnimData;
-			result = Sounds(line, is3D);
-			if (result.failed)
-				return false;
+			result = *sound;
 			return true;
 		});
 		animTime.soundPaths = animTime.soundPathsBase->CreateContext(GetAnimTime(anim));

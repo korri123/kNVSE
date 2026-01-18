@@ -166,6 +166,33 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 
 namespace
 {
+	void HandleSoundPathMismatch(AnimData* animData, BSAnimGroupSequence* sourceSeq, BSAnimGroupSequence* targetSeq)
+	{
+		if (!sourceSeq->m_spTextKeys || !targetSeq->m_spTextKeys)
+			return;
+		auto sourceKeys = sourceSeq->m_spTextKeys->GetKeys();
+		auto targetKeys = sourceSeq->m_spTextKeys->GetKeys();
+		auto sourceCount = ra::count_if(sourceKeys, _L(auto& key, sv::starts_with_ci(key.m_kText.CStr(), "SoundPath:")));
+		auto targetCount = ra::count_if(targetKeys, _L(auto& key, sv::starts_with_ci(key.m_kText.CStr(), "SoundPath:")));
+		if (sourceCount != targetCount || sourceCount == 0)
+			return;
+		for (auto& key : sourceKeys)
+		{
+			if (!sv::starts_with_ci(key.m_kText.CStr(), "SoundPath:"))
+				continue;
+			const auto targetTime = GetAnimTime(targetSeq);
+			const auto sourceTime = sourceSeq->m_fLastScaledTime;
+			if (key.m_fTime < targetTime && key.m_fTime > sourceTime)
+			{
+				if (auto sound = Sounds::FromTextKey(animData, key.m_kText.CStr()))
+				{
+					const auto is3D = animData != g_thePlayer->firstPersonAnimData;
+					sound->Play(animData->actor, is3D);
+				}
+			}
+		}
+	}
+	
 	bool TransitionToAttack(AnimData* animData, AnimGroupID sourceGroupId, AnimGroupID targetGroupId)
 	{
 		auto* sourceSeq = GetAnimByGroupID(animData, sourceGroupId);
@@ -182,6 +209,7 @@ namespace
 		targetSeq->Update(animData->timePassed, true);
 
 		HandleExtraOperations(animData, targetSeq);
+		HandleSoundPathMismatch(animData, sourceSeq, targetSeq);
 		
 		animData->SetCurrentSequence(targetSeq, false);
 

@@ -45,6 +45,14 @@ enum class POVSwitchState
 	NotSet, POV3rd, POV1st
 };
 
+inline std::string_view GetTextAfterColon(std::string_view in)
+{
+	auto str = in.substr(in.find_first_of(':') + 1);
+	while (!str.empty() && isspace(*str.begin()))
+		str = str.substr(1);
+	return str;
+}
+
 struct Sounds
 {
 	BSSoundHandle sound;
@@ -93,6 +101,20 @@ struct Sounds
 		if (is3D)
 			sound.Set3D(actor);
 		sound.Play();
+	}
+	
+	static std::optional<Sounds> FromTextKey(AnimData* animData, std::string_view key)
+	{
+		if (!sv::starts_with_ci(key, "SoundPath:"))
+			return std::nullopt;
+		const auto line = GetTextAfterColon(key);
+		if (line.empty())
+			return std::nullopt;
+		const auto is3D = animData != g_thePlayer->firstPersonAnimData;
+		auto result = Sounds(line, is3D);
+		if (result.failed)
+			return std::nullopt;
+		return result;
 	}
 };
 
