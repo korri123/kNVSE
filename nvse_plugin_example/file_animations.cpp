@@ -300,7 +300,8 @@ int OverrideBSAPathAnimationsForList(AnimOverrideData& animOverrideData, std::st
 
 bool LoadDataFolderBSAPaths(JSONEntry& entry)
 {
-	const auto basePath = "meshes\\animgroupoverride\\" + ToLower(entry.folderName) + "\\";
+	auto basePath = sv::stack_string<0x400>(R"(meshes\animgroupoverride\%s\)", entry.folderName.c_str());
+	basePath.to_lower();
 	const auto subfolders = {"_1stperson\\", "_male\\"};
 	const auto childFolders = {"mod1\\", "mod2\\", "mod3\\", "hurt\\", "human\\", "male\\", "female\\"};
 	int numFound = 0;
@@ -313,19 +314,21 @@ bool LoadDataFolderBSAPaths(JSONEntry& entry)
 		.matchBaseGroupId = entry.matchBaseGroupId,
 	};
 	
+#if _DEBUG
 	auto* archiveLists = ArchiveManager::GetArchiveList();
 	std::vector<std::string_view> archives;
 	for (auto* archive : *archiveLists)
 		archives.emplace_back(archive->cFileName);
+#endif
 
-	for (const auto& subfolder : subfolders)
+	for (const auto* subfolder : subfolders)
 	{
-		std::string path = basePath + subfolder;
-		numFound += OverrideBSAPathAnimationsForList(animOverrideData, path);
-		for (const auto& childFolder : childFolders)
+		auto path = sv::stack_string<0x400>("%s%s", basePath.c_str(), subfolder);
+		numFound += OverrideBSAPathAnimationsForList(animOverrideData, path.str());
+		for (const auto* childFolder : childFolders)
 		{
-			std::string childPath = basePath + subfolder + childFolder;
-			numFound += OverrideBSAPathAnimationsForList(animOverrideData, childPath);
+			auto childPath = sv::stack_string<0x400>("%s%s%s", basePath.c_str(), subfolder, childFolder);
+			numFound += OverrideBSAPathAnimationsForList(animOverrideData, childPath.str());
 		}
 	}
 
@@ -366,20 +369,16 @@ void LoadJsonEntries(std::vector<JSONEntry>& jsonEntries, const std::vector<std:
 			LOG(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		else
 			LOG("JSON: Loading animations for global override in path " + entry.folderName);
-		const auto path = R"(data\meshes\animgroupoverride\)" + entry.folderName;
-		if (!fs::exists(path))
+		auto path = sv::stack_string<0x400>(R"(data\meshes\animgroupoverride\%s)", entry.folderName.c_str());
+		LoadJSONInBSAPaths(bsaAnimPaths, entry);
+		LoadDataFolderBSAPaths(entry);
+		if (fs::exists(path.str()))
 		{
-			bool success = false;
-			success |= LoadJSONInBSAPaths(bsaAnimPaths, entry);
-			success |= LoadDataFolderBSAPaths(entry);
-			if (!success)
-				LOG(FormatString("Path %s does not exist yet it is present in JSON", path.c_str()));
-			continue;
+			if (!entry.form) // global
+				LoadPathsForPOV(path.str(), 0xFF, true, &entry);
+			else if (LoadForForm(path.str(), entry.form, &entry))
+				LOG(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
 		}
-		if (!entry.form) // global
-			LoadPathsForPOV(path, 0xFF, true, &entry);
-		else if (LoadForForm(path, entry.form, &entry))
-			LOG(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
 	}
 }
 
