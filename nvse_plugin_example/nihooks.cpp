@@ -1186,8 +1186,9 @@ float NiControllerSequence::GetEaseSpinner() const
 
 bool NiControllerSequence::DisabledBlendSmoothing() const
 {
-    const static NiFixedString key = "noBlendSmoothing";
-    return m_spTextKeys && m_spTextKeys->FindFirstByName(key);
+    const static NiFixedString key1 = "noBlendSmoothing";
+    const static NiFixedString key2 = "noBlend";
+    return m_spTextKeys && (m_spTextKeys->FindFirstByName(key1) || m_spTextKeys->FindFirstByName(key2));
 }
 
 void NiControllerSequence::AttachInterpolators(char cPriority)
