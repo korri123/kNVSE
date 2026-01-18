@@ -599,17 +599,17 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
     if (m_ucInterpCount == 1)
     {
-        bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
+        kBlendInterpItem* extraItem = kExtraData ? kExtraData->GetItem(this->m_pkSingleInterpolator) : nullptr;
+        if (extraItem && extraItem->isAdditive)
+            ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
+        else
+            bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
         // remove last interp
-        if (g_pluginSettings.blendSmoothing && !g_pluginSettings.poseInterpolators && kExtraData)
+        if (g_pluginSettings.blendSmoothing && !g_pluginSettings.poseInterpolators && extraItem && extraItem->detached)
         {
-            auto* kExtraItem = kExtraData->GetItem(this->m_pkSingleInterpolator);
-            if (kExtraItem && kExtraItem->detached)
-            {
-                this->RemoveInterpInfo(this->m_ucSingleIdx);
-                kExtraItem->ClearValues();
-                kExtraItem->debugState = kInterpDebugState::RemovedInStoreSingle;
-            }
+            this->RemoveInterpInfo(this->m_ucSingleIdx);
+            extraItem->ClearValues();
+            extraItem->debugState = kInterpDebugState::RemovedInStoreSingle;
         }
     }
     else if (m_ucInterpCount > 0)
