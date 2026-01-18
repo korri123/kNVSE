@@ -1300,7 +1300,7 @@ void ApplyHooks()
 
 	BlendSmoothing::WriteHooks();
 	
-	// JIPFixes::Init();
+	JIPFixes::Init();
 }
 
 void WriteDelayedHooks()

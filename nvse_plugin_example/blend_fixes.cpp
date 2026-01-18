@@ -199,10 +199,8 @@ namespace
 	bool TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID sourceGroupId,
 	                                  AnimGroupID targetGroupId)
 	{
-		const auto result = TransitionToAttack(animData3rd, sourceGroupId, targetGroupId);
-		if (!result)
-			return false;
-
+		TransitionToAttack(animData3rd, sourceGroupId, targetGroupId);
+		
 		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(sourceGroupId + 1), static_cast<AnimGroupID>(targetGroupId + 1)); // up
 		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(sourceGroupId + 2), static_cast<AnimGroupID>(targetGroupId + 2)); // down
 
@@ -236,8 +234,7 @@ namespace
 		const auto sourceGroupId = static_cast<AnimGroupID>(curGroupId);
 		const auto targetGroupId = static_cast<AnimGroupID>(toIronSights ? curGroupId + 3 : curGroupId - 3);
 
-		if (!TransitionAttackWithVariants(animData3rd, animData1st, sourceGroupId, targetGroupId))
-			return;
+		TransitionAttackWithVariants(animData3rd, animData1st, sourceGroupId, targetGroupId);
 
 		auto* finalSequence = GetAnimByGroupID(animData3rd, targetGroupId);
 		const auto animAction = static_cast<Decoding::AnimAction>(highProcess->GetCurrentAnimAction());

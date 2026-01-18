@@ -44,24 +44,45 @@ namespace
         return reinterpret_cast<size_t>(hJIP) + aiAddress - 0x10000000;
     }
     
+    NiAVObject* FindSceneRoot(NiAVObject* base)
+    {
+        static NiFixedString sSceneRoot = "Scene Root";
+        if (base->m_pcName == sSceneRoot)
+            return base;
+        if (base->m_pkParent)
+            return FindSceneRoot(base->m_pkParent);
+        return nullptr;
+    }
+    
     void RemoveObjectFromController(NiAVObject* base, NiAVObject* obj)
     {
         if (auto* controller = base->GetController(NiMultiTargetTransformController::ms_RTTI))
         {
             auto* transCon = static_cast<NiMultiTargetTransformController*>(controller);
             transCon->RemoveNodeRecurse(obj);
-            return;
         }
-        if (base->m_pkParent)
-            RemoveObjectFromController(base->m_pkParent, obj);
+    }
+    
+    void ResetSceneGraph(NiAVObject* base)
+    {
+        if (auto* manager = base->GetController(NiControllerManager::ms_RTTI))
+        {
+            auto* controllerManager = static_cast<NiControllerManager*>(manager);
+            if (controllerManager->m_spObjectPalette)
+                controllerManager->m_spObjectPalette->ResetAndFillFromScenegraph();
+        }
     }
     
     template <UInt32 ReturnAddress>
     void __fastcall DetachChildHook(NiNode* pNode, void*, NiAVObject* pObject)
     {
         auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
-        RemoveObjectFromController(pNode, pObject);
+        auto* sceneRoot = FindSceneRoot(pNode);
+        if (sceneRoot)
+            RemoveObjectFromController(sceneRoot, pObject);
         pNode->DetachChild(pObject);
+        if (sceneRoot)
+            ResetSceneGraph(sceneRoot);
         *addrOfRetn = GetJIPAddress(ReturnAddress);
     }
     
@@ -73,6 +94,7 @@ namespace
         WriteRelCall(GetJIPAddress(0x10019C3E), DetachChildHook<0x10019C44>);
         SafeWrite8(GetJIPAddress(0x10019C3E + 5), 0x90); // nop
         
+#if 0
         // RegisterInsertObject
         WriteRelCall(GetJIPAddress(0x1002C239), DetachChildHook<0x1002C23F>);
         SafeWrite8(GetJIPAddress(0x1002C239 + 5), 0x90); // nop
@@ -84,6 +106,7 @@ namespace
         // RegisterInsertObject
         WriteRelCall(GetJIPAddress(0x1002D39B), DetachChildHook<0x1002D3A1>);
         SafeWrite8(GetJIPAddress(0x1002D39B + 5), 0x90); // nop
+#endif
     }
 }
 

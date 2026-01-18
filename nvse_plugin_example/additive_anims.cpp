@@ -431,9 +431,9 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority, SequenceE
                     kItem.m_pkBlendInterp->RemoveInterpInfo(extraInterpItem.blendIndex);
                 extraInterpItem.blendIndex = 0xFF;
                 extraInterpItem.detached = false;
-                extraInterpItem.translateWeight = {};
-                extraInterpItem.rotateWeight = {};
-                extraInterpItem.scaleWeight = {};
+                extraInterpItem.translateWeight.ClearValues();
+                extraInterpItem.rotateWeight.ClearValues();
+                extraInterpItem.scaleWeight.ClearValues();
                 extraInterpItem.debugState = kInterpDebugState::WasDetachedButNowAdditive;
             }
             kItem.m_ucBlendIdx = kItem.m_pkBlendInterp->AddInterpInfo(

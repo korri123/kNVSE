@@ -473,6 +473,16 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         if (kTransform.IsScaleValid())
             validScales.emplace_back(kTransform.GetScale(), &item);
     }
+    
+    if (kExtraData && kExtraData->noBlendSmoothRequesterCount)
+    {
+        for (auto& item : kExtraData->items)
+        {
+            item.translateWeight.ClearValues();
+            item.rotateWeight.ClearValues();
+            item.scaleWeight.ClearValues();
+        }
+    }
 
     thread_local std::vector<InterpArrayItem*> items;
     items.clear();

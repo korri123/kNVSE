@@ -289,8 +289,9 @@ public:
 
 	static ScopedList<char> GetDirectoryAnimPaths(std::string_view path)
 	{
+		const auto basePath = sv::stack_string<0x400>(R"(data\%s*.kf)", path.data());
 		const auto searchPath = sv::stack_string<0x400>(R"(%s*.kf)", path.data());
-		return GetDirectoryPaths(searchPath.c_str(), searchPath.c_str(), ARCHIVE_TYPE_MESHES);
+		return GetDirectoryPaths(basePath.c_str(), searchPath.c_str(), ARCHIVE_TYPE_MESHES);
 	}
 
 	static void Lock() {
