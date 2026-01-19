@@ -226,7 +226,7 @@ struct AnimTime
 	bool endIfSequenceTypeChanges = true;
 	bool useLegacyTime = false;
 	bool isOverlayAdditiveAnim = false;
-	NiPointer<BSAnimGroupSequence> referenceAnim = nullptr;
+	FullAnimGroupID referenceAnimGroupId = 0xFFFF;
 
 	struct RespectEndKeyData
 	{

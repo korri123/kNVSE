@@ -494,14 +494,14 @@ void HandleCustomTextKeys()
 
 		if (animTime.isOverlayAdditiveAnim)
 		{
-			BSAnimGroupSequence* baseAnim = animTime.referenceAnim;
-			if (baseAnim->m_eState == NiControllerSequence::INACTIVE
-				|| baseAnim->m_eState == NiControllerSequence::EASEOUT)
+			const auto refGroupId = animTime.referenceAnimGroupId;
+			auto* currentAnim = animData->animSequence[kSequence_Weapon];
+			if (!currentAnim || !currentAnim->animGroup || currentAnim->animGroup->groupID != refGroupId)
 			{
 				erase();
 				continue;
 			}
-			const auto baseGroupId = baseAnim->animGroup->GetBaseGroupID();
+			const auto baseGroupId = static_cast<AnimGroupID>(refGroupId);
 			if (baseGroupId == kAnimGroup_AttackLoop || baseGroupId == kAnimGroup_AttackLoopIS)
 			{
 				if (!GameFuncs::GetControlState(ControlCode::Attack, Decoding::IsDXKeyState::IsHeld))

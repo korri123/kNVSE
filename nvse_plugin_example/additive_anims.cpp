@@ -122,21 +122,17 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
     }
     InitAdditiveSequence(animData, additiveAnim, referenceAnim, 0.0f, false);
 
-    BSAnimGroupSequence* currentAnim = nullptr;
-    if (referenceAnim->animGroup)
-        currentAnim = animData->animSequence[referenceAnim->animGroup->GetSequenceType()];
     float easeInTime = 0.0f;
     const static NiFixedString sNoBlend = "noBlend";
     if (!additiveAnim->m_spTextKeys->FindFirstByName(sNoBlend))
-        easeInTime = GetDefaultBlendTime(additiveAnim, currentAnim);
-    const auto result = additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false);
-    if (result)
+        easeInTime = GetDefaultBlendTime(additiveAnim, referenceAnim);
+    if (additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false))
     {
         if (auto* animTime = HandleExtraOperations(animData, additiveAnim, true))
         {
             animTime->endIfSequenceTypeChanges = false;
             animTime->isOverlayAdditiveAnim = true;
-            animTime->referenceAnim = currentAnim;
+            animTime->referenceAnimGroupId = referenceAnim->animGroup->groupID;
         }
     }
 }
