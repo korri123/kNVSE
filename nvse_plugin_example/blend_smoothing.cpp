@@ -357,11 +357,14 @@ namespace
 
 void BlendSmoothing::WriteHooks()
 {
+
     // Animation::ReloadTargets
     WriteRelCall(0x499322, HandleReloadTargets);
+    WriteRelCall(0x499481, ReactivateSequencesHook);
+    PatchMemoryNop(0x499481 + 5, 4);
+
     // Animation::SkipNextBlend
     // noticed an issue that ReloadTargets wasn't being called from load game, so that means lingering extra data
     WriteRelCall(0x49B1A7, HandleSkipNextBlend);
-    WriteRelCall(0x499481, ReactivateSequencesHook);
-    PatchMemoryNop(0x499481 + 5, 4);
+    
 }

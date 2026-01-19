@@ -1994,9 +1994,6 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		SetLowercase(path);
 		BSAnimGroupSequence* anim = FindActiveAnimationForRef(thisObj, path);
-
-		if (!anim)
-			anim = GetAnimationByPath(path);
 		if (!anim)
 			return true;
 		const auto* animData = GetAnimDataForAnim(thisObj, anim);
@@ -2090,6 +2087,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 			povState = static_cast<POVSwitchState>(firstPersonArg->GetInt());
 		const auto lowerPath = ToLower(path);
 		auto* anim = FindActiveAnimationForRef(thisObj, lowerPath.c_str(), povState);
+		if (!anim && thisObj && thisObj->IsActor())
+			anim = FindOrLoadAnim(static_cast<Actor*>(thisObj), lowerPath.c_str(), povState == POVSwitchState::POV1st);
 				
 		if (!anim)
 		{
@@ -3266,6 +3265,30 @@ void CreateCommands(NVSECommandBuilder& builder)
 		*result = 1.0;
 		return true;
 	});
+	
+	builder.Create("LoadAnimation", kRetnType_Default, {
+		PARAM("sequence name", String),
+		PARAM("bFirstPerson", Integer),
+	}, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		sv::stack_string<0x400> sequenceName;
+		UInt32 bFirstPerson = false;
+		float frequency = 1.0f;
+		if (!ExtractArgs(EXTRACT_ARGS, &sequenceName, &frequency, &bFirstPerson) || !thisObj)
+			return true;
+		sequenceName.to_lower();
+		if (thisObj->IsActor())
+		{
+			if (FindOrLoadAnim(static_cast<Actor*>(thisObj), sequenceName.c_str(), bFirstPerson))
+				*result = 1.0;
+		}
+		else if (FindOrLoadAnim(thisObj, sequenceName.c_str()))
+		{
+			*result = 1.0;
+		}
+		return true;
+	}, nullptr, "LoadAnim");
 
 #undef PARAM
 #undef OPT_PARAM

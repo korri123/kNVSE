@@ -2125,8 +2125,9 @@ namespace NiHooks
         //WriteRelJump(0xA2E1B0, &NiControllerManager::Morph);
         //WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
         //WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
-        //WriteRelJump(0xA35030, &NiControllerSequence::Deactivate_);
+        
 #if _DEBUG
+        WriteRelJump(0xA35030, &NiControllerSequence::Deactivate_);
         // WriteRelJump(0xA34BA0, &NiControllerSequence::Update);
 #endif
     }

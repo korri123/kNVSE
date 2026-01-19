@@ -75,14 +75,6 @@ std::vector<BSAnimGroupSequence*> GetActiveSequencesWhere(AnimData* animData, F&
 	return sequences;
 }
 
-std::vector<BSAnimGroupSequence*> GetActiveAttackSequences(AnimData* animData)
-{
-	return GetActiveSequencesWhere(animData, [&](BSAnimGroupSequence* sequence)
-	{
-		return IsAnimGroupAttack(sequence->animGroup->GetBaseGroupID());
-	});
-}
-
 BSAnimGroupSequence* GetOtherActiveWeaponSequence(AnimData* animData)
 {
 	return GetActiveSequenceWhere(animData, [&](BSAnimGroupSequence* sequence)
@@ -193,9 +185,9 @@ namespace
 		}
 	}
 	
-	bool TransitionToAttack(AnimData* animData, AnimGroupID sourceGroupId, AnimGroupID targetGroupId)
+	bool TransitionToAttack(AnimData* animData, AnimGroupID targetGroupId)
 	{
-		auto* sourceSeq = GetAnimByGroupID(animData, sourceGroupId);
+		auto* sourceSeq = animData->animSequence[kSequence_Weapon];
 		auto* targetSeq = GetAnimByGroupID(animData, targetGroupId);
 		if (!targetSeq || !sourceSeq || !sourceSeq->animGroup)
 			return false;
@@ -210,7 +202,7 @@ namespace
 
 		HandleExtraOperations(animData, targetSeq);
 		HandleSoundPathMismatch(animData, sourceSeq, targetSeq);
-		
+
 		animData->SetCurrentSequence(targetSeq, false);
 
 		const auto sequenceType = targetSeq->animGroup->GetGroupInfo()->sequenceType;
@@ -224,15 +216,14 @@ namespace
 		return true;
 	}
 
-	bool TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID sourceGroupId,
-	                                  AnimGroupID targetGroupId)
+	bool TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID targetGroupId)
 	{
-		TransitionToAttack(animData3rd, sourceGroupId, targetGroupId);
+		TransitionToAttack(animData3rd, targetGroupId);
 		
-		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(sourceGroupId + 1), static_cast<AnimGroupID>(targetGroupId + 1)); // up
-		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(sourceGroupId + 2), static_cast<AnimGroupID>(targetGroupId + 2)); // down
+		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 1)); // up
+		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 2)); // down
 
-		TransitionToAttack(animData1st, sourceGroupId, targetGroupId);
+		TransitionToAttack(animData1st, targetGroupId);
 		return true;
 	}
 
@@ -259,10 +250,9 @@ namespace
 			return;
 
 		const auto curGroupId = curWeaponAnim->animGroup->groupID;
-		const auto sourceGroupId = static_cast<AnimGroupID>(curGroupId);
 		const auto targetGroupId = static_cast<AnimGroupID>(toIronSights ? curGroupId + 3 : curGroupId - 3);
 
-		TransitionAttackWithVariants(animData3rd, animData1st, sourceGroupId, targetGroupId);
+		TransitionAttackWithVariants(animData3rd, animData1st, targetGroupId);
 
 		auto* finalSequence = GetAnimByGroupID(animData3rd, targetGroupId);
 		const auto animAction = static_cast<Decoding::AnimAction>(highProcess->GetCurrentAnimAction());
