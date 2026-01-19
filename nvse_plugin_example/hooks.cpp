@@ -55,6 +55,14 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	const auto sequenceType = GetSequenceType(baseGroupId);
 	if (!animData || !animData->actor)
 		return nullptr;
+	
+	TESAnimGroup* const destAnimGroup = destAnim ? destAnim->animGroup : nullptr;
+	BSAnimGroupSequence* currentAnim = nullptr;
+	if (destAnimGroup)
+	{
+		if (auto* groupInfo = destAnimGroup->GetGroupInfo())
+			currentAnim = animData->animSequence[groupInfo->sequenceType];
+	}
 
 	BlendFixes::ApplyMissingUpDownAnims(animData);
 
@@ -96,23 +104,21 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug)
 	{
 		if (BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
+		{
+			if (auto* idle = animData->animSequence[kSequence_Idle]; idle && idle->m_eState == NiControllerSequence::ANIMATING)
+				BlendFixes::FixConflictingPriorities(currentAnim, destAnim, idle);
+			if (destAnim->animGroup)
+				JIPFixes::CallSetAnimGroupEvent(animData, static_cast<AnimGroupID>(destAnim->animGroup->groupID));
 			return destAnim;
+		}
 		if (!destAnim && (sequenceType == kSequence_WeaponUp || sequenceType == kSequence_WeaponDown))
 		{
 			// fix broken 2ha aimup/aimdown anims in vanilla (assault carbine)
-			// otherwise aimISUp/aimISDown gets stuck
+			// otherwise aimISUp/aimISDown gets stuck due to our hook that patches out this logic
 			const auto defaultBlend = animData->GetBlendTime();
 			animData->ClearGroup(kSequence_WeaponUp, defaultBlend);
 			animData->ClearGroup(kSequence_WeaponDown, defaultBlend);
 		}
-	}
-
-	TESAnimGroup* const destAnimGroup = destAnim ? destAnim->animGroup : nullptr;
-	BSAnimGroupSequence* currentAnim = nullptr;
-	if (destAnimGroup)
-	{
-		if (auto* groupInfo = destAnimGroup->GetGroupInfo())
-			currentAnim = animData->animSequence[groupInfo->sequenceType];
 	}
 
 	if (currentAnim)
@@ -125,11 +131,11 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		BlendFixes::AddMissingMTIdleInterps(animData, destAnim);
 	}
 
-	const bool useSpecialBlend = g_pluginSettings.blendSmoothing && destAnimGroup;
 	BSAnimGroupSequence* result;
 
-	if (useSpecialBlend && destAnimGroup->GetSequenceType() == kSequence_Movement)
+	if (g_pluginSettings.blendSmoothing && destAnimGroup && destAnimGroup->GetSequenceType() == kSequence_Movement)
 	{
+		JIPFixes::CallSetAnimGroupEvent(animData, static_cast<AnimGroupID>(destAnimGroup->groupID));
 		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
 	}
 	else

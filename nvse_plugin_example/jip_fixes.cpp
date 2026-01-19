@@ -93,7 +93,6 @@ namespace
         // ReloadBipedAnim
         WriteRelCall(GetJIPAddress(0x10019C3E), DetachChildHook<0x10019C44>);
         SafeWrite8(GetJIPAddress(0x10019C3E + 5), 0x90); // nop
-        
 #if 0
         // RegisterInsertObject
         WriteRelCall(GetJIPAddress(0x1002C239), DetachChildHook<0x1002C23F>);
@@ -108,9 +107,46 @@ namespace
         SafeWrite8(GetJIPAddress(0x1002D39B + 5), 0x90); // nop
 #endif
     }
+    
+    bool IsAnimGroupEventLoaded()
+    {
+        auto opcode = *reinterpret_cast<UInt8*>(0x494E19);
+        return opcode != 0x66;
+    }
+    
+    // based on 0x10008EE0
+    // need to invoke jip code that we skip
+    void SetAnimGroupEventHook(const AnimData* animData, AnimGroupID animGroupId)
+    {
+        if (!hJIP || !IsAnimGroupEventLoaded() || animData == g_thePlayer->firstPersonAnimData)
+            return;
+        struct EventCallbackScripts
+        {
+            UInt32 objData[3];
+        };
+        const auto mapGetPtr = [](const void* map, void* key) -> void* {
+            return ThisStdCall<void*>(GetJIPAddress(0x1004FBE0), map, key);
+        };
+        const auto invokeEvent = [](const void* scripts, void* actor, UInt32 key) {
+            ThisStdCall(GetJIPAddress(0x10002920), scripts, actor, key);
+        };
+        auto* actor = animData->actor;
+        auto* playGroupEventMap = reinterpret_cast<EventCallbackScripts*>(GetJIPAddress(0x10072FB0));
+        if (playGroupEventMap->objData[2])
+        {
+            if (const void* ptr = mapGetPtr(playGroupEventMap, reinterpret_cast<void*>(static_cast<UInt32>(animGroupId))))
+                invokeEvent(ptr, actor, animGroupId);
+        }
+        if ((actor->jipActorFlags3 & 2) != 0)
+        {
+            const auto playGroupEventMapFl = reinterpret_cast<void*>(GetJIPAddress(0x10075BB4));
+            void* outerMap = mapGetPtr(playGroupEventMapFl, actor);
+            if (outerMap)
+                if (void* innerPtr = mapGetPtr(outerMap, reinterpret_cast<void*>(static_cast<UInt32>(animGroupId))))
+                    invokeEvent(innerPtr, actor, animGroupId);
+        }
+    }
 }
-
-
 
 void JIPFixes::Init()
 {
@@ -177,4 +213,9 @@ void JIPFixes::Init()
     hJIP = hJIPModule;
     
     PatchReloadEquippedModels();
+}
+
+void JIPFixes::CallSetAnimGroupEvent(const AnimData* animData, AnimGroupID groupId)
+{
+    SetAnimGroupEventHook(animData, groupId);
 }

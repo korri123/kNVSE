@@ -670,7 +670,9 @@ public:
 	bhkRagdollPenetrationUtil			* ragDollPentrationUtil;		// 0B0
 	UInt32								unk0B4[(0x104-0x0b4) >> 2];		// 0B4
 	UInt8								unk104;							// 104 Is in combat
-	UInt8								pad105[3];						// 105
+	UInt8								jipActorFlags1;						// 105
+	UInt8								jipActorFlags2;						// 106
+	UInt8								jipActorFlags3;						// 107
 	UInt32								lifeState;						// 108 saved as byte HasHealth = 1 or 2, optionally 6
 	UInt32 unk10C;
 	UInt32 nextAttackAnimGroupId110;
