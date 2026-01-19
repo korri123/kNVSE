@@ -11,7 +11,7 @@ namespace
     UInt32 uiCrc32Table[256];
     UInt32 uiJipHash = 0x9DF36B6;
 
-    void initCRC32Table() 
+    void InitCRC32Table() 
     {
         for (UInt32 i = 0; i < 256; i++) 
         {
@@ -28,7 +28,7 @@ namespace
         }
     }
     
-    UInt32 crc32(const UInt8* data, size_t length) 
+    UInt32 CRC32(const UInt8* data, size_t length) 
     {
         UInt32 crc = 0xFFFFFFFF;
         for (size_t i = 0; i < length; i++) 
@@ -140,8 +140,7 @@ namespace
         if ((actor->jipActorFlags3 & 2) != 0)
         {
             const auto playGroupEventMapFl = reinterpret_cast<void*>(GetJIPAddress(0x10075BB4));
-            void* outerMap = mapGetPtr(playGroupEventMapFl, actor);
-            if (outerMap)
+            if (void* outerMap = mapGetPtr(playGroupEventMapFl, actor))
                 if (void* innerPtr = mapGetPtr(outerMap, reinterpret_cast<void*>(static_cast<UInt32>(animGroupId))))
                     invokeEvent(innerPtr, actor, animGroupId);
         }
@@ -195,8 +194,8 @@ void JIPFixes::Init()
 
         if (bRead) 
         {
-            initCRC32Table();
-            uint32_t uiHash = crc32(kBuffer.data(), kBuffer.size());
+            InitCRC32Table();
+            uint32_t uiHash = CRC32(kBuffer.data(), kBuffer.size());
             if (uiHash != uiJipHash) 
             {
                 ERROR_LOG("Incompatible JIP LN binary!");
