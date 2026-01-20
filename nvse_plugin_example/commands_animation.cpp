@@ -514,10 +514,10 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	}
 
 	std::string_view animName(anim->m_kName);
-	
+
 	for (const auto& legacyPath : g_pluginSettings.legacyAnimTimePaths)
 	{
-		if (animName.contains(legacyPath))
+		if (sv::contains_ci(animName, legacyPath))
 		{
 			auto& animTime = getAnimTimeStruct();
 			animTime.useLegacyTime = true;

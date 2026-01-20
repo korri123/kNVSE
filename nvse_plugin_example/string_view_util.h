@@ -36,12 +36,7 @@ namespace sv
     {
         if (left.size() != right.size())
             return false;
-        for (size_t i = 0; i < left.size(); ++i)
-        {
-            if (std::tolower(left[i]) != std::tolower(right[i]))
-                return false;
-        }
-        return true;
+        return _stricmp(left.data(), right.data()) == 0;
     }
 
     inline bool contains_ci(std::string_view left, std::string_view right)
@@ -208,6 +203,11 @@ namespace sv
         bool starts_with_ci(std::string_view str) const
         {
             return sv::starts_with_ci(data_, str);
+        }
+        
+        bool contains_ci(std::string_view str) const
+        {
+            return sv::contains_ci(data_, str);
         }
 
         bool ends_with(char c) const

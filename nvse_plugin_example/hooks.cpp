@@ -726,9 +726,8 @@ void ApplyHooks()
 	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest");
 	const std::string legacyAnimTimePaths = ini.GetOrCreate("Anim Fixes", "sLegacyAnimTimePaths", "B42Inject,B42Interact,B42Loot", "; use legacy anim time algorithm for these paths (these mods rely on bugged behavior from previous versions of kNVSE)");
 	if (!legacyAnimTimePaths.empty())
-	{
 		conf.legacyAnimTimePaths = SplitString(legacyAnimTimePaths);
-	}
+		
 	//WriteRelJump(0x4949D0, AnimationHook);
 	
 	WriteRelCall(0x494989, HandleAnimationChange);
@@ -807,7 +806,7 @@ void ApplyHooks()
 	//  AnimData::GetAnimGroupForID
 	WriteRelCall(0x49651B, OverrideWithCustomAnimHook<-0x8>);
 #endif
-
+	
 	// AnimData destructor
 	WriteRelCall(0x48FB82, INLINE_HOOK(void, __fastcall, AnimData* animData)
 	{
@@ -922,6 +921,8 @@ void ApplyHooks()
 		return ThisStdCall<bool>(0xA350D0, tempSeq, seq, fDuration, fDestFrame, iPriority, fSourceWeight, fDestWeight, pkTimeSyncSeq);
 	}));
 
+
+    // @@@@@@@@@@@@@@@@
 	// AnimData::RemovesAnimSequence
 	WriteRelCall(0x4994F6, INLINE_HOOK(eAnimSequence, __fastcall, AnimData* animData)
 	{
@@ -961,29 +962,28 @@ void ApplyHooks()
 			// AnimFixes::EraseNegativeAnimKeys(anim);
 			AnimFixes::FixWrongKFName(anim, fileName);
 			AnimFixes::FixMissingPrnKey(anim, fileName);
-			//AnimFixes::AddNoBlendSmoothingKeys(anim, fileName);
+			AnimFixes::AddNoBlendSmoothingKeys(anim, fileName);
 		}
 		return &anim->m_kName;
 	}));
-	
+
+#if 1
 	// BSAnimGroupSequence::SetSequenceName
 	WriteRelCall(0x43B99A, INLINE_HOOK(void, __fastcall, BSAnimGroupSequence* anim, void*, NiFixedString* name)
 	{
 		// we want to force every animations with path names to have lowercase names so we can look them up case insensitive in NiTPointerMap
 		sv::stack_string<0x400> newName("%s", name->data);
 		if (newName.ends_with_ci(".kf"))
-		{
 			newName.to_lower();
-			anim->m_kName = newName.c_str();
-		}
+		anim->m_kName = newName.c_str();
 	}));
-	
+#endif
 	for (const auto addr : { 0x8B79EC, 0x8B7A05, 0x8B7A1E, 0x8B7A37 })
 	{
 		// replace case-sensitive anim name strstr's with case-insensitive
 		WriteRelCall(addr, stristr);
 	}
-	
+
 	// NiControllerManager::GetSequenceByName
 	WriteRelCall(0x47A53C, INLINE_HOOK(bool, __fastcall, NiTMapBase<const char*, NiControllerSequence*>* map, void*, const char* name, NiControllerSequence** out)
 	{
@@ -996,6 +996,7 @@ void ApplyHooks()
 		return ThisStdCall<bool>(0x853130, map, name, out);
 	}));
 
+
 	// AnimData::PlayAnimGroup
 	// used to rig GetCurrentAmmoRounds command to add 1 to the result if we are about to play a looping reload anim
 	WriteRelCall(0x8BAD2C, INLINE_HOOK(void, __fastcall, AnimData *animData, void*, UInt16 groupID, int flags, int queuedState, eAnimSequence sequenceID)
@@ -1004,6 +1005,7 @@ void ApplyHooks()
 		ThisStdCall(0x494740, animData, groupID, flags, queuedState, sequenceID);
 		g_globals.isInLoopingReloadPlayAnim = false;
 	}));
+
 
 	const auto writeAttackLoopToAimHooks = []
 	{
@@ -1307,6 +1309,7 @@ void ApplyHooks()
 	BlendSmoothing::WriteHooks();
 	
 	JIPFixes::Init();
+	
 }
 
 void WriteDelayedHooks()
