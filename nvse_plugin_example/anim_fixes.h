@@ -15,7 +15,7 @@ namespace AnimFixes
     void FixWrongKFName(BSAnimGroupSequence* anim, const char* filePath);
     void FixWrongPrnKey(BSAnimGroupSequence* anim);
     void FixMissingPrnKey(BSAnimGroupSequence* anim, const char* filePath);
-    void AddNoBlendSmoothingKeys(BSAnimGroupSequence* anim, const char* fileName);
+    void AddNoBlendSmoothingKeys(BSAnimGroupSequence* anim);
 
     void ApplyHooks();
 }

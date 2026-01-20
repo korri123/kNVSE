@@ -499,9 +499,23 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         dTotalTransWeight += translation.item->m_fNormalizedWeight;
         bTransChanged = true;
     }
+    
+    items.clear();
+    for (auto& scale : validScales)
+        items.emplace_back(scale.item);
+
+    ComputeNormalizedWeights(items);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Scale);
+
+    for (auto& scale : validScales)
+    {
+        fFinalScale += scale.scale *
+                       scale.item->m_fNormalizedWeight;
+        dTotalScaleWeight += scale.item->m_fNormalizedWeight;
+        bScaleChanged = true;
+    }
 
     items.clear();
-
     for (auto& item : validRotations)
         items.emplace_back(item.item);
     ComputeNormalizedWeights(items);
@@ -535,20 +549,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             kRotValue.GetY() + kFinalRotate.GetY(),
             kRotValue.GetZ() + kFinalRotate.GetZ());
         bRotChanged = true;
-    }
-    items.clear();
-    for (auto& scale : validScales)
-        items.emplace_back(scale.item);
-
-    ComputeNormalizedWeights(items);
-    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Scale);
-
-    for (auto& scale : validScales)
-    {
-        fFinalScale += scale.scale *
-                       scale.item->m_fNormalizedWeight;
-        dTotalScaleWeight += scale.item->m_fNormalizedWeight;
-        bScaleChanged = true;
     }
 
     BlendSmoothing::DetachZeroWeightItems(kExtraData, this);
@@ -2126,7 +2126,7 @@ namespace NiHooks
         //WriteRelJump(0xA30C80, &NiControllerSequence::CanSyncTo);
         //WriteRelJump(0xA34F20, &NiControllerSequence::Activate);
         
-#if _DEBUG
+#if _DEBUG && 0
         WriteRelJump(0xA35030, &NiControllerSequence::Deactivate_);
         // WriteRelJump(0xA34BA0, &NiControllerSequence::Update);
 #endif

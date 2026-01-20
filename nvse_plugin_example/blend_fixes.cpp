@@ -185,9 +185,9 @@ namespace
 		}
 	}
 	
-	bool TransitionToAttack(AnimData* animData, AnimGroupID targetGroupId)
+	bool TransitionToAttack(AnimData* animData, AnimGroupID targetGroupId, eAnimSequence sourceSequenceId)
 	{
-		auto* sourceSeq = animData->animSequence[kSequence_Weapon];
+		auto* sourceSeq = animData->animSequence[sourceSequenceId];
 		auto* targetSeq = GetAnimByGroupID(animData, targetGroupId);
 		if (!targetSeq || !sourceSeq || !sourceSeq->animGroup)
 			return false;
@@ -218,12 +218,12 @@ namespace
 
 	bool TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID targetGroupId)
 	{
-		TransitionToAttack(animData3rd, targetGroupId);
+		TransitionToAttack(animData3rd, targetGroupId, kSequence_Weapon);
 		
-		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 1)); // up
-		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 2)); // down
+		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 1), kSequence_WeaponUp); // up
+		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 2), kSequence_WeaponDown); // down
 
-		TransitionToAttack(animData1st, targetGroupId);
+		TransitionToAttack(animData1st, targetGroupId, kSequence_Weapon);
 		return true;
 	}
 

@@ -288,20 +288,36 @@ void AnimFixes::FixMissingPrnKey(BSAnimGroupSequence* anim, const char* filePath
 	anim->m_spTextKeys->AddKey(prnName, 0.0f);
 }
 
-void AnimFixes::AddNoBlendSmoothingKeys(BSAnimGroupSequence* anim, const char* fileName)
+void AnimFixes::AddNoBlendSmoothingKeys(BSAnimGroupSequence* anim)
 {
-	if (HasNoFixTextKey(anim))
+	const auto fileName = anim->m_kName;
+	if (!anim->m_spTextKeys || HasNoFixTextKey(anim))
 		return;
+
 	static NiFixedString key = "noBlendSmoothing";
-	static constexpr std::array<std::string_view, 3> paths = {
+
+	static std::array exactPaths = {
+		NiFixedString(R"(characters\_1stperson\locomotion\male\pipboy.kf)"),
+		NiFixedString(R"(characters\_1stperson\locomotion\female\pipboyfemale.kf))")
+	};
+	for (const auto& path : exactPaths)
+	{
+		if (fileName == path)
+		{
+			anim->m_spTextKeys->SetOrAddKey(key, 0.0f);
+			return;
+		}
+	}
+
+	static constexpr std::array<std::string_view, 3> containsPaths = {
 		"B42Inject", "B42Interact", "pipboyholopanel_animations"
 	};
-	for (auto& path : paths)
+	for (const auto& path : containsPaths)
 	{
 		if (sv::contains_ci(fileName, path))
 		{
-			if (anim->m_spTextKeys)
-				anim->m_spTextKeys->AddKey(key, 0.0f);
+			anim->m_spTextKeys->SetOrAddKey(key, 0.0f);
+			return;
 		}
 	}
 }

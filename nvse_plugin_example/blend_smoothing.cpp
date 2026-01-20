@@ -234,7 +234,8 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
         
         // Store temporarily in lastSmoothedWeight
         weightState.lastSmoothedWeight = smoothedWeight;
-        totalSmoothedWeight += smoothedWeight;
+        if (!extraItem.detached)
+            totalSmoothedWeight += smoothedWeight;
     }
 
     // Second pass: renormalize to ensure sum = 1.0
@@ -264,7 +265,8 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
                 
             auto& weightState = *extraItem.GetWeightState(type);
             
-            weightState.lastSmoothedWeight *= normalizationFactor;
+            if (!extraItem.detached)
+                weightState.lastSmoothedWeight *= normalizationFactor;
             item.m_fNormalizedWeight = weightState.lastSmoothedWeight;
         }
     }

@@ -87,7 +87,9 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		// allow non AnimGroupOverride anims to use custom text keys
 		HandleExtraOperations(animData, destAnim);
 	}
-
+	if (destAnim)
+		AnimFixes::AddNoBlendSmoothingKeys(destAnim);
+	
 	// Handle event interception
 	bool bSkip = false;
 	if (auto* interceptedAnim = InterceptPlayAnimGroup::Dispatch(animData, destAnim, bSkip);
@@ -710,21 +712,27 @@ void ApplyHooks()
 	auto& conf = g_pluginSettings;
 
 #if 0
-	conf.fixSpineBlendBug = ini.GetOrCreate("General", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down");
 	conf.fixBlendSamePriority = ini.GetOrCreate("General", "bFixBlendSamePriority", 1, "; fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority");
-	conf.fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim control");
 	conf.fixLoopingReloadStart = ini.GetOrCreate("General", "bFixLoopingReloadStart", 1, "; fix looping reload start anims transitioning to aim anim before main looping reload anim");
 
 	g_disableFirstPersonTurningAnims = ini.GetOrCreate("General", "bDisableFirstPersonTurningAnims", 1, "; disable first person turning anims (they mess with shit and serve barely any purpose)");
 #endif
+	conf.blendSmoothing = ini.GetOrCreate("Blend Fixes", "bBlendSmoothing", 1, "; applies smoothing and easing into the animation blending algorithm to prevent snapping and add fluidity between anims. for some animations this might not be wanted, add noBlendSmoothing as text key to disable.");
+	conf.blendSmoothingRate = ini.GetOrCreate("Blend Fixes", "fBlendSmoothingRate", 0.075, "; the rate the blend smoothing algorithm smooths between weights animations. higher values mean more fluidity but slower blends.");
+	if (conf.blendSmoothingRate == 0.0f)
+		conf.blendSmoothingRate = 0.075f;
+	conf.fixSpineBlendBug = ini.GetOrCreate("Blend Fixes", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down (requires bBlendSmoothing).");
+	conf.fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim button. kNVSE will trigger a blend to the hipfire attack animation when the attack key is released.");
+
 	conf.fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
 	conf.fixEndKeyTimeShorterThanStopTime = ini.GetOrCreate("Anim Fixes", "bFixEndKeyTimeShorterThanStopTime", 1, "; try to fix animations with broken export stop time where it's greater than the end key time and time of last transform data");
 	conf.fixWrongAKeyInRespectEndKeyAnim = ini.GetOrCreate("Anim Fixes", "bFixWrongAKeyInRespectEndKeyAnim", 1, "; try to fix animations where animator messed up the a: text key value in the first person animation. Previous versions of kNVSE ignored this key in first person animations.");
 	conf.fixWrongPrnKey = ini.GetOrCreate("Anim Fixes", "bFixWrongPrnKey", 1, "; try to fix animations where animator messed up the prn text key value in the first person animation. Previous versions of kNVSE ignored this key in first person animations.");
 	conf.fixWrongAnimName = ini.GetOrCreate("Anim Fixes", "bFixWrongAnimName", 1, "; try to fix animations where the name of the animation file does not match anim group name.");
 	conf.fixMissingPrnKey = ini.GetOrCreate("Anim Fixes", "bFixMissingPrnKey", 1, "; try to fix animations where the prn key is missing in the first person animation.");
-	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest");
-	const std::string legacyAnimTimePaths = ini.GetOrCreate("Anim Fixes", "sLegacyAnimTimePaths", "B42Inject,B42Interact,B42Loot", "; use legacy anim time algorithm for these paths (these mods rely on bugged behavior from previous versions of kNVSE)");
+	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest.");
+
+	const std::string legacyAnimTimePaths = ini.GetOrCreate("Anim Fixes", "sLegacyAnimTimePaths", "B42Inject,B42Interact,B42Loot", "; use legacy anim time algorithm for these paths (these mods rely on bugged behavior from previous versions of kNVSE).");
 	if (!legacyAnimTimePaths.empty())
 		conf.legacyAnimTimePaths = SplitString(legacyAnimTimePaths);
 		
@@ -962,7 +970,6 @@ void ApplyHooks()
 			// AnimFixes::EraseNegativeAnimKeys(anim);
 			AnimFixes::FixWrongKFName(anim, fileName);
 			AnimFixes::FixMissingPrnKey(anim, fileName);
-			AnimFixes::AddNoBlendSmoothingKeys(anim, fileName);
 		}
 		return &anim->m_kName;
 	}));
