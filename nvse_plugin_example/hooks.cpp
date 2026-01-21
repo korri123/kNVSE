@@ -411,12 +411,12 @@ namespace LoopingReloadPauseFix
 	void __fastcall NoAimInReloadLoopHook(AnimData* animData, void*, eAnimSequence sequenceId, bool bChar)
 	{
 		auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
-		const static std::unordered_set ids = { kAnimGroup_ReloadWStart, kAnimGroup_ReloadYStart, kAnimGroup_ReloadXStart, kAnimGroup_ReloadZStart };
+		constexpr static std::array ids = { kAnimGroup_ReloadWStart, kAnimGroup_ReloadYStart, kAnimGroup_ReloadXStart, kAnimGroup_ReloadZStart };
 		auto* anim = animData->animSequence[sequenceId];
 
 		const auto dontEndSequence = _L(, *addrOfRetn = 0x492BF8 );
 		const auto endSequence = _L(, ThisStdCall(0x4994F0, animData, sequenceId, bChar));
-		if (!anim || !anim->animGroup || !ids.contains(anim->animGroup->GetBaseGroupID()))
+		if (!anim || !anim->animGroup || ra::find(ids, anim->animGroup->GetBaseGroupID()) == ids.end())
 		{
 			endSequence();
 			return;
@@ -930,7 +930,6 @@ void ApplyHooks()
 	}));
 
 
-    // @@@@@@@@@@@@@@@@
 	// AnimData::RemovesAnimSequence
 	WriteRelCall(0x4994F6, INLINE_HOOK(eAnimSequence, __fastcall, AnimData* animData)
 	{
