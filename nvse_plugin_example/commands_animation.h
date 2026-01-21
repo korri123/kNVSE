@@ -146,14 +146,8 @@ public:
 				return;
 			const auto lastTime = this->lastTime;
 			this->lastTime = time;
-			if (index >= execution->items.size())
-			{
-				if (time - lastTime < -0.01f)
-					// looping anim
-					index = 0;
-				else
-					return;
-			}
+			if (time - lastTime < -0.01f || index >= execution->items.size())
+				index = 0;
 			while (index < execution->items.size())
 			{
 				auto& [item, nextTime] = execution->items.at(index);
