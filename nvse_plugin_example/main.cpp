@@ -710,6 +710,21 @@ void HandleMisc()
 
 std::thread g_animFileThread;
 
+static void CheckAndWarnForFixPack()
+{
+	constexpr auto path = R"(Data\NVSE\Plugins\scripts\ln_nvaofixpack.txt)";
+	if (g_pluginSettings.fixAttackISTransition && std::filesystem::exists(path))
+	{
+		std::ifstream file(path);
+		std::string content((std::istreambuf_iterator(file)), std::istreambuf_iterator<char>());
+    
+		if (content.contains("Player.PlayGroup AimIS 1"))
+		{
+			Script::RunScriptLine("MessageBoxEx \"kNVSE: Disable 'kNVSE Fixpack'.%R%RkNVSE has all the fixes now natively and this mod will interfere with them.\"");
+		}
+	}
+}
+
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
@@ -719,6 +734,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		WriteDelayedHooks();
 		g_thePlayer = *reinterpret_cast<PlayerCharacter**>(0x011DEA3C);
 		g_animFileThread = std::thread(LoadFileAnimPaths);
+		CheckAndWarnForFixPack();
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{
