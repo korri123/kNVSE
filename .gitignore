@@ -400,3 +400,4 @@ ipch
 **/.idea
 
 types.txt
+/nvse_plugin_example/.claude
