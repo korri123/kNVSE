@@ -238,6 +238,7 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
             totalSmoothedWeight += smoothedWeight;
     }
 
+#if 0
     // Second pass: renormalize to ensure sum = 1.0
     if (totalSmoothedWeight > 0.0f)
     {
@@ -270,6 +271,7 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
             item.m_fNormalizedWeight = weightState.lastSmoothedWeight;
         }
     }
+#endif
 }
 
 void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp)
