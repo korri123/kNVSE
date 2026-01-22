@@ -177,7 +177,7 @@ NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObjec
 }
 
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
-    const std::vector<NiBlendInterpolator::InterpArrayItem*>& items, kWeightType type)
+    const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type)
 {
     if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount || items.empty())
         return;
@@ -188,21 +188,13 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
 
     constexpr float MIN_WEIGHT = 0.001f;
 
-    for (auto* itemPtr : items)
+    for (auto [itemPtr, extraItemPtr] : items)
     {
         auto& item = *itemPtr;
-        if (!item.m_spInterpolator)
+        if (!item.m_spInterpolator || !extraItemPtr)
             continue;
 
-        auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
-        if (!extraItemPtr)
-            continue;
-
-        if (extraItemPtr->isAdditive)
-        {
-            DebugAssert(false);
-            continue;
-        }
+        DebugAssert(!extraItemPtr->isAdditive);
 
         auto& extraItem = *extraItemPtr;
         if (extraItem.debugState == kInterpDebugState::NotSet)

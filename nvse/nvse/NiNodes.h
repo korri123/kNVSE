@@ -2092,6 +2092,7 @@ public:
 };
 
 class kBlendInterpolatorExtraData;
+class kBlendInterpItem;
 
 class NiBlendInterpolator : public NiInterpolator
 {
@@ -2232,7 +2233,7 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
-	void ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items, kBlendInterpolatorExtraData* extraData);
+	void ComputeNormalizedWeights(const std::vector<std::pair<InterpArrayItem*, kBlendInterpItem*>>& items);
 	void ComputeNormalizedWeightsHighPriorityDominant();
 
 	void ClearWeightSums()
