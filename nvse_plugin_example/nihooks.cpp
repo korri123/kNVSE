@@ -489,7 +489,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     
     for (auto& item : validTranslates)
         items.emplace_back(item.item);
-    ComputeNormalizedWeights(items);
+    ComputeNormalizedWeights(items, kExtraData);
     BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Translate);
 
     for (auto& translation : validTranslates)
@@ -504,7 +504,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     for (auto& scale : validScales)
         items.emplace_back(scale.item);
 
-    ComputeNormalizedWeights(items);
+    ComputeNormalizedWeights(items, kExtraData);
     BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Scale);
 
     for (auto& scale : validScales)
@@ -518,7 +518,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     items.clear();
     for (auto& item : validRotations)
         items.emplace_back(item.item);
-    ComputeNormalizedWeights(items);
+    ComputeNormalizedWeights(items, kExtraData);
     BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate);
     
     for (auto& rotation : validRotations)
@@ -841,11 +841,19 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items)
+void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items, kBlendInterpolatorExtraData* extraData)
 {
+    auto isDetached = [extraData](const InterpArrayItem& item) -> bool
+    {
+        if (!extraData)
+            return false;
+        auto* extraItem = extraData->GetItem(item.m_spInterpolator);
+        return extraItem && extraItem->detached;
+    };
+
     if (items.size() == 1)
     {
-        items.front()->m_fNormalizedWeight = 1.0f;
+        items.front()->m_fNormalizedWeight = isDetached(*items.front()) ? 0.0f : 1.0f;
         return;
     }
 
@@ -853,7 +861,7 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<InterpArray
     char cNextHighPriority = INVALID_INDEX;
     for (auto& item : items)
     {
-        if (item->m_spInterpolator != nullptr)
+        if (item->m_spInterpolator != nullptr && !isDetached(*item))
         {
             if (item->m_cPriority > cHighPriority)
             {
@@ -873,7 +881,7 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<InterpArray
     for (auto& kItemPtr : items)
     {
         auto& kItem = *kItemPtr;
-        if (kItem.m_spInterpolator != nullptr)
+        if (kItem.m_spInterpolator != nullptr && !isDetached(kItem))
         {
             float fRealWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
             if (kItem.m_cPriority == cHighPriority)
@@ -903,7 +911,11 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<InterpArray
         auto& kItem = *kItemPtr;
         if (kItem.m_spInterpolator != nullptr)
         {
-            if (kItem.m_cPriority == cHighPriority)
+            if (isDetached(kItem))
+            {
+                kItem.m_fNormalizedWeight = 0.0f;
+            }
+            else if (kItem.m_cPriority == cHighPriority)
             {
                 kItem.m_fNormalizedWeight = fHighEaseSpinner *
                     kItem.m_fWeight * kItem.m_fEaseSpinner *
@@ -2115,6 +2127,7 @@ namespace NiHooks
         WriteRelJump(0xA30900, &NiControllerSequence::AttachInterpolatorsHooked);
         WriteRelJump(0xA30540, &NiControllerSequence::DetachInterpolatorsHooked);
         ReplaceVTableEntry(0x1097598, &NiBlendTransformInterpolator::UpdateHooked);
+        WriteRelCall(0xA34E7B, &NiControllerSequence::SetInterpsWeightAndTime); // make it also update values even if single interpolator
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant);

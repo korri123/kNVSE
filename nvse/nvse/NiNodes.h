@@ -2232,7 +2232,7 @@ public:
 	}
 
 	void ComputeNormalizedWeights();
-	void ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items);
+	void ComputeNormalizedWeights(const std::vector<InterpArrayItem*>& items, kBlendInterpolatorExtraData* extraData);
 	void ComputeNormalizedWeightsHighPriorityDominant();
 
 	void ClearWeightSums()
@@ -2352,7 +2352,7 @@ public:
 		{
 			// Set the cached time for a single interpolator.
 			m_fSingleTime = fTime;
-			return;
+			// no return here, fix issue where times will mismatch between blends
 		}
 
 		m_pkInterpArray[ucIndex].m_fUpdateTime = fTime;
