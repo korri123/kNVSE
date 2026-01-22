@@ -144,10 +144,12 @@ public:
 		{
 			if (!execution || execution->items.empty())
 				return;
-			const auto lastTime = this->lastTime;
+			const auto fLastTime = this->lastTime;
 			this->lastTime = time;
-			if (time - lastTime < -0.01f || index >= execution->items.size())
+			if (time - fLastTime < -0.01f)
 				index = 0;
+			if (index >= execution->items.size())
+				return;
 			while (index < execution->items.size())
 			{
 				auto& [item, nextTime] = execution->items.at(index);

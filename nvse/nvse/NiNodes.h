@@ -2092,7 +2092,7 @@ public:
 };
 
 class kBlendInterpolatorExtraData;
-class kBlendInterpItem;
+struct kBlendInterpItem;
 
 class NiBlendInterpolator : public NiInterpolator
 {
