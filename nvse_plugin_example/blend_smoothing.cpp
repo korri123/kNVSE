@@ -181,97 +181,52 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
 {
     if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount || items.empty())
         return;
-    
+
     const auto deltaTime = g_timeGlobal->secondsPassed;
     const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
     const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
-    
+
     constexpr float MIN_WEIGHT = 0.001f;
 
-    // First pass: compute smoothed weights and accumulate sum
-    float totalSmoothedWeight = 0.0f;
-    
     for (auto* itemPtr : items)
     {
         auto& item = *itemPtr;
         if (!item.m_spInterpolator)
             continue;
-            
+
         auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
         if (!extraItemPtr)
             continue;
-        
+
         if (extraItemPtr->isAdditive)
         {
             DebugAssert(false);
             continue;
         }
-            
+
         auto& extraItem = *extraItemPtr;
         if (extraItem.debugState == kInterpDebugState::NotSet)
             continue;
-            
+
         auto& weightState = *extraItem.GetWeightState(type);
-        
-        // Initialize on first frame
-        if (weightState.lastSmoothedWeight == -NI_INFINITY)
-        {
-            weightState.lastSmoothedWeight = item.m_fNormalizedWeight;
-        }
-        
+
         float targetWeight = item.m_fNormalizedWeight;
+
+        // Initialize new items to 0 for fade-in effect
+        if (weightState.lastSmoothedWeight == -NI_INFINITY)
+            weightState.lastSmoothedWeight = 0.0f;
+
         weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
         weightState.calculatedNormalizedWeight = targetWeight;
-        
-        if (extraItem.detached)
-            targetWeight = 0.0f;
-        
+
         float smoothedWeight = std::lerp(weightState.lastSmoothedWeight, targetWeight, smoothingRate);
-        
-        // Snap to zero if below threshold (but don't normalize yet)
+
         if (smoothedWeight < MIN_WEIGHT)
             smoothedWeight = 0.0f;
-        
-        // Store temporarily in lastSmoothedWeight
-        weightState.lastSmoothedWeight = smoothedWeight;
-        if (!extraItem.detached)
-            totalSmoothedWeight += smoothedWeight;
-    }
 
-#if 0
-    // Second pass: renormalize to ensure sum = 1.0
-    if (totalSmoothedWeight > 0.0f)
-    {
-        const float normalizationFactor = 1.0f / totalSmoothedWeight;
-        
-        for (auto* itemPtr : items)
-        {
-            auto& item = *itemPtr;
-            if (!item.m_spInterpolator)
-                continue;
-                
-            auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
-            if (!extraItemPtr)
-                continue;
-            
-            if (extraItemPtr->isAdditive)
-            {
-                DebugAssert(false);
-                continue;
-            }
-                
-            auto& extraItem = *extraItemPtr;
-            if (extraItem.debugState == kInterpDebugState::NotSet)
-                continue;
-                
-            auto& weightState = *extraItem.GetWeightState(type);
-            
-            if (!extraItem.detached)
-                weightState.lastSmoothedWeight *= normalizationFactor;
-            item.m_fNormalizedWeight = weightState.lastSmoothedWeight;
-        }
+        weightState.lastSmoothedWeight = smoothedWeight;
+        item.m_fNormalizedWeight = smoothedWeight;
     }
-#endif
 }
 
 void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp)
