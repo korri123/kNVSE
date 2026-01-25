@@ -164,6 +164,36 @@ public:
 				}
 			}
 		}
+		
+		template <typename F>
+		void UpdateLegacy(float time, AnimData* animData, F&& f)
+		{
+			if (!execution || execution->items.empty())
+				return;
+			const auto lastTime = this->lastTime;
+			this->lastTime = time;
+			if (index >= execution->items.size())
+			{
+				if (time - lastTime < -0.01f)
+					// looping anim
+						index = 0;
+				else
+					return;
+			}
+			while (index < execution->items.size())
+			{
+				auto& [item, nextTime] = execution->items.at(index);
+				if (time >= nextTime)
+				{
+					f(item);
+					++index;
+				}
+				else
+				{
+					break;
+				}
+			}
+		}
 	};
 
 	std::vector<std::pair<T, float>> items;

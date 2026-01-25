@@ -302,3 +302,88 @@ public:
 		pCriticalSection->Unlock();
 	}
 };
+
+struct _PackageType {
+	enum Type {
+		NONE						= -1,
+		EXPLORE						= 0,
+		FOLLOW						= 1,
+		ESCORT						= 2,
+		EAT							= 3,
+		SLEEP						= 4,
+		WANDER						= 5,
+		TRAVEL						= 6,
+		ACCOMPANY					= 7,
+		USE_ITEM_AT					= 8,
+		AMBUSH						= 9,
+		FLEE_NON_COMBAT				= 10,
+		CAST_MAGIC					= 11,
+		SANDBOX						= 12,
+		PATROL						= 13,
+		GUARD						= 14,
+		DIALOGUE					= 15,
+		USE_WEAPON					= 16,
+		FIND						= 17,
+		COMBAT						= 18,
+		COMBAT_LOW					= 19,
+		ACTIVATE					= 20,
+		ALARM						= 21,
+		FLEE						= 22,
+		TRESPASS					= 23,
+		SPECTATOR					= 24,
+		REACT_TO_DEAD				= 25,
+		GET_UP						= 26,
+		DO_NOTHING					= 27,
+		IN_GAME_DIALOGUE			= 28,
+		SURFACE						= 29,
+		SEARCH_FOR_ATTACKER			= 30,
+		AVOID_RADIATION				= 31,
+		REACT_TO_DESTROYED_OBJECT	= 32,
+		REACT_TO_GRENADE_OR_MINE	= 33,
+		STEAL_WARNING				= 34,
+		PICKPOCKET_WARNING			= 35,
+		MOVEMENT_BLOCKED			= 36,
+		SANDMAN						= 37,
+		CANNIBAL					= 38,
+		BACKUP						= 39,
+		COUNT,
+	};
+};
+using PACKAGE_TYPE = _PackageType::Type;
+
+class Actor;
+class BGSSaveGameBuffer;
+class BGSLoadGameBuffer;
+
+class ActorPackageData {
+public:
+	ActorPackageData();
+	virtual					~ActorPackageData();
+	virtual void			RemoveActor(Actor* apActor);
+	virtual PACKAGE_TYPE	GetPackageType() const;
+	virtual void			SaveGame(BGSSaveGameBuffer* apBuffer);
+	virtual void			LoadGame(BGSLoadGameBuffer* apBuffer);
+	virtual void			InitLoadGame(BGSLoadGameBuffer* apBuffer);
+};
+
+ASSERT_SIZE(ActorPackageData, 0x4);
+
+class TESPackage;
+class TESPackageData;
+class TESObjectREFR;
+
+class PatrolActorPackageData : public ActorPackageData {
+public:
+	uint32_t						eState;
+	float							fCurrentTimeAtReference;
+	bool							bPatrolDirection;
+	Actor*							pActor;
+	TESPackage*						pPackage;
+	TESPackageData*					pPatrolData;
+	BSSimpleArray<TESObjectREFR*>	kReferences;
+	bool							bCircularArray;
+	uint32_t						uiLoopAroundIndex;
+	uint32_t						uiCurrentReference;
+};
+
+ASSERT_SIZE(PatrolActorPackageData, 0x38);

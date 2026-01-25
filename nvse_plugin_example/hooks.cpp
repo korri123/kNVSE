@@ -1002,7 +1002,6 @@ void ApplyHooks()
 		return ThisStdCall<bool>(0x853130, map, name, out);
 	}));
 
-
 	// AnimData::PlayAnimGroup
 	// used to rig GetCurrentAmmoRounds command to add 1 to the result if we are about to play a looping reload anim
 	WriteRelCall(0x8BAD2C, INLINE_HOOK(void, __fastcall, AnimData *animData, void*, UInt16 groupID, int flags, int queuedState, eAnimSequence sequenceID)
@@ -1315,6 +1314,14 @@ void ApplyHooks()
 	BlendSmoothing::WriteHooks();
 	
 	JIPFixes::Init();
+	
+	// fix extra data loading
+	WriteRelCall(0x9F2ABB, INLINE_HOOK(void, __fastcall, PatrolActorPackageData* obj)
+	{
+		if (!obj->pActor)
+			return;
+		ThisStdCall<void*>(0x5D43C0, obj);
+	}));
 	
 }
 

@@ -459,10 +459,14 @@ void HandleCustomTextKeys()
 		}
 		if (animTime.scriptLines.Exists())
 		{
-			animTime.scriptLines.Update(time, animData, [&](Script* script)
+			const auto callback = [&](Script* script)
 			{
 				ThisStdCall<bool>(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, true);
-			});
+			};
+			if (animTime.useLegacyTime) // prevent getting stuck in b42 interact 
+				animTime.scriptLines.UpdateLegacy(time, animData, callback);	
+			else
+				animTime.scriptLines.Update(time, animData, callback);	
 		}
 
 		if (animTime.hasCustomAnimGroups)
