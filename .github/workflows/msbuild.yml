@@ -6,88 +6,90 @@ on:
 
 env:
   SOLUTION_FILE_PATH: nvse_plugin_example/nvse_plugin_example.sln
+  PLATFORM_TOOLSET: v145
 
-permissions: write-all
+permissions:
+  contents: write
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v6
 
-    - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v2
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v3
+        with:
+          vs-version: '[18.0,19.0)'
+          msbuild-architecture: x64
 
-    - name: Build Release
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: msbuild /m /p:Configuration=Release ${{env.SOLUTION_FILE_PATH}} /p:PostBuildEventUseInBuild=false
+      - name: Build Release
+        working-directory: ${{ github.workspace }}
+        run: >
+          msbuild /m
+          /p:Configuration=Release
+          /p:PlatformToolset=${{ env.PLATFORM_TOOLSET }}
+          /p:PostBuildEventUseInBuild=false
+          ${{ env.SOLUTION_FILE_PATH }}
 
-    - name: Build Debug
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: msbuild /m /p:Configuration=Debug ${{env.SOLUTION_FILE_PATH}} /p:PostBuildEventUseInBuild=false
+      - name: Build Debug
+        working-directory: ${{ github.workspace }}
+        run: >
+          msbuild /m
+          /p:Configuration=Debug
+          /p:PlatformToolset=${{ env.PLATFORM_TOOLSET }}
+          /p:PostBuildEventUseInBuild=false
+          ${{ env.SOLUTION_FILE_PATH }}
 
-    - name: Generate Timestamp
-      run: |
-        timestamp=$(date +"%Y%m%d%H%M%S")
-        echo "artifact_timestamp=$timestamp" >> $GITHUB_ENV
-      shell: bash
+      - name: Generate Timestamp
+        shell: pwsh
+        run: |
+          "artifact_timestamp=$(Get-Date -Format 'yyyyMMddHHmmss')" >> $env:GITHUB_ENV
 
-    - name: Package Artifacts
-      run: |
-        mkdir -p artifacts
-        Compress-Archive -Path nvse_plugin_example\Release\kNVSE.dll, nvse_plugin_example\Release\kNVSE.pdb -DestinationPath artifacts\kNVSE-Release-${{ env.artifact_timestamp }}.zip
-        Compress-Archive -Path nvse_plugin_example\Debug\kNVSE.dll, nvse_plugin_example\Debug\kNVSE.pdb -DestinationPath artifacts\kNVSE-Debug-${{ env.artifact_timestamp }}.zip
-      shell: pwsh
+      - name: Package Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
 
-    - name: Publish Zipped Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: Zipped-Artifacts-${{ env.artifact_timestamp }}
-        path: artifacts/
+          Compress-Archive `
+            -Path nvse_plugin_example\Release\kNVSE.dll, nvse_plugin_example\Release\kNVSE.pdb `
+            -DestinationPath artifacts\kNVSE-Release-${{ env.artifact_timestamp }}.zip `
+            -Force
 
-    - name: Get Release
-      id: get_release
-      uses: cardinalby/git-get-release-action@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag: 'continuous'
-        doNotFailIfNotFound: true
-    - name: Delete old release if exists
-      if: steps.get_release.outputs.id != ''
-      uses: dev-drprasad/delete-tag-and-release@v1.0
-      with:
-        tag_name: continuous
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        delete_release: true
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: continuous
-        release_name: "Continuous release"
-        draft: false
-        prerelease: true
-        body: |
-          Continuous release generated from the latest push to development branch.
-    - name: Upload Artifact (Release)
-      uses: actions/upload-release-asset@v1
-      env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: artifacts/kNVSE-Release-${{ env.artifact_timestamp }}.zip
-        asset_name: kNVSE-Release-${{ env.artifact_timestamp }}.zip
-        asset_content_type: application/zip
-    - name: Upload Artifact (Debug)
-      uses: actions/upload-release-asset@v1
-      env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: artifacts/kNVSE-Debug-${{ env.artifact_timestamp }}.zip
-        asset_name: kNVSE-Debug-${{ env.artifact_timestamp }}.zip
-        asset_content_type: application/zip
+          Compress-Archive `
+            -Path nvse_plugin_example\Debug\kNVSE.dll, nvse_plugin_example\Debug\kNVSE.pdb `
+            -DestinationPath artifacts\kNVSE-Debug-${{ env.artifact_timestamp }}.zip `
+            -Force
+
+      - name: Publish Zipped Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zipped-Artifacts-${{ env.artifact_timestamp }}
+          path: artifacts/
+
+      - name: Delete old continuous release if exists
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view continuous *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete continuous --cleanup-tag --yes
+          } else {
+            Write-Host "No existing continuous release/tag to delete."
+          }
+
+      - name: Create continuous release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create continuous `
+            artifacts/kNVSE-Release-${{ env.artifact_timestamp }}.zip `
+            artifacts/kNVSE-Debug-${{ env.artifact_timestamp }}.zip `
+            --title "Continuous release" `
+            --notes "Continuous release generated from the latest push to development branch." `
+            --prerelease `
+            --target "${{ github.sha }}"
