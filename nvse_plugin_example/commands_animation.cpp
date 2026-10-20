@@ -12,6 +12,7 @@
 #include "GameAPI.h"
 #include "GameObjects.h"
 #include "GameRTTI.h"
+#include "GameData.h"
 #include "hooks.h"
 #include "main.h"
 #include "MemoizedMap.h"
@@ -759,7 +760,7 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 		
 		std::optional<AnimationResult> result;
 		std::optional<AnimationResult> modIndexResult;
-		StackVector<UInt8, 8> visitedModIndices;
+		std::vector<UInt32> visitedModIndices;
 
 		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
 		auto& map = GetMap(firstPerson);
@@ -770,10 +771,12 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 			if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData))
 				return lResult;
 			// mod index
-			if (!modIndexResult.has_value() && ra::find(*visitedModIndices, form->GetModIndex()) == visitedModIndices->end())
+			const ModInfo* file = form->GetFile(0);
+			const UInt32 modFormID = file ? file->GetAsFormID() : 0xFF;
+			if (!modIndexResult.has_value() && ra::find(visitedModIndices, modFormID) == visitedModIndices.end())
 			{
-				modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData);
-				visitedModIndices->push_back(form->GetModIndex());
+				modIndexResult = GetAnimationFromMap(modIndexMap, modFormID, animGroupId, animData);
+				visitedModIndices.push_back(modFormID);
 			}
 			return std::nullopt;
 		};

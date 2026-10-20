@@ -11,6 +11,18 @@ static const _GetActorValueInfo GetActorValueInfo = (_GetActorValueInfo)0x00066E
 BGSDefaultObjectManager ** g_defaultObjectManager = (BGSDefaultObjectManager**)0x011CA80C;
 #endif
 
+UInt32 TESForm::GetFormID() const {
+	return refID;
+}
+
+UInt32 TESForm::GetFormIDWithoutIndex() const {
+#if RUNTIME
+	return ThisStdCall<UInt32>(0x485BC0, this);
+#else
+	return refID & 0x00FFFFFF;
+#endif
+}
+
 TESForm * TESForm::TryGetREFRParent(void)
 {
 	TESForm			* result = this;
@@ -394,6 +406,10 @@ bool TESForm::IsInventoryObject() const
 	static _IsInventoryObjectType IsInventoryObjectType = (_IsInventoryObjectType)0x004F4100;	// first call from first case of main switch in Cmd_DefaultParse
 #endif
 	return IsInventoryObjectType(typeID);
+}
+
+ModInfo* TESForm::GetFile(SInt32 index) const {
+	return ThisStdCall<ModInfo*>(0x484E60, this, index);
 }
 
 const char* TESPackage::TargetData::StringForTargetCode(UInt8 targetCode)
