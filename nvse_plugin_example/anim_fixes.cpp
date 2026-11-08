@@ -26,58 +26,98 @@ bool HasNoFixTextKey(const BSAnimGroupSequence* anim)
 	return false;
 }
 
+// Time of the last key of a transform interpolator's tracks, or -NI_INFINITY when it has no keys
+static float GetLastKeyTime(NiTransformInterpolator* interpolator)
+{
+	float lastTime = -NI_INFINITY;
+	unsigned int numKeys;
+	NiAnimationKey::KeyType keyType;
+	unsigned char keySize;
+
+	if (auto* posData = interpolator->GetPosData(numKeys, keyType, keySize); numKeys)
+		lastTime = (std::max)(lastTime, posData->GetKeyAt(numKeys - 1, keySize)->m_fTime);
+
+	if (auto* rotData = interpolator->GetRotData(numKeys, keyType, keySize); numKeys)
+	{
+		if (keyType == NiAnimationKey::EULERKEY)
+		{
+			// an Euler key's own time is never set; its three float tracks hold the timing
+			const auto* euler = static_cast<NiEulerRotKey*>(rotData->GetKeyAt(0, keySize));
+			for (unsigned int i = 0; i < 3; ++i)
+			{
+				if (euler->m_uiNumKeys[i])
+					lastTime = (std::max)(lastTime, euler->m_apkKeys[i]->GetKeyAt(euler->m_uiNumKeys[i] - 1, euler->m_ucSizes[i])->m_fTime);
+			}
+		}
+		else
+			lastTime = (std::max)(lastTime, rotData->GetKeyAt(numKeys - 1, keySize)->m_fTime);
+	}
+
+	if (auto* scaleData = interpolator->GetScaleData(numKeys, keyType, keySize); numKeys)
+		lastTime = (std::max)(lastTime, scaleData->GetKeyAt(numKeys - 1, keySize)->m_fTime);
+
+	return lastTime;
+}
+
 void AnimFixes::FixInconsistentEndTime(BSAnimGroupSequence* anim)
 {
 	if (!g_pluginSettings.fixEndKeyTimeShorterThanStopTime || HasNoFixTextKey(anim))
 		return;
-	const auto endKeyTime = anim->m_fEndKeyTime;
-	const static auto sEnd = NiFixedString("end");
-	if (auto* endKey = anim->m_spTextKeys->FindFirstByName(sEnd))
-	{
-		endKey->m_fTime = endKeyTime;
-	}
-#ifdef _DEBUG
-	const auto tags = anim->GetIDTags();
-	auto idx = 0;
-#endif
+
+	float dataEndTime = -NI_INFINITY;
+	bool dataRangeKnown = true;
 	for (const auto& block : anim->GetControlledBlocks())
 	{
-#ifdef _DEBUG
-		auto& tag = tags[idx++];
-#endif
-		NiTransformInterpolator* interpolator = static_cast<NiTransformInterpolator*>(block.m_spInterpolator.data);
-		if (interpolator && IS_TYPE(interpolator, NiTransformInterpolator))
+		NiInterpolator* interpolator = block.m_spInterpolator.data;
+		if (!interpolator)
+			continue;
+		if (!IS_TYPE(interpolator, NiTransformInterpolator))
 		{
-			unsigned int numKeys;
-			NiAnimationKey::KeyType keyType;
-			unsigned char keySize;
+			dataRangeKnown = false; // e.g. B-spline interpolators: no key array to read the range from
+			continue;
+		}
+		dataEndTime = (std::max)(dataEndTime, GetLastKeyTime(static_cast<NiTransformInterpolator*>(interpolator)));
+	}
 
-			// PosData
-			auto* posData = interpolator->GetPosData(numKeys, keyType, keySize);
-			if (numKeys)
-			{
-				auto* key = posData->GetKeyAt(numKeys - 1, keySize);
-				if (key->m_fTime < endKeyTime)
-					key->m_fTime = endKeyTime;
-			}
+	// A broken export stop time past the last key of every track: end the sequence where its data ends instead of
+	// stretching the data out to the stop time. Text keys in between are pulled back so that they still fire.
+	if (dataRangeKnown && dataEndTime > anim->m_fBeginKeyTime && dataEndTime < anim->m_fEndKeyTime)
+	{
+		LogAnimError(anim, FormatString("Stop time %.4f is past the last animation key at %.4f, ending the animation there",
+			anim->m_fEndKeyTime, dataEndTime));
+		for (auto& textKey : anim->m_spTextKeys->GetKeys())
+		{
+			if (textKey.m_fTime > dataEndTime && textKey.m_fTime <= anim->m_fEndKeyTime)
+				textKey.m_fTime = dataEndTime;
+		}
+		anim->m_fEndKeyTime = dataEndTime;
+	}
 
-			// RotData
-			auto* rotData = interpolator->GetRotData(numKeys, keyType, keySize);
-			if (numKeys)
-			{
-				auto* key = rotData->GetKeyAt(numKeys - 1, keySize);
-				if (key->m_fTime < endKeyTime)
-					key->m_fTime = endKeyTime;
-			}
+	// The engine's position and rotation key searches read past the key array for times after a track's last key
+	// (float keys, including Euler rotation tracks, clamp), so tracks that still end early are extended to the end.
+	const auto endKeyTime = anim->m_fEndKeyTime;
+	for (const auto& block : anim->GetControlledBlocks())
+	{
+		NiInterpolator* interpolator = block.m_spInterpolator.data;
+		if (!interpolator || !IS_TYPE(interpolator, NiTransformInterpolator))
+			continue;
+		auto* transformInterpolator = static_cast<NiTransformInterpolator*>(interpolator);
+		unsigned int numKeys;
+		NiAnimationKey::KeyType keyType;
+		unsigned char keySize;
 
-			// ScaleData
-			auto* scaleData = interpolator->GetScaleData(numKeys, keyType, keySize);
-			if (numKeys)
-			{
-				auto* key = scaleData->GetKeyAt(numKeys - 1, keySize);
-				if (key->m_fTime < endKeyTime)
-					key->m_fTime = endKeyTime;
-			}
+		if (auto* posData = transformInterpolator->GetPosData(numKeys, keyType, keySize); numKeys)
+		{
+			auto* key = posData->GetKeyAt(numKeys - 1, keySize);
+			if (key->m_fTime < endKeyTime)
+				key->m_fTime = endKeyTime;
+		}
+
+		if (auto* rotData = transformInterpolator->GetRotData(numKeys, keyType, keySize); numKeys && keyType != NiAnimationKey::EULERKEY)
+		{
+			auto* key = rotData->GetKeyAt(numKeys - 1, keySize);
+			if (key->m_fTime < endKeyTime)
+				key->m_fTime = endKeyTime;
 		}
 	}
 }
