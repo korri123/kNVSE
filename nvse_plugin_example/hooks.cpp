@@ -1164,7 +1164,9 @@ void ApplyHooks()
 		if (g_pluginSettings.blendSmoothing && pkSequence->animGroup->GetSequenceType() == kSequence_Movement &&
 			pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
 		{
-			return pkSequence->DeactivateNoReset(fEaseOut, false);
+			// Animation::ClearGroup: the Animation at [ebp-8]
+			const auto* animData = GET_CALLER_VAR_LAMBDA(AnimData*, -0x8);
+			return pkSequence->DeactivateNoReset(fEaseOut, false, animData->timePassed);
 		}
 		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
 	}));

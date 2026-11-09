@@ -1477,7 +1477,7 @@ bool NiControllerSequence::Activate(float fEaseInTime, bool bTransition)
     return Activate(0, false, this->m_fSeqWeight, fEaseInTime, nullptr, bTransition);
 }
 
-bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition)
+bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition, float fTime)
 {
     if ((m_eState != EASEOUT && m_eState != TRANSSOURCE) || fEaseInTime == 0.0f)
     {
@@ -1487,11 +1487,13 @@ bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition)
         return false;
     }
     
-    const auto fTime = m_fLastTime - m_fOffset;
+    // fTime is the owner's animation time: m_fLastTime - m_fOffset is not, as Update clamps the time it stores to a
+    // start time still ahead, which then carried every later NoReset window further into the future
     const auto fCurrentEaseTime = m_fEndTime - m_fStartTime;
 
-    auto fAnimTime = fTime - m_fStartTime;
-    fAnimTime = max(fAnimTime, 0.0f); // floating point inaccuracy fix
+    // m_fStartTime unset: deactivated but not yet updated, nothing has eased out
+    auto fAnimTime = m_fStartTime == -NI_INFINITY ? 0.0f : fTime - m_fStartTime;
+    fAnimTime = min(max(fAnimTime, 0.0f), fCurrentEaseTime); // floating point inaccuracy fix
     const auto fEaseOutProgress = fAnimTime / fCurrentEaseTime;
             
     // Calculate current animation level (1.0 at start of EASEOUT, 0.0 at end)
@@ -2170,7 +2172,7 @@ bool NiControllerSequence::Deactivate_(float fEaseOutTime, bool bTransition)
     return true;
 }
 
-bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime, bool bTransition)
+bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime, bool bTransition, float fTime)
 {
     if ((m_eState != EASEIN && m_eState != TRANSDEST) || fEaseOutTime == 0.0f)
     {
@@ -2181,10 +2183,12 @@ bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime, bool bTransitio
     }
     
     // Store the current animation state for a smooth transition
-    const float fCurrentTime = m_fLastTime - m_fOffset;
+    // fTime is the owner's animation time (see ActivateNoReset)
+    const float fCurrentTime = fTime;
 
-    float fAnimTime = fCurrentTime - m_fStartTime;
-    fAnimTime = max(fAnimTime, 0.0f);
+    // m_fStartTime unset: activated but not yet updated, nothing has eased in
+    float fAnimTime = m_fStartTime == -NI_INFINITY ? 0.0f : fCurrentTime - m_fStartTime;
+    fAnimTime = min(max(fAnimTime, 0.0f), m_fEndTime - m_fStartTime);
     // Calculate current ease level if we were easing in
     const float fCurrentEaseLevel = fAnimTime / (m_fEndTime - m_fStartTime);
     // Adjust timing to create a smooth transition from EASEIN to EASEOUT
