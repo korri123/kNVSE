@@ -29,6 +29,10 @@ struct PluginINISettings
     bool blendSmoothing = true;
     bool poseInterpolators = false;
     float blendSmoothingRate = 0.075f;
+    bool fixWeaponHandBlend = true;
+#if _DEBUG
+    bool weaponHandBlendDebugLog = false;
+#endif
 
     bool fixDeactivateControllerManagers = true;
     std::vector<std::string> legacyAnimTimePaths;

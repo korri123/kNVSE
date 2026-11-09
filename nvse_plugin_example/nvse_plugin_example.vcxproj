@@ -397,6 +397,7 @@
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="commands_misc.cpp" />
     <ClCompile Include="decompiled\AnimDataHooks.cpp" />
+    <ClCompile Include="debug_tools.cpp" />
     <ClCompile Include="dllmain.c">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug ng|Win32'">
       </ForcedIncludeFiles>
@@ -427,6 +428,7 @@
     <ClCompile Include="blend_fixes.cpp" />
     <ClCompile Include="sequence_extradata.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
+    <ClCompile Include="weapon_hand_blend.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\CommandTable.h" />
@@ -459,6 +461,7 @@
     <ClInclude Include="class_vtbls.h" />
     <ClInclude Include="commands_animation.h" />
     <ClInclude Include="commands_misc.h" />
+    <ClInclude Include="debug_tools.h" />
     <ClInclude Include="containers.h" />
     <ClInclude Include="decompiled\AnimDataHooks.h" />
     <ClInclude Include="file_animations.h" />
@@ -486,6 +489,7 @@
     <ClInclude Include="stack_allocator.h" />
     <ClInclude Include="string_view_util.h" />
     <ClInclude Include="utility.h" />
+    <ClInclude Include="weapon_hand_blend.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="exports.def" />

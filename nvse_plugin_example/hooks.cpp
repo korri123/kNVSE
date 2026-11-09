@@ -21,6 +21,7 @@
 #include "knvse_events.h"
 #include "movement_blend_fixes.h"
 #include "sequence_extradata.h"
+#include "weapon_hand_blend.h"
 
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
@@ -228,7 +229,7 @@ bool __fastcall IsCustomAnimKey(const char* key)
 {
 	const static auto customKeys = {
 		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:",
-		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion", "noBlendSmoothing"
+		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion", "noBlendSmoothing", "weaponSpace:"
 	};
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
 }
@@ -722,6 +723,10 @@ void ApplyHooks()
 	if (conf.blendSmoothingRate == 0.0f)
 		conf.blendSmoothingRate = 0.075f;
 	conf.fixSpineBlendBug = ini.GetOrCreate("Blend Fixes", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down (requires bBlendSmoothing).");
+	conf.fixWeaponHandBlend = ini.GetOrCreate("Blend Fixes", "bFixWeaponHandBlend", 1, "; keep the weapon on the hand holding it when animations move it to the left hand (counter-animated against the right hand): during blends, and between keys of animations baked at low frame rates. Detected automatically; animators can set it with the text keys \"weaponSpace: left\", \"weaponSpace: right\", \"weaponSpace: body\" (follows neither hand, for hand-offs) and \"weaponSpace: auto\", each holding until the next, or opt an animation out with \"weaponSpace: off\" (its share of a blend is blended as without this fix).");
+#if _DEBUG
+	conf.weaponHandBlendDebugLog = ini.GetOrCreate("Blend Fixes", "bWeaponHandBlendDebugLog", 0, "; log to kNVSE.log how long each animation holds the weapon in each hand, as detected by bFixWeaponHandBlend.");
+#endif
 	conf.fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim button. kNVSE will trigger a blend to the hipfire attack animation when the attack key is released.");
 
 	conf.fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
@@ -873,9 +878,9 @@ void ApplyHooks()
 		// hooked call
 		*reinterpret_cast<UInt32*>(anim) = kVtbl_NiControllerSequence;
 		auto* retnAddr = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		SequenceExtraDatas::Delete(anim);
-		kBlendInterpolatorExtraData::EraseSequence(anim);
+		// sequence extra data is dropped when the sequence leaves its manager (SequenceExtraDatas::WriteHooks)
 		// EraseTimeTrackedAnim(anim); we do store a smart pointer to the anim in g_timeTrackedAnims
+		// detaching also clears the blend items' pointers to this sequence (kBlendInterpItem::sequence)
 		if (anim->m_eState != NiControllerSequence::INACTIVE)
 			anim->Deactivate(0.0f, false);
 		*retnAddr = 0xA3565E;
@@ -1270,8 +1275,8 @@ void ApplyHooks()
 						if (block.m_spInterpCtlr && block.m_spInterpCtlr->GetType() == NiMultiTargetTransformController::ms_RTTI)
 							block.m_pkBlendInterp = nullptr;
 					}
-					auto* sequenceExtraData = SequenceExtraDatas::GetOrCreate(sequence);
-					sequenceExtraData->needsStoreTargets = true;
+					if (auto* sequenceExtraData = SequenceExtraDatas::GetOrCreate(sequence))
+						sequenceExtraData->needsStoreTargets = true;
 				}
 				return nullptr;
 			}
@@ -1312,6 +1317,7 @@ void ApplyHooks()
 	}));
 
 	BlendSmoothing::WriteHooks();
+	SequenceExtraDatas::WriteHooks();
 	
 	JIPFixes::Init();
 	

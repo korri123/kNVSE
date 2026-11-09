@@ -79,7 +79,6 @@ void AdditiveManager::AddReferencePoseTransforms(NiControllerSequence* additiveS
 
             auto& extraInterpItem = extraData->GetOrCreateItem(additiveInterp);
             extraInterpItem.isAdditive = true;
-            extraInterpItem.sequence = additiveSequence;
             extraInterpItem.additiveMetadata.refTransform = refTransform;
             extraInterpItem.additiveMetadata.ignorePriorities = ignorePriorities;
         }
@@ -98,17 +97,12 @@ void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSeque
     };
 
     auto* sequenceExtraData = SequenceExtraDatas::GetOrCreate(additiveSequence);
+    if (!sequenceExtraData)
+        return; // removed from its manager (kNVSE's anim cache can still hold it), so it can't be activated either
 
-    if (sequenceExtraData->additiveMetadata)
-    {
-        if (metadata == *sequenceExtraData->additiveMetadata)
-            return;
-        *sequenceExtraData->additiveMetadata = metadata;
-    }
-    else
-    {
-        sequenceExtraData->additiveMetadata = std::make_unique<AdditiveSequenceMetadata>(metadata);
-    }
+    if (sequenceExtraData->additiveMetadata == metadata)
+        return;
+    sequenceExtraData->additiveMetadata = metadata;
 }
 
 void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSequence* referenceAnim, BSAnimGroupSequence* additiveAnim)
@@ -142,7 +136,7 @@ bool AdditiveManager::IsAdditiveSequence(const NiControllerSequence* sequence)
     auto* sequenceExtraData = SequenceExtraDatas::Get(sequence);
     if (!sequenceExtraData)
         return false;
-    return sequenceExtraData->additiveMetadata != nullptr;
+    return sequenceExtraData->additiveMetadata.has_value();
 }
 
 void AdditiveManager::RemoveAdditiveTransformsFlags(NiControllerSequence* sequence)

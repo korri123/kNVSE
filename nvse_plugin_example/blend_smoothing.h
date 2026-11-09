@@ -1,5 +1,8 @@
 ﻿#pragma once
+#include <memory>
+
 #include "GameAPI.h"
+#include "weapon_hand_blend.h"
 
 enum class kInterpDebugState: UInt8
 {
@@ -48,6 +51,9 @@ enum class kWeightType: UInt8
 struct kBlendInterpItem
 {
     NiPointer<NiInterpolator> interpolator = nullptr;
+    // The sequence that has this item's interpolator attached; null once the sequence detaches it, including while a
+    // detached item is still fading out. Every path that removes or destroys a sequence detaches it first (retail
+    // NiControllerSequence::ClearTargets and the destructor hook both Deactivate), so this never points at a dead sequence.
     NiControllerSequence* sequence = nullptr;
     NiBlendInterpolator* blendInterp = nullptr;
     kWeightState translateWeight;
@@ -115,6 +121,8 @@ public:
     float poseInterpUpdatedTime = -NI_INFINITY;
     NiControllerManager* owner = nullptr;
     UInt32 noBlendSmoothRequesterCount = 0;
+    // Weapon nodes only; survives ClearValues, as it describes the skeleton and its sequences, not the current blend
+    std::unique_ptr<WeaponHandBlend::NodeData> weaponHandBlend;
     
     void ClearValues()
     {
@@ -131,7 +139,6 @@ public:
 
     void Destroy(bool freeMem);
     bool IsEqualEx(const kBlendInterpolatorExtraData* other) const;
-    static void EraseSequence(NiControllerSequence* anim);
 
     static kBlendInterpolatorExtraData* Create();
     static const NiFixedString& GetKey();

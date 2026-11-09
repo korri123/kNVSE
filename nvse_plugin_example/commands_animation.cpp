@@ -1510,8 +1510,8 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 					animTime->trackEndTime = true;
 					animTime->endIfSequenceTypeChanges = false;
 				}
-				auto* extraData = SequenceExtraDatas::GetOrCreate(anim);
-				extraData->startInReloadTargets = true;
+				if (auto* extraData = SequenceExtraDatas::GetOrCreate(anim))
+					extraData->startInReloadTargets = true;
 				return 1.0;
 			}
 		}
@@ -1541,6 +1541,7 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 			NiUpdateData updateData{};
 			manager->Update(&updateData);
 		}
+		SequenceExtraDatas::Delete(anim); // removed from the manager below without RemoveSequence
 		const auto seqCount = manager->sequences.EffectiveSize();
 		manager->sequences.Remove(anim);
 		const auto newSeqCount = manager->sequences.EffectiveSize();
@@ -3306,6 +3307,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 		{
 			g_pluginSettings.blendSmoothing = !g_pluginSettings.blendSmoothing;
 			*result = g_pluginSettings.blendSmoothing;
+		}
+		else if (featureName.str() == "weaponHandBlend")
+		{
+			g_pluginSettings.fixWeaponHandBlend = !g_pluginSettings.fixWeaponHandBlend;
+			*result = g_pluginSettings.fixWeaponHandBlend;
 		}
 		
 		return true;

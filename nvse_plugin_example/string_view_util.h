@@ -34,9 +34,8 @@ namespace sv
 
     inline bool equals_ci(std::string_view left, std::string_view right)
     {
-        if (left.size() != right.size())
-            return false;
-        return _stricmp(left.data(), right.data()) == 0;
+        // views need not be null terminated: compare exactly their characters
+        return left.size() == right.size() && _strnicmp(left.data(), right.data(), left.size()) == 0;
     }
 
     inline bool contains_ci(std::string_view left, std::string_view right)

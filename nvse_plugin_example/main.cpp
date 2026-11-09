@@ -27,6 +27,7 @@
 #include "commands_misc.h"
 #endif
 #include "knvse_events.h"
+#include "debug_tools.h"
 #include "gamebryo/NiStream.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
@@ -872,5 +873,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 
 	ApplyHooks();
 	Events::RegisterEvents();
+	DebugTools::InstallAssertHook();
+	DebugTools::StartCommandPipe();
 	return true;
 }

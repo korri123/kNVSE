@@ -28,6 +28,7 @@ void PopulateVtable(kBlendInterpolatorExtraData* extraData)
 void kBlendInterpolatorExtraData::Destroy(bool freeMem)
 {
     this->items.~vector();
+    this->weaponHandBlend.~unique_ptr();
     if (this->poseInterp)
         this->poseInterp->DecrementRefCount();
     ThisStdCall(0xA7B300, this);
@@ -40,41 +41,12 @@ bool kBlendInterpolatorExtraData::IsEqualEx(const kBlendInterpolatorExtraData* o
     return false;
 }
 
-void kBlendInterpolatorExtraData::EraseSequence(NiControllerSequence* anim)
-{
-    auto* owner = anim->GetOwner();
-    if (!owner)
-        return;
-    auto* palette = owner->GetObjectPalette();
-    if (!palette)
-        return;
-    for (auto& block : anim->GetControlledBlocks())
-    {
-        auto* blendInterp = block.m_pkBlendInterp;
-        if (!blendInterp)
-            continue;
-        auto& idTag = block.GetIDTag(anim);
-        if (!idTag.m_kAVObjectName.data)
-            continue;
-        auto* target = palette->m_kHash.Lookup(idTag.m_kAVObjectName);
-        if (!target)
-            continue;
-        auto* extraData = GetExtraData(target);
-        if (!extraData)
-            continue;
-        for (auto& item : extraData->items)
-        {
-            if (item.sequence == anim)
-                item.ClearValues();
-        }
-    }
-}
-
 kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::Create()
 {
     auto* extraData = NiNew<kBlendInterpolatorExtraData>();
     ThisStdCall(0xA7B2E0, extraData); // ctor
     new(&extraData->items) std::vector<kBlendInterpItem>();
+    new(&extraData->weaponHandBlend) std::unique_ptr<WeaponHandBlend::NodeData>();
     PopulateVtable(extraData);
     extraData->m_kName = GetKey();
     return extraData;
@@ -139,7 +111,6 @@ kBlendInterpItem& kBlendInterpolatorExtraData::CreatePoseInterpItem(NiBlendInter
     DebugAssert(poseIndex != INVALID_INDEX);
     auto& poseItem = GetOrCreateItem(poseInterp);
     poseItem.state = kInterpState::Activating;
-    poseItem.sequence = sequence;
     poseItem.blendInterp = blendInterp;
     poseItem.isPoseInterp = true;
     poseItem.poseInterpIndex = poseIndex;

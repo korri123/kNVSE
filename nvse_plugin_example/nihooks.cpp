@@ -15,6 +15,7 @@
 #include "additive_anims.h"
 #include "blend_smoothing.h"
 #include "sequence_extradata.h"
+#include "weapon_hand_blend.h"
 
 #define BETHESDA_MODIFICATIONS 1
 #define NI_OVERRIDE 0
@@ -196,14 +197,37 @@ bool NiBlendAccumTransformInterpolator::BlendValues(float fTime, NiObjectNET* pk
     return false;
 }
 
+void NiMultiTargetTransformController::UpdateTarget(unsigned short usIndex, float fTime)
+{
+    auto* pkTarget = m_ppkTargets[usIndex];
+    NiQuatTransform kTransform;
+    if (m_pkBlendInterps[usIndex].Update(fTime, pkTarget, kTransform))
+    {
+        if (kTransform.IsTranslateValid())
+        {
+            pkTarget->SetTranslate(kTransform.GetTranslate());
+        }
+        if (kTransform.IsRotateValid())
+        {
+            pkTarget->SetRotate(kTransform.GetRotate());
+        }
+        if (kTransform.IsScaleValid())
+        {
+            pkTarget->SetScale(kTransform.GetScale());
+        }
+    }
+}
+
+// BSTransCon::UpdateAllButTarget
 void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
 {
     if (!GetActive() || !m_usNumInterps)
         return;
-    
+
+    // the weapon is blended after the arms so WeaponHandBlend sees this frame's hand transforms
+    unsigned short usWeaponIndex = m_usNumInterps;
     for (unsigned short us = 0; us < m_usNumInterps; us++)
     {
-        NiQuatTransform kTransform;
         auto* pkTarget = m_ppkTargets[us];
         // We need to check the UpdateSelected flag before updating the
         // interpolator. For instance, BoneLOD might have turned off that
@@ -222,24 +246,40 @@ void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
             // beth bs
             break;
         }
-        
-        auto& kBlendInterp = m_pkBlendInterps[us];
-        if (kBlendInterp.Update(fTime, pkTarget, kTransform))
+        if (usWeaponIndex == m_usNumInterps && WeaponHandBlend::IsWeaponNode(pkTarget))
         {
-            if (kTransform.IsTranslateValid())
-            {
-                pkTarget->SetTranslate(kTransform.GetTranslate());
-            }
-            if (kTransform.IsRotateValid())
-            {
-                pkTarget->SetRotate(kTransform.GetRotate());
-            }
-            if (kTransform.IsScaleValid())
-            {
-                pkTarget->SetScale(kTransform.GetScale());
-            }
+            usWeaponIndex = us;
+            continue;
         }
+        UpdateTarget(us, fTime);
     }
+    if (usWeaponIndex != m_usNumInterps)
+        UpdateTarget(usWeaponIndex, fTime);
+}
+
+// NiMultiTargetTransformController::Update (0xA2FBE0), called from NiAVObject::UpdateObjectControllers
+void NiMultiTargetTransformController::UpdateHooked(NiUpdateData* pkUpdateData)
+{
+    if (!GetActive() || !m_usNumInterps)
+        return;
+
+    const float fTime = pkUpdateData->fTime;
+    // the weapon is blended after the arms so WeaponHandBlend sees this frame's hand transforms
+    unsigned short usWeaponIndex = m_usNumInterps;
+    for (unsigned short us = 0; us < m_usNumInterps; us++)
+    {
+        auto* pkTarget = m_ppkTargets[us];
+        if (!pkTarget || !pkTarget->GetSelectiveUpdate())
+            continue;
+        if (usWeaponIndex == m_usNumInterps && WeaponHandBlend::IsWeaponNode(pkTarget))
+        {
+            usWeaponIndex = us;
+            continue;
+        }
+        UpdateTarget(us, fTime);
+    }
+    if (usWeaponIndex != m_usNumInterps)
+        UpdateTarget(usWeaponIndex, fTime);
 }
 
 bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInterpTarget,
@@ -433,6 +473,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     bool bFirstRotation = true;
     auto interpItems = GetItems();
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
+    WeaponHandBlend::Context weaponHandBlend(pkInterpTarget, kExtraData);
     
     struct ValidTranslate
     {
@@ -477,6 +518,8 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         NiQuatTransform kTransform;
         if (!item.m_spInterpolator->Update(fTime, pkInterpTarget, kTransform))
             continue;
+        if (weaponHandBlend)
+            weaponHandBlend.AddItem(&item, extraItem, fTime, kTransform);
         if (kTransform.IsTranslateValid())
             validTranslates.emplace_back(kTransform.GetTranslate(), &item, extraItem);
         if (kTransform.IsRotateValid())
@@ -509,6 +552,8 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                        translation.item->m_fNormalizedWeight;
         dTotalTransWeight += translation.item->m_fNormalizedWeight;
         bTransChanged = true;
+        if (weaponHandBlend)
+            weaponHandBlend.SetTranslateWeight(translation.item, translation.item->m_fNormalizedWeight);
     }
     
     items.clear();
@@ -558,6 +603,8 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             kRotValue.GetY() + kFinalRotate.GetY(),
             kRotValue.GetZ() + kFinalRotate.GetZ());
         bRotChanged = true;
+        if (weaponHandBlend)
+            weaponHandBlend.SetRotateWeight(rotation.item, weight);
     }
 
     BlendSmoothing::DetachZeroWeightItems(kExtraData, this);
@@ -587,6 +634,8 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         }
     }
 
+    if (weaponHandBlend)
+        weaponHandBlend.Blend(kValue);
     if (kValue.IsTransformInvalid())
     {
         return false;
@@ -621,7 +670,11 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
         if (extraItem && extraItem->isAdditive)
             ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
         else
+        {
             bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
+            if (WeaponHandBlend::Context weaponHandBlend(pkInterpTarget, kExtraData); bReturnValue && weaponHandBlend)
+                weaponHandBlend.BlendSingle(extraItem, GetManagerControlled() ? m_fSingleTime : fTime, kValue);
+        }
         // remove last interp
         if (g_pluginSettings.blendSmoothing && !g_pluginSettings.poseInterpolators && extraItem && extraItem->detached)
         {
@@ -1990,6 +2043,10 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                     blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator &&
                     kItem.m_spInterpolator != nullptr);
                 extraInterpItem.debugState = kInterpDebugState::DetachedButSmoothing;
+                if (WeaponHandBlend::Context weaponHandBlend(target, extraData); weaponHandBlend)
+                    weaponHandBlend.CacheDetachedPose(extraInterpItem, *this, blendInterp->m_pkInterpArray[blendIndex].m_fUpdateTime);
+                // the sequence may be removed and destroyed while this item fades out
+                extraInterpItem.sequence = nullptr;
             }
             kItem.m_ucBlendIdx = INVALID_INDEX;
 
@@ -2133,6 +2190,7 @@ namespace NiHooks
         WriteRelJump(0xA30900, &NiControllerSequence::AttachInterpolatorsHooked);
         WriteRelJump(0xA30540, &NiControllerSequence::DetachInterpolatorsHooked);
         ReplaceVTableEntry(0x1097598, &NiBlendTransformInterpolator::UpdateHooked);
+        ReplaceVTableEntry(0x10964D8, &NiMultiTargetTransformController::UpdateHooked); // blend the weapon after the arms
         WriteRelCall(0xA34E7B, &NiControllerSequence::SetInterpsWeightAndTime); // make it also update values even if single interpolator
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);

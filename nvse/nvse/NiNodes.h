@@ -2454,6 +2454,8 @@ public:
 	UInt16 m_usNumInterps;
 
 	void _Update(float fTime, bool bSelective);
+	void UpdateHooked(NiUpdateData* pkUpdateData);
+	void UpdateTarget(unsigned short usIndex, float fTime);
 
 	std::span<NiAVObject*> GetTargets() const
 	{

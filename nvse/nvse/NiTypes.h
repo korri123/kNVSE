@@ -141,7 +141,7 @@ struct NiPoint3
 	    return x*pt.x+y*pt.y+z*pt.z;
 	}
 
-	NiPoint3 operator* (float fScalar) const
+	NiPoint3 operator* (const float fScalar) const
 	{
 	    return NiPoint3(fScalar*x,fScalar*y,fScalar*z);
 	}
@@ -173,7 +173,7 @@ struct NiPoint3
 	    return *this;
 	}
 
-	NiPoint3& operator*= (float fScalar)
+	NiPoint3& operator*= (const float fScalar)
 	{
 	    x *= fScalar;
 	    y *= fScalar;
@@ -189,6 +189,7 @@ struct NiPoint3
 	    z *= fInvScalar;
 	    return *this;
 	}
+	
 };
 
 // 10 - always aligned?
@@ -221,6 +222,75 @@ struct NiMatrix33
 		pCol[0] = m_pEntry[0][uiCol];
 		pCol[1] = m_pEntry[1][uiCol];
 		pCol[2] = m_pEntry[2][uiCol];
+	}
+	
+	NiMatrix33 operator* (const float fScalar) const
+	{
+		NiMatrix33 result;
+		result.m_pEntry[0][0] = m_pEntry[0][0] * fScalar;
+		result.m_pEntry[0][1] = m_pEntry[0][1] * fScalar;
+		result.m_pEntry[0][2] = m_pEntry[0][2] * fScalar;
+		result.m_pEntry[1][0] = m_pEntry[1][0] * fScalar;
+		result.m_pEntry[1][1] = m_pEntry[1][1] * fScalar;
+		result.m_pEntry[1][2] = m_pEntry[1][2] * fScalar;
+		result.m_pEntry[2][0] = m_pEntry[2][0] * fScalar;
+		result.m_pEntry[2][1] = m_pEntry[2][1] * fScalar;
+		result.m_pEntry[2][2] = m_pEntry[2][2] * fScalar;
+		return result;
+	}
+	
+	NiMatrix33 operator* (const NiMatrix33& mat) const
+	{
+		NiMatrix33 prd;
+
+		prd.m_pEntry[0][0] =
+			m_pEntry[0][0]*mat.m_pEntry[0][0]+
+			m_pEntry[0][1]*mat.m_pEntry[1][0]+
+			m_pEntry[0][2]*mat.m_pEntry[2][0];
+		prd.m_pEntry[1][0] =
+			m_pEntry[1][0]*mat.m_pEntry[0][0]+
+			m_pEntry[1][1]*mat.m_pEntry[1][0]+
+			m_pEntry[1][2]*mat.m_pEntry[2][0];
+		prd.m_pEntry[2][0] =
+			m_pEntry[2][0]*mat.m_pEntry[0][0]+
+			m_pEntry[2][1]*mat.m_pEntry[1][0]+
+			m_pEntry[2][2]*mat.m_pEntry[2][0];
+		prd.m_pEntry[0][1] =
+			m_pEntry[0][0]*mat.m_pEntry[0][1]+
+			m_pEntry[0][1]*mat.m_pEntry[1][1]+
+			m_pEntry[0][2]*mat.m_pEntry[2][1];
+		prd.m_pEntry[1][1] =
+			m_pEntry[1][0]*mat.m_pEntry[0][1]+
+			m_pEntry[1][1]*mat.m_pEntry[1][1]+
+			m_pEntry[1][2]*mat.m_pEntry[2][1];
+		prd.m_pEntry[2][1] =
+			m_pEntry[2][0]*mat.m_pEntry[0][1]+
+			m_pEntry[2][1]*mat.m_pEntry[1][1]+
+			m_pEntry[2][2]*mat.m_pEntry[2][1];
+		prd.m_pEntry[0][2] =
+			m_pEntry[0][0]*mat.m_pEntry[0][2]+
+			m_pEntry[0][1]*mat.m_pEntry[1][2]+
+			m_pEntry[0][2]*mat.m_pEntry[2][2];
+		prd.m_pEntry[1][2] =
+			m_pEntry[1][0]*mat.m_pEntry[0][2]+
+			m_pEntry[1][1]*mat.m_pEntry[1][2]+
+			m_pEntry[1][2]*mat.m_pEntry[2][2];
+		prd.m_pEntry[2][2] =
+			m_pEntry[2][0]*mat.m_pEntry[0][2]+
+			m_pEntry[2][1]*mat.m_pEntry[1][2]+
+			m_pEntry[2][2]*mat.m_pEntry[2][2];
+
+		return prd;
+	}
+	
+	NiPoint3 operator* (const NiPoint3& pt) const
+	{
+		return NiPoint3
+		(
+			m_pEntry[0][0]*pt.x+m_pEntry[0][1]*pt.y+m_pEntry[0][2]*pt.z,
+			m_pEntry[1][0]*pt.x+m_pEntry[1][1]*pt.y+m_pEntry[1][2]*pt.z,
+			m_pEntry[2][0]*pt.x+m_pEntry[2][1]*pt.y+m_pEntry[2][2]*pt.z
+		);
 	}
 };
 
@@ -455,6 +525,17 @@ struct NiTransform
 	NiMatrix33	m_Rotate;		// 00
 	NiPoint3	m_Translate;	// 24
 	float		m_fScale;		// 30
+
+	NiTransform operator*(const NiTransform &xform) const
+	{
+		NiTransform res;
+
+		res.m_fScale = m_fScale * xform.m_fScale;
+		res.m_Rotate = m_Rotate * xform.m_Rotate;
+		res.m_Translate = m_Translate + m_Rotate * xform.m_Translate * m_fScale;
+
+		return res;
+	}
 };
 
 // 10
