@@ -157,5 +157,7 @@ namespace BlendSmoothing
 {
     void ApplyForItems(kBlendInterpolatorExtraData* extraData, const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type);
     void DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp);
+    // The player's animations (either person) while VATS is up: blended as the game does, no smoothing
+    bool IsPlayerInVATS(const NiControllerManager* owner);
     void WriteHooks();
 }

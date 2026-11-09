@@ -104,7 +104,8 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		return destAnim;
 	}
 
-	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug)
+	// (not the player's in VATS: its aims blend as the game's, see BlendSmoothing::IsPlayerInVATS)
+	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug && !BlendSmoothing::IsPlayerInVATS(animData->controllerManager))
 	{
 		if (BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		{

@@ -147,11 +147,36 @@ NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObjec
     return poseInterp;
 }
 
+bool BlendSmoothing::IsPlayerInVATS(const NiControllerManager* owner)
+{
+    if (!owner || !g_thePlayer || VATSCameraData::GetSingleton()->eMode == VATSCameraData::VATS_MODE_NONE)
+        return false;
+    const auto* thirdPerson = g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr;
+    const auto* firstPerson = g_thePlayer->firstPersonAnimData;
+    return (thirdPerson && owner == thirdPerson->controllerManager) || (firstPerson && owner == firstPerson->controllerManager);
+}
+
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type)
 {
     if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount || items.empty())
         return;
+
+    // In VATS the player's weights are the game's own: smoothing them left the gun lagging its aim when a queued shot
+    // fired, so shots missed. The smoothed weights follow the game's meanwhile, so nothing jumps when VATS ends.
+    if (IsPlayerInVATS(extraData->owner))
+    {
+        for (auto [itemPtr, extraItemPtr] : items)
+        {
+            if (!itemPtr->m_spInterpolator || !extraItemPtr || extraItemPtr->debugState == kInterpDebugState::NotSet)
+                continue;
+            auto& weightState = *extraItemPtr->GetWeightState(type);
+            weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
+            weightState.calculatedNormalizedWeight = itemPtr->m_fNormalizedWeight;
+            weightState.lastSmoothedWeight = itemPtr->m_fNormalizedWeight;
+        }
+        return;
+    }
 
     const auto deltaTime = g_timeGlobal->secondsPassed;
     const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
