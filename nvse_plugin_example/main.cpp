@@ -681,6 +681,52 @@ void ApplyHolsterFix()
 	}
 }
 
+// NPCs' holstered weapons: an animation that keys the Weapon bone while the weapon is sheathed (e.g. Idle Variety's IVWeap_* idles, started with the weapon
+// drawn and still playing after the NPC holsters) moves the holstered weapon off its holster, and it stays wherever that animation last left it, as nothing
+// else keys the bone. The holster pose (the Weapon bone's parent, from the unequip's prn: key, and its local transform) is taken from the unequip while it
+// plays, and put back after each animation update for as long as the weapon stays sheathed under that parent.
+struct HolsterPose
+{
+	NiNode* parent;
+	NiTransform local;
+};
+static std::unordered_map<Actor*, HolsterPose> g_holsterPoses;
+
+void ApplyNPCHolsterFix(AnimData* animData, Actor* actor)
+{
+	if (!g_pluginSettings.fixNPCHolsteredWeapon || !animData || !actor || actor == g_thePlayer)
+		return;
+	auto* process = actor->baseProcess;
+	NiNode* weaponNode = process && process->processLevel <= 1 ? process->weaponNode : nullptr; // (MiddleHighProcess::pWeaponNode, what GetWeaponBone gives without a biped)
+	if (!weaponNode)
+	{
+		g_holsterPoses.erase(actor);
+		return;
+	}
+	if (auto* weaponAnim = animData->animSequence[kSequence_Weapon])
+	{
+		if (weaponAnim->animGroup && weaponAnim->animGroup->GetBaseGroupID() == kAnimGroup_Unequip)
+			g_holsterPoses[actor] = { weaponNode->m_pkParent, weaponNode->m_kLocal };
+		else
+			g_holsterPoses.erase(actor);
+		return;
+	}
+	if (process->isWeaponOut)
+	{
+		g_holsterPoses.erase(actor);
+		return;
+	}
+	const auto iter = g_holsterPoses.find(actor);
+	if (iter == g_holsterPoses.end())
+		return;
+	if (weaponNode->m_pkParent != iter->second.parent)
+	{
+		g_holsterPoses.erase(iter);
+		return;
+	}
+	weaponNode->m_kLocal = iter->second.local;
+}
+
 void ClearResultCaches()
 {
 	g_animationResultCache.clear();

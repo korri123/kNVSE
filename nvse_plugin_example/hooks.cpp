@@ -26,6 +26,7 @@
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
+void ApplyNPCHolsterFix(AnimData* animData, Actor* actor);
 
 std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
 
@@ -736,6 +737,7 @@ void ApplyHooks()
 	conf.fixWrongAnimName = ini.GetOrCreate("Anim Fixes", "bFixWrongAnimName", 1, "; try to fix animations where the name of the animation file does not match anim group name.");
 	conf.fixMissingPrnKey = ini.GetOrCreate("Anim Fixes", "bFixMissingPrnKey", 1, "; try to fix animations where the prn key is missing in the first person animation.");
 	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest.");
+	conf.fixNPCHolsteredWeapon = ini.GetOrCreate("Anim Fixes", "bFixNPCHolsteredWeapon", 1, "; keep NPCs' holstered weapons where their unequip animation put them when another animation (e.g. a weapon idle still playing after the NPC holstered) keys the Weapon bone.");
 
 	const std::string legacyAnimTimePaths = ini.GetOrCreate("Anim Fixes", "sLegacyAnimTimePaths", "B42Inject,B42Interact,B42Loot", "; use legacy anim time algorithm for these paths (these mods rely on bugged behavior from previous versions of kNVSE).");
 	if (!legacyAnimTimePaths.empty())
@@ -1119,6 +1121,7 @@ void ApplyHooks()
 	{
 		OnActorUpdateAnimation::Dispatch(actor);
 		ThisStdCall(uiAnimDataUpdateControllersAddr, animData, actor);
+		ApplyNPCHolsterFix(animData, actor);
 	}), &uiAnimDataUpdateControllersAddr);
 
 	static UInt32 uiGetAttackSpeedMultGetAnimAddr;
