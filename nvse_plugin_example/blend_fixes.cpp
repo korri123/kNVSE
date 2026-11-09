@@ -147,8 +147,8 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 
 	if (destAnim->m_eState == NiControllerSequence::EASEOUT)
 	{
-		srcAnim->DeactivateNoReset(blendTime, false);
-		destAnim->ActivateNoReset(blendTime, false);
+		srcAnim->DeactivateNoReset(blendTime, false, animData->timePassed);
+		destAnim->ActivateNoReset(blendTime, false, animData->timePassed);
 		return SKIP;
 	}
 

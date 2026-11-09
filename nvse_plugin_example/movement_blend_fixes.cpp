@@ -38,14 +38,14 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	if (currentMoveAnim && currentMoveAnim != pkSequence && currentMoveAnim->m_eState != NiControllerSequence::EASEOUT)
 	{
 		if (currentMoveAnim->m_eState == NiControllerSequence::EASEIN)
-			currentMoveAnim->DeactivateNoReset(fDuration, false);
+			currentMoveAnim->DeactivateNoReset(fDuration, false, animData->timePassed);
 		else
 			currentMoveAnim->Deactivate(fDuration, false);
 	}
 
 	if (pkSequence->m_eState == NiControllerSequence::EASEOUT)
 	{
-		if (!pkSequence->ActivateNoReset(fDuration, false))
+		if (!pkSequence->ActivateNoReset(fDuration, false, animData->timePassed))
 			return pkSequence;
 	}
 	else
