@@ -44,45 +44,14 @@ namespace
         return reinterpret_cast<size_t>(hJIP) + aiAddress - 0x10000000;
     }
     
-    NiAVObject* FindSceneRoot(NiAVObject* base)
-    {
-        static NiFixedString sSceneRoot = "Scene Root";
-        if (base->m_pcName == sSceneRoot)
-            return base;
-        if (base->m_pkParent)
-            return FindSceneRoot(base->m_pkParent);
-        return nullptr;
-    }
-    
-    void RemoveObjectFromController(NiAVObject* base, NiAVObject* obj)
-    {
-        if (auto* controller = base->GetController(NiMultiTargetTransformController::ms_RTTI))
-        {
-            auto* transCon = static_cast<NiMultiTargetTransformController*>(controller);
-            transCon->RemoveNodeRecurse(obj);
-        }
-    }
-    
-    void ResetSceneGraph(NiAVObject* base)
-    {
-        if (auto* manager = base->GetController(NiControllerManager::ms_RTTI))
-        {
-            auto* controllerManager = static_cast<NiControllerManager*>(manager);
-            if (controllerManager->m_spObjectPalette)
-                controllerManager->m_spObjectPalette->ResetAndFillFromScenegraph();
-        }
-    }
-    
+    // JIP's ReloadBipedAnim detaches the parts itself instead of through BipedAnim::RemovePart
     template <UInt32 ReturnAddress>
     void __fastcall DetachChildHook(NiNode* pNode, void*, NiAVObject* pObject)
     {
         auto* addrOfRetn = static_cast<UInt32*>(_AddressOfReturnAddress());
-        auto* sceneRoot = FindSceneRoot(pNode);
-        if (sceneRoot)
-            RemoveObjectFromController(sceneRoot, pObject);
+        if (auto* manager = NiControllerManager::FindForObject(pObject))
+            manager->ForgetObjectRecurse(pObject);
         pNode->DetachChild(pObject);
-        if (sceneRoot)
-            ResetSceneGraph(sceneRoot);
         *addrOfRetn = GetJIPAddress(ReturnAddress);
     }
     

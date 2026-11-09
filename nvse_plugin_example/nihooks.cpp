@@ -1329,7 +1329,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             continue;
         const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
         auto& idTag = kItem.GetIDTag(this);
-        auto* target = m_pkOwner->GetTarget(kItem.m_spInterpCtlr, idTag);
+        auto* target = m_pkOwner->GetTarget(kItem, idTag);
         if (!target) 
         {
             // hello "Ripper" from 1hmidle.kf
@@ -1907,16 +1907,27 @@ bool NiControllerManager::DeactivateSequence(NiControllerSequence* pkSequence, f
 #endif
 }
 
-NiAVObject* NiControllerManager::GetTarget(NiInterpController* controller,
+NiAVObject* NiControllerManager::GetTarget(const NiControllerSequence::InterpArrayItem& kItem,
     const NiControllerSequence::IDTag& idTag)
 {
+    NiInterpController* controller = kItem.m_spInterpCtlr;
+    auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller);
+    if (multiTarget && kItem.m_pkBlendInterp)
+    {
+        // the controller writes slot i's blend interpolator into slot i's target; the palette only maps names and can hold
+        // another node of the same name or, after a biped part was removed, a freed one
+        const auto blendInterps = multiTarget->GetBlendInterps();
+        const auto offset = reinterpret_cast<UInt32>(kItem.m_pkBlendInterp) - reinterpret_cast<UInt32>(blendInterps.data());
+        if (offset < blendInterps.size_bytes() && offset % sizeof(NiBlendTransformInterpolator) == 0)
+            return multiTarget->m_ppkTargets[offset / sizeof(NiBlendTransformInterpolator)]; // null once the node left the scene graph
+    }
     if (!GetObjectPalette())
         return nullptr;
     if (auto* target = m_spObjectPalette->m_kHash.Lookup(idTag.m_kAVObjectName))
         return target;
     if (auto* target = m_spObjectPalette->m_pkScene->GetObjectByName(idTag.m_kAVObjectName))
         return target;
-    if (auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller))
+    if (multiTarget)
     {
         auto targets = multiTarget->GetTargets();
         auto iter = std::ranges::find_if(targets, [&](const auto* target)
@@ -1957,6 +1968,44 @@ NiMultiTargetTransformController* NiControllerManager::GetMultiTargetTransformCo
     return nullptr;
 }
 
+NiControllerManager* NiControllerManager::FindForObject(const NiAVObject* object)
+{
+    // start above object: a biped part can carry a controller manager of its own (JohnnyGuitar keeps them)
+    for (auto* node = object->m_pkParent; node; node = node->m_pkParent)
+    {
+        auto* manager = static_cast<NiControllerManager*>(node->GetController(NiControllerManager::ms_RTTI));
+        if (manager && manager->m_spObjectPalette && manager->m_spObjectPalette->m_pkScene == node)
+            return manager;
+    }
+    return nullptr;
+}
+
+void NiControllerManager::ForgetObjectRecurse(NiAVObject* object) const
+{
+    auto* palette = m_spObjectPalette;
+    auto* multiTarget = GetMultiTargetTransformController();
+    const auto forget = [&](NiAVObject* node)
+    {
+        // only entries pointing at this very node: a skeleton node of the same name stays
+        NiAVObject* entry;
+        if (palette && node->m_pcName.data && palette->m_kHash.GetAt(node->m_pcName, entry) && entry == node)
+            palette->m_kHash.RemoveAt(node->m_pcName);
+        if (multiTarget)
+        {
+            // NiMultiTargetTransformController::RemoveNodeRecurse clears the slot the same way, the slots keep their indices
+            for (auto*& target : multiTarget->GetTargets())
+            {
+                if (target == node)
+                    target = nullptr;
+            }
+        }
+    };
+    if (auto* node = object->GetAsNiNode())
+        node->RecurseTree(forget);
+    else
+        forget(object);
+}
+
 void NiControllerSequence::DetachInterpolators() const
 {
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
@@ -1985,7 +2034,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         {
             const auto& idTag = kItem.GetIDTag(this);
             DebugAssert(m_pkOwner && m_pkOwner->m_spObjectPalette);
-            auto* target = m_pkOwner ? m_pkOwner->GetTarget(kItem.m_spInterpCtlr, idTag) : nullptr;
+            auto* target = m_pkOwner ? m_pkOwner->GetTarget(kItem, idTag) : nullptr;
             const auto blendIndex = kItem.m_ucBlendIdx;
             if (!target)
             {
@@ -2180,6 +2229,16 @@ __declspec(naked) void PoseSequenceIDTagHook()
     }
 }
 
+// BipedAnim::RemovePart (0x4AB020) calls this first, before it detaches the part now or queues the detach. Armor, gloves
+// and the Pip-Boy enter the palette (and the multi-target controller once a KF names one of their nodes) whenever
+// Animation::ReloadTargets runs while they are worn, yet the part is freed without either being told
+void __fastcall RemoveBipedPartHook(void* biped, void*, NiAVObject* part)
+{
+    if (auto* manager = NiControllerManager::FindForObject(part))
+        manager->ForgetObjectRecurse(part);
+    ThisStdCall(0x4AB130, biped, part); // BipedAnim::RemoveDecalPlacementVectors
+}
+
 namespace NiHooks
 {
     void WriteHooks()
@@ -2192,6 +2251,7 @@ namespace NiHooks
         ReplaceVTableEntry(0x1097598, &NiBlendTransformInterpolator::UpdateHooked);
         ReplaceVTableEntry(0x10964D8, &NiMultiTargetTransformController::UpdateHooked); // blend the weapon after the arms
         WriteRelCall(0xA34E7B, &NiControllerSequence::SetInterpsWeightAndTime); // make it also update values even if single interpolator
+        WriteRelCall(0x4AB03A, &RemoveBipedPartHook);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant);

@@ -63,7 +63,7 @@ void AdditiveManager::AddReferencePoseTransforms(NiControllerSequence* additiveS
         if (!additiveInterp)
             continue;
         
-        NiAVObject* targetNode = owner->GetTarget(refBlock.m_spInterpCtlr, idTag);
+        NiAVObject* targetNode = owner->GetTarget(refBlock, idTag);
         if (!targetNode)
             continue;
 
@@ -392,7 +392,7 @@ void NiControllerSequence::AttachInterpolatorsAdditive(char cPriority, SequenceE
             const auto cInterpPriority = static_cast<unsigned char>(kItem.m_ucPriority) != 0xFFui8 ? kItem.m_ucPriority : cPriority;
 
             auto& idTag = kItem.GetIDTag(this);
-            auto* target = m_pkOwner->GetTarget(kItem.m_spInterpCtlr, idTag);
+            auto* target = m_pkOwner->GetTarget(kItem, idTag);
             if (!target) 
             {
                 // hello "Ripper" from 1hmidle.kf

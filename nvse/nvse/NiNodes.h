@@ -3047,11 +3047,19 @@ public:
 		return nullptr;
 	}
 
-	NiAVObject* GetTarget(NiInterpController* controller, const NiControllerSequence::IDTag& idTag);
+	// The node kItem's blend interpolator animates: its slot in the multi-target controller, else the palette entry
+	NiAVObject* GetTarget(const NiControllerSequence::InterpArrayItem& kItem, const NiControllerSequence::IDTag& idTag);
 
 	NiDefaultAVObjectPalette* GetObjectPalette() const;
 	
 	NiMultiTargetTransformController* GetMultiTargetTransformController() const;
+
+	// The manager whose scene object hangs under (nearest ancestor that is its palette's scene), or null
+	static NiControllerManager* FindForObject(const NiAVObject* object);
+
+	// Drops the palette entries and multi-target controller targets that point into object's subtree; call before the
+	// subtree leaves the scene graph, the engine only rebuilds both in Animation::ReloadTargets
+	void ForgetObjectRecurse(NiAVObject* object) const;
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
 
