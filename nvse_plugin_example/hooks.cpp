@@ -20,6 +20,7 @@
 #include "jip_fixes.h"
 #include "knvse_events.h"
 #include "movement_blend_fixes.h"
+#include "pose_blend_fixes.h"
 #include "sequence_extradata.h"
 #include "weapon_hand_blend.h"
 
@@ -790,6 +791,7 @@ void ApplyHooks()
 #if _DEBUG
 	conf.weaponHandBlendDebugLog = ini.GetOrCreate("Blend Fixes", "bWeaponHandBlendDebugLog", 0, "; log to kNVSE.log how long each animation holds the weapon in each hand, as detected by bFixWeaponHandBlend.");
 #endif
+	conf.fixBlendFromPose = ini.GetOrCreate("Blend Fixes", "bFixBlendFromPose", 1, "; start animations that the game blends in from a frozen snapshot of the pose (drawing weapons, hit reactions, special idles, the Pip-Boy) with a normal ease-in instead: lower priority animations keep playing under them during the blend and they play from their start instead of holding their first frame, and the animations the game cut off for them fade out over the same time. Knocked down, ragdolled and dead actors keep the snapshot. Requires bBlendSmoothing.");
 	conf.fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim button. kNVSE will trigger a blend to the hipfire attack animation when the attack key is released.");
 
 	conf.fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
@@ -824,6 +826,8 @@ void ApplyHooks()
 	if (conf.blendSmoothing && conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
 	BlendFixes::ApplyHooks();
+	if (conf.blendSmoothing && conf.fixBlendFromPose)
+		PoseBlendFixes::ApplyHooks();
 	
 	if (ini.GetOrCreate("Engine Fixes", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{
@@ -1230,6 +1234,8 @@ void ApplyHooks()
 		auto* animData = GET_CALLER_VAR_LAMBDA(AnimData*, -0x8);
 		const auto sequenceType = GET_CALLER_VAR_LAMBDA(eAnimSequence, -0x4);
 		bool result;
+		if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixBlendFromPose)
+			PoseBlendFixes::RecordHardCut(animData, pkSequence, fEaseOut);
 		if (g_pluginSettings.blendSmoothing && pkSequence->animGroup->GetSequenceType() == kSequence_Movement &&
 			pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
 		{

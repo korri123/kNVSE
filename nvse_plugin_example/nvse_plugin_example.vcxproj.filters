@@ -84,6 +84,7 @@
     <ClCompile Include="blend_smoothing.cpp" />
     <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
     <ClCompile Include="movement_blend_fixes.cpp" />
+    <ClCompile Include="pose_blend_fixes.cpp" />
     <ClCompile Include="gamebryo\NiStream.cpp" />
     <ClCompile Include="sequence_extradata.cpp" />
     <ClCompile Include="weapon_hand_blend.cpp" />
@@ -190,6 +191,7 @@
     <ClInclude Include="containers.h" />
     <ClInclude Include="lib\memory_pool\MemoryPool.h" />
     <ClInclude Include="movement_blend_fixes.h" />
+    <ClInclude Include="pose_blend_fixes.h" />
     <ClInclude Include="gamebryo\NiStream.h" />
     <ClInclude Include="sequence_extradata.h" />
     <ClInclude Include="weapon_hand_blend.h" />

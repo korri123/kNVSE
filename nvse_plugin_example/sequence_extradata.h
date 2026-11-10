@@ -8,9 +8,20 @@
 class SequenceExtraData
 {
 public:
+    // Animation::ClearGroup deactivating the sequence without an ease-out (PoseBlendFixes): its state just before, and
+    // the owner's animation time of the cut
+    struct HardCut
+    {
+        NiControllerSequence::AnimState eState;
+        float fStartTime;
+        float fEndTime;
+        float fTime;
+    };
+
     bool startInReloadTargets = false;
     bool needsStoreTargets = false;
     std::optional<AdditiveSequenceMetadata> additiveMetadata;
+    std::optional<HardCut> hardCut;
 };
 
 // kNVSE's data about the sequences of the NiControllerManagers animating a node, kept as extra data on that node (the
