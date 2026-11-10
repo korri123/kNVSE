@@ -626,46 +626,6 @@ namespace AllowAttackKey
 }
 
 
-namespace HolsterUnholsterLocomotionFixes
-{
-	void ApplyHooks()
-	{
-	
-		// AnimData::GetNthSequenceGroupID(animData, sequenceType_1);
-		// Fix issue where new movement anim is played during equip or unequip
-		WriteRelCall(0x897237, INLINE_HOOK(UInt16, __fastcall, AnimData* animData, void*, eAnimSequence sequenceType)
-		{
-			auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-			auto* _ebp = GetParentBasePtr(addrOfRetn);
-			const auto groupId = animData->groupIDs[sequenceType];
-			const auto nextGroupId = *reinterpret_cast<UInt16*>(_ebp - 0x24);
-			if (sequenceType == kSequence_Movement && groupId != nextGroupId && (groupId & 0xFF) == (nextGroupId & 0xFF))
-			{
-				if (auto* weaponAnim = animData->animSequence[kSequence_Weapon]; weaponAnim && weaponAnim->animGroup)
-				{
-					const auto baseWeaponGroupId = weaponAnim->animGroup->GetBaseGroupID();
-					if (baseWeaponGroupId == kAnimGroup_Equip || baseWeaponGroupId == kAnimGroup_Unequip)
-					{
-						*addrOfRetn = 0x897682;
-						return 0;
-					}
-				}
-			}
-			return groupId;
-		}));
-	}
-
-	bool IsTryingToEndEquip(UInt32* addrOfRetn)
-	{
-		// need to check here to prevent game from trying to end movement sequence during equip/unequip
-
-		auto* _ebp = GetParentBasePtr(addrOfRetn);
-		const auto nextGroupId = *reinterpret_cast<AnimGroupID*>(_ebp - 0x40);
-		return nextGroupId == kAnimGroup_Equip || nextGroupId == kAnimGroup_Unequip;
-	}
-}
-
-
 void ApplyFixLoopingReloadStartHooks()
 {
 #if 0 // obsidian fucked up looping reload priorities so the flicker bug appears with this enabled
@@ -821,9 +781,6 @@ void ApplyHooks()
 
 	// WriteRelJump(0x4951D7, FixSpineBlendBug);
 
-#if 0
-	HolsterUnholsterLocomotionFixes::ApplyHooks();
-#endif
 	if (conf.blendSmoothing && conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
 	BlendFixes::ApplyHooks();
@@ -1214,15 +1171,18 @@ void ApplyHooks()
 		return ThisStdCall<double>(0x646020, weap, hasMod);
 	}), &uiGetAttackSpeedMultGetAnimAttackMultAddr);
 
+	// NiControllerSequence::GetState of the movement sequence in Actor::PickAnimations, deciding whether to BlendOut the
+	// movement section because the group picked this update belongs to another section ([ebp-0x40], its base group)
 	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
 	{
 		// INACTIVE -> do not end movement
 		// ANIMATING -> end movement
-		auto* addrOfRetn = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-#if 0
-		if (HolsterUnholsterLocomotionFixes::IsTryingToEndEquip(addrOfRetn))
+		// Equip/Unequip are picked on the update they start, the next one picks the movement group again from the move
+		// flags: ending the movement there restarted it (from a frozen pose, BlendFromPose, with the gait at its first
+		// frame) on every draw and holster while moving. Their legs are below the movement's priority anyway.
+		const auto pickedGroup = GET_CALLER_VAR_LAMBDA(UInt32, -0x40) & 0xFF;
+		if (pickedGroup == kAnimGroup_Equip || pickedGroup == kAnimGroup_Unequip)
 			return NiControllerSequence::INACTIVE;
-#endif
 		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
 			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
 		// stop game from not ending move anims immediately
