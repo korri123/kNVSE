@@ -225,6 +225,69 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void*, UInt16 groupID
 	return fullGroupId;
 }
 
+// The engine picks the reload path (looping or not) by TESObjectWEAP::IsReloadLoop (0x4938C0), set from the base
+// reload anim alone, but plays the mod reload anim when the weapon has an Increase Clip Capacity mod
+// (TESObjectWEAP::GetReloadAnimGroup 0x51E2A0). Looping base, non-looping mod anim: the looping path asked for
+// "ReloadM - 23", no such group, no reload. Non-looping base, looping mod anim: the loop played once as a plain reload.
+namespace ModReloadAnimFix
+{
+	bool HasClipMod(const BaseProcess::WeaponInfo* weaponInfo)
+	{
+		return weaponInfo && weaponInfo->HasModEffect(TESObjectWEAP::kWeaponModEffect_IncreaseClipCapacity);
+	}
+
+	bool IsLoopingReload(const TESObjectWEAP* weapon, bool hasClipMod)
+	{
+		return weapon && weapon->HasLoopingReloadAnim(hasClipMod);
+	}
+
+	// PlayerCharacter::ReloadAlt, Actor::Reload: their clip mod argument
+	bool __fastcall IsReloadLoopClipModArgHook(const TESObjectWEAP* weapon)
+	{
+		return IsLoopingReload(weapon, GET_CALLER_VAR(bool, 0x10));
+	}
+
+	// Animation::Update starting the queued reload group, picks the anim action. Delayed: Stewie's Tweaks replaces this
+	// call in its NVSEPlugin_Load (IsReloadLoopNullCheck, kept in IsLoopingReload)
+	bool __fastcall IsReloadLoopQueuedReloadHook(const TESObjectWEAP* weapon)
+	{
+		const auto* actor = GET_CALLER_VAR(const Actor*, -0x6C);
+		return IsLoopingReload(weapon, HasClipMod(actor->baseProcess->GetWeaponInfo()));
+	}
+
+	// InventoryMenu::DoClick reloading after the player picked ammo
+	bool __fastcall IsReloadLoopPlayerHook(const TESObjectWEAP* weapon)
+	{
+		return IsLoopingReload(weapon, HasClipMod(g_thePlayer->baseProcess->GetWeaponInfo()));
+	}
+
+	// Actor::HandlePostAnimationActions after a round of a looping reload passes no clip mod
+	template <int WeaponInfoOffset>
+	UInt32 __fastcall GetReloadAnimGroupHook(const TESObjectWEAP* weapon, void*, bool)
+	{
+		const auto* weaponInfo = GET_CALLER_VAR(const BaseProcess::WeaponInfo*, WeaponInfoOffset);
+		return ThisStdCall<UInt32>(0x51E2A0, weapon, HasClipMod(weaponInfo));
+	}
+
+	bool g_enabled = false;
+
+	void ApplyHooks()
+	{
+		g_enabled = true;
+		WriteRelCall(0x95D400, IsReloadLoopClipModArgHook);
+		WriteRelCall(0x8A8716, IsReloadLoopClipModArgHook);
+		WriteRelCall(0x78074C, IsReloadLoopPlayerHook);
+		WriteRelCall(0x8BAC17, GetReloadAnimGroupHook<-0x1C>); // NPC ending the loop
+		WriteRelCall(0x8BACF1, GetReloadAnimGroupHook<-0x3C>); // next round
+	}
+
+	void WriteDelayedHooks()
+	{
+		if (g_enabled)
+			WriteRelCall(0x4913C4, IsReloadLoopQueuedReloadHook);
+	}
+}
+
 bool __fastcall IsCustomAnimKey(const char* key)
 {
 	const static auto customKeys = {
@@ -767,6 +830,9 @@ void ApplyHooks()
 		WriteRelCall(0x8BABCA, LoopingReloadFixHook);
 		WriteRelCall(0x948CEC, LoopingReloadFixHook); // part of cancelling looping reload after shooting
 	}
+
+	if (ini.GetOrCreate("Engine Fixes", "bFixModReloadAnims", 1, "; fix weapons whose Increase Clip Capacity mod switches the reload animation between a looping (ReloadW-Z) and a non-looping one: the reload did not play at all, or its loop played only once"))
+		ModReloadAnimFix::ApplyHooks();
 
 	if (ini.GetOrCreate("Engine Fixes", "bFixIdleStrafing", 1, "; allow player to strafe/turn sideways mid idle animation"))
 		FixIdleAnimStrafe();
@@ -1349,6 +1415,7 @@ void WriteDelayedHooks()
 #endif
 	NiHooks::WriteDelayedHooks();
 	AllowAttackKey::ApplyHooks();
+	ModReloadAnimFix::WriteDelayedHooks();
 
 	// hooking TESForm::GetFlags
 	// Runs on empty clip when reloading

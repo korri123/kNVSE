@@ -2862,9 +2862,16 @@ public:
 	float GetItemModValue1(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value1Mod[which]; }
 	float GetItemModValue2(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value2Mod[which]; }
 
-	bool HasLoopingReloadAnim() const
+	// the reload anim the engine plays: modReloadAnim with an Increase Clip Capacity mod (TESObjectWEAP::GetReloadAnimGroup 0x51E2A0)
+	UInt8 GetReloadAnim(bool hasClipMod) const
 	{
-		return reloadAnim >= eReload_W && reloadAnim <= eReload_Z;
+		return hasClipMod && modReloadAnim != 0xFF ? modReloadAnim : reloadAnim;
+	}
+
+	bool HasLoopingReloadAnim(bool hasClipMod) const
+	{
+		const auto anim = GetReloadAnim(hasClipMod);
+		return anim >= eReload_W && anim <= eReload_Z;
 	}
 
 	float GetShotSpeed(bool hasIncreasedRateOfFire) const

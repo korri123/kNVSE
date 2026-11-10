@@ -239,6 +239,12 @@ public:
 
 		bool HasWeaponMod(WeaponModFlags mod) const;
 
+		// ItemChange::HasWeaponMod: an attached mod has this effect (TESObjectWEAP::kWeaponModEffect_*)
+		bool HasModEffect(UInt32 effect) const
+		{
+			return ThisStdCall<bool>(0x4BDA70, this, effect);
+		}
+
 		float GetShotTime() const
 		{
 			auto hasIncreasedRateOfFire = ThisStdCall<bool>(0x4BDA70, this, TESObjectWEAP::kWeaponModEffect_IncreaseRateOfFire);

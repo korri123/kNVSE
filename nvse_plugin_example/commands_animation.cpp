@@ -1252,12 +1252,13 @@ void OnReloadHandler::SetDidReload(Actor* actor, ReloadType reloadType)
 	const auto key = GetReloadKey(actor);
 	if (!key)
 		return;
-	auto* weapon = actor->GetWeaponForm();
-	if (!weapon)
+	const auto* weaponInfo = actor->baseProcess->GetWeaponInfo();
+	if (!weaponInfo || !weaponInfo->weapon)
 		return;
+	const bool hasClipMod = weaponInfo->HasModEffect(TESObjectWEAP::kWeaponModEffect_IncreaseClipCapacity);
 	std::unique_lock lock(g_reloadMapMutex);
 	g_reloadMap.insert_or_assign(*key, ReloadHandler {
-		.isLoopingReload = weapon->HasLoopingReloadAnim(),
+		.isLoopingReload = weaponInfo->weapon->HasLoopingReloadAnim(hasClipMod),
 		.reloadType = reloadType
 	});
 }
