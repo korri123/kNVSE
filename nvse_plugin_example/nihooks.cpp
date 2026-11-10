@@ -540,11 +540,13 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
     thread_local std::vector<std::pair<InterpArrayItem*, kBlendInterpItem*>> items;
     items.clear();
+    // m_fLastTime is still this blend's previous evaluation (UpdateHooked sets it afterwards)
+    const float fSmoothingDelta = BlendSmoothing::GetElapsedTime(m_fLastTime, fTime);
     
     for (auto& item : validTranslates)
         items.emplace_back(item.item, item.extraItem);
     ComputeNormalizedWeights(items);
-    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Translate);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Translate, fSmoothingDelta);
 
     for (auto& translation : validTranslates)
     {
@@ -561,7 +563,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         items.emplace_back(item.item, item.extraItem);
 
     ComputeNormalizedWeights(items);
-    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Scale);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Scale, fSmoothingDelta);
 
     for (auto& scale : validScales)
     {
@@ -575,7 +577,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     for (auto& item : validRotations)
         items.emplace_back(item.item, item.extraItem);
     ComputeNormalizedWeights(items);
-    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate, fSmoothingDelta);
     
     for (auto& rotation : validRotations)
     {
@@ -2243,6 +2245,27 @@ void __fastcall RemoveBipedPartHook(void* biped, void*, NiAVObject* part)
     ThisStdCall(0x4AB130, biped, part); // BipedAnim::RemoveDecalPlacementVectors
 }
 
+// BSAnimGroupSequence::Deactivate (0x4EFDC0): when a holster, equip or unequip ends on an actor whose bone LOD has switched
+// bones off (actors the camera can't see), the engine updates just those bones once, at the sequence's last time, so they
+// take its final pose: the Weapon bone its holster. They were not evaluated while it played, so their smoothed weights
+// still favoured the animations from before it; smoothing this update left the holstered weapon partway to the hand
+static UInt32 uiUpdateLODBonesAddr;
+void __fastcall UpdateLODBonesHook(NiMultiTargetTransformController* controller, void*, float fTime, bool bSelective)
+{
+    const auto setUnsmoothed = [controller](bool unsmoothed)
+    {
+        for (unsigned short us = 0; us < controller->m_usNumInterps; us++)
+        {
+            if (auto* target = controller->m_ppkTargets[us])
+                if (auto* extraData = kBlendInterpolatorExtraData::GetExtraData(target))
+                    extraData->unsmoothedUpdate = unsmoothed;
+        }
+    };
+    setUnsmoothed(true);
+    ThisStdCall(uiUpdateLODBonesAddr, controller, fTime, bSelective); // BSTransCon::UpdateAllButTarget, or Stewie's
+    setUnsmoothed(false);
+}
+
 namespace NiHooks
 {
     void WriteHooks()
@@ -2276,6 +2299,8 @@ namespace NiHooks
     // override stewie's tweaks
     void WriteDelayedHooks()
     {
+        // after Stewie's NVAC, which replaces this call with its own controller update
+        WriteRelCall(0x4EFE53, &UpdateLODBonesHook, &uiUpdateLODBonesAddr);
 #if _DEBUG
         WriteRelCall(0x4F0087, &NiMultiTargetTransformController::_Update);
         WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);

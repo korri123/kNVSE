@@ -147,15 +147,37 @@ NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObjec
     return poseInterp;
 }
 
+float BlendSmoothing::GetElapsedTime(float fLastTime, float fTime)
+{
+    // not evaluated before, or the animation time went back: one frame
+    if (fLastTime == -NI_INFINITY || fTime < fLastTime)
+        return g_timeGlobal->secondsPassed;
+    return fTime - fLastTime;
+}
+
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
-    const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type)
+    const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type,
+    float fDeltaTime)
 {
     if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount || items.empty())
         return;
 
-    const auto deltaTime = g_timeGlobal->secondsPassed;
+    if (extraData->unsmoothedUpdate)
+    {
+        for (auto [itemPtr, extraItemPtr] : items)
+        {
+            if (!itemPtr->m_spInterpolator || !extraItemPtr || extraItemPtr->debugState == kInterpDebugState::NotSet)
+                continue;
+            auto& weightState = *extraItemPtr->GetWeightState(type);
+            weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
+            weightState.calculatedNormalizedWeight = itemPtr->m_fNormalizedWeight;
+            weightState.lastSmoothedWeight = itemPtr->m_fNormalizedWeight;
+        }
+        return;
+    }
+
     const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
-    const auto smoothingRate = 1.0f - std::exp(-deltaTime / smoothingTime);
+    const auto smoothingRate = 1.0f - std::exp(-fDeltaTime / smoothingTime);
 
     constexpr float MIN_WEIGHT = 0.001f;
 

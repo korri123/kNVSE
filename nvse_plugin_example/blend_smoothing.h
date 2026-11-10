@@ -121,6 +121,9 @@ public:
     float poseInterpUpdatedTime = -NI_INFINITY;
     NiControllerManager* owner = nullptr;
     UInt32 noBlendSmoothRequesterCount = 0;
+    // set only while the engine snaps the bones bone LOD switched off to an ending (un)equip (UpdateLODBonesHook): their
+    // weights are taken as computed, and the smoothed state follows them
+    bool unsmoothedUpdate = false;
     // Weapon nodes only; survives ClearValues, as it describes the skeleton and its sequences, not the current blend
     std::unique_ptr<WeaponHandBlend::NodeData> weaponHandBlend;
     
@@ -155,7 +158,10 @@ public:
 
 namespace BlendSmoothing
 {
-    void ApplyForItems(kBlendInterpolatorExtraData* extraData, const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type);
+    // fDeltaTime: animation time since the blend interpolator was last evaluated (GetElapsedTime), not the frame time:
+    // bone LOD stops evaluating the bones of actors the camera can't see, and their weights must catch up afterwards
+    void ApplyForItems(kBlendInterpolatorExtraData* extraData, const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type, float fDeltaTime);
+    float GetElapsedTime(float fLastTime, float fTime);
     void DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp);
     void WriteHooks();
 }
