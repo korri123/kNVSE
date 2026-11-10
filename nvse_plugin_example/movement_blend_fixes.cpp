@@ -1,5 +1,9 @@
 ﻿#include "movement_blend_fixes.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+
 #include "blend_fixes.h"
 #include "hooks.h"
 
@@ -21,6 +25,147 @@ void FixJumpLoopMovementSpeed(AnimData* animData, BSAnimGroupSequence* pkSequenc
 	}
 }
 
+namespace
+{
+	// Walk and run cycles (3rd person): the movement groups whose variants (weapon type, sneak, power armor: the group ID's
+	// high byte) are the same alternating steps
+	bool IsGaitCycle(const BSAnimGroupSequence* sequence)
+	{
+		if (!sequence->animGroup || sequence->m_eCycleType != NiControllerSequence::LOOP ||
+			sequence->m_fEndKeyTime <= sequence->m_fBeginKeyTime)
+			return false;
+		const auto groupId = sequence->animGroup->GetBaseGroupID();
+		return groupId >= kAnimGroup_Forward && groupId <= kAnimGroup_FastRight;
+	}
+
+	constexpr unsigned int kGaitSamples = 32;
+	constexpr unsigned int kLegBones = 3;
+	using Legs = std::array<std::array<NiAVObject*, kLegBones>, 2>;
+	// both feet relative to their own mean over the cycle, in the thighs' parent space
+	using FeetCycle = std::array<std::array<NiPoint3, 2>, kGaitSamples>;
+
+	bool GetLegs(AnimData* animData, Legs& legs)
+	{
+		// BSUtilities::GetObjectByName interns its char* in the global string table on every call
+		static const NiFixedString names[2][kLegBones] = {
+			{ "Bip01 L Thigh", "Bip01 L Calf", "Bip01 L Foot" },
+			{ "Bip01 R Thigh", "Bip01 R Calf", "Bip01 R Foot" },
+		};
+		if (!animData->nBip01)
+			return false;
+		for (unsigned int leg = 0; leg < 2; ++leg)
+			for (unsigned int bone = 0; bone < kLegBones; ++bone)
+				if (!(legs[leg][bone] = animData->nBip01->GetObjectByName(names[leg][bone])))
+					return false;
+		return true;
+	}
+
+	// A node's local transform as the interpolator animates it at fTime; channels it does not animate keep the node's
+	NiTransform SampleLocal(NiInterpolator* interpolator, NiAVObject* node, float fTime)
+	{
+		NiTransform result = node->m_kLocal;
+		NiQuatTransform value;
+		if (interpolator->Update(fTime, node, value))
+		{
+			if (value.IsTranslateValid())
+				result.m_Translate = value.GetTranslate();
+			if (value.IsRotateValid())
+			{
+				NiQuaternion rotation = value.GetRotate();
+				rotation.Normalize();
+				rotation.ToRotation(result.m_Rotate);
+			}
+		}
+		return result;
+	}
+
+	// The feet over one cycle of the sequence. Interpolators are shared by every clone of a KF and cache their last
+	// evaluation by time: sampling other times must not leave that cache claiming them (as WeaponHandBlend does).
+	bool SampleFeet(const NiControllerSequence* sequence, const Legs& legs, FeetCycle& cycle)
+	{
+		std::array<std::array<NiInterpolator*, kLegBones>, 2> interpolators{};
+		for (unsigned int leg = 0; leg < 2; ++leg)
+		{
+			for (unsigned int bone = 0; bone < kLegBones; ++bone)
+			{
+				const auto* block = sequence->GetControlledBlock(legs[leg][bone]->m_pcName);
+				if (!block || !block->m_spInterpolator)
+					return false;
+				interpolators[leg][bone] = block->m_spInterpolator;
+			}
+		}
+		const float fBegin = sequence->m_fBeginKeyTime;
+		const float fLength = sequence->m_fEndKeyTime - fBegin;
+		std::array<NiPoint3, 2> mean{};
+		for (unsigned int sample = 0; sample < kGaitSamples; ++sample)
+		{
+			const float fTime = fBegin + fLength * static_cast<float>(sample) / kGaitSamples;
+			for (unsigned int leg = 0; leg < 2; ++leg)
+			{
+				NiTransform chain = SampleLocal(interpolators[leg][0], legs[leg][0], fTime);
+				for (unsigned int bone = 1; bone < kLegBones; ++bone)
+					chain = chain * SampleLocal(interpolators[leg][bone], legs[leg][bone], fTime);
+				cycle[sample][leg] = chain.m_Translate;
+				mean[leg] += chain.m_Translate;
+			}
+		}
+		for (const auto& legInterpolators : interpolators)
+			for (auto* interpolator : legInterpolators)
+				interpolator->m_fLastTime = -NI_INFINITY;
+		for (auto& feet : cycle)
+			for (unsigned int leg = 0; leg < 2; ++leg)
+				feet[leg] -= mean[leg] / static_cast<float>(kGaitSamples);
+		return true;
+	}
+
+	// The fraction of a cycle by which the destination's steps lag the source's: where the feet of both cycles match
+	// best. Variants of a gait don't share where their cycle starts (h2hforward, sneakmtforward and 2hhbackward are half
+	// a cycle from mtforward/mtbackward) nor how their footstep text keys are placed.
+	float FindCycleOffset(const FeetCycle& source, const FeetCycle& dest)
+	{
+		std::array<float, kGaitSamples> costs{};
+		unsigned int best = 0;
+		for (unsigned int shift = 0; shift < kGaitSamples; ++shift)
+		{
+			float cost = 0.0f;
+			for (unsigned int sample = 0; sample < kGaitSamples; ++sample)
+			{
+				const auto& dst = dest[(sample + shift) % kGaitSamples];
+				for (unsigned int leg = 0; leg < 2; ++leg)
+					cost += (source[sample][leg] - dst[leg]).SqrLength();
+			}
+			costs[shift] = cost;
+			if (cost < costs[best])
+				best = shift;
+		}
+		// between samples: the vertex of the parabola through the best shift and its neighbours
+		const float fBefore = costs[(best + kGaitSamples - 1) % kGaitSamples];
+		const float fAfter = costs[(best + 1) % kGaitSamples];
+		const float fCurvature = fBefore - 2.0f * costs[best] + fAfter;
+		const float fDelta = fCurvature > 0.0f ? std::clamp(0.5f * (fBefore - fAfter) / fCurvature, -0.5f, 0.5f) : 0.0f;
+		return (static_cast<float>(best) + fDelta) / kGaitSamples;
+	}
+
+	// The time in pkDest's cycle at which its steps match where pkSource is in its cycle, or NAN when either is not a
+	// variant of the same walk/run cycle with leg tracks
+	float FindMatchingGaitTime(AnimData* animData, const BSAnimGroupSequence* pkSource, const BSAnimGroupSequence* pkDest)
+	{
+		if (!IsGaitCycle(pkSource) || !IsGaitCycle(pkDest) || pkSource->animGroup->GetBaseGroupID() != pkDest->animGroup->GetBaseGroupID())
+			return NAN;
+		if (pkSource->m_fLastTime == -NI_INFINITY)
+			return NAN; // not evaluated since it was started: no time of its own yet
+		Legs legs;
+		FeetCycle source, dest;
+		if (!GetLegs(animData, legs) || !SampleFeet(pkSource, legs, source) || !SampleFeet(pkDest, legs, dest))
+			return NAN;
+		const float fSourceLength = pkSource->m_fEndKeyTime - pkSource->m_fBeginKeyTime;
+		const float fSourcePhase = (pkSource->m_fLastScaledTime - pkSource->m_fBeginKeyTime) / fSourceLength;
+		float fPhase = fSourcePhase + FindCycleOffset(source, dest);
+		fPhase -= std::floor(fPhase);
+		return pkDest->m_fBeginKeyTime + fPhase * (pkDest->m_fEndKeyTime - pkDest->m_fBeginKeyTime);
+	}
+}
+
 BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence)
 {
 	FixJumpLoopMovementSpeed(animData, pkSequence);
@@ -33,6 +178,16 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		{
 			return seq->animGroup->GetSequenceType() == kSequence_Movement && seq->m_eState != NiControllerSequence::EASEOUT;
 		});
+	}
+
+	// a variant of the gait playing (weapon type switched at an equip's Attach or unequip's Detach key, sneaking, ...)
+	// cross fades from the same step instead of from its first frame
+	float fGaitTime = NAN;
+	if (g_pluginSettings.fixGaitSwitch && currentMoveAnim && currentMoveAnim != pkSequence &&
+		pkSequence->m_eState == NiControllerSequence::INACTIVE &&
+		(currentMoveAnim->m_eState == NiControllerSequence::ANIMATING || currentMoveAnim->m_eState == NiControllerSequence::EASEIN))
+	{
+		fGaitTime = FindMatchingGaitTime(animData, currentMoveAnim, pkSequence);
 	}
 
 	if (currentMoveAnim && currentMoveAnim != pkSequence && currentMoveAnim->m_eState != NiControllerSequence::EASEOUT)
@@ -52,6 +207,8 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	{
 		if (!pkSequence->Activate(0, true, pkSequence->m_fSeqWeight, fDuration, nullptr, false))
 			return pkSequence;
+		if (!std::isnan(fGaitTime))
+			pkSequence->m_fOffset = fGaitTime / pkSequence->m_fFrequency - animData->timePassed;
 	}
 
 	SetAnimDataState(animData, pkSequence);
