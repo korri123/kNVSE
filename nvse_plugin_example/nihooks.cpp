@@ -504,7 +504,9 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
     for (auto& item : interpItems)
     {
-        if (!item.m_spInterpolator || !GetUpdateTimeForItem(fTime, item))
+        // GetUpdateTimeForItem replaces the time with the item's own (its sequence's); fTime stays the blend's
+        float fUpdateTime = fTime;
+        if (!item.m_spInterpolator || !GetUpdateTimeForItem(fUpdateTime, item))
             continue;
         auto* extraItem = kExtraData ? kExtraData->GetItem(item.m_spInterpolator) : nullptr;
         if (extraItem)
@@ -516,10 +518,10 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         }
         
         NiQuatTransform kTransform;
-        if (!item.m_spInterpolator->Update(fTime, pkInterpTarget, kTransform))
+        if (!item.m_spInterpolator->Update(fUpdateTime, pkInterpTarget, kTransform))
             continue;
         if (weaponHandBlend)
-            weaponHandBlend.AddItem(&item, extraItem, fTime, kTransform);
+            weaponHandBlend.AddItem(&item, extraItem, fUpdateTime, kTransform);
         if (kTransform.IsTranslateValid())
             validTranslates.emplace_back(kTransform.GetTranslate(), &item, extraItem);
         if (kTransform.IsRotateValid())
