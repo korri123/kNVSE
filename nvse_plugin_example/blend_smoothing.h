@@ -119,6 +119,9 @@ public:
     bool unsmoothedUpdate = false;
     // which items were attached, at which priorities, when the blend interpolator was last evaluated (BlendSmoothing::Step)
     UInt32 attachedItems = 0;
+    // the node is a child of its sequences' accum root (Bip01 NonAccum): it is posed relative to the actor. Set on attach,
+    // survives ClearValues like weaponHandBlend
+    bool accumRootChild = false;
     // Weapon nodes only; survives ClearValues, as it describes the skeleton and its sequences, not the current blend
     std::unique_ptr<WeaponHandBlend::NodeData> weaponHandBlend;
     
@@ -165,7 +168,8 @@ namespace BlendSmoothing
         float fInputChange = 0.0f;
         // other items are attached, or at other priorities
         bool bItemsChanged = false;
-        // an attached item wants no smoothing (kBlendInterpItem::noSmoothing): nothing is taken up, and what was is dropped
+        // an attached item wants no smoothing (kBlendInterpItem::noSmoothing), or the node is posed relative to an actor the
+        // engine is turning at once: nothing is taken up, and what was is dropped
         bool bDisabled = false;
     private:
         UInt32 m_uiAttachedItems = 0;

@@ -43,6 +43,8 @@ kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::Create()
     ThisStdCall(0xA7B2E0, extraData); // ctor
     new(&extraData->items) std::vector<kBlendInterpItem>();
     new(&extraData->weaponHandBlend) std::unique_ptr<WeaponHandBlend::NodeData>();
+    // NiNew does not construct
+    extraData->accumRootChild = false;
     PopulateVtable(extraData);
     extraData->m_kName = GetKey();
     return extraData;
@@ -136,6 +138,31 @@ void BlendSmoothing::Step::AddItem(const NiBlendInterpolator::InterpArrayItem& i
     extraItem->lastEaseSpinner = item.m_fEaseSpinner;
 }
 
+// The children of the accum root (Bip01 NonAccum) are posed relative to the actor, which the engine turns at once when it
+// sits down or stands up: the furniture enter and exit animations are made for the way the actor faces after the turn,
+// which comes with the switch of sequences, without a blend. The actor's angle is set before the evaluation that blends
+// the switch, its 3D is turned after it, before the frame is drawn. Whatever weight smoothing took up from that switch
+// posed the node relative to the old facing, turned with the actor: the body flipped around and turned back over
+// fBlendSmoothingRate.
+static bool ActorTurnsAtOnce(const kBlendInterpolatorExtraData* extraData)
+{
+    NiAVObject* target = extraData->target;
+    if (!extraData->accumRootChild || !target || !target->m_pkParent)
+        return false;
+    auto* actor = TESObjectREFR::FindReferenceFor3D(target->m_pkParent);
+    if (!actor || !actor->IsActor())
+        return false;
+    // the facing of the 3D the node is posed in, against the actor's angle: turning while walking or in place stays well
+    // below this per frame, the engine turns actors onto furniture by multiples of 90 degrees
+    constexpr float MIN_COS_TURN = 0.70710678f; // 45 degrees
+    const NiMatrix33& kRotate = target->m_pkParent->m_kWorld.m_Rotate;
+    const float fForwardX = kRotate.m_pEntry[0][1];
+    const float fForwardY = kRotate.m_pEntry[1][1];
+    const float fLength = std::sqrt(fForwardX * fForwardX + fForwardY * fForwardY);
+    return fLength > 0.5f
+        && fForwardX * std::sin(actor->rotZ) + fForwardY * std::cos(actor->rotZ) < MIN_COS_TURN * fLength;
+}
+
 void BlendSmoothing::Step::End(kBlendInterpolatorExtraData* extraData)
 {
     if (!extraData)
@@ -143,8 +170,9 @@ void BlendSmoothing::Step::End(kBlendInterpolatorExtraData* extraData)
     bItemsChanged = extraData->attachedItems != m_uiAttachedItems;
     extraData->attachedItems = m_uiAttachedItems;
 
-    // asked for from attach to detach, whether or not the item is blended this time
-    bDisabled = ra::any_of(extraData->items, [](const kBlendInterpItem& item) { return item.noSmoothing && !item.detached; });
+    // noSmoothing is asked for from attach to detach, whether or not the item is blended this time
+    bDisabled = ra::any_of(extraData->items, [](const kBlendInterpItem& item) { return item.noSmoothing && !item.detached; })
+        || ActorTurnsAtOnce(extraData);
     if (bDisabled)
     {
         // items still fading out are cut (DetachZeroWeightItems), and smoothing starts over once it is back

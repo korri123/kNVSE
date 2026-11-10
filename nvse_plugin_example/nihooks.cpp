@@ -1175,6 +1175,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         DebugAssert(extraData);
         extraData->target = target;
         extraData->owner = m_pkOwner;
+        extraData->accumRootChild = target->m_pkParent && target->m_pkParent == m_pkAccumRoot;
         auto& extraInterpItem = extraData->GetOrCreateItem(kItem.m_spInterpolator);
         if (extraInterpItem.blendInterp)
             DebugAssert(extraInterpItem.blendInterp == pkBlendInterp);

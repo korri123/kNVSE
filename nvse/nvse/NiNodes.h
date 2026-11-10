@@ -1965,7 +1965,7 @@ public:
 	float m_fDestFrame;
 	NiControllerSequence* m_pkPartnerSequence;
 	NiFixedString m_kAccumRootName;
-	UInt32 m_pkAccumRoot;
+	NiAVObject* m_pkAccumRoot;
 	UInt32 m_spDeprecatedStringPalette; // deprecated string palette
 	UInt16 usCurAnimNIdx;
 	BSAnimNote* spAnimNotes;
