@@ -1158,17 +1158,26 @@ void ApplyHooks()
 		return NiControllerSequence::ANIMATING;
 	}));
 
-	// NiControllerManager::DeactivateSequence
+	// NiControllerManager::DeactivateSequence in Animation::ClearGroup: the Animation at [ebp-8], the section at [ebp-4]
 	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
 	{
+		auto* animData = GET_CALLER_VAR_LAMBDA(AnimData*, -0x8);
+		const auto sequenceType = GET_CALLER_VAR_LAMBDA(eAnimSequence, -0x4);
+		bool result;
 		if (g_pluginSettings.blendSmoothing && pkSequence->animGroup->GetSequenceType() == kSequence_Movement &&
 			pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
 		{
-			// Animation::ClearGroup: the Animation at [ebp-8]
-			const auto* animData = GET_CALLER_VAR_LAMBDA(AnimData*, -0x8);
-			return pkSequence->DeactivateNoReset(fEaseOut, false, animData->timePassed);
+			result = pkSequence->DeactivateNoReset(fEaseOut, false, animData->timePassed);
 		}
-		return ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
+		else
+		{
+			result = ThisStdCall<bool>(0x47B220, manager, pkSequence, fEaseOut);
+		}
+		if (sequenceType == kSequence_Movement) [[msvc::noinline_calls]]
+		{
+			MovementBlendFixes::TrackLastEaseOut(animData);
+		}
+		return result;
 	}));
 
 	// NiControllerManager::CreateTempBlendSequence

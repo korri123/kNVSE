@@ -5,4 +5,5 @@
 namespace MovementBlendFixes
 {
     BSAnimGroupSequence* PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence);
+    void TrackLastEaseOut(AnimData* animData);
 }
