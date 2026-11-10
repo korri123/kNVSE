@@ -163,12 +163,26 @@ thread_local GameAnimMap* s_customMap = nullptr;
 std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData)
 {
 	const auto key = std::make_pair(path.data(), animData);
+	std::optional<BSAnimationContext> cached;
 	{
 		std::shared_lock lock(g_loadCustomAnimationMutex);
 		if (const auto iter = g_cachedAnimMap.find(key); iter != g_cachedAnimMap.end())
-		{
-			return iter->second;
-		}
+			cached = iter->second;
+	}
+	if (cached)
+	{
+		auto* manager = animData->controllerManager;
+		if (cached->anim->m_pkOwner == manager)
+			return cached;
+		// The engine removed the sequence from the manager: Animation::AnimIdleFree removes the sequence a special or
+		// dynamic idle played, which is this one when it replaced the idle's KF. Started without an owner it would never
+		// update, and the idle that plays it would never end. The cached base still holds a reference, so no other
+		// actor's Animation::AddAnimation takes this sequence (it clones unless the KFModel holds the only reference).
+		if (!cached->anim->m_pkOwner && manager && manager->AddSequence(cached->anim, NiFixedString(), true))
+			return cached;
+		ERROR_LOG(FormatString("Failed to add anim %s back to the controller manager of actor %X", path.data(),
+			animData->actor ? animData->actor->refID : 0));
+		return std::nullopt;
 	}
 
 	const auto tryCreateAnimation = [&]() -> std::optional<BSAnimationContext>
@@ -558,12 +572,31 @@ void FilterAmmoSwaps(std::vector<AnimPath*>& candidates, Actor* actor)
 	}) | std::ranges::to<std::vector<AnimPath*>>();
 }
 
+// Special and dynamic idles (TESIdleForm, hit reactions, Pip-Boy) all share one anim group: an override replaces only the
+// idle whose KF has its file name. Animation::SpecialIdlePlay adds the idle's sequence to the map before playing the group.
+std::optional<std::string_view> GetPlayingIdleFileStem(AnimData* animData, UInt16 groupId)
+{
+	if (groupId != kAnimGroup_DynamicIdle && groupId != kAnimGroup_SpecialIdle)
+		return std::nullopt;
+	auto* base = animData->mapAnimSequenceBase->Lookup(groupId);
+	auto* anim = base ? base->GetSequenceByIndex(-1) : nullptr;
+	if (!anim)
+		return std::nullopt;
+	return sv::get_file_stem(anim->m_kName.CStr());
+}
+
+bool IsIdleFileStem(const AnimPath& animPath, std::string_view idleFileStem)
+{
+	return sv::equals_ci(sv::get_file_stem(animPath.path), idleFileStem);
+}
+
 std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData)
 {
 	if (const auto stacksIter = overrides.stacks.find(groupId); stacksIter != overrides.stacks.end())
 	{
 		auto& animStacks = stacksIter->second;
 		auto* actor = animData->actor;
+		const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
 		
 		auto& stack = animStacks.anims;
 		for (auto& ctx : ra::reverse_view(stack))
@@ -583,6 +616,8 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 			};
 			if (!ctx->loaded)
 				ctx->Load();
+			if (idleFileStem && ra::none_of(ctx->anims, _L(const auto& animPath, IsIdleFileStem(*animPath, *idleFileStem))))
+				continue;
 			if (ctx->conditionScript)
 			{
 				if (ctx->pollCondition)
@@ -642,26 +677,19 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 	
 	const auto getAnimPath = [&]() -> AnimPath*
 	{
-		if (ctx.anims.size() == 1) [[likely]]
+		const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
+		if (ctx.anims.size() == 1 && !idleFileStem) [[likely]]
 			return ctx.anims[0].get();
 		auto candidates = ctx.anims 
             | std::views::transform([](const auto& anim) { return anim.get(); }) 
             | std::ranges::to<std::vector<AnimPath*>>();
 
-		if (groupId == kAnimGroup_DynamicIdle || groupId == kAnimGroup_SpecialIdle)
+		if (idleFileStem)
 		{
-			auto* dynamicIdle = animData->mapAnimSequenceBase->Lookup(groupId);
-			BSAnimGroupSequence* idleAnimQueued;
-			if (dynamicIdle && ((idleAnimQueued = dynamicIdle->GetSequenceByIndex(-1))))
+			candidates = candidates | std::views::filter([&](const AnimPath* animPath)
 			{
-				// handle pip boy dynamic idles
-				const auto queuedFileStem = sv::get_file_stem(idleAnimQueued->m_kName.CStr());
-				candidates = candidates | std::views::filter([=](const auto& animPath)
-				{
-					const auto candidateFileStem = sv::get_file_stem(animPath->path);
-					return sv::equals_ci(candidateFileStem, queuedFileStem);
-				}) | std::ranges::to<std::vector<AnimPath*>>();
-			}
+				return IsIdleFileStem(*animPath, *idleFileStem);
+			}) | std::ranges::to<std::vector<AnimPath*>>();
 		}
 		const auto baseGroupId = static_cast<AnimGroupID>(groupId);
 		if (ctx.hasStartAnim)

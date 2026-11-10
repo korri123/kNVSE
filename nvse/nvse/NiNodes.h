@@ -3004,7 +3004,7 @@ public:
 	bool DeactivateSequence(NiControllerSequence* pkSequence, float fEaseOutTime);
 	bool AddSequence(NiControllerSequence* pkSequence, const NiFixedString& kName, bool bStoreTargets)
 	{
-		return ThisStdCall(0xA2F0C0, this, pkSequence, &kName, bStoreTargets);
+		return ThisStdCall<bool>(0xA2F0C0, this, pkSequence, &kName, bStoreTargets);
 	}
 
 	void DeactivateAll(float fEaseOutTime = 0.0f)
