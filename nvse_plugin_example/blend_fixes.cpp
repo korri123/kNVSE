@@ -163,7 +163,7 @@ namespace
 		if (!sourceSeq->m_spTextKeys || !targetSeq->m_spTextKeys)
 			return;
 		auto sourceKeys = sourceSeq->m_spTextKeys->GetKeys();
-		auto targetKeys = sourceSeq->m_spTextKeys->GetKeys();
+		auto targetKeys = targetSeq->m_spTextKeys->GetKeys();
 		auto sourceCount = ra::count_if(sourceKeys, _L(auto& key, sv::starts_with_ci(key.m_kText.CStr(), "SoundPath:")));
 		auto targetCount = ra::count_if(targetKeys, _L(auto& key, sv::starts_with_ci(key.m_kText.CStr(), "SoundPath:")));
 		if (sourceCount != targetCount || sourceCount == 0)
@@ -185,46 +185,81 @@ namespace
 		}
 	}
 	
-	bool TransitionToAttack(AnimData* animData, AnimGroupID targetGroupId, eAnimSequence sourceSequenceId)
+	// The blend the game gives the same switch outside an attack (ApplyAimBlendFix: the ease in of the aim group switched
+	// to). The attack's own blend in is made for starting a shot (1 frame in the vanilla KFs), not for moving the weapon
+	// between the hip and the sights.
+	float GetAimBlendTime(AnimData* animData, bool toIronSights)
+	{
+		if (const auto* aimAnim = GetAnimByGroupID(animData, toIronSights ? kAnimGroup_AimIS : kAnimGroup_Aim))
+			return aimAnim->GetEaseInTime();
+		return GetDefaultBlendTime() / GetDefaultAnimMult();
+	}
+
+	// Cross fades the attack to its hip fire / iron sights counterpart at the same point of the attack. Both keep playing
+	// through the blend: a transition (StartBlend) holds both sequences at their frame until it ends, which delays the
+	// attack, its text keys and the end of the attack by the blend time.
+	bool TransitionToAttack(AnimData* animData, AnimGroupID targetGroupId, eAnimSequence sourceSequenceId, float blend)
 	{
 		auto* sourceSeq = animData->animSequence[sourceSequenceId];
 		auto* targetSeq = GetAnimByGroupID(animData, targetGroupId);
-		if (!targetSeq || !sourceSeq || !sourceSeq->animGroup)
+		if (!targetSeq || !targetSeq->animGroup || !sourceSeq || !sourceSeq->animGroup || targetSeq == sourceSeq)
 			return false;
-		if (sourceSeq->m_eState != NiControllerSequence::ANIMATING || targetSeq->m_eState != NiControllerSequence::INACTIVE)
+		// the source may still be easing in (the first person attack: the engine cross fades it in from the aim over
+		// 0.16 s with the 9mm Pistol, the third person one over a frame), the target still easing out from a switch the
+		// other way
+		if (sourceSeq->m_eState != NiControllerSequence::ANIMATING && sourceSeq->m_eState != NiControllerSequence::EASEIN)
+			return false;
+		if (targetSeq->m_eState != NiControllerSequence::INACTIVE && targetSeq->m_eState != NiControllerSequence::EASEOUT)
 			return false;
 
-		const auto blend = GetDefaultBlendTime(targetSeq, sourceSeq);
+		const auto sequenceType = targetSeq->animGroup->GetGroupInfo()->sequenceType;
+		const bool isThirdPersonWeapon = animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon
+			&& sequenceType <= kSequence_WeaponDown;
+		// the up/down variants are weighted by the aim pitch
+		if (isThirdPersonWeapon)
+			targetSeq->m_fSeqWeight = sourceSeq->m_fSeqWeight;
+
+		const auto fTime = animData->timePassed;
 		const auto destFrame = sourceSeq->m_fLastScaledTime / sourceSeq->m_fEndKeyTime * targetSeq->m_fEndKeyTime;
-		sourceSeq->StartBlend(targetSeq, blend, destFrame, 0, sourceSeq->m_fSeqWeight, targetSeq->m_fSeqWeight,
-		                      nullptr);
-		targetSeq->Update(animData->timePassed, true);
+
+		// the NoReset variants continue the ease from the weight the sequence has now
+		if (blend > 0.0f && sourceSeq->m_eState == NiControllerSequence::EASEIN)
+			sourceSeq->DeactivateNoReset(blend, false, fTime);
+		else
+			sourceSeq->Deactivate(blend, false);
+
+		if (blend > 0.0f && targetSeq->m_eState == NiControllerSequence::EASEOUT)
+			targetSeq->ActivateNoReset(blend, false, fTime);
+		else
+		{
+			if (targetSeq->m_eState != NiControllerSequence::INACTIVE)
+				targetSeq->Deactivate(0.0f, false);
+			if (!targetSeq->Activate(0, true, targetSeq->m_fSeqWeight, blend, nullptr, false))
+				return false;
+		}
+		targetSeq->m_fOffset = destFrame / targetSeq->m_fFrequency - fTime;
+		targetSeq->Update(fTime, true);
 
 		HandleExtraOperations(animData, targetSeq);
 		HandleSoundPathMismatch(animData, sourceSeq, targetSeq);
 
 		animData->SetCurrentSequence(targetSeq, false);
 
-		const auto sequenceType = targetSeq->animGroup->GetGroupInfo()->sequenceType;
-		if (animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon && sequenceType <=
-			kSequence_WeaponDown)
-		{
-			targetSeq->m_fSeqWeight = sourceSeq->m_fSeqWeight;
+		if (isThirdPersonWeapon)
 			if (auto* highProcess = animData->actor->baseProcess; IS_TYPE(highProcess, HighProcess))
 				highProcess->weaponSequence[sequenceType - kSequence_Weapon] = targetSeq;
-		}
 		return true;
 	}
 
-	bool TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID targetGroupId)
+	void TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID targetGroupId,
+		bool toIronSights)
 	{
-		TransitionToAttack(animData3rd, targetGroupId, kSequence_Weapon);
-		
-		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 1), kSequence_WeaponUp); // up
-		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 2), kSequence_WeaponDown); // down
+		const auto blend3rd = GetAimBlendTime(animData3rd, toIronSights);
+		TransitionToAttack(animData3rd, targetGroupId, kSequence_Weapon, blend3rd);
+		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 1), kSequence_WeaponUp, blend3rd); // up
+		TransitionToAttack(animData3rd, static_cast<AnimGroupID>(targetGroupId + 2), kSequence_WeaponDown, blend3rd); // down
 
-		TransitionToAttack(animData1st, targetGroupId, kSequence_Weapon);
-		return true;
+		TransitionToAttack(animData1st, targetGroupId, kSequence_Weapon, GetAimBlendTime(animData1st, toIronSights));
 	}
 
 	void ApplyAttackTransitionFix(bool toIronSights)
@@ -252,7 +287,7 @@ namespace
 		const auto curGroupId = curWeaponAnim->animGroup->groupID;
 		const auto targetGroupId = static_cast<AnimGroupID>(toIronSights ? curGroupId + 3 : curGroupId - 3);
 
-		TransitionAttackWithVariants(animData3rd, animData1st, targetGroupId);
+		TransitionAttackWithVariants(animData3rd, animData1st, targetGroupId, toIronSights);
 
 		auto* finalSequence = GetAnimByGroupID(animData3rd, targetGroupId);
 		const auto animAction = static_cast<Decoding::AnimAction>(highProcess->GetCurrentAnimAction());

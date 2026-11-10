@@ -1866,8 +1866,9 @@ float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence)
 	const static auto sNoBlend = NiFixedString("noBlend");
 	if (destSequence->m_spTextKeys->FindFirstByName(sNoBlend))
 		return 0.0f;
-	const auto defaultBlend = GetDefaultBlendTime();
+	// the engine divides every blend by fAnimationMult, the default included (Animation::StartGroup)
 	const auto blendMult = GetDefaultAnimMult();
+	const auto defaultBlend = GetDefaultBlendTime() / blendMult;
 	if (!destSequence->animGroup)
 		return defaultBlend;
 	const auto blendOut = max(destSequence->animGroup->blendOut, destSequence->animGroup->blend);
@@ -1881,13 +1882,14 @@ float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimG
 	const static auto sNoBlend = NiFixedString("noBlend");
 	if (destSequence->m_spTextKeys->FindFirstByName(sNoBlend))
 		return 0.0f;
-	const auto defaultBlend = GetDefaultBlendTime();
 	const auto blendMult = GetDefaultAnimMult();
+	const auto defaultBlend = GetDefaultBlendTime() / blendMult;
 
 	if (!destSequence->animGroup)
 		return defaultBlend;
 
-	const float sourceBlendOut = sourceSequence ? max(destSequence->animGroup->blend, destSequence->animGroup->blendOut) : 0;
+	const float sourceBlendOut = sourceSequence && sourceSequence->animGroup
+		? max(sourceSequence->animGroup->blend, sourceSequence->animGroup->blendOut) : 0;
 	const float destBlendIn = max(destSequence->animGroup->blend, destSequence->animGroup->blendIn);
 
 	float blendValue;
