@@ -2245,6 +2245,40 @@ void __fastcall RemoveBipedPartHook(void* biped, void*, NiAVObject* part)
     ThisStdCall(0x4AB130, biped, part); // BipedAnim::RemoveDecalPlacementVectors
 }
 
+// NiNode::~NiNode (0xA5E930) releases the children before ~NiObjectNET releases the extra data and then the controllers.
+// A NiControllerManager on the node dies last (one owned by its scene alone, e.g. the gore effect FXGorePopHead01), and
+// ~NiControllerSequence would deactivate its active sequences then, with the palette and the multi-target controller
+// pointing at freed nodes. Making that same call here, before anything is released, runs it on a whole scene
+void __fastcall DeactivateSequencesOfDyingNode(NiNode* node)
+{
+    auto* manager = static_cast<NiControllerManager*>(node->GetController(NiControllerManager::ms_RTTI));
+    if (!manager)
+        return;
+    // Deactivate leaves the set as it is (NiControllerManager::Update drops inactive sequences later)
+    for (auto* sequence : manager->m_kActiveSequences.ToSpan())
+    {
+        if (sequence && sequence->m_eState != NiControllerSequence::INACTIVE)
+            sequence->Deactivate(0.0f, false);
+    }
+}
+
+__declspec(naked) void NiNodeDestructorHook()
+{
+    __asm
+    {
+        push ecx
+        call DeactivateSequencesOfDyingNode
+        pop ecx
+        // overwritten: push ecx; push esi; mov esi, ecx; push edi
+        push ecx
+        push esi
+        mov esi, ecx
+        push edi
+        mov eax, 0xA5E935
+        jmp eax
+    }
+}
+
 // BSAnimGroupSequence::Deactivate (0x4EFDC0): when a holster, equip or unequip ends on an actor whose bone LOD has switched
 // bones off (actors the camera can't see), the engine updates just those bones once, at the sequence's last time, so they
 // take its final pose: the Weapon bone its holster. They were not evaluated while it played, so their smoothed weights
@@ -2279,6 +2313,7 @@ namespace NiHooks
         ReplaceVTableEntry(0x10964D8, &NiMultiTargetTransformController::UpdateHooked); // blend the weapon after the arms
         WriteRelCall(0xA34E7B, &NiControllerSequence::SetInterpsWeightAndTime); // make it also update values even if single interpolator
         WriteRelCall(0x4AB03A, &RemoveBipedPartHook);
+        WriteRelJump(0xA5E930, &NiNodeDestructorHook);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
         //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant);
