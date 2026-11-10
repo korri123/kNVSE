@@ -518,6 +518,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             if (extraItem->detached)
                 item.m_fNormalizedWeight = 0.0f;
         }
+        fUpdateTime = WeaponParentSwitch::GetUpdateTime(extraItem, pkInterpTarget, fUpdateTime);
         
         NiQuatTransform kTransform;
         if (!item.m_spInterpolator->Update(fUpdateTime, pkInterpTarget, kTransform))
@@ -667,9 +668,16 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
             ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
         else
         {
-            bReturnValue = StoreSingleValue(fTime, pkInterpTarget, kValue);
-            if (WeaponHandBlend::Context weaponHandBlend(pkInterpTarget, kExtraData); bReturnValue && weaponHandBlend)
-                weaponHandBlend.BlendSingle(extraItem, GetManagerControlled() ? m_fSingleTime : fTime, kValue);
+            float fUpdateTime = fTime;
+            if (GetSingleUpdateTime(fUpdateTime))
+            {
+                fUpdateTime = WeaponParentSwitch::GetUpdateTime(extraItem, pkInterpTarget, fUpdateTime);
+                bReturnValue = m_pkSingleInterpolator->Update(fUpdateTime, pkInterpTarget, kValue);
+            }
+            if (!bReturnValue)
+                kValue.MakeInvalid();
+            else if (WeaponHandBlend::Context weaponHandBlend(pkInterpTarget, kExtraData); weaponHandBlend)
+                weaponHandBlend.BlendSingle(extraItem, fUpdateTime, kValue);
         }
         // remove last interp
         if (g_pluginSettings.blendSmoothing && extraItem && extraItem->detached)
@@ -1191,6 +1199,8 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         
         extraInterpItem.sequence = this;
         extraInterpItem.noSmoothing = disabledBlendSmoothing;
+        if (WeaponHandBlend::IsWeaponNode(target))
+            WeaponParentSwitch::Init(extraInterpItem, *this);
 
         if (extraInterpItem.detached)
         {

@@ -425,6 +425,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="movement_blend_fixes.cpp" />
     <ClCompile Include="pose_blend_fixes.cpp" />
+    <ClCompile Include="weapon_parent_switch.cpp" />
     <ClCompile Include="nihooks.cpp" />
     <ClCompile Include="blend_fixes.cpp" />
     <ClCompile Include="sequence_extradata.cpp" />
@@ -483,6 +484,7 @@
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="movement_blend_fixes.h" />
     <ClInclude Include="pose_blend_fixes.h" />
+    <ClInclude Include="weapon_parent_switch.h" />
     <ClInclude Include="nihooks.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="sequence_extradata.h" />

@@ -1,8 +1,10 @@
 ﻿#pragma once
 #include <memory>
+#include <optional>
 
 #include "GameAPI.h"
 #include "weapon_hand_blend.h"
+#include "weapon_parent_switch.h"
 
 enum class kInterpDebugState: UInt8
 {
@@ -68,6 +70,8 @@ struct kBlendInterpItem
     bool noSmoothing = false;
     bool isAdditive = false;
     kAdditiveInterpMetadata additiveMetadata;
+    // Weapon node items of equip/unequip animations: where the track switches parent space (WeaponParentSwitch)
+    std::optional<WeaponParentSwitch::Window> parentSwitch;
 
     bool IsSmoothedWeightZero() const
     {
@@ -105,6 +109,7 @@ struct kBlendInterpItem
         noSmoothing = false;
         isAdditive = false;
         additiveMetadata.ClearValues();
+        parentSwitch.reset();
     }
 };
 
