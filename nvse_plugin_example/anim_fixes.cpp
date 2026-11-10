@@ -338,7 +338,7 @@ void AnimFixes::AddNoBlendSmoothingKeys(BSAnimGroupSequence* anim)
 
 	static std::array exactPaths = {
 		NiFixedString(R"(characters\_1stperson\locomotion\male\pipboy.kf)"),
-		NiFixedString(R"(characters\_1stperson\locomotion\female\pipboyfemale.kf))")
+		NiFixedString(R"(characters\_1stperson\locomotion\female\pipboyfemale.kf)")
 	};
 	for (const auto& path : exactPaths)
 	{

@@ -2234,7 +2234,6 @@ public:
 
 	void ComputeNormalizedWeights();
 	void ComputeNormalizedWeights(const std::vector<std::pair<InterpArrayItem*, kBlendInterpItem*>>& items);
-	void ComputeNormalizedWeightsHighPriorityDominant();
 
 	void ClearWeightSums()
 	{

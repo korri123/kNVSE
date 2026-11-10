@@ -10,11 +10,6 @@ enum class kInterpDebugState: UInt8
     WasDetachedButNowAdditive
 };
 
-enum class kInterpState: UInt8
-{
-    NotSet, Activating, Deactivating
-};
-
 struct kAdditiveInterpMetadata
 {
     NiQuatTransform refTransform;
@@ -67,10 +62,10 @@ struct kBlendInterpItem
     float lastEaseSpinner = -NI_INFINITY;
     bool detached = false;
     unsigned char blendIndex = INVALID_INDEX;
+    // diagnostics only: how the item got into its current state
     kInterpDebugState debugState = kInterpDebugState::NotSet;
-    kInterpState state = kInterpState::NotSet;
-    unsigned char poseInterpIndex = INVALID_INDEX;
-    bool isPoseInterp = false;
+    // its sequence has a noBlendSmoothing or noBlend text key: while it is attached, the node is blended as computed
+    bool noSmoothing = false;
     bool isAdditive = false;
     kAdditiveInterpMetadata additiveMetadata;
 
@@ -79,11 +74,6 @@ struct kBlendInterpItem
         return (translateWeight.lastSmoothedWeight == 0.0f || translateWeight.lastSmoothedWeight == -NI_INFINITY) && 
             (rotateWeight.lastSmoothedWeight == 0.0f || rotateWeight.lastSmoothedWeight ==  -NI_INFINITY) && 
             (scaleWeight.lastSmoothedWeight == 0.0f || scaleWeight.lastSmoothedWeight == -NI_INFINITY);
-    }
-
-    bool IsSmoothedWeightValid() const
-    {
-        return translateWeight.lastSmoothedWeight != -NI_INFINITY && rotateWeight.lastSmoothedWeight != -NI_INFINITY && scaleWeight.lastSmoothedWeight != -NI_INFINITY;
     }
 
     kWeightState* GetWeightState(kWeightType type)
@@ -112,9 +102,7 @@ struct kBlendInterpItem
         blendInterp = nullptr;
         detached = false;
         blendIndex = INVALID_INDEX;
-        state = kInterpState::NotSet;
-        poseInterpIndex = INVALID_INDEX;
-        isPoseInterp = false;
+        noSmoothing = false;
         isAdditive = false;
         additiveMetadata.ClearValues();
     }
@@ -125,10 +113,7 @@ class kBlendInterpolatorExtraData : public NiExtraData
 public:
     NiAVObject* target = nullptr;
     std::vector<kBlendInterpItem> items;
-    NiPointer<NiTransformInterpolator> poseInterp = nullptr;
-    float poseInterpUpdatedTime = -NI_INFINITY;
     NiControllerManager* owner = nullptr;
-    UInt32 noBlendSmoothRequesterCount = 0;
     // set only while the engine snaps the bones bone LOD switched off to an ending (un)equip (UpdateLODBonesHook): their
     // weights are taken as computed, and the smoothed state follows them
     bool unsmoothedUpdate = false;
@@ -142,10 +127,7 @@ public:
         target = nullptr;
         items.clear();
         items.shrink_to_fit();
-        poseInterp = nullptr;
-        poseInterpUpdatedTime = -NI_INFINITY;
         owner = nullptr;
-        noBlendSmoothRequesterCount = 0;
         attachedItems = 0;
     }
 
@@ -160,11 +142,7 @@ public:
     static kBlendInterpolatorExtraData* GetExtraData(NiObjectNET* obj);
 
     kBlendInterpItem& GetOrCreateItem(NiInterpolator* interpolator);
-    kBlendInterpItem& CreatePoseInterpItem(NiBlendInterpolator* blendInterp, NiControllerSequence* sequence, NiAVObject* target);
     kBlendInterpItem* GetItem(NiInterpolator* interpolator);
-    kBlendInterpItem* GetPoseInterpItem();
-
-    NiTransformInterpolator* ObtainPoseInterp(NiAVObject* target);
 };
 
 namespace BlendSmoothing
@@ -187,6 +165,8 @@ namespace BlendSmoothing
         float fInputChange = 0.0f;
         // other items are attached, or at other priorities
         bool bItemsChanged = false;
+        // an attached item wants no smoothing (kBlendInterpItem::noSmoothing): nothing is taken up, and what was is dropped
+        bool bDisabled = false;
     private:
         UInt32 m_uiAttachedItems = 0;
     };

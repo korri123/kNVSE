@@ -720,7 +720,7 @@ void ApplyHooks()
 #endif
 	conf.blendSmoothing = ini.GetOrCreate("Blend Fixes", "bBlendSmoothing", 1, "; smooths out the snaps in animation blending: where the blend weights jump (animations switched without a blend, more than two animation priorities on a bone) the previous pose fades out instead. Blends that are smooth already keep their timing. for some animations this might not be wanted, add noBlendSmoothing as text key to disable.");
 	conf.blendSmoothingRate = ini.GetOrCreate("Blend Fixes", "fBlendSmoothingRate", 0.075, "; how long (in seconds) a snap takes to fade out with bBlendSmoothing: about a third of it is left after this time. higher values mean smoother but slower.");
-	if (conf.blendSmoothingRate == 0.0f)
+	if (conf.blendSmoothingRate <= 0.0f)
 		conf.blendSmoothingRate = 0.075f;
 	conf.fixSpineBlendBug = ini.GetOrCreate("Blend Fixes", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down (requires bBlendSmoothing).");
 	conf.fixWeaponHandBlend = ini.GetOrCreate("Blend Fixes", "bFixWeaponHandBlend", 1, "; keep the weapon on the hand holding it when animations move it to the left hand (counter-animated against the right hand): during blends, and between keys of animations baked at low frame rates. Detected automatically; animators can set it with the text keys \"weaponSpace: left\", \"weaponSpace: right\", \"weaponSpace: body\" (follows neither hand, for hand-offs) and \"weaponSpace: auto\", each holding until the next, or opt an animation out with \"weaponSpace: off\" (its share of a blend is blended as without this fix).");
@@ -758,7 +758,7 @@ void ApplyHooks()
 #if 0
 	HolsterUnholsterLocomotionFixes::ApplyHooks();
 #endif
-	if (conf.fixSpineBlendBug)
+	if (conf.blendSmoothing && conf.fixSpineBlendBug)
 		BlendFixes::ApplyAimBlendHooks();
 	BlendFixes::ApplyHooks();
 	

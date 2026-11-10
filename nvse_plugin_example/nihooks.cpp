@@ -533,16 +533,6 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             validScales.emplace_back(kTransform.GetScale(), &item, extraItem);
     }
     smoothingStep.End(kExtraData);
-    
-    if (kExtraData && kExtraData->noBlendSmoothRequesterCount)
-    {
-        for (auto& item : kExtraData->items)
-        {
-            item.translateWeight.ClearValues();
-            item.rotateWeight.ClearValues();
-            item.scaleWeight.ClearValues();
-        }
-    }
 
     thread_local std::vector<std::pair<InterpArrayItem*, kBlendInterpItem*>> items;
     items.clear();
@@ -682,7 +672,7 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
                 weaponHandBlend.BlendSingle(extraItem, GetManagerControlled() ? m_fSingleTime : fTime, kValue);
         }
         // remove last interp
-        if (g_pluginSettings.blendSmoothing && !g_pluginSettings.poseInterpolators && extraItem && extraItem->detached)
+        if (g_pluginSettings.blendSmoothing && extraItem && extraItem->detached)
         {
             this->RemoveInterpInfo(this->m_ucSingleIdx);
             extraItem->ClearValues();
@@ -1067,178 +1057,6 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<std::pair<I
     }
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant()
-{
-    if (!GetComputeNormalizedWeights())
-    {
-        return;
-    }
-
-    SetComputeNormalizedWeights(false);
-
-    if (m_ucInterpCount == 1)
-    {
-        m_pkInterpArray[m_ucSingleIdx].m_fNormalizedWeight = 1.0f;
-        return;
-    }
-
-    if (m_ucInterpCount == 2)
-    {
-        ThisStdCall(0xA36BD0, this); // NiBlendInterpolator::ComputeNormalizedWeightsFor2
-        return;
-    }
-
-    unsigned char uc;
-
-    if (m_fHighSumOfWeights == -NI_INFINITY)
-{
-    // Compute sum of weights for highest and next highest priorities,
-    // along with highest ease spinner for the highest priority.
-    m_fHighSumOfWeights = 0.0f;
-    m_fNextHighSumOfWeights = 0.0f;
-    m_fHighEaseSpinner = 0.0f;
-    for (uc = 0; uc < m_ucArraySize; uc++)
-    {
-        InterpArrayItem& kItem = m_pkInterpArray[uc];
-        if (kItem.m_spInterpolator != NULL)
-        {
-            float fRealWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
-            if (kItem.m_cPriority == m_cHighPriority)
-            {
-                m_fHighSumOfWeights += fRealWeight;
-                if (kItem.m_fEaseSpinner > m_fHighEaseSpinner)
-                {
-                    m_fHighEaseSpinner = kItem.m_fEaseSpinner;
-                }
-            }
-            else if (kItem.m_cPriority == m_cNextHighPriority)
-            {
-                m_fNextHighSumOfWeights += fRealWeight;
-            }
-        }
-    }
-}
-
-    assert(m_fHighEaseSpinner >= 0.0f && m_fHighEaseSpinner <= 1.0f);
-
-    // Check if high priority sum is approximately 1.0
-    const float EPSILON = 0.001f;  // Tolerance value for "approximately"
-    bool bHighPriorityOnly = (fabs(m_fHighSumOfWeights - 1.0f) < EPSILON);
-
-    float fTotalSumOfWeights;
-    float fOneOverTotalSumOfWeights;
-
-    if (bHighPriorityOnly)
-    {
-        // If high priority weights sum to ~1.0, only use high priority
-        fTotalSumOfWeights = m_fHighSumOfWeights;
-    }
-    else
-    {
-        // Original blending behavior
-        float fOneMinusHighEaseSpinner = 1.0f - m_fHighEaseSpinner;
-        fTotalSumOfWeights = m_fHighEaseSpinner * m_fHighSumOfWeights +
-            fOneMinusHighEaseSpinner * m_fNextHighSumOfWeights;
-    }
-
-    fOneOverTotalSumOfWeights = 
-        (fTotalSumOfWeights > 0.0f) ? (1.0f / fTotalSumOfWeights) : 0.0f;
-
-    // Compute normalized weights.
-    for (uc = 0; uc < m_ucArraySize; uc++)
-    {
-        InterpArrayItem& kItem = m_pkInterpArray[uc];
-        if (kItem.m_spInterpolator != NULL)
-        {
-            if (kItem.m_cPriority == m_cHighPriority)
-            {
-                if (bHighPriorityOnly)
-                {
-                    // Simple normalization when only using high priority
-                    kItem.m_fNormalizedWeight = kItem.m_fWeight * kItem.m_fEaseSpinner *
-                        fOneOverTotalSumOfWeights;
-                }
-                else
-                {
-                    // Original calculation
-                    kItem.m_fNormalizedWeight = m_fHighEaseSpinner *
-                        kItem.m_fWeight * kItem.m_fEaseSpinner *
-                        fOneOverTotalSumOfWeights;
-                }
-            }
-            else if (!bHighPriorityOnly && kItem.m_cPriority == m_cNextHighPriority)
-            {
-                // Only calculate for next high priority if not in high-priority-only mode
-                float fOneMinusHighEaseSpinner = 1.0f - m_fHighEaseSpinner;
-                kItem.m_fNormalizedWeight = fOneMinusHighEaseSpinner *
-                    kItem.m_fWeight * kItem.m_fEaseSpinner *
-                    fOneOverTotalSumOfWeights;
-            }
-            else
-            {
-                kItem.m_fNormalizedWeight = 0.0f;
-            }
-        }
-    }
-
-    // Exclude weights below threshold, computing new sum in the process.
-    float fSumOfNormalizedWeights = 1.0f;
-    if (m_fWeightThreshold > 0.0f)
-    {
-        fSumOfNormalizedWeights = 0.0f;
-        for (uc = 0; uc < m_ucArraySize; uc++)
-        {
-            auto& kItem = m_pkInterpArray[uc];
-            if (kItem.m_spInterpolator != NULL &&
-                kItem.m_fNormalizedWeight != 0.0f)
-            {
-                if (kItem.m_fNormalizedWeight < m_fWeightThreshold)
-                {
-                    kItem.m_fNormalizedWeight = 0.0f;
-                }
-                fSumOfNormalizedWeights += kItem.m_fNormalizedWeight;
-            }
-        }
-    }
-
-    // Renormalize weights if any were excluded earlier.
-    if (fSumOfNormalizedWeights != 1.0f)
-    {
-        // Renormalize weights.
-        float fOneOverSumOfNormalizedWeights =
-            (fSumOfNormalizedWeights > 0.0f) ? (1.0f / fSumOfNormalizedWeights) : 0.0f;
-
-        for (uc = 0; uc < m_ucArraySize; uc++)
-        {
-            auto& kItem = m_pkInterpArray[uc];
-            if (kItem.m_fNormalizedWeight != 0.0f)
-            {
-                kItem.m_fNormalizedWeight = kItem.m_fNormalizedWeight *
-                    fOneOverSumOfNormalizedWeights;
-            }
-        }
-    }
-
-    // Only use the highest weight, if so directed.
-    if (GetOnlyUseHighestWeight())
-    {
-        float fHighest = -1.0f;
-        unsigned char ucHighIndex = INVALID_INDEX;
-        for (uc = 0; uc < m_ucArraySize; uc++)
-        {
-            if (m_pkInterpArray[uc].m_fNormalizedWeight > fHighest)
-            {
-                ucHighIndex = uc;
-                fHighest = m_pkInterpArray[uc].m_fNormalizedWeight;
-            }
-            m_pkInterpArray[uc].m_fNormalizedWeight = 0.0f;
-        }
-
-        // Set the highest index to 1.0
-        m_pkInterpArray[ucHighIndex].m_fNormalizedWeight = 1.0f;
-    }
-}
-
 void NiControllerSequence::RemoveInterpolator(const NiFixedString& name) const
 {
     const auto idTags = GetIDTags();
@@ -1357,8 +1175,6 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         DebugAssert(extraData);
         extraData->target = target;
         extraData->owner = m_pkOwner;
-        if (disabledBlendSmoothing)
-            ++extraData->noBlendSmoothRequesterCount;
         auto& extraInterpItem = extraData->GetOrCreateItem(kItem.m_spInterpolator);
         if (extraInterpItem.blendInterp)
             DebugAssert(extraInterpItem.blendInterp == pkBlendInterp);
@@ -1373,7 +1189,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         }
         
         extraInterpItem.sequence = this;
-        extraInterpItem.state = kInterpState::Activating;
+        extraInterpItem.noSmoothing = disabledBlendSmoothing;
 
         if (extraInterpItem.detached)
         {
@@ -1398,12 +1214,6 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
             extraInterpItem.interpolator == kItem.m_spInterpolator &&
             kItem.m_spInterpolator != nullptr &&
             kItem.m_ucBlendIdx != INVALID_INDEX);
-
-        if (g_pluginSettings.poseInterpolators)
-        {
-            auto* poseInterp = extraData->ObtainPoseInterp(target);
-            poseInterp->m_kTransformValue = target->m_kLocal;
-        }
     }
 }
 
@@ -2042,7 +1852,6 @@ void NiControllerSequence::DetachInterpolatorsHooked()
         DetachInterpolators();
         return;
     }
-    const auto disabledBlendSmoothing = DisabledBlendSmoothing();
     // BlendFixes::DetachSecondaryTempInterpolators(this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
@@ -2071,11 +1880,8 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                 kItem.m_ucBlendIdx = INVALID_INDEX;
                 continue;
             }
-            if (extraData->noBlendSmoothRequesterCount && disabledBlendSmoothing)
-                --extraData->noBlendSmoothRequesterCount;
 
             auto& extraInterpItem = extraData->GetOrCreateItem(kItem.m_spInterpolator);
-            extraInterpItem.state = kInterpState::Deactivating;
 
             DebugAssert(blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator
                 && extraInterpItem.interpolator == kItem.m_spInterpolator && kItem.m_spInterpolator != nullptr);
@@ -2087,16 +1893,6 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                     blendInterp->RemoveInterpInfo(blendIndex);
                 extraInterpItem.ClearValues();
                 extraInterpItem.debugState = kInterpDebugState::RemovedInDetachInterpolators;
-
-                if (blendInterp->m_ucInterpCount == 1 && g_pluginSettings.poseInterpolators)
-                {
-                    if (auto* poseItem = extraData->GetPoseInterpItem())
-                    {
-                        DebugAssert(poseItem->poseInterpIndex < blendInterp->m_ucArraySize);
-                        blendInterp->RemoveInterpInfo(poseItem->poseInterpIndex);
-                        poseItem->ClearValues();
-                    }
-                }
             }
             else
             {
@@ -2115,12 +1911,6 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                 extraInterpItem.sequence = nullptr;
             }
             kItem.m_ucBlendIdx = INVALID_INDEX;
-
-            if (g_pluginSettings.poseInterpolators)
-            {
-                auto* poseInterp = extraData->ObtainPoseInterp(target);
-                poseInterp->m_kTransformValue = target->m_kLocal;
-            }
         }
     }
 }
@@ -2329,7 +2119,6 @@ namespace NiHooks
         WriteRelJump(0xA5E930, &NiNodeDestructorHook);
         //WriteRelJump(0xA41110, &NiBlendTransformInterpolator::_Update);
         //WriteRelJump(0xA3FDB0, &NiTransformInterpolator::_Update);
-        //WriteRelJump(0xA37260, &NiBlendInterpolator::ComputeNormalizedWeightsHighPriorityDominant);
         //WriteRelJump(0xA39960, &NiBlendAccumTransformInterpolator::BlendValues); // modified and enhanced movement bugs out when sprinting
         //WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
         //WriteRelJump(0xA2F800, &NiControllerManager::BlendFromPose);

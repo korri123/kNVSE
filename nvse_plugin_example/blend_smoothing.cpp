@@ -1,7 +1,5 @@
 ﻿#include "blend_smoothing.h"
 
-#include <unordered_set>
-
 #include "additive_anims.h"
 #include "GameAPI.h"
 #include "hooks.h"
@@ -29,8 +27,6 @@ void kBlendInterpolatorExtraData::Destroy(bool freeMem)
 {
     this->items.~vector();
     this->weaponHandBlend.~unique_ptr();
-    if (this->poseInterp)
-        this->poseInterp->DecrementRefCount();
     ThisStdCall(0xA7B300, this);
     if ((freeMem & 1) != 0)
         NiDelete(this);
@@ -97,26 +93,6 @@ kBlendInterpItem& kBlendInterpolatorExtraData::GetOrCreateItem(NiInterpolator* i
     return items.emplace_back(interpolator);
 }
 
-NiInterpolator* CreatePoseInterpolator(NiAVObject* object)
-{
-    return NiTransformInterpolator::Create(object->m_kLocal);
-}
-
-kBlendInterpItem& kBlendInterpolatorExtraData::CreatePoseInterpItem(NiBlendInterpolator* blendInterp,
-                                                                    NiControllerSequence* sequence,
-                                                                    NiAVObject* target)
-{
-    auto* poseInterp = CreatePoseInterpolator(target);
-    const auto poseIndex = blendInterp->AddInterpInfo(poseInterp, 1.0f, 0, 1.0f);
-    DebugAssert(poseIndex != INVALID_INDEX);
-    auto& poseItem = GetOrCreateItem(poseInterp);
-    poseItem.state = kInterpState::Activating;
-    poseItem.blendInterp = blendInterp;
-    poseItem.isPoseInterp = true;
-    poseItem.poseInterpIndex = poseIndex;
-    return poseItem;
-}
-
 kBlendInterpItem* kBlendInterpolatorExtraData::GetItem(NiInterpolator* interpolator)
 {
     for (auto& item : items)
@@ -125,26 +101,6 @@ kBlendInterpItem* kBlendInterpolatorExtraData::GetItem(NiInterpolator* interpola
             return &item;
     }
     return nullptr;
-}
-
-kBlendInterpItem* kBlendInterpolatorExtraData::GetPoseInterpItem()
-{
-    for (auto& item : items)
-    {
-        if (item.isPoseInterp)
-        {
-            DebugAssert(item.poseInterpIndex != INVALID_INDEX);
-            return &item;
-        }
-    }
-    return nullptr;
-}
-
-NiTransformInterpolator *kBlendInterpolatorExtraData::ObtainPoseInterp(NiAVObject* target)
-{
-    if (!poseInterp)
-        poseInterp = NiTransformInterpolator::Create(target->m_kLocal);
-    return poseInterp;
 }
 
 float BlendSmoothing::GetElapsedTime(float fLastTime, float fTime)
@@ -186,6 +142,19 @@ void BlendSmoothing::Step::End(kBlendInterpolatorExtraData* extraData)
         return;
     bItemsChanged = extraData->attachedItems != m_uiAttachedItems;
     extraData->attachedItems = m_uiAttachedItems;
+
+    // asked for from attach to detach, whether or not the item is blended this time
+    bDisabled = ra::any_of(extraData->items, [](const kBlendInterpItem& item) { return item.noSmoothing && !item.detached; });
+    if (bDisabled)
+    {
+        // items still fading out are cut (DetachZeroWeightItems), and smoothing starts over once it is back
+        for (auto& item : extraData->items)
+        {
+            item.translateWeight.ClearValues();
+            item.rotateWeight.ClearValues();
+            item.scaleWeight.ClearValues();
+        }
+    }
 }
 
 // A blend in progress moves the normalized weights about as far as the ease spinner or sequence weight driving it, and
@@ -201,13 +170,13 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type,
     const Step& step)
 {
-    if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount || items.empty())
+    if (!g_pluginSettings.blendSmoothing || !extraData || step.bDisabled || items.empty())
         return;
 
     const auto getWeightState = [type](const std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>& pair) -> kWeightState*
     {
         auto [itemPtr, extraItemPtr] = pair;
-        if (!itemPtr->m_spInterpolator || !extraItemPtr || extraItemPtr->debugState == kInterpDebugState::NotSet)
+        if (!itemPtr->m_spInterpolator || !extraItemPtr)
             return nullptr;
         DebugAssert(!extraItemPtr->isAdditive);
         return extraItemPtr->GetWeightState(type);
@@ -289,37 +258,21 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     }
 }
 
+// Detached items stay in the blend until they have faded out
 void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp)
 {
     if (!extraData || !g_pluginSettings.blendSmoothing)
         return;
-    auto blendInterpItems = blendInterp->GetItems();
-    for (auto& item : blendInterpItems)
+    for (auto& item : blendInterp->GetItems())
     {
-        auto* extraItemPtr = extraData->GetItem(item.m_spInterpolator);
-        if (!extraItemPtr || extraItemPtr->isAdditive)
+        if (!item.m_spInterpolator)
             continue;
-        auto& extraItem = *extraItemPtr;
-        if (extraItem.IsSmoothedWeightZero() && extraItem.state == kInterpState::Deactivating)
-        {
-            if (extraItem.detached)
-            {
-                const auto ucIndex = item.GetIndex(blendInterp);
-                blendInterp->RemoveInterpInfo(ucIndex);
-                extraItem.ClearValues();
-                extraItem.debugState = kInterpDebugState::RemovedInBlendSmoothing;
-
-                if (blendInterp->m_ucInterpCount == 1 && g_pluginSettings.poseInterpolators)
-                {
-                    if (auto* poseItem = extraData->GetPoseInterpItem())
-                    {
-                        DebugAssert(poseItem->poseInterpIndex < blendInterp->m_ucArraySize);
-                        blendInterp->RemoveInterpInfo(poseItem->poseInterpIndex);
-                        poseItem->ClearValues();
-                    }
-                }
-            }
-        }
+        auto* extraItem = extraData->GetItem(item.m_spInterpolator);
+        if (!extraItem || extraItem->isAdditive || !extraItem->detached || !extraItem->IsSmoothedWeightZero())
+            continue;
+        blendInterp->RemoveInterpInfo(item.GetIndex(blendInterp));
+        extraItem->ClearValues();
+        extraItem->debugState = kInterpDebugState::RemovedInBlendSmoothing;
     }
 }
 

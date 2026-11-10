@@ -272,10 +272,9 @@ void BlendFixes::ApplyAttackToAttackISFix()
 
 void BlendFixes::ApplyAimBlendHooks()
 {
-	// JMP 0x4996E7 -> 0x499709
-	// disable the game resetting sequence state for aimup and aimdown as we will do it ourselves
-	if (g_pluginSettings.fixSpineBlendBug)
-		SafeWriteBuf(0x4996E7, "\xEB\x20\x90\x90", 4);
+	// Animation::BlendOut: JMP 0x4996E7 -> 0x499709 over its clearing of the aim up and down groups. ApplyAimBlendFix
+	// blends them instead, and HandleAnimationChange clears them where the next group has none
+	SafeWriteBuf(0x4996E7, "\xEB\x20\x90\x90", 4);
 }
 
 

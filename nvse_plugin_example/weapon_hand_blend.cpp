@@ -855,8 +855,7 @@ void WeaponHandBlend::Context::AddItem(const void* key, kBlendInterpItem* extraI
     entry.key = key;
     entry.time = fTime;
     entry.transform = kTransform;
-    // pose interpolators hold a snapshot of the weapon's local transform, which is relative to the right hand
-    if (extraItem && extraItem->interpolator && !extraItem->isAdditive && !extraItem->isPoseInterp)
+    if (extraItem && extraItem->interpolator && !extraItem->isAdditive)
     {
         if (const NiControllerSequence* sequence = extraItem->sequence)
         {
@@ -904,7 +903,7 @@ void WeaponHandBlend::Context::BlendSingle(kBlendInterpItem* extraItem, float fT
 
 void WeaponHandBlend::Context::CacheDetachedPose(const kBlendInterpItem& extraItem, const NiControllerSequence& sequence, float fTime)
 {
-    if (!m_weapon || !extraItem.interpolator || extraItem.isAdditive || extraItem.isPoseInterp)
+    if (!m_weapon || !extraItem.interpolator || extraItem.isAdditive)
         return;
     // Sequences detach here, outside of blending, so this is where released sequences are dropped: an entry whose Weapon
     // interpolator is referenced by nobody else belongs to a sequence that is gone.
