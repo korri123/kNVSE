@@ -31,15 +31,18 @@ struct kAdditiveInterpMetadata
 
 struct kWeightState
 {
+    // the weight the item was blended with when its blend interpolator was last evaluated
     float lastSmoothedWeight = -NI_INFINITY;
+    // the weight ComputeNormalizedWeights gave it then
     float calculatedNormalizedWeight = -NI_INFINITY;
-    float lastCalculatedNormalizedWeight = -NI_INFINITY;
+    // what is left of the weight jumps taken up so far (BlendSmoothing::ApplyForItems): added to the computed weight
+    float offset = 0.0f;
 
     void ClearValues()
     {
         lastSmoothedWeight = -NI_INFINITY;
         calculatedNormalizedWeight = -NI_INFINITY;
-        lastCalculatedNormalizedWeight = -NI_INFINITY;
+        offset = 0.0f;
     }
 };
 
@@ -59,6 +62,9 @@ struct kBlendInterpItem
     kWeightState translateWeight;
     kWeightState rotateWeight;
     kWeightState scaleWeight;
+    // m_fWeight and m_fEaseSpinner of its blend item when the blend interpolator was last evaluated
+    float lastWeight = -NI_INFINITY;
+    float lastEaseSpinner = -NI_INFINITY;
     bool detached = false;
     unsigned char blendIndex = INVALID_INDEX;
     kInterpDebugState debugState = kInterpDebugState::NotSet;
@@ -101,6 +107,8 @@ struct kBlendInterpItem
         translateWeight.ClearValues();
         rotateWeight.ClearValues();
         scaleWeight.ClearValues();
+        lastWeight = -NI_INFINITY;
+        lastEaseSpinner = -NI_INFINITY;
         blendInterp = nullptr;
         detached = false;
         blendIndex = INVALID_INDEX;
@@ -124,6 +132,8 @@ public:
     // set only while the engine snaps the bones bone LOD switched off to an ending (un)equip (UpdateLODBonesHook): their
     // weights are taken as computed, and the smoothed state follows them
     bool unsmoothedUpdate = false;
+    // which items were attached, at which priorities, when the blend interpolator was last evaluated (BlendSmoothing::Step)
+    UInt32 attachedItems = 0;
     // Weapon nodes only; survives ClearValues, as it describes the skeleton and its sequences, not the current blend
     std::unique_ptr<WeaponHandBlend::NodeData> weaponHandBlend;
     
@@ -136,6 +146,7 @@ public:
         poseInterpUpdatedTime = -NI_INFINITY;
         owner = nullptr;
         noBlendSmoothRequesterCount = 0;
+        attachedItems = 0;
     }
 
     NiNewRTTI(kBlendInterpolatorExtraData, NiExtraData)
@@ -158,9 +169,28 @@ public:
 
 namespace BlendSmoothing
 {
-    // fDeltaTime: animation time since the blend interpolator was last evaluated (GetElapsedTime), not the frame time:
-    // bone LOD stops evaluating the bones of actors the camera can't see, and their weights must catch up afterwards
-    void ApplyForItems(kBlendInterpolatorExtraData* extraData, const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type, float fDeltaTime);
+    // What changed since a blend interpolator's last evaluation: tells a jump of the normalized weights from a blend in
+    // progress (ApplyForItems)
+    class Step
+    {
+    public:
+        // fDeltaTime: animation time since the last evaluation (GetElapsedTime), not the frame time: bone LOD stops
+        // evaluating the bones of actors the camera can't see, and a jump taken up before must have faded by then
+        explicit Step(float fDeltaTime) : fDeltaTime(fDeltaTime) {}
+
+        // every item the evaluation blends, then End
+        void AddItem(const NiBlendInterpolator::InterpArrayItem& item, kBlendInterpItem* extraItem, const NiQuatTransform& kTransform);
+        void End(kBlendInterpolatorExtraData* extraData);
+
+        float fDeltaTime;
+        // how far the weight and ease spinner of the attached item that moved most have moved
+        float fInputChange = 0.0f;
+        // other items are attached, or at other priorities
+        bool bItemsChanged = false;
+    private:
+        UInt32 m_uiAttachedItems = 0;
+    };
+    void ApplyForItems(kBlendInterpolatorExtraData* extraData, const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type, const Step& step);
     float GetElapsedTime(float fLastTime, float fTime);
     void DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp);
     void WriteHooks();

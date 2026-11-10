@@ -718,8 +718,8 @@ void ApplyHooks()
 
 	g_disableFirstPersonTurningAnims = ini.GetOrCreate("General", "bDisableFirstPersonTurningAnims", 1, "; disable first person turning anims (they mess with shit and serve barely any purpose)");
 #endif
-	conf.blendSmoothing = ini.GetOrCreate("Blend Fixes", "bBlendSmoothing", 1, "; applies smoothing and easing into the animation blending algorithm to prevent snapping and add fluidity between anims. for some animations this might not be wanted, add noBlendSmoothing as text key to disable.");
-	conf.blendSmoothingRate = ini.GetOrCreate("Blend Fixes", "fBlendSmoothingRate", 0.075, "; the rate the blend smoothing algorithm smooths between weights animations. higher values mean more fluidity but slower blends.");
+	conf.blendSmoothing = ini.GetOrCreate("Blend Fixes", "bBlendSmoothing", 1, "; smooths out the snaps in animation blending: where the blend weights jump (animations switched without a blend, more than two animation priorities on a bone) the previous pose fades out instead. Blends that are smooth already keep their timing. for some animations this might not be wanted, add noBlendSmoothing as text key to disable.");
+	conf.blendSmoothingRate = ini.GetOrCreate("Blend Fixes", "fBlendSmoothingRate", 0.075, "; how long (in seconds) a snap takes to fade out with bBlendSmoothing: about a third of it is left after this time. higher values mean smoother but slower.");
 	if (conf.blendSmoothingRate == 0.0f)
 		conf.blendSmoothingRate = 0.075f;
 	conf.fixSpineBlendBug = ini.GetOrCreate("Blend Fixes", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down (requires bBlendSmoothing).");

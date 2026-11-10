@@ -502,6 +502,8 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     thread_local std::vector<ValidScale> validScales;
     validScales.clear();
 
+    // m_fLastTime is still this blend's previous evaluation (UpdateHooked sets it afterwards)
+    BlendSmoothing::Step smoothingStep(BlendSmoothing::GetElapsedTime(m_fLastTime, fTime));
     for (auto& item : interpItems)
     {
         // GetUpdateTimeForItem replaces the time with the item's own (its sequence's); fTime stays the blend's
@@ -522,6 +524,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             continue;
         if (weaponHandBlend)
             weaponHandBlend.AddItem(&item, extraItem, fUpdateTime, kTransform);
+        smoothingStep.AddItem(item, extraItem, kTransform);
         if (kTransform.IsTranslateValid())
             validTranslates.emplace_back(kTransform.GetTranslate(), &item, extraItem);
         if (kTransform.IsRotateValid())
@@ -529,6 +532,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         if (kTransform.IsScaleValid())
             validScales.emplace_back(kTransform.GetScale(), &item, extraItem);
     }
+    smoothingStep.End(kExtraData);
     
     if (kExtraData && kExtraData->noBlendSmoothRequesterCount)
     {
@@ -542,13 +546,11 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
     thread_local std::vector<std::pair<InterpArrayItem*, kBlendInterpItem*>> items;
     items.clear();
-    // m_fLastTime is still this blend's previous evaluation (UpdateHooked sets it afterwards)
-    const float fSmoothingDelta = BlendSmoothing::GetElapsedTime(m_fLastTime, fTime);
     
     for (auto& item : validTranslates)
         items.emplace_back(item.item, item.extraItem);
     ComputeNormalizedWeights(items);
-    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Translate, fSmoothingDelta);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Translate, smoothingStep);
 
     for (auto& translation : validTranslates)
     {
@@ -565,7 +567,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         items.emplace_back(item.item, item.extraItem);
 
     ComputeNormalizedWeights(items);
-    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Scale, fSmoothingDelta);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Scale, smoothingStep);
 
     for (auto& scale : validScales)
     {
@@ -579,7 +581,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     for (auto& item : validRotations)
         items.emplace_back(item.item, item.extraItem);
     ComputeNormalizedWeights(items);
-    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate, fSmoothingDelta);
+    BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate, smoothingStep);
     
     for (auto& rotation : validRotations)
     {
@@ -938,7 +940,12 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<std::pair<I
 
     float fHighSumOfWeights = 0.0f;
     float fNextHighSumOfWeights = 0.0f;
+    // The highest priority's ease spinner is the share of the bone it takes from the next priority. Gamebryo uses the
+    // largest of its items': two sequences cross fading at one priority (NiControllerManager::CrossFade and the movement
+    // blends ease one out while the other eases in) hand half of the bone to the next priority halfway through. The
+    // largest spinner easing out and the largest of the others are added instead, so a cross fade keeps the bone
     float fHighEaseSpinner = 0.0f;
+    float fHighEaseOutSpinner = 0.0f;
     for (auto& item : items)
     {
         auto& kItem = *item.first;
@@ -948,9 +955,12 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<std::pair<I
             if (kItem.m_cPriority == cHighPriority)
             {
                 fHighSumOfWeights += fRealWeight;
-                if (kItem.m_fEaseSpinner > fHighEaseSpinner)
+                const auto* sequence = item.second ? item.second->sequence : nullptr;
+                auto& fEaseSpinner = sequence && sequence->m_eState == NiControllerSequence::EASEOUT
+                    ? fHighEaseOutSpinner : fHighEaseSpinner;
+                if (kItem.m_fEaseSpinner > fEaseSpinner)
                 {
-                    fHighEaseSpinner = kItem.m_fEaseSpinner;
+                    fEaseSpinner = kItem.m_fEaseSpinner;
                 }
             }
             else if (kItem.m_cPriority == cNextHighPriority)
@@ -959,6 +969,7 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<std::pair<I
             }
         }
     }
+    fHighEaseSpinner = min(fHighEaseSpinner + fHighEaseOutSpinner, 1.0f);
 
     float fOneMinusHighEaseSpinner = 1.0f - fHighEaseSpinner;
     float fTotalSumOfWeights = fHighEaseSpinner * fHighSumOfWeights +

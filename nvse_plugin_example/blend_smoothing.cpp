@@ -155,62 +155,137 @@ float BlendSmoothing::GetElapsedTime(float fLastTime, float fTime)
     return fTime - fLastTime;
 }
 
+void BlendSmoothing::Step::AddItem(const NiBlendInterpolator::InterpArrayItem& item, kBlendInterpItem* extraItem,
+    const NiQuatTransform& kTransform)
+{
+    // a detached item is only fading out: no sequence has it attached, nothing moves its weight or ease spinner
+    if (extraItem && extraItem->detached)
+        return;
+
+    // the channels count too: each is blended from the items that have it. Summed, as the order of the items means nothing
+    const UInt32 uiChannels = (kTransform.IsTranslateValid() ? 1 : 0) | (kTransform.IsRotateValid() ? 2 : 0)
+        | (kTransform.IsScaleValid() ? 4 : 0);
+    m_uiAttachedItems += (reinterpret_cast<UInt32>(item.m_spInterpolator.data) * 2654435761u)
+        ^ (((static_cast<UInt8>(item.m_cPriority) << 3) | uiChannels) * 2246822519u);
+
+    if (!extraItem)
+        return;
+    if (extraItem->lastWeight != -NI_INFINITY)
+    {
+        const float fChange = std::abs(item.m_fWeight - extraItem->lastWeight)
+            + std::abs(item.m_fEaseSpinner - extraItem->lastEaseSpinner);
+        fInputChange = max(fInputChange, fChange);
+    }
+    extraItem->lastWeight = item.m_fWeight;
+    extraItem->lastEaseSpinner = item.m_fEaseSpinner;
+}
+
+void BlendSmoothing::Step::End(kBlendInterpolatorExtraData* extraData)
+{
+    if (!extraData)
+        return;
+    bItemsChanged = extraData->attachedItems != m_uiAttachedItems;
+    extraData->attachedItems = m_uiAttachedItems;
+}
+
+// A blend in progress moves the normalized weights about as far as the ease spinner or sequence weight driving it, and
+// is left alone: it keeps its timing. The weights jump when
+// - items come and go: ComputeNormalizedWeights only blends the two highest priorities, so with a third one an item
+//   attached at no weight can take a bone over at once, and one detached at no weight can hand it over at once; and
+//   sequences are switched without a blend (jump loop to landing) or dropped in the middle of one;
+// - it divides one vanishing sum by another: the highest priority still easing in while the next has all but eased
+//   out swings the weights between the two many times faster than either spinner moves, whatever is below them.
+// A jump is taken up by the items' offsets instead: each keeps the weight it was last blended with, and the offsets
+// decay from there, so the pose the jump left behind fades out over fBlendSmoothingRate.
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type,
-    float fDeltaTime)
+    const Step& step)
 {
     if (!g_pluginSettings.blendSmoothing || !extraData || extraData->noBlendSmoothRequesterCount || items.empty())
         return;
 
+    const auto getWeightState = [type](const std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>& pair) -> kWeightState*
+    {
+        auto [itemPtr, extraItemPtr] = pair;
+        if (!itemPtr->m_spInterpolator || !extraItemPtr || extraItemPtr->debugState == kInterpDebugState::NotSet)
+            return nullptr;
+        DebugAssert(!extraItemPtr->isAdditive);
+        return extraItemPtr->GetWeightState(type);
+    };
+
     if (extraData->unsmoothedUpdate)
     {
-        for (auto [itemPtr, extraItemPtr] : items)
+        for (const auto& pair : items)
         {
-            if (!itemPtr->m_spInterpolator || !extraItemPtr || extraItemPtr->debugState == kInterpDebugState::NotSet)
+            auto* weightState = getWeightState(pair);
+            if (!weightState)
                 continue;
-            auto& weightState = *extraItemPtr->GetWeightState(type);
-            weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
-            weightState.calculatedNormalizedWeight = itemPtr->m_fNormalizedWeight;
-            weightState.lastSmoothedWeight = itemPtr->m_fNormalizedWeight;
+            weightState->calculatedNormalizedWeight = pair.first->m_fNormalizedWeight;
+            weightState->lastSmoothedWeight = pair.first->m_fNormalizedWeight;
+            weightState->offset = 0.0f;
         }
         return;
     }
 
-    const auto smoothingTime = g_pluginSettings.blendSmoothingRate;
-    const auto smoothingRate = 1.0f - std::exp(-fDeltaTime / smoothingTime);
-
+    // weights below this are not blended
     constexpr float MIN_WEIGHT = 0.001f;
+    // a change of the weights this small is not worth taking up, however fast
+    constexpr float MIN_JUMP = 0.02f;
+    // one sequence easing in over another moves the weights up to 1.5 times as far as its ease spinner (sequences
+    // easing together count once: step.fInputChange is the item that moved most); from here on it is
+    // ComputeNormalizedWeights swinging by itself
+    constexpr float MAX_GAIN = 3.0f;
 
-    for (auto [itemPtr, extraItemPtr] : items)
+    // an item not blended before had no weight
+    const auto getLastWeight = [](const kWeightState& weightState)
     {
-        auto& item = *itemPtr;
-        if (!item.m_spInterpolator || !extraItemPtr)
+        return weightState.calculatedNormalizedWeight == -NI_INFINITY ? 0.0f : weightState.calculatedNormalizedWeight;
+    };
+
+    // how much of the weight changed hands since the last evaluation (1: all of it), and how much of that evaluation's
+    // weight the items still here held
+    float fWeightChange = 0.0f;
+    float fLastTotal = 0.0f;
+    for (const auto& pair : items)
+    {
+        if (const auto* weightState = getWeightState(pair))
+        {
+            const float fLastWeight = getLastWeight(*weightState);
+            fWeightChange += std::abs(pair.first->m_fNormalizedWeight - fLastWeight);
+            fLastTotal += fLastWeight;
+        }
+    }
+    fWeightChange *= 0.5f;
+
+    // nothing was blended before (first evaluation, after ReloadTargets or noBlendSmoothing): nothing to continue from
+    const bool bJump = fLastTotal >= MIN_WEIGHT
+        && (step.bItemsChanged || (fWeightChange > MIN_JUMP && fWeightChange > MAX_GAIN * step.fInputChange));
+    const float fDecay = std::exp(-step.fDeltaTime / g_pluginSettings.blendSmoothingRate);
+
+    for (const auto& pair : items)
+    {
+        auto* weightState = getWeightState(pair);
+        if (!weightState)
             continue;
+        auto& item = *pair.first;
+        const float fWeight = item.m_fNormalizedWeight;
 
-        DebugAssert(!extraItemPtr->isAdditive);
+        float fOffset = weightState->offset;
+        if (bJump)
+            fOffset += getLastWeight(*weightState) - fWeight;
+        fOffset *= fDecay;
+        if (std::abs(fOffset) < MIN_WEIGHT)
+            fOffset = 0.0f;
 
-        auto& extraItem = *extraItemPtr;
-        if (extraItem.debugState == kInterpDebugState::NotSet)
-            continue;
+        // an item still easing out may be computed less weight than a jump took from it
+        float fSmoothedWeight = max(fWeight + fOffset, 0.0f);
+        if (fSmoothedWeight < MIN_WEIGHT)
+            fSmoothedWeight = 0.0f;
 
-        auto& weightState = *extraItem.GetWeightState(type);
-
-        float targetWeight = item.m_fNormalizedWeight;
-
-        // Initialize new items to 0 for fade-in effect
-        if (weightState.lastSmoothedWeight == -NI_INFINITY)
-            weightState.lastSmoothedWeight = 0.0f;
-
-        weightState.lastCalculatedNormalizedWeight = weightState.calculatedNormalizedWeight;
-        weightState.calculatedNormalizedWeight = targetWeight;
-
-        float smoothedWeight = std::lerp(weightState.lastSmoothedWeight, targetWeight, smoothingRate);
-
-        if (smoothedWeight < MIN_WEIGHT)
-            smoothedWeight = 0.0f;
-
-        weightState.lastSmoothedWeight = smoothedWeight;
-        item.m_fNormalizedWeight = smoothedWeight;
+        weightState->offset = fOffset;
+        weightState->calculatedNormalizedWeight = fWeight;
+        weightState->lastSmoothedWeight = fSmoothedWeight;
+        item.m_fNormalizedWeight = fSmoothedWeight;
     }
 }
 
