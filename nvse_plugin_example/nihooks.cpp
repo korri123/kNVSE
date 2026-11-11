@@ -14,6 +14,7 @@
 
 #include "additive_anims.h"
 #include "blend_smoothing.h"
+#include "blend_transitions.h"
 #include "sequence_extradata.h"
 #include "weapon_hand_blend.h"
 
@@ -906,18 +907,14 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
-void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<std::pair<InterpArrayItem*, kBlendInterpItem*>>& items)
+// Gamebryo's blend of the two highest priorities, with kNVSE's cross fade rule for the highest one's ease spinner
+static void ComputeNormalizedWeightsOfTwoHighestPriorities(
+    const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items)
 {
     const auto isDetached = [](auto& item)
     {
         return item.second && item.second->detached;
     };
-    if (items.size() == 1)
-    {
-        items.front().first->m_fNormalizedWeight = isDetached(items.front()) ? 0.0f : 1.0f;
-        return;
-    }
-
     char cHighPriority = INVALID_INDEX;
     char cNextHighPriority = INVALID_INDEX;
     for (auto& item : items)
@@ -1003,6 +1000,22 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<std::pair<I
             kItem.m_fNormalizedWeight = 0.0f;
         }
     }
+}
+
+void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<std::pair<InterpArrayItem*, kBlendInterpItem*>>& items)
+{
+    const auto isDetached = [](auto& item)
+    {
+        return item.second && item.second->detached;
+    };
+    if (items.size() == 1)
+    {
+        items.front().first->m_fNormalizedWeight = isDetached(items.front()) ? 0.0f : 1.0f;
+        return;
+    }
+
+    if (!BlendTransitions::ComputeNormalizedWeights(items))
+        ComputeNormalizedWeightsOfTwoHighestPriorities(items);
     
     // Exclude weights below threshold, computing new sum in the process.
     float fSumOfNormalizedWeights = 1.0f;
@@ -1139,6 +1152,9 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
     auto* sequenceExtraData = SequenceExtraDatas::Get(this);
+    // the ease that brought it here is over: whatever eases it next declares its switch (AnimSwitch)
+    if (sequenceExtraData)
+        sequenceExtraData->switchMembership.reset();
 
     if (sequenceExtraData && sequenceExtraData->needsStoreTargets)
     {

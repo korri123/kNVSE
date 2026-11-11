@@ -9,19 +9,28 @@ class SequenceExtraData
 {
 public:
     // Animation::ClearGroup deactivating the sequence without an ease-out (PoseBlendFixes): its state just before, and
-    // the owner's animation time of the cut
+    // the switch that cut it
     struct HardCut
     {
         NiControllerSequence::AnimState eState;
         float fStartTime;
         float fEndTime;
-        float fTime;
+        UInt32 uiSwitch;
+    };
+
+    // The switch that eased the sequence in or out (AnimSwitch). Holds while the sequence stays in that state, and is
+    // dropped when it is activated again
+    struct SwitchMembership
+    {
+        UInt32 uiSwitch;
+        NiControllerSequence::AnimState eState;
     };
 
     bool startInReloadTargets = false;
     bool needsStoreTargets = false;
     std::optional<AdditiveSequenceMetadata> additiveMetadata;
     std::optional<HardCut> hardCut;
+    std::optional<SwitchMembership> switchMembership;
 };
 
 // kNVSE's data about the sequences of the NiControllerManagers animating a node, kept as extra data on that node (the
@@ -38,6 +47,14 @@ public:
         SequenceExtraData data;
     };
     std::vector<Entry> entries;
+    // The switch the Animation animating this node is making (AnimSwitch::Current): one per update of the Animation
+    struct OpenSwitch
+    {
+        const NiControllerManager* manager = nullptr;
+        UInt32 uiID = 0;
+        float fTime = 0.0f;
+    };
+    OpenSwitch openSwitch;
 
     NiNewRTTI(kAnimationExtraData, NiExtraData)
 

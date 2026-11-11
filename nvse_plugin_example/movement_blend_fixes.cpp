@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 
+#include "anim_switch.h"
 #include "blend_fixes.h"
 #include "hooks.h"
 
@@ -190,26 +191,14 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		fGaitTime = FindMatchingGaitTime(animData, currentMoveAnim, pkSequence);
 	}
 
-	if (currentMoveAnim && currentMoveAnim != pkSequence && currentMoveAnim->m_eState != NiControllerSequence::EASEOUT)
-	{
-		if (currentMoveAnim->m_eState == NiControllerSequence::EASEIN)
-			currentMoveAnim->DeactivateNoReset(fDuration, false, animData->timePassed);
-		else
-			currentMoveAnim->Deactivate(fDuration, false);
-	}
-
-	if (pkSequence->m_eState == NiControllerSequence::EASEOUT)
-	{
-		if (!pkSequence->ActivateNoReset(fDuration, false, animData->timePassed))
-			return pkSequence;
-	}
-	else
-	{
-		if (!pkSequence->Activate(0, true, pkSequence->m_fSeqWeight, fDuration, nullptr, false))
-			return pkSequence;
-		if (!std::isnan(fGaitTime))
-			pkSequence->m_fOffset = fGaitTime / pkSequence->m_fFrequency - animData->timePassed;
-	}
+	const auto animSwitch = AnimSwitch::Current(animData);
+	if (currentMoveAnim && currentMoveAnim != pkSequence)
+		animSwitch.EaseOut(currentMoveAnim, fDuration);
+	if (!animSwitch.EaseIn(pkSequence, fDuration))
+		return pkSequence;
+	// only set for a sequence started from inactive
+	if (!std::isnan(fGaitTime))
+		pkSequence->m_fOffset = fGaitTime / pkSequence->m_fFrequency - animData->timePassed;
 
 	SetAnimDataState(animData, pkSequence);
 	return pkSequence;

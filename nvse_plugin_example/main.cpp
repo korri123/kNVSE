@@ -22,6 +22,7 @@
 #include "nihooks.h"
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
+#include "anim_switch.h"
 #include "blend_fixes.h"
 #if _DEBUG
 #include "commands_misc.h"
@@ -343,6 +344,8 @@ void HandleCustomTextKeys()
 		BSAnimGroupSequence* anim = animTime.anim;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
 
+		// ~AnimTime eases the animation out: part of the Animation's current switch, once the Animation is known
+		AnimData* animDataOfEase = nullptr;
 		const auto erase = [&]
 		{
 			if (!animTime.cleanUpScripts.empty())
@@ -352,7 +355,10 @@ void HandleCustomTextKeys()
 					g_script->CallFunctionAlt(cleanUpScript, actor, 2, path.c_str(), animTime.firstPerson);
 				}
 			}
+			const NiPointer<BSAnimGroupSequence> endedAnim = anim;
 			it = g_timeTrackedAnims.erase(it);
+			if (animDataOfEase && endedAnim)
+				AnimSwitch::Current(animDataOfEase).Add(endedAnim);
 		};
 
 		if (!anim)
@@ -384,6 +390,7 @@ void HandleCustomTextKeys()
 			erase();
 			continue;
 		}
+		animDataOfEase = animData;
 
 		const auto time = animTime.useLegacyTime ? GetAnimTimeLegacy(animData, anim) : GetAnimTime(anim);
 	

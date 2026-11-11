@@ -393,7 +393,9 @@
     <ClCompile Include="anim_fixes.cpp" />
     <ClCompile Include="bethesda\archive.cpp" />
     <ClCompile Include="bethesda\bsfile.cpp" />
+    <ClCompile Include="anim_switch.cpp" />
     <ClCompile Include="blend_smoothing.cpp" />
+    <ClCompile Include="blend_transitions.cpp" />
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="commands_misc.cpp" />
     <ClCompile Include="decompiled\AnimDataHooks.cpp" />
@@ -459,7 +461,9 @@
     <ClInclude Include="additive_anims.h" />
     <ClInclude Include="anim_fixes.h" />
     <ClInclude Include="bethesda\bethesda_types.h" />
+    <ClInclude Include="anim_switch.h" />
     <ClInclude Include="blend_smoothing.h" />
+    <ClInclude Include="blend_transitions.h" />
     <ClInclude Include="class_vtbls.h" />
     <ClInclude Include="commands_animation.h" />
     <ClInclude Include="commands_misc.h" />

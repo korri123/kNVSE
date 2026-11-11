@@ -23,6 +23,7 @@
 
 #include "additive_anims.h"
 #include "anim_fixes.h"
+#include "anim_switch.h"
 #include "blend_fixes.h"
 #include "nihooks.h"
 #include "NiNodes.h"
@@ -1533,6 +1534,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 			const auto easeInTime = anim->GetEaseInTime();
 			if (anim->Activate(0, true, anim->m_fSeqWeight, easeInTime, nullptr, false))
 			{
+				AnimSwitch::Current(animData).Add(anim);
 				ApplyFootIK(actor);
 				if (auto* animTime = HandleExtraOperations(animData, anim, true); animTime && anim->m_eCycleType != NiControllerSequence::LOOP)
 				{
@@ -2321,6 +2323,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 				manager->DeactivateSequence(anim, 0.0);
 
 			const auto activateResult = manager->ActivateSequence(anim, priority, startOver, actualWeight, actualEaseInTime, timeSyncSeq);
+			AnimSwitch::Current(animData).Add(anim);
 			if (activateResult)
 				if (auto* animTime = HandleExtraOperations(animData, anim, true))
 					animTime->endIfSequenceTypeChanges = false;
@@ -2374,7 +2377,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (AdditiveManager::IsAdditiveSequence(anim))
 				AdditiveManager::RemoveAdditiveTransformsFlags(anim);
 			auto* manager = anim->m_pkOwner;
-			return manager->DeactivateSequence(anim, actualEaseOutTime);
+			const bool deactivated = manager->DeactivateSequence(anim, actualEaseOutTime);
+			AnimSwitch::Current(GetAnimDataForAnim(actor, anim)).Add(anim);
+			return deactivated;
 		});
 		return true;
 	});
@@ -2453,7 +2458,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			if (destAnim->m_eState != kAnimState_Inactive)
 				GameFuncs::DeactivateSequence(destAnim->m_pkOwner, destAnim, 0.0f);
 
-			return manager->CrossFade(
+			const bool crossFaded = manager->CrossFade(
 				sourceAnim,
 				destAnim,
 				actualEaseInTime,
@@ -2462,6 +2467,10 @@ void CreateCommands(NVSECommandBuilder& builder)
 				actualWeight,
 				timeSyncAnim
 			);
+			const auto animSwitch = AnimSwitch::Current(GetAnimData(actor, firstPerson));
+			animSwitch.Add(sourceAnim);
+			animSwitch.Add(destAnim);
+			return crossFaded;
 		});
 		return true;
 	});
@@ -3343,6 +3352,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 		{
 			g_pluginSettings.fixWeaponHandBlend = !g_pluginSettings.fixWeaponHandBlend;
 			*result = g_pluginSettings.fixWeaponHandBlend;
+		}
+		else if (featureName.str() == "overlappingBlends")
+		{
+			g_pluginSettings.fixOverlappingBlends = !g_pluginSettings.fixOverlappingBlends;
+			*result = g_pluginSettings.fixOverlappingBlends;
 		}
 		
 		return true;

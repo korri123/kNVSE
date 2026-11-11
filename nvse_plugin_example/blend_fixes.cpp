@@ -8,6 +8,7 @@
 #include <array>
 
 #include "SafeWrite.h"
+#include "anim_switch.h"
 #include "anim_fixes.h"
 
 
@@ -138,21 +139,10 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 
 	const auto blendTime = destAnim->GetEaseInTime();
 
-	if (srcAnim->m_eState != NiControllerSequence::EASEIN)
-	{
-		srcAnim->Deactivate(blendTime, false);
-		destAnim->Activate(0, true, destAnim->m_fSeqWeight, blendTime, nullptr, false);
-		return SKIP;
-	}
-
-	if (destAnim->m_eState == NiControllerSequence::EASEOUT)
-	{
-		srcAnim->DeactivateNoReset(blendTime, false, animData->timePassed);
-		destAnim->ActivateNoReset(blendTime, false, animData->timePassed);
-		return SKIP;
-	}
-
-	animData->controllerManager->CrossFade(srcAnim, destAnim, blendTime, 0, true, destAnim->m_fSeqWeight);
+	// aim, aim up and aim down are switched one by one: they share the switch of this update
+	const auto animSwitch = AnimSwitch::Current(animData);
+	animSwitch.EaseOut(srcAnim, blendTime);
+	animSwitch.EaseIn(destAnim, blendTime);
 	return SKIP;
 }
 
@@ -222,21 +212,10 @@ namespace
 		const auto fTime = animData->timePassed;
 		const auto destFrame = sourceSeq->m_fLastScaledTime / sourceSeq->m_fEndKeyTime * targetSeq->m_fEndKeyTime;
 
-		// the NoReset variants continue the ease from the weight the sequence has now
-		if (blend > 0.0f && sourceSeq->m_eState == NiControllerSequence::EASEIN)
-			sourceSeq->DeactivateNoReset(blend, false, fTime);
-		else
-			sourceSeq->Deactivate(blend, false);
-
-		if (blend > 0.0f && targetSeq->m_eState == NiControllerSequence::EASEOUT)
-			targetSeq->ActivateNoReset(blend, false, fTime);
-		else
-		{
-			if (targetSeq->m_eState != NiControllerSequence::INACTIVE)
-				targetSeq->Deactivate(0.0f, false);
-			if (!targetSeq->Activate(0, true, targetSeq->m_fSeqWeight, blend, nullptr, false))
-				return false;
-		}
+		const auto animSwitch = AnimSwitch::Current(animData);
+		animSwitch.EaseOut(sourceSeq, blend);
+		if (!animSwitch.EaseIn(targetSeq, blend))
+			return false;
 		targetSeq->m_fOffset = destFrame / targetSeq->m_fFrequency - fTime;
 		targetSeq->Update(fTime, true);
 

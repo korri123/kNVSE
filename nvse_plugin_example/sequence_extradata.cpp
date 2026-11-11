@@ -84,6 +84,7 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
     auto* extraData = NiNew<kAnimationExtraData>();
     ThisStdCall(0xA7B2E0, extraData); // NiExtraData::NiExtraData
     new(&extraData->entries) std::vector<Entry>();
+    new(&extraData->openSwitch) OpenSwitch();
     PopulateVtable(extraData);
     extraData->m_kName = ExtraDataName();
     obj->AddExtraData(extraData);

@@ -81,7 +81,9 @@
     <ClCompile Include="knvse_events.cpp" />
     <ClCompile Include="blend_fixes.cpp" />
     <ClCompile Include="additive_anims.cpp" />
+    <ClCompile Include="anim_switch.cpp" />
     <ClCompile Include="blend_smoothing.cpp" />
+    <ClCompile Include="blend_transitions.cpp" />
     <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
     <ClCompile Include="movement_blend_fixes.cpp" />
     <ClCompile Include="pose_blend_fixes.cpp" />
@@ -188,7 +190,9 @@
     <ClInclude Include="blend_fixes.h" />
     <ClInclude Include="string_view_util.h" />
     <ClInclude Include="additive_anims.h" />
+    <ClInclude Include="anim_switch.h" />
     <ClInclude Include="blend_smoothing.h" />
+    <ClInclude Include="blend_transitions.h" />
     <ClInclude Include="containers.h" />
     <ClInclude Include="lib\memory_pool\MemoryPool.h" />
     <ClInclude Include="movement_blend_fixes.h" />
