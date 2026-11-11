@@ -591,6 +591,52 @@ bool IsIdleFileStem(const AnimPath& animPath, std::string_view idleFileStem)
 	return sv::equals_ci(sv::get_file_stem(animPath.path), idleFileStem);
 }
 
+void SavedAnims::Load()
+{
+	if (loaded.load(std::memory_order_acquire))
+		return;
+	// sets are shared by every actor and loaded by whichever animation thread asks first
+	static std::mutex s_loadMutex;
+	std::scoped_lock lock(s_loadMutex);
+	if (loaded.load(std::memory_order_relaxed))
+		return;
+	if (!conditionScript && !conditionScriptText.empty())
+	{
+		conditionScript = CompileConditionScript(conditionScriptText);
+		if (!conditionScript)
+		{
+			const auto setPath = !anims.empty() ? anims[0]->path : additiveAnimPath;
+			ERROR_LOG(FormatString("Condition '%s' of %s failed to compile (see the console for the error), its animations are disabled",
+				conditionScriptText.data(), setPath.empty() ? "an animation set" : std::string(setPath).c_str()));
+			conditionFailed = true;
+		}
+	}
+	for (const auto& anim : anims)
+	{
+		const auto fileStem = sv::get_file_stem(anim->path);
+		if (!hasOrder && sv::contains_ci(fileStem, "_order_"))
+			hasOrder = true;
+		if (!anim->partialReload && sv::contains_ci(fileStem, "_partial"))
+		{
+			anim->partialReload = true;
+			hasPartialReload = true;
+		}
+		if (!anim->isStartAnim && sv::contains_ci(fileStem, "_start"))
+		{
+			anim->isStartAnim = true;
+			hasStartAnim = true;
+		}
+		if (!anim->isAmmoSwap && sv::contains_ci(fileStem, "_ammo_swap"))
+		{
+			anim->isAmmoSwap = true;
+			hasAmmoSwap = true;
+		}
+	}
+	if (hasOrder)
+		std::ranges::sort(anims, [&](const auto& a, const auto& b) {return a->path < b->path; });
+	loaded.store(true, std::memory_order_release);
+}
+
 std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData)
 {
 	if (const auto stacksIter = overrides.stacks.find(groupId); stacksIter != overrides.stacks.end())
@@ -615,8 +661,9 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				animTime->actorId = animData->actor->refID;
 				animTime->animData = animData;
 			};
-			if (!ctx->loaded)
-				ctx->Load();
+			ctx->Load();
+			if (ctx->conditionFailed)
+				continue;
 			if (idleFileStem && ra::none_of(ctx->anims, _L(const auto& animPath, IsIdleFileStem(*animPath, *idleFileStem))))
 				continue;
 			if (ctx->conditionScript)
@@ -671,8 +718,7 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 		cachePtr = &result->second;
 	}
 
-	if (!ctx.loaded)
-		ctx.Load();
+	ctx.Load();
 		
 	Actor* actor = animData->actor;
 	

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <optional>
@@ -329,7 +330,7 @@ struct SavedAnims
 	std::vector<std::unique_ptr<AnimPath>> anims; // inludes all random variants, or ordered variants, or in case reloads normal and partial reload animations
 	std::unordered_set<NiPointer<BSAnimGroupSequence>> linkedSequences;
 	bool hasOrder = false;
-	bool loaded = false;
+	std::atomic<bool> loaded = false; // set by Load, which runs on any animation thread
 	std::function<bool(const Actor*)> folderCondition;
 	FolderConditionType folderConditionType = FolderConditionType::None;
 	LambdaVariableContext conditionScript = nullptr;
@@ -340,6 +341,7 @@ struct SavedAnims
 	bool hasPartialReload = false;
 	bool hasAmmoSwap = false;
 	bool disabled = false;
+	bool conditionFailed = false; // the condition text failed to compile: never play, whatever enables the set again
 	std::string_view additiveAnimPath;
 	
 	SavedAnims() = default;
@@ -356,36 +358,9 @@ struct SavedAnims
 		return folderCondition(actor);
 	}
 
-	void Load()
-	{
-		if (!conditionScript && !conditionScriptText.empty())
-			conditionScript = CompileConditionScript(conditionScriptText);
-
-		for (const auto& anim : anims)
-		{
-			const auto fileStem = sv::get_file_stem(anim->path);
-			if (!hasOrder && sv::contains_ci(fileStem, "_order_"))
-				hasOrder = true;
-			if (!anim->partialReload && sv::contains_ci(fileStem, "_partial"))
-			{
-				anim->partialReload = true;
-				hasPartialReload = true;
-			}
-			if (!anim->isStartAnim && sv::contains_ci(fileStem, "_start"))
-			{
-				anim->isStartAnim = true;
-				hasStartAnim = true;
-			}
-			if (!anim->isAmmoSwap && sv::contains_ci(fileStem, "_ammo_swap"))
-			{
-				anim->isAmmoSwap = true;
-				hasAmmoSwap = true;
-			}
-		}
-		if (hasOrder)
-			std::ranges::sort(anims, [&](const auto& a, const auto& b) {return a->path < b->path; });
-		loaded = true;
-	}
+	// Compiles the condition and sorts the variants on first use. A set whose condition fails to compile is disabled:
+	// without its condition it would play for every actor the set's identifier covers (global sets: all of them).
+	void Load();
 };
 
 struct AnimStacks
