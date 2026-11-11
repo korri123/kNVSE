@@ -114,7 +114,7 @@ void LoadPathsForList(const fs::path& path, const BGSListForm* listForm, JSONEnt
 
 void LoadModAnimPaths(const fs::path& path, const ModInfo* mod)
 {
-	LoadPathsForPOV(path, mod->modIndex, true);
+	LoadPathsForPOV(path, mod->GetAsFormID(), true);
 	for (fs::directory_iterator iter(path), end; iter != end; ++iter)
 	{
 		const auto& iterPath = iter->path();
@@ -126,7 +126,8 @@ void LoadModAnimPaths(const fs::path& path, const ModInfo* mod)
 			const auto id = HexStringToInt(folderName);
 			if (id != -1) 
 			{
-				const auto formId = (id & 0x00FFFFFF) + (mod->modIndex << 24);
+				UInt32 formId = id;
+				mod->AdjustFormIDFileIndex(formId);
 				auto* form = LookupFormByID(formId);
 				if (form)
 					LoadForForm(iterPath, form);
@@ -189,14 +190,14 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 				if (elem.contains("priority"))
 					priority = elem["priority"].get<int>();
 				auto modName = elem.contains("mod") ? elem["mod"].get<std::string>() : "";
-				const auto* mod = !modName.empty() ? DataHandler::Get()->LookupModByName(modName.c_str()) : nullptr;
+				const auto* mod = !modName.empty() ? DataHandler::Get()->GetModByName(modName.c_str()) : nullptr;
 				if (!mod && !modName.empty())
 				{
 					continue;
 				}
 				auto folder = elem["folder"].get<std::string>();
 				ra::replace(folder, '/', '\\');
-				std::vector<int> formIds;
+				std::vector<UInt32> formIds;
 				auto* formElem = elem.contains("form") ? &elem["form"] : nullptr;
 				if (formElem)
 				{
@@ -231,7 +232,7 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 				{
 					for (auto formId : formIds)
 					{
-						formId = (mod->modIndex << 24) + (formId & 0x00FFFFFF);
+						mod->AdjustFormIDFileIndex(formId);
 						auto* form = LookupFormByID(formId);
 						if (!form)
 						{
@@ -434,7 +435,7 @@ void LoadFileAnimPaths()
 				if (sv::equals_ci(ext, ".esp") || sv::equals_ci(ext, ".esm"))
 				{
 					const auto fileName = path.filename().string();
-					if (const auto* mod = DataHandler::Get()->LookupModByName(fileName.c_str()))
+					if (const auto* mod = DataHandler::Get()->GetModByName(fileName.c_str()))
 						LoadModAnimPaths(path, mod);
 					else
 						ERROR_LOG(FormatString("Mod with name %s is not loaded!", fileName.c_str()));

@@ -133,7 +133,7 @@ enum FormType
 	kFormType_BGSSleepDeprevationStage,	// 78
 };
 
-struct ModInfo;		// in GameData.h 
+class ModInfo;		// in GameData.h 
 class TESFullName;
 class EnchantmentItem;
 class TESSound;
@@ -332,6 +332,8 @@ public:
 
 	// Looks like there is another DWord here, used as a byte: LastLoaded or Active or Selected ? 
 
+	UInt32			GetFormID() const;
+	UInt32			GetFormIDWithoutIndex() const;
 	TESForm *		TryGetREFRParent(void);
 	UInt8			GetModIndex() const;
 	TESFullName*	GetFullName() const;
@@ -347,6 +349,8 @@ public:
 	// return a new base form which is the clone of this form
 	TESForm* CloneForm(bool bPersist = true) const;
 	bool     IsInventoryObject() const;
+
+	ModInfo* GetFile(SInt32 index) const;
 
 	MEMBER_FN_PREFIX(TESForm);
 #if RUNTIME

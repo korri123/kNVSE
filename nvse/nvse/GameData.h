@@ -10,6 +10,9 @@ class TESRecipeCategory;
 class TESAmmoEffect;
 class TESCasino;
 class TESCaravanDeck;
+class TESCasinoChips;
+class TESCaravanMoney;
+class TESCaravanCard;
 class TESTopicInfo;
 class BGSDehydrationStage;
 class BGSHungerStage;
@@ -75,8 +78,9 @@ struct ChunkHeader
 	UInt16	size : 2;
 };
 
-struct ModInfo		// referred to by game as TESFile
+class ModInfo		// referred to by game as TESFile
 {
+public:
 	ModInfo();
 	~ModInfo();
 
@@ -148,8 +152,7 @@ struct ModInfo		// referred to by game as TESFile
 	UInt8								pad29B;
 	WIN32_FIND_DATA						fileData;			// 29C
 	FileHeader							header;				// 3DC
-	UInt8								flags;				// 3E8	Bit 0 is ESM . Runtime: Bit 2 is Valid, Bit 3 is Unselected Editor: 2 is selected, 3 is active, 4 may be invalid, 6 is endian, 14 controls VCI.
-	UInt8								pad3E9[3];
+	UInt32								flags;				// 3E8	Bit 0 is ESM . Runtime: Bit 2 is Valid, Bit 3 is Unselected Editor: 2 is selected, 3 is active, 4 may be invalid, 6 is endian, 14 controls VCI.
 	tList<char*>						refModNames;		// 3EC
 	tList<MasterSize*>					refModData;			// 3F4 most likely full of 0
 	UInt32								numRefMods;			// 3FC related to modindex; see 4472D0
@@ -158,7 +161,7 @@ struct ModInfo		// referred to by game as TESFile
 	UInt32								unk404;				// 404
 	UInt32								unk408;				// 408
 	UInt8								modIndex;			// 40C init to 0xFF
-	UInt8								pad40D[3];
+	UInt16								secondIndex;
 	BSString								author;				// 410
 	BSString								description;		// 418
 	void								* dataBuf;			// 420 
@@ -168,9 +171,22 @@ struct ModInfo		// referred to by game as TESFile
 
 	// In Editor: 430 = ONAM array and 434 ONAM array count. Allocated at 0438
 	
-	bool IsLoaded() const { return true; }
+	bool IsLoaded() const { return modIndex != 0xFF; }
+
+	bool IsSmall() const { return (flags & 0x100) != 0; }
+	bool IsOverlay() const { return (flags & 0x200) != 0; }
+	bool IsMedium() const { return (flags & 0x400) != 0; }
+	bool IsSpecial() const { return (flags & 0x700) != 0; }
+
+	ModInfo* GetIndexFile(UInt32 index) const;
+
+	void AdjustFormIDFileIndex(UInt32& formID) const;
+
+	UInt32 GetAsFormID() const;
 
 #if RUNTIME
+	static ModInfo* GetFileForTempID(UInt32 formID);
+
 	/*** used by TESForm::LoadForm() among others ***/
 	MEMBER_FN_PREFIX(ModInfo);
 	DEFINE_MEMBER_FN(GetNextChunk, UInt32, _ModInfo_GetNextChunk);	// returns chunk type
@@ -187,14 +203,59 @@ STATIC_ASSERT(offsetof(ModInfo, unk260) == 0x260);
 STATIC_ASSERT(sizeof(ModInfo) == 0x42C);
 
 
+struct ModArray {
+	void* vtable;
+	ModInfo** data;
+	UInt32	size;
+	UInt32	capacity;
+
+	ModInfo* GetAt(UInt32 idx) const {
+		return data[idx];
+	}
+
+	UInt32 GetSize() const {
+		return size;
+	}
+};
 
 struct ModList
 {
-	tList<ModInfo>		modInfoList;		// 00
-	UInt32				loadedModCount;		// 08
-	ModInfo*			loadedMods[0xFF];	// 0C
+	union {
+		struct {
+			ModArray	normalFiles;
+			ModArray	smallFiles;
+			ModArray	overlayFiles;
+			ModArray	mediumFiles;
+			UInt32		padding[0xE4];
+		};
+
+		struct {
+			uint32_t	loadedModCount;
+			ModInfo*	loadedMods[0xFF];
+		};
+	};
+private:
+	friend class DataHandler;
+
+	ModInfo* GetMod(UInt8 modIndex) const;
+
+	ModInfo* GetSmallMod(UInt16 modIndex) const;
+
+	ModInfo* GetMediumMod(UInt16 modIndex) const;
+
+	ModInfo* GetOverlayMod(UInt32 modIndex) const;
+
+	UInt32 GetNormalModCount() const;
+
+	UInt32 GetSmallModCount() const;
+
+	UInt32 GetMediumModCount() const;
+
+	UInt32 GetOverlayModCount() const;
 };
-STATIC_ASSERT(sizeof(ModList) == 0x408);
+STATIC_ASSERT(sizeof(ModList) == 0x400);
+
+inline constexpr uint32_t HAS_NEW_PLUGIN_TYPES = 0x80;
 
 // 5B8
 class DataHandler
@@ -203,7 +264,7 @@ public:
 	DataHandler();
 	~DataHandler();
 
-	UInt32							unk00;					// 000
+	UInt32							flags;					// 000
 	BoundObjectListHead				* boundObjectList;		// 004
 	tList<TESPackage>				packageList;			// 008
 	tList<TESWorldSpace>			worldSpaceList;			// 010
@@ -266,10 +327,10 @@ public:
 	TESRegionList					* regionList;			// 1D8
 	NiTArray<TESObjectCELL*>		cellArray;				// 1DC
 	NiTArray<BGSAddonNode*>			addonArray;				// 1EC
-
 	UInt32							unk1FC[0x3];			// 1FC	208 looks like next created refID
 	UInt32							nextCreatedRefID;		// 208	Init'd to FF000800 (in GECK init'd to nn000800)
 	ModInfo*						activeFile;					// 20C	last unselected mod in modList. GECK: active ESM
+	tList<ModInfo>					modInfoList;
 	ModList							modList;				// 210
 	UInt8							unk618;					// 618	5A4
 	UInt8							unk619;					// 619
@@ -291,11 +352,39 @@ public:
 	UInt32							unk638;					// 638
 
 	static DataHandler* Get();
-	const ModInfo ** GetActiveModList();		// returns array of modEntry* corresponding to loaded mods sorted by mod index
-	const ModInfo* LookupModByName(const char* modName);
-	UInt8 GetModIndex(const char* modName);
+
+	bool SupportsNewFileTypes() const { return flags & HAS_NEW_PLUGIN_TYPES; }
+	static bool HasNewFileTypeSupport() { return Get()->SupportsNewFileTypes(); }
+
+	ModInfo* GetModByFormID(UInt32 formID) const;
+
+	ModInfo* GetMod(UInt32 auiIndex) const;
+
+	const ModInfo* GetModByName(const char* modName) const;
+	UInt8 GetModIndex(const char* modName) const;
 	UInt8 GetActiveModCount() const;
-	const char* GetNthModName(UInt32 modIndex);
+	const char* GetNthModName(UInt8 modIndex) const;
+	const char* GetNthModName(UInt8 modIndex, UInt16 smallIndex) const;
+	const char* GetModNameForForm(const TESForm* form) const;
+
+	UInt32 GetNormalModCount() const;
+	ModInfo* GetNormalMod(UInt32 auiIndex) const;
+
+	UInt32 GetSmallModCount() const;
+	ModInfo* GetSmallMod(UInt32 auiIndex) const;
+
+	UInt32 GetMediumModCount() const;
+	ModInfo* GetMediumMod(UInt32 auiIndex) const;
+
+	UInt32 GetOverlayModCount() const;
+	ModInfo* GetOverlayMod(UInt32 auiIndex) const;
+
+	void DisableAssignFormIDs(bool shouldAsssign);
+
+	bool IsFormIDInUse(UInt32 formID) const;
+
+	static UInt32 BuildFormID(UInt8 mainIndex, UInt32 formIndex, UInt16 secondIndex, bool useSecondary);
+
 	void SetAssignFormIDs(bool shouldAssign);
 	bool GetAssignFormIDs() const { return !bDontRemoveFormIDs; }
 
@@ -307,6 +396,6 @@ public:
 	TESQuest* GetQuestByName(const char* questName);
 };
 
-STATIC_ASSERT(offsetof(DataHandler, modList) == 0x210);
+STATIC_ASSERT(offsetof(DataHandler, modList) == 0x218);
 STATIC_ASSERT(offsetof(DataHandler, unk618) == 0x618);
 STATIC_ASSERT(sizeof(DataHandler) == 0x63C);
