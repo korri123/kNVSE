@@ -94,8 +94,8 @@ public:
 	UInt32		unk0020;							// 0020
 	UInt32		unk0024;							// 0024
 	UInt32		unk0028;							// 0028
-	void		* unk002C;							// 002C
-	void		* unk0030;							// 0030
+	IDirectInputDevice8A	* keyboard;				// 002C
+	IDirectInputDevice8A	* mouse;				// 0030
 	UInt32		unk0034[(0x1A30 - 0x0034) >> 2];	// 0034
 	UInt32		unk1A30;							// 1A30
 	UInt32		unk1A34[(0x1AF8 - 0x1A34) >> 2];	// 1A34

@@ -400,6 +400,9 @@
     <ClCompile Include="commands_misc.cpp" />
     <ClCompile Include="decompiled\AnimDataHooks.cpp" />
     <ClCompile Include="debug_tools.cpp" />
+    <ClCompile Include="debug_capture.cpp" />
+    <ClCompile Include="debug_input.cpp" />
+    <ClCompile Include="debug_window.cpp" />
     <ClCompile Include="dllmain.c">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug ng|Win32'">
       </ForcedIncludeFiles>

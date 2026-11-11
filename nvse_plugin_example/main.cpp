@@ -748,6 +748,7 @@ static void CheckAndWarnForFixPack()
 
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
+	DebugTools::HandleMessage(msg->type);
 	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
 	{
 		g_isThreadCacheEnabled = true;
@@ -894,5 +895,6 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	Events::RegisterEvents();
 	DebugTools::InstallAssertHook();
 	DebugTools::StartCommandPipe();
+	DebugTools::StartBackgroundMode();
 	return true;
 }

@@ -92,6 +92,9 @@
     <ClCompile Include="sequence_extradata.cpp" />
     <ClCompile Include="weapon_hand_blend.cpp" />
     <ClCompile Include="debug_tools.cpp" />
+    <ClCompile Include="debug_capture.cpp" />
+    <ClCompile Include="debug_input.cpp" />
+    <ClCompile Include="debug_window.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\nvse\nvse\GameAPI.h">
