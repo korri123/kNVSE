@@ -63,7 +63,7 @@ struct Sounds
 	static bool IsSoundFile(const std::string_view fileName)
 	{
 		const auto fileExt = sv::get_file_extension(fileName);
-		return fileExt == ".wav" || fileExt == ".ogg";
+		return sv::equals_ci(fileExt, ".wav") || sv::equals_ci(fileExt, ".ogg");
 	}
 	
 	Sounds(std::string_view path, bool is3D)
