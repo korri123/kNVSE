@@ -2231,6 +2231,8 @@ CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::SetDoubleValue(
     // use SetValue to create sections
     if (!a_pSection || !a_pKey) return SI_FAIL;
 
+    m_bChangesMade = true;
+
     // convert to an ASCII string
     char szInput[64];
 #if __STDC_WANT_SECURE_LIB__ && !_WIN32_WCE

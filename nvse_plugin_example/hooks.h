@@ -29,6 +29,7 @@ struct PluginINISettings
     bool fixLoopingReloadStance = true;
     bool blendSmoothing = true;
     float blendSmoothingRate = 0.075f;
+    float blendEaseCurve = 0.7f;
     bool fixWeaponHandBlend = true;
     bool fixBlendFromPose = true;
     bool fixWeaponParentSwitch = true;

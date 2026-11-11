@@ -1641,8 +1641,26 @@ float NiControllerSequence::FindCorrespondingMorphFrame(NiControllerSequence* pk
     return ThisStdCall<float>(0xA32010, this, pkTargetSequence, fTime);
 }
 
+// fBlendEaseCurve: the engine moves ease and transition spinners at constant speed, so blends start and stop at once.
+// Mixed with their smoothstep they speed up and slow down instead, and still end on time. The curve is point symmetric
+// (1 - curve(x) == curve(1 - x)): a cross fade's two spinners still add up to 1, and an ease reversed where it is
+// (ActivateNoReset, DeactivateNoReset), which mirrors its times, continues from the spinner it had
+static float ApplyBlendEaseCurve(float fSpinner)
+{
+    const float fCurve = g_pluginSettings.blendEaseCurve;
+    if (fCurve <= 0.0f || fSpinner <= 0.0f || fSpinner >= 1.0f)
+        return fSpinner;
+    const float fSmoothStep = fSpinner * fSpinner * (3.0f - 2.0f * fSpinner);
+    return fSpinner + (fSmoothStep - fSpinner) * fCurve;
+}
+
+// The call in NiControllerSequence::Update (0xA34E7B), the engine's only one: every blend item's ease spinner comes from here
 void NiControllerSequence::SetInterpsWeightAndTime(float fWeight, float fEaseSpinner, float fTime)
 {
+    fEaseSpinner = ApplyBlendEaseCurve(fEaseSpinner);
+    // a transition's spinner arrives multiplied into the weight
+    if ((m_eState == TRANSSOURCE || m_eState == TRANSDEST) && m_fSeqWeight > 0.0f)
+        fWeight = m_fSeqWeight * ApplyBlendEaseCurve(fWeight / m_fSeqWeight);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
