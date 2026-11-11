@@ -7,6 +7,7 @@
 
 namespace Decoding {
 	class HighProcess;
+	enum AnimAction : SInt16;
 }
 
 class TESObjectCELL;
@@ -735,6 +736,12 @@ public:
 	float GetRunSpeedMult() const
 	{
 		return ThisStdCall<float>(0x884EB0, this);
+	}
+
+	// Actor::SetAnimAction: the action the actor's process is in and the sequence playing it
+	void SetAnimAction(Decoding::AnimAction action, BSAnimGroupSequence* sequence)
+	{
+		ThisStdCall(0x8A73E0, this, action, sequence);
 	}
 
 	void RestartAnims();

@@ -165,6 +165,18 @@ struct AnimData
 		ThisStdCall(0x496080, this, seqID, blendAmount);
 	}
 
+	// Animation::GetCurrentSequence
+	BSAnimGroupSequence* GetCurrentSequence(eAnimSequence sequenceId) const
+	{
+		return ThisStdCall<BSAnimGroupSequence*>(0x491040, this, sequenceId);
+	}
+
+	// Animation::PlayGroup
+	BSAnimGroupSequence* PlayGroup(UInt16 groupId, int flags, int loopCount, eAnimSequence sequenceId)
+	{
+		return ThisStdCall<BSAnimGroupSequence*>(0x494740, this, groupId, flags, loopCount, sequenceId);
+	}
+
 	bool Refresh(bool storeTargets)
 	{
 		return ThisStdCall<bool>(0x499240, this, storeTargets);

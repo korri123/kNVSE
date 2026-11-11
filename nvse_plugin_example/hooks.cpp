@@ -227,6 +227,24 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void*, UInt16 groupID
 	return fullGroupId;
 }
 
+// Actor::HandlePostAnimationActions, next round of a looping reload (AnimData::PlayAnimGroup)
+// - rigs GetCurrentAmmoRounds to add 1 to the result while the next round's anim is started
+// - the engine records the reload loop action with the current weapon sequence, then plays the next round's group,
+//   picked from the current stance. Sneaking or standing up mid-reload picks the other variant (sneak2hrreloadz <->
+//   2hrreloadz): the action kept the sequence that was cut, the engine dropped the action once that one had faded out
+//   and the new variant played to its end without loading a round. The action now follows the sequence that plays.
+void __fastcall ReloadLoopNextRoundHook(AnimData* animData, void*, UInt16 groupId, int flags, int queuedState, eAnimSequence sequenceId)
+{
+	auto* actor = GET_CALLER_VAR(Actor*, -0xA0);
+	const auto* recorded = animData->GetCurrentSequence(kSequence_Weapon);
+	g_globals.isInLoopingReloadPlayAnim = true;
+	animData->PlayGroup(groupId, flags, queuedState, sequenceId);
+	g_globals.isInLoopingReloadPlayAnim = false;
+	auto* playing = animData->GetCurrentSequence(kSequence_Weapon);
+	if (actor && playing && playing != recorded)
+		actor->SetAnimAction(Decoding::kAnimAction_ReloadLoop, playing);
+}
+
 // The engine picks the reload path (looping or not) by TESObjectWEAP::IsReloadLoop (0x4938C0), set from the base
 // reload anim alone, but plays the mod reload anim when the weapon has an Increase Clip Capacity mod
 // (TESObjectWEAP::GetReloadAnimGroup 0x51E2A0). Looping base, non-looping mod anim: the looping path asked for
@@ -1039,14 +1057,7 @@ void ApplyHooks()
 		return ThisStdCall<bool>(0x853130, map, name, out);
 	}));
 
-	// AnimData::PlayAnimGroup
-	// used to rig GetCurrentAmmoRounds command to add 1 to the result if we are about to play a looping reload anim
-	WriteRelCall(0x8BAD2C, INLINE_HOOK(void, __fastcall, AnimData *animData, void*, UInt16 groupID, int flags, int queuedState, eAnimSequence sequenceID)
-	{
-		g_globals.isInLoopingReloadPlayAnim = true;
-		ThisStdCall(0x494740, animData, groupID, flags, queuedState, sequenceID);
-		g_globals.isInLoopingReloadPlayAnim = false;
-	}));
+	WriteRelCall(0x8BAD2C, ReloadLoopNextRoundHook);
 
 
 	const auto writeAttackLoopToAimHooks = []
