@@ -122,7 +122,19 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 }
 
 bool g_fixHolster = false;
+// Referenced, not borrowed: the unequip can be freed (save load, KF unload) while the fix waits for 3rd person. A raw
+// pointer with manual references rather than a NiPointer, which would release it from a static destructor at exit.
 BSAnimGroupSequence* g_fixHolsterUnequipAnim3rd = nullptr;
+
+static void SetFixHolster(BSAnimGroupSequence* unequipAnim3rd)
+{
+	if (unequipAnim3rd)
+		unequipAnim3rd->IncrementRefCount();
+	if (g_fixHolsterUnequipAnim3rd)
+		g_fixHolsterUnequipAnim3rd->DecrementRefCount();
+	g_fixHolsterUnequipAnim3rd = unequipAnim3rd;
+	g_fixHolster = unequipAnim3rd != nullptr;
+}
 
 struct ThirdPersonSavedData
 {
@@ -170,10 +182,7 @@ void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence*
 	}
 	const TESAnimGroup* animGroup = anim1st->animGroup;
 	if (animGroup && (animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
-	{
-		g_fixHolster = true;
-		g_fixHolsterUnequipAnim3rd = anim3rd;
-	}
+		SetFixHolster(anim3rd);
 }
 
 bool IsSequenceInAnimBundle(AnimData* animData, UInt16 nearestGroupId, const std::optional<AnimationResult>& animResult, BSAnimGroupSequence* anim)
@@ -679,12 +688,12 @@ void ApplyHolsterFix()
 		{
 			if (g_fixHolsterUnequipAnim3rd->m_eState == kAnimState_Inactive)
 			{
-				g_fixHolster = false;
+				SetFixHolster(nullptr);
 				ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
 			}
 		}
-		else if (anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
-			g_fixHolster = false;
+		else if (!anim->animGroup || anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
+			SetFixHolster(nullptr);
 	}
 }
 
@@ -768,6 +777,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
 	{
+		SetFixHolster(nullptr); // a holster started before the load is not the player's anymore
 	}
 }
 
