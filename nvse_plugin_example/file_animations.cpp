@@ -200,6 +200,8 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 				const auto* mod = !modName.empty() ? DataHandler::Get()->LookupModByName(modName.c_str()) : nullptr;
 				if (!mod && !modName.empty())
 				{
+					LOG(FormatString("JSON %s: mod %s is not loaded, skipping folder %s", path.string().c_str(), modName.c_str(),
+						elem.value("folder", std::string()).c_str()));
 					continue;
 				}
 				auto folder = elem["folder"].get<std::string>();
@@ -239,11 +241,13 @@ void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
 				{
 					for (auto formId : formIds)
 					{
-						formId = (mod->modIndex << 24) + (formId & 0x00FFFFFF);
+						const auto localFormId = formId & 0x00FFFFFF;
+						formId = (mod->modIndex << 24) + localFormId;
 						auto* form = LookupFormByID(formId);
 						if (!form)
 						{
-							LOG(FormatString("Form %X was not found", formId));
+							LOG(FormatString("JSON %s: form %06X of %s (%08X in the load order) was not found, skipping folder %s",
+								path.string().c_str(), localFormId, modName.c_str(), formId, folder.c_str()));
 							continue;
 						}
 						//LOG(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
