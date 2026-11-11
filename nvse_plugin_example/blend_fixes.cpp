@@ -310,33 +310,42 @@ namespace
 		}
 		return blend > 0.0f ? blend : targetSeq->GetEaseInTime();
 	}
+
+	// The variant of the sequence's group the actor's current stance picks, if it is another one. Compared by group ID:
+	// a group with several KFs (random variants, override sets) returns another sequence on each lookup
+	BSAnimGroupSequence* GetStanceVariant(AnimData* animData, const BSAnimGroupSequence* sequence)
+	{
+		const auto groupId = GetNearestGroupID(animData, sequence->animGroup->GetBaseGroupID());
+		if (groupId == 0xFFFF || groupId == sequence->animGroup->groupID)
+			return nullptr;
+		return GetAnimByFullGroupID(animData, groupId);
+	}
 }
 
-// The engine picks a looping reload's stance variant (sneaking or not) only when it starts a round, while the idle and
-// movement groups switch to the new stance at once. The third person variants key the legs but not Bip01 NonAccum, so
-// after sneaking or standing up the feet sank into the ground or floated above it for the rest of the round, and for
-// the whole rest of the reload after its last round. Cross fades the reload to the new stance's variant at once.
-void BlendFixes::ApplyLoopingReloadStanceFix()
+// The engine picks a reload's stance variant (sneaking or not) only when it starts the reload, or a looping reload's
+// round, while the idle and movement groups and the camera switch to the new stance at once. The third person reloads
+// key the legs: a reload (9mm Pistol 1hpreloadl) held the body standing until it ended while the camera was already at
+// the sneak height, a looping reload's variants don't key Bip01 NonAccum, so the feet sank into the ground or floated
+// above it for the rest of the round, and for the whole rest of the reload after its last round. Cross fades the reload
+// to the new stance's variant at once.
+void BlendFixes::ApplyReloadStanceFix()
 {
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
 	auto* animData1st = g_thePlayer->firstPersonAnimData;
 	auto* sourceSeq = animData3rd ? animData3rd->animSequence[kSequence_Weapon] : nullptr;
-	if (!sourceSeq || !sourceSeq->animGroup)
+	if (!sourceSeq || !sourceSeq->animGroup || !sourceSeq->animGroup->IsReload())
 		return;
-	if (!sourceSeq->animGroup->IsLoopingReload() && !sourceSeq->animGroup->IsLoopingReloadStart())
-		return;
-	const auto groupId = sourceSeq->animGroup->GetBaseGroupID();
-	auto* targetSeq = GetAnimByGroupID(animData3rd, groupId);
-	if (!targetSeq || targetSeq == sourceSeq || !targetSeq->animGroup)
+	auto* targetSeq = GetStanceVariant(animData3rd, sourceSeq);
+	if (!targetSeq || !targetSeq->animGroup)
 		return;
 	const auto blend = GetStanceSwitchBlendTime(animData3rd, targetSeq);
 	if (!TransitionToVariant(animData3rd, targetSeq, kSequence_Weapon, blend))
 		return;
 
 	if (auto* sourceSeq1st = animData1st->animSequence[kSequence_Weapon]; sourceSeq1st && sourceSeq1st->animGroup
-		&& sourceSeq1st->animGroup->GetBaseGroupID() == groupId)
+		&& sourceSeq1st->animGroup->GetBaseGroupID() == sourceSeq->animGroup->GetBaseGroupID())
 	{
-		if (auto* targetSeq1st = GetAnimByGroupID(animData1st, groupId))
+		if (auto* targetSeq1st = GetStanceVariant(animData1st, sourceSeq1st))
 			TransitionToVariant(animData1st, targetSeq1st, kSequence_Weapon, blend);
 	}
 

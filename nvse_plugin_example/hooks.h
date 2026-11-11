@@ -26,7 +26,7 @@ struct PluginINISettings
     bool fixWrongAnimName = false;
     bool fixMissingPrnKey = false;
     bool fixReloadStartAllowReloadTweak = false;
-    bool fixLoopingReloadStance = true;
+    bool fixReloadStance = true;
     bool blendSmoothing = true;
     float blendSmoothingRate = 0.075f;
     float blendEaseCurve = 0.7f;

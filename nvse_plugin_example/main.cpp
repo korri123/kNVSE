@@ -772,8 +772,8 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 				BlendFixes::ApplyAttackToAttackISFix();
 			}
 #endif
-			if (g_pluginSettings.fixLoopingReloadStance)
-				BlendFixes::ApplyLoopingReloadStanceFix();
+			if (g_pluginSettings.fixReloadStance)
+				BlendFixes::ApplyReloadStanceFix();
 		}
 		HandleSynchronizedExecutionQueue();
 		g_mainThreadQueue.RunAllAndClear(); // kMessage_MainGameLoop runs before AILinearTaskThreads start

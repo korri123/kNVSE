@@ -785,7 +785,7 @@ void ApplyHooks()
 	conf.fixWrongAnimName = ini.GetOrCreate("Anim Fixes", "bFixWrongAnimName", 1, "; try to fix animations where the name of the animation file does not match anim group name.");
 	conf.fixMissingPrnKey = ini.GetOrCreate("Anim Fixes", "bFixMissingPrnKey", 1, "; try to fix animations where the prn key is missing in the first person animation.");
 	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest.");
-	conf.fixLoopingReloadStance = ini.GetOrCreate("Anim Fixes", "bFixLoopingReloadStance", 1, "; fix the legs sinking into the ground or floating above it when sneaking or standing up during a looping reload (e.g. the Cowboy Repeater) in third person: the game only switches the reload to the new stance's animation at its next round, and not at all after the last one. kNVSE blends to it at once.");
+	conf.fixReloadStance = ini.GetOrCreate("Anim Fixes", "bFixReloadStance", 1, "; fix the body staying in the old stance when sneaking or standing up during a reload in third person: the game only switches the reload to the new stance's animation when it starts the next reload (or round of a looping reload, e.g. the Cowboy Repeater, whose legs sink into the ground or float above it until then), while the camera moves at once. kNVSE blends to it at once.");
 
 	const std::string legacyAnimTimePaths = ini.GetOrCreate("Anim Fixes", "sLegacyAnimTimePaths", "B42Inject,B42Interact,B42Loot", "; use legacy anim time algorithm for these paths (these mods rely on bugged behavior from previous versions of kNVSE).");
 	if (!legacyAnimTimePaths.empty())
