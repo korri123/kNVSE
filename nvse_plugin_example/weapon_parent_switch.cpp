@@ -54,12 +54,26 @@ namespace
         }
         return std::nullopt;
     }
+
+    // The engine acts on a text key by the group's action: only equip and unequip animations move the Weapon node at
+    // their Attach/Detach key. A throw attack's Attach is where the next projectile appears in the hand the node never
+    // left, and its Weapon track before that key is the throwing grip, in the same space
+    bool MovesWeapon(const NiControllerSequence& sequence)
+    {
+        if (NOT_TYPE(&sequence, BSAnimGroupSequence))
+            return false;
+        const TESAnimGroup* animGroup = static_cast<const BSAnimGroupSequence&>(sequence).animGroup;
+        if (!animGroup)
+            return false;
+        const auto groupId = animGroup->GetBaseGroupID();
+        return groupId == kAnimGroup_Equip || groupId == kAnimGroup_Unequip;
+    }
 }
 
 void WeaponParentSwitch::Init(kBlendInterpItem& item, const NiControllerSequence& sequence)
 {
     item.parentSwitch.reset();
-    if (!g_pluginSettings.fixWeaponParentSwitch || !sequence.m_spTextKeys)
+    if (!g_pluginSettings.fixWeaponParentSwitch || !sequence.m_spTextKeys || !MovesWeapon(sequence))
         return;
     auto* transform = item.interpolator ? NI_DYNAMIC_CAST(NiTransformInterpolator, item.interpolator.data) : nullptr;
     if (!transform)
