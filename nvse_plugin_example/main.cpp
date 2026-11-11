@@ -55,6 +55,7 @@ NVSEScriptInterface* g_script;
 NVSEArrayVarInterface* g_arrayVarInterface = nullptr;
 NVSEStringVarInterface* g_stringVarInterface = nullptr;
 NVSEConsoleInterface* g_consoleInterface = nullptr;
+NVSEDataInterface* g_nvseDataInterface = nullptr;
 #endif
 
 _CaptureLambdaVars CaptureLambdaVars;
@@ -887,9 +888,9 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 
 	//g_eventManagerInterface->SetNativeEventHandler("OnActorEquip", OnActorEquipEventHandler);
 
-	NVSEDataInterface* nvseData = (NVSEDataInterface*)nvse->QueryInterface(kInterface_Data);
-	CaptureLambdaVars = (_CaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaSaveVariableList);
-	UncaptureLambdaVars = (_UncaptureLambdaVars)nvseData->GetFunc(NVSEDataInterface::kNVSEData_LambdaUnsaveVariableList);
+	g_nvseDataInterface = (NVSEDataInterface*)nvse->QueryInterface(kInterface_Data);
+	CaptureLambdaVars = (_CaptureLambdaVars)g_nvseDataInterface->GetFunc(NVSEDataInterface::kNVSEData_LambdaSaveVariableList);
+	UncaptureLambdaVars = (_UncaptureLambdaVars)g_nvseDataInterface->GetFunc(NVSEDataInterface::kNVSEData_LambdaUnsaveVariableList);
 
 	ApplyHooks();
 	Events::RegisterEvents();

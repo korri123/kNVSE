@@ -86,6 +86,7 @@
     <ClCompile Include="blend_transitions.cpp" />
     <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
     <ClCompile Include="movement_blend_fixes.cpp" />
+    <ClCompile Include="npc_looping_reload_fix.cpp" />
     <ClCompile Include="pose_blend_fixes.cpp" />
     <ClCompile Include="weapon_parent_switch.cpp" />
     <ClCompile Include="gamebryo\NiStream.cpp" />
@@ -199,6 +200,7 @@
     <ClInclude Include="containers.h" />
     <ClInclude Include="lib\memory_pool\MemoryPool.h" />
     <ClInclude Include="movement_blend_fixes.h" />
+    <ClInclude Include="npc_looping_reload_fix.h" />
     <ClInclude Include="pose_blend_fixes.h" />
     <ClInclude Include="weapon_parent_switch.h" />
     <ClInclude Include="gamebryo\NiStream.h" />

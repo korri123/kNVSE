@@ -667,7 +667,7 @@ struct NVSEScriptInterface
 struct NVSEDataInterface
 {
 	enum {
-		kVersion = 3
+		kVersion = 4
 	};
 
 	UInt32		version;
@@ -701,6 +701,20 @@ struct NVSEDataInterface
 		kNVSEData_HasScriptCommand,
 		kNVSEData_DecompileScript,
 
+		// Deprecated in v4
+		kNVSEData_LegacyFormExtraDataGet,
+		kNVSEData_LegacyFormExtraDataGetAll,
+		kNVSEData_LegacyFormExtraDataAdd,
+		kNVSEData_LegacyFormExtraDataRemoveByName,
+		kNVSEData_LegacyFormExtraDataRemoveByPtr,
+
+		// Added in v4: PluginFormExtraData
+		kNVSEData_PluginFormExtraDataGet,
+		kNVSEData_PluginFormExtraDataGetAll,
+		kNVSEData_PluginFormExtraDataAdd,
+		kNVSEData_PluginFormExtraDataRemoveByName,
+		kNVSEData_PluginFormExtraDataRemoveByPtr,
+
 		kNVSEData_FuncMax,
 	};
 	void* (*GetFunc)(UInt32 funcID);
@@ -715,6 +729,87 @@ struct NVSEDataInterface
 	// v3
 
 
+};
+
+struct NiFixedString;
+class PluginFormExtraData;
+
+typedef PluginFormExtraData* (__fastcall* _PluginFormExtraData_Get)(const TESForm* form, const char* name);
+typedef bool (__fastcall* _PluginFormExtraData_Add)(TESForm* form, PluginFormExtraData* formExtraData);
+typedef bool (__fastcall* _PluginFormExtraData_RemoveByName)(TESForm* form, const char* name);
+
+// --- PluginFormExtraData (xNVSE 6.4.9+, NVSEDataInterface v4) ---
+// Data a plugin attaches to a form, by name (one per name and form). NVSE removes it when the form is destroyed or a
+// reference is garbage collected. Extend this class, allocate it on the game's heap (New<T>()), and hold it with a
+// NiPointer: it is ref counted, and Get does not add a reference.
+// The virtual methods must stay in this order, they are NVSE's interface (GetFunc returns nullptr before v4).
+class PluginFormExtraData
+{
+public:
+	enum { kVersion = 1 };
+
+	enum RemovalReason {
+		kManualRequest		= 0, // Remove
+		kFormDeletion		= 1, // TESForm's destructor
+		kTrashedReference	= 2, // TESObjectREFR's garbage collector
+	};
+
+	const UInt32	nvseReserved = 0; // NVSE's, do not modify
+	volatile UInt32	refCount = 0;
+
+	PluginFormExtraData() = default;
+
+protected:
+	virtual ~PluginFormExtraData() = default;
+
+public:
+	virtual void DeleteThis()
+	{
+		this->~PluginFormExtraData();
+		FormHeap_Free(this);
+	}
+	// The name identifying the data: an interned string, compared by pointer
+	virtual const NiFixedString& GetName() const = 0;
+	virtual UInt32 GetVersion() const { return kVersion; }
+	virtual UInt32 GetUserVersion() const { return 1; }
+	virtual bool OnRemoval(TESForm* removedFrom, UInt32 removalReason) { return true; }
+	virtual UInt32 Reserved0(void*, void*) { return 0; }
+	virtual UInt32 Reserved1(void*, void*) { return 0; }
+	virtual UInt32 Reserved2(void*, void*) { return 0; }
+	virtual UInt32 Reserved3(void*, void*) { return 0; }
+
+	// for NiPointer
+	void IncrementRefCount() { InterlockedIncrement(&refCount); }
+	void DecrementRefCount()
+	{
+		if (InterlockedDecrement(&refCount) == 0)
+			DeleteThis();
+	}
+
+	// Whether NVSE provides the API (v4)
+	static bool IsAvailable(NVSEDataInterface* dataApi)
+	{
+		return dataApi && dataApi->version >= 4 && dataApi->GetFunc(NVSEDataInterface::kNVSEData_PluginFormExtraDataGet);
+	}
+
+	[[nodiscard]] static PluginFormExtraData* Get(NVSEDataInterface* dataApi, const TESForm* form, const char* name)
+	{
+		static auto* get = static_cast<_PluginFormExtraData_Get>(dataApi->GetFunc(NVSEDataInterface::kNVSEData_PluginFormExtraDataGet));
+		return get(form, name);
+	}
+
+	// false if the form already has data of that name
+	static bool Add(NVSEDataInterface* dataApi, TESForm* form, PluginFormExtraData* extraData)
+	{
+		static auto* add = static_cast<_PluginFormExtraData_Add>(dataApi->GetFunc(NVSEDataInterface::kNVSEData_PluginFormExtraDataAdd));
+		return add(form, extraData);
+	}
+
+	static bool Remove(NVSEDataInterface* dataApi, TESForm* form, const char* name)
+	{
+		static auto* remove = static_cast<_PluginFormExtraData_RemoveByName>(dataApi->GetFunc(NVSEDataInterface::kNVSEData_PluginFormExtraDataRemoveByName));
+		return remove(form, name);
+	}
 };
 #endif
 

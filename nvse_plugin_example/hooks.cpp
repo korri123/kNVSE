@@ -21,6 +21,7 @@
 #include "jip_fixes.h"
 #include "knvse_events.h"
 #include "movement_blend_fixes.h"
+#include "npc_looping_reload_fix.h"
 #include "pose_blend_fixes.h"
 #include "sequence_extradata.h"
 #include "weapon_hand_blend.h"
@@ -228,7 +229,8 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void*, UInt16 groupID
 }
 
 // Actor::HandlePostAnimationActions, next round of a looping reload (AnimData::PlayAnimGroup)
-// - rigs GetCurrentAmmoRounds to add 1 to the result while the next round's anim is started
+// - rigs GetCurrentAmmoRounds to add 1 to the result while the player's next round's anim is started: the player's
+//   round is loaded by the queued equip, after this. NPCs have theirs loaded already (npc_looping_reload_fix.cpp).
 // - the engine records the reload loop action with the current weapon sequence, then plays the next round's group,
 //   picked from the current stance. Sneaking or standing up mid-reload picks the other variant (sneak2hrreloadz <->
 //   2hrreloadz): the action kept the sequence that was cut, the engine dropped the action once that one had faded out
@@ -237,9 +239,12 @@ void __fastcall ReloadLoopNextRoundHook(AnimData* animData, void*, UInt16 groupI
 {
 	auto* actor = GET_CALLER_VAR(Actor*, -0xA0);
 	const auto* recorded = animData->GetCurrentSequence(kSequence_Weapon);
-	g_globals.isInLoopingReloadPlayAnim = true;
+	const auto isPlayer = actor == g_thePlayer;
+	if (isPlayer)
+		g_globals.isInLoopingReloadPlayAnim = true;
 	animData->PlayGroup(groupId, flags, queuedState, sequenceId);
-	g_globals.isInLoopingReloadPlayAnim = false;
+	if (isPlayer)
+		g_globals.isInLoopingReloadPlayAnim = false;
 	auto* playing = animData->GetCurrentSequence(kSequence_Weapon);
 	if (actor && playing && playing != recorded)
 		actor->SetAnimAction(Decoding::kAnimAction_ReloadLoop, playing);
@@ -819,8 +824,12 @@ void ApplyHooks()
 		WriteRelCall(0x948CEC, LoopingReloadFixHook); // part of cancelling looping reload after shooting
 	}
 
-	if (ini.GetOrCreate("Engine Fixes", "bFixModReloadAnims", 1, "; fix weapons whose Increase Clip Capacity mod switches the reload animation between a looping (ReloadW-Z) and a non-looping one: the reload did not play at all, or its loop played only once"))
+	const bool fixModReloadAnims = ini.GetOrCreate("Engine Fixes", "bFixModReloadAnims", 1, "; fix weapons whose Increase Clip Capacity mod switches the reload animation between a looping (ReloadW-Z) and a non-looping one: the reload did not play at all, or its loop played only once");
+	if (fixModReloadAnims)
 		ModReloadAnimFix::ApplyHooks();
+
+	if (ini.GetOrCreate("Engine Fixes", "bFixNPCLoopingReloads", 1, "; fix NPCs loading the whole clip of a weapon with a looping reload (Cowboy Repeater, lever-action shotgun, ...) in one round: they load one round per loop, like the player. Needs xNVSE 6.4.9 or newer."))
+		NPCLoopingReloadFix::ApplyHooks(fixModReloadAnims);
 
 	if (ini.GetOrCreate("Engine Fixes", "bFixIdleStrafing", 1, "; allow player to strafe/turn sideways mid idle animation"))
 		FixIdleAnimStrafe();
@@ -1415,6 +1424,7 @@ void WriteDelayedHooks()
 	NiHooks::WriteDelayedHooks();
 	AllowAttackKey::ApplyHooks();
 	ModReloadAnimFix::WriteDelayedHooks();
+	NPCLoopingReloadFix::WriteDelayedHooks();
 	BlendFixes::WriteDelayedHooks();
 
 	// hooking TESForm::GetFlags
