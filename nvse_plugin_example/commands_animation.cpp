@@ -1618,6 +1618,7 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 			NiUpdateData updateData{};
 			manager->Update(&updateData);
 		}
+		anim->ReleaseFollowers(animData->timePassed);
 		SequenceExtraDatas::Delete(anim); // removed from the manager below without RemoveSequence
 		const auto seqCount = manager->sequences.EffectiveSize();
 		manager->sequences.Remove(anim);
@@ -3408,6 +3409,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 		{
 			g_pluginSettings.fixReloadStance = !g_pluginSettings.fixReloadStance;
 			*result = g_pluginSettings.fixReloadStance;
+		}
+		else if (featureName.str() == "movementMorphKeys")
+		{
+			g_pluginSettings.fixMovementMorphKeys = !g_pluginSettings.fixMovementMorphKeys;
+			*result = g_pluginSettings.fixMovementMorphKeys;
 		}
 		
 		return true;

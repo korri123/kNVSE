@@ -2040,7 +2040,16 @@ public:
 		return m_fLastTime;
 	}
 
-	float FindCorrespondingMorphFrame(NiControllerSequence* pkTargetSequence, float fTime) const;
+	// The time in this sequence's cycle corresponding to pkSourceSequence's fSourceTime (unscaled, its owner time plus
+	// offset) at the m: keys both have
+	float FindCorrespondingMorphFrame(NiControllerSequence* pkSourceSequence, float fSourceTime) const;
+
+	// Stop taking the time from m_pkPartnerSequence (the source of a morph, or of a movement switch at m: keys, follows
+	// its destination's cycle) and continue on its own clock from where it is. fTime: its owner's animation time of the
+	// last evaluation or the next; NAN when unknown (the time then continues from the offset it had before following)
+	void StopFollowingPartner(float fTime);
+	// StopFollowingPartner for every sequence of the owner following this one
+	void ReleaseFollowers(float fTime) const;
 
 	void SetInterpsWeightAndTime(float fWeight, float fEaseSpinner, float fTime);
 

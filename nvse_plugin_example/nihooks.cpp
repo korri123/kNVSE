@@ -9,6 +9,7 @@
 #include "NiTypes.h"
 
 #include <array>
+#include <cmath>
 #include <functional>
 #include <ranges>
 
@@ -1342,7 +1343,10 @@ bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition, 
 #endif
         return false;
     }
-    
+
+    // eased back in: its own cycle again, not the one of the sequence it followed while easing out
+    StopFollowingPartner(fTime);
+
     // fTime is the owner's animation time: m_fLastTime - m_fOffset is not, as Update clamps the time it stores to a
     // start time still ahead, which then carried every later NoReset window further into the future
     const auto fCurrentEaseTime = m_fEndTime - m_fStartTime;
@@ -1636,9 +1640,34 @@ bool NiControllerSequence::StoreTargets(NiAVObject* pkRoot)
     return ThisStdCall<bool>(0xA32C70, this, pkRoot);
 }
 
-float NiControllerSequence::FindCorrespondingMorphFrame(NiControllerSequence* pkTargetSequence, float fTime) const
+float NiControllerSequence::FindCorrespondingMorphFrame(NiControllerSequence* pkSourceSequence, float fSourceTime) const
 {
-    return ThisStdCall<float>(0xA32010, this, pkTargetSequence, fTime);
+    return ThisStdCall<float>(0xA32010, this, pkSourceSequence, fSourceTime);
+}
+
+void NiControllerSequence::StopFollowingPartner(float fTime)
+{
+    if (!m_pkPartnerSequence)
+        return;
+    m_pkPartnerSequence = nullptr;
+    if (m_fLastTime == -NI_INFINITY || std::isnan(fTime))
+        return;
+    // ComputeScaledTime adds the time since m_fLastTime to m_fWeightedLastTime, the time the partner gave it: restart the
+    // accumulation on an offset that continues from there (as Deactivate rebases its offset)
+    m_fOffset = m_fWeightedLastTime / m_fFrequency - fTime;
+    m_fLastTime = -NI_INFINITY;
+}
+
+void NiControllerSequence::ReleaseFollowers(float fTime) const
+{
+    if (!m_pkOwner)
+        return;
+    // only active sequences follow: Deactivate drops the partner
+    for (auto* sequence : m_pkOwner->m_kActiveSequences)
+    {
+        if (sequence && sequence->m_pkPartnerSequence == this)
+            sequence->StopFollowingPartner(fTime);
+    }
 }
 
 // fBlendEaseCurve: the engine moves ease and transition spinners at constant speed, so blends start and stop at once.

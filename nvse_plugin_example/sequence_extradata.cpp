@@ -1,6 +1,7 @@
 ﻿#include "sequence_extradata.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "GameAPI.h"
 #include "SafeWrite.h"
@@ -48,6 +49,12 @@ namespace
     // ~Animation dereferences the manager's target itself right after RemoveAllSequences.
     void __fastcall ClearTargetsAndDelete(NiControllerSequence* sequence)
     {
+        // sequences following this one (NiControllerSequence::m_pkPartnerSequence) would read it once it is freed. Before
+        // ClearTargets, which deactivates it and rebases its offset: the owner time of its last evaluation is the time it
+        // stored minus that offset, if it ran on its own clock
+        const bool bOwnClock = sequence->m_fLastTime != -NI_INFINITY && !sequence->m_pkPartnerSequence &&
+            sequence->m_fDestFrame == -NI_INFINITY;
+        sequence->ReleaseFollowers(bOwnClock ? sequence->m_fLastTime - sequence->m_fOffset : NAN);
         ThisStdCall(0xA30880, sequence); // NiControllerSequence::ClearTargets
         SequenceExtraDatas::Delete(sequence);
     }

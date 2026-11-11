@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 
 #include "anim_switch.h"
 #include "blend_fixes.h"
@@ -165,6 +166,48 @@ namespace
 		fPhase -= std::floor(fPhase);
 		return pkDest->m_fBeginKeyTime + fPhase * (pkDest->m_fEndKeyTime - pkDest->m_fBeginKeyTime);
 	}
+
+	// m: text keys (the engine's morph tag, NiControllerSequence::pMorphTag): whole keys starting with "m:" in any case,
+	// points authored to match across movement cycles (m:L / m:R where a foot is planted). Key texts are never null here:
+	// AnimFixes::EraseNullTextKeys drops those when the KF loads (KFModel::InitSequence), before it gets an anim group
+	bool IsMorphKey(const NiTextKey& key)
+	{
+		return _strnicmp(key.m_kText, "m:", 2) == 0;
+	}
+
+	// A looping cycle with m: keys: FindCorrespondingMorphFrame maps between such cycles
+	bool IsMorphCycle(const NiControllerSequence* sequence)
+	{
+		return sequence->m_spTextKeys && sequence->m_eCycleType == NiControllerSequence::LOOP &&
+			sequence->m_fEndKeyTime > sequence->m_fBeginKeyTime &&
+			std::ranges::any_of(sequence->m_spTextKeys->GetKeys(), IsMorphKey);
+	}
+
+	// Every m: key of from has a key of the same text (case-sensitive, as the engine compares them) in to
+	bool HasMorphKeysOf(const NiControllerSequence* to, const NiControllerSequence* from)
+	{
+		const auto toKeys = to->m_spTextKeys->GetKeys();
+		return std::ranges::all_of(from->m_spTextKeys->GetKeys(), [&](const NiTextKey& key)
+		{
+			return !IsMorphKey(key) || std::ranges::any_of(toKeys, [&](const NiTextKey& other)
+			{
+				return strcmp(other.m_kText, key.m_kText) == 0;
+			});
+		});
+	}
+
+	// Whether pkDest can start at pkSource's point between their m: keys and pkSource then follow it: both have the same
+	// set of m: keys (NiControllerSequence::VerifyMatchingMorphKeys) and pkSource runs on a clock of its own. The game
+	// (Animation::StartGroup) also requires the same number of controlled bones and the same character after the first
+	// m: key's "m:" (TESAnimGroup's morph type, set in BSAnimGroupSequence::InitAnimGroup), which lets few authored pairs
+	// through: vanilla mtfastforward starts with m:R, mtbackward with m:L
+	bool CanFollowMorphKeys(const NiControllerSequence* pkSource, const NiControllerSequence* pkDest)
+	{
+		if (pkSource->m_fLastTime == -NI_INFINITY || pkSource->m_fDestFrame != -NI_INFINITY || pkSource->m_pkPartnerSequence)
+			return false;
+		return IsMorphCycle(pkSource) && IsMorphCycle(pkDest) &&
+			HasMorphKeysOf(pkDest, pkSource) && HasMorphKeysOf(pkSource, pkDest);
+	}
 }
 
 BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence)
@@ -181,14 +224,31 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		});
 	}
 
-	// a variant of the gait playing (weapon type switched at an equip's Attach or unequip's Detach key, sneaking, ...)
-	// cross fades from the same step instead of from its first frame
-	float fGaitTime = NAN;
-	if (g_pluginSettings.fixGaitSwitch && currentMoveAnim && currentMoveAnim != pkSequence &&
-		pkSequence->m_eState == NiControllerSequence::INACTIVE &&
+	const float fTime = animData->timePassed;
+	// started again or eased back in: sequences still following its cycle from an earlier switch would jump with it
+	if (pkSequence->m_eState == NiControllerSequence::INACTIVE || pkSequence->m_eState == NiControllerSequence::EASEOUT)
+		pkSequence->ReleaseFollowers(fTime);
+
+	// a sequence started from inactive cross fades from the point the playing one is at: between their m: keys where
+	// both have the same, else for a variant of the gait playing (weapon type switched at an equip's Attach or unequip's
+	// Detach key, sneaking, ...) at the same step
+	float fStartTime = NAN;
+	bool bFollowMorphKeys = false;
+	if (currentMoveAnim && currentMoveAnim != pkSequence && pkSequence->m_eState == NiControllerSequence::INACTIVE &&
 		(currentMoveAnim->m_eState == NiControllerSequence::ANIMATING || currentMoveAnim->m_eState == NiControllerSequence::EASEIN))
 	{
-		fGaitTime = FindMatchingGaitTime(animData, currentMoveAnim, pkSequence);
+		if (g_pluginSettings.fixMovementMorphKeys && CanFollowMorphKeys(currentMoveAnim, pkSequence))
+		{
+			// as the engine's morph does (NiControllerSequence::Update, MORPHSOURCE)
+			fStartTime = pkSequence->FindCorrespondingMorphFrame(currentMoveAnim, currentMoveAnim->m_fOffset + fTime);
+			bFollowMorphKeys = true;
+			// it will follow pkSequence: the sequences following it would read a clock it no longer shows
+			currentMoveAnim->ReleaseFollowers(fTime);
+		}
+		else if (g_pluginSettings.fixGaitSwitch)
+		{
+			fStartTime = FindMatchingGaitTime(animData, currentMoveAnim, pkSequence);
+		}
 	}
 
 	const auto animSwitch = AnimSwitch::Current(animData);
@@ -197,8 +257,12 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	if (!animSwitch.EaseIn(pkSequence, fDuration))
 		return pkSequence;
 	// only set for a sequence started from inactive
-	if (!std::isnan(fGaitTime))
-		pkSequence->m_fOffset = fGaitTime / pkSequence->m_fFrequency - animData->timePassed;
+	if (!std::isnan(fStartTime))
+		pkSequence->m_fOffset = fStartTime / pkSequence->m_fFrequency - fTime;
+	// the old sequence takes its time from the new one's at their m: keys while it fades out (NiControllerSequence::Update),
+	// as the source of the engine's morph: both stay in step however long their cycles are. Deactivate drops the partner
+	if (bFollowMorphKeys && currentMoveAnim->m_eState == NiControllerSequence::EASEOUT)
+		currentMoveAnim->m_pkPartnerSequence = pkSequence;
 
 	SetAnimDataState(animData, pkSequence);
 	return pkSequence;
