@@ -53,11 +53,19 @@ void LoadPathsForType(const fs::path& dirPath, const UInt32 identifier, bool fir
 		animOverrideData.pollCondition = jsonEntry->pollCondition;
 		animOverrideData.matchBaseGroupId = jsonEntry->matchBaseGroupId;
 	}
+	std::vector<fs::path> kfPaths;
 	for (const auto& iter : fs::recursive_directory_iterator(dirPath))
 	{
-		if (!sv::equals_ci(iter.path().extension().string(), ".kf"))
-			continue;
-		const auto& relPath = GetRelativePath(iter.path(), "AnimGroupOverride");
+		if (sv::equals_ci(iter.path().extension().string(), ".kf"))
+			kfPaths.push_back(iter.path());
+	}
+	// Files directly in the folder first: a set registered later goes above them on its group's stack, so the conditional
+	// subfolder variants (mod1, hurt, male, ...) are checked before the base set. In directory order the base file came
+	// after a subfolder whose name sorts before it (_male\mod1\ before _male\sneak2hrreloadp.kf) and always won.
+	std::ranges::stable_partition(kfPaths, [&](const fs::path& kfPath) { return kfPath.parent_path() == dirPath; });
+	for (const auto& kfPath : kfPaths)
+	{
+		const auto& relPath = GetRelativePath(kfPath, "AnimGroupOverride");
 		const std::string_view path = AddStringToPool(ToLower(relPath.string()));
 		animOverrideData.path = path;
 		try
