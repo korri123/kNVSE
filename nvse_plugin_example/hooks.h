@@ -26,6 +26,7 @@ struct PluginINISettings
     bool fixWrongAnimName = false;
     bool fixMissingPrnKey = false;
     bool fixReloadStartAllowReloadTweak = false;
+    bool fixLoopingReloadStance = true;
     bool blendSmoothing = true;
     float blendSmoothingRate = 0.075f;
     bool fixWeaponHandBlend = true;

@@ -14,6 +14,9 @@ namespace BlendFixes
 	Result ApplyAimBlendFix(AnimData* animData, BSAnimGroupSequence* destAnim);
 	void ApplyAttackISToAttackFix();
 	void ApplyAttackToAttackISFix();
+	void ApplyLoopingReloadStanceFix();
+	NiControllerSequence::AnimState __fastcall ContinuedVariantStateHook(const NiControllerSequence* sequence);
+	void WriteDelayedHooks();
 	void ApplyAimBlendHooks();
 	void FixConflictingPriorities(BSAnimGroupSequence* pkSource, BSAnimGroupSequence* pkDest, BSAnimGroupSequence* pkIdle);
 	void ApplyHooks();

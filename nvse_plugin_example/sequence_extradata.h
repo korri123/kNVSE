@@ -28,6 +28,10 @@ public:
 
     bool startInReloadTargets = false;
     bool needsStoreTargets = false;
+    // Cross faded in from another variant of its group at the same point (BlendFixes' TransitionToVariant): it continues
+    // that sequence, so Animation::Update acts on its group's keys and scales its clock while it eases in, as for the
+    // ANIMATING sequence it replaced. Dropped when the sequence is activated again
+    bool continuesVariant = false;
     std::optional<AdditiveSequenceMetadata> additiveMetadata;
     std::optional<HardCut> hardCut;
     std::optional<SwitchMembership> switchMembership;

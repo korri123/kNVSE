@@ -1152,9 +1152,13 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
     auto* sequenceExtraData = SequenceExtraDatas::Get(this);
-    // the ease that brought it here is over: whatever eases it next declares its switch (AnimSwitch)
+    // the ease that brought it here is over: whatever eases it next declares its switch (AnimSwitch) and says whether
+    // it continues a variant
     if (sequenceExtraData)
+    {
         sequenceExtraData->switchMembership.reset();
+        sequenceExtraData->continuesVariant = false;
+    }
 
     if (sequenceExtraData && sequenceExtraData->needsStoreTargets)
     {

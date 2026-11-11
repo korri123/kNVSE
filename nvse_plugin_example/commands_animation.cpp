@@ -3404,6 +3404,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 			g_pluginSettings.fixOverlappingBlends = !g_pluginSettings.fixOverlappingBlends;
 			*result = g_pluginSettings.fixOverlappingBlends;
 		}
+		else if (featureName.str() == "loopingReloadStance")
+		{
+			g_pluginSettings.fixLoopingReloadStance = !g_pluginSettings.fixLoopingReloadStance;
+			*result = g_pluginSettings.fixLoopingReloadStance;
+		}
 		
 		return true;
 	});
