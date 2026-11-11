@@ -499,8 +499,8 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 				const auto line = std::string(GetTextAfterColon(key));
 				if (line.empty())
 					return false;
-				auto formattedLine = ReplaceAll(line, "%R", "\r\n");
-				formattedLine = ReplaceAll(formattedLine, "%r", "\r\n");
+				auto formattedLine = line;
+				FormatScriptText(formattedLine);
 				result = Script::CompileFromText(formattedLine, "ScriptLineKey");
 				if (!result)
 				{

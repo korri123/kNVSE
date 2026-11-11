@@ -457,35 +457,40 @@ bool TESForm::IsTypeActor()
 	return IS_ID(this, Character) || IS_ID(this, Creature);
 }
 
+// %r / %R: line break (\r\n: the compiler needs both to split lines), %q / %Q: quote, %% is kept as is
 void FormatScriptText(std::string& str)
 {
-	UInt32 pos = 0;
-
-	while (((pos = str.find('%', pos)) != -1) && pos < str.length() - 1)
+	std::string formatted;
+	formatted.reserve(str.size());
+	for (size_t i = 0; i < str.size(); ++i)
 	{
-		char toInsert = 0;
-		switch (str[pos + 1])
+		if (str[i] != '%' || i + 1 == str.size())
 		{
-		case '%':
-			pos += 2;
+			formatted += str[i];
 			continue;
+		}
+		switch (str[i + 1])
+		{
 		case 'r':
 		case 'R':
-			toInsert = '\n';
+			formatted += "\r\n";
+			++i;
 			break;
 		case 'q':
 		case 'Q':
-			toInsert = '"';
+			formatted += '"';
+			++i;
+			break;
+		case '%':
+			formatted += "%%";
+			++i;
 			break;
 		default:
-			pos += 1;
-			continue;
+			formatted += '%';
+			break;
 		}
-
-		str.insert(pos, 1, toInsert); // insert char at current pos
-		str.erase(pos + 1, 2);		  // erase format specifier
-		pos += 1;
 	}
+	str = std::move(formatted);
 }
 
 UInt32* g_weaponTypeToAnim = reinterpret_cast<UInt32*>(0x118A838);
