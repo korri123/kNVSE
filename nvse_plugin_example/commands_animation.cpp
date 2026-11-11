@@ -1497,7 +1497,7 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	}
 	catch (std::exception& e)
 	{
-		ShowRuntimeError(scriptObj, "SetWeaponAnimationPath: %s", e.what());
+		ShowRuntimeError(scriptObj, "SetActorAnimationPath: %s", e.what());
 	}
 	return true;
 }
