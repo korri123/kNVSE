@@ -14,6 +14,7 @@
 #include <ranges>
 
 #include "additive_anims.h"
+#include "aim_pitch.h"
 #include "blend_smoothing.h"
 #include "blend_transitions.h"
 #include "sequence_extradata.h"
@@ -525,6 +526,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         NiQuatTransform kTransform;
         if (!item.m_spInterpolator->Update(fUpdateTime, pkInterpTarget, kTransform))
             continue;
+        AimPitch::Apply(kExtraData, extraItem, pkInterpTarget, kTransform);
         if (weaponHandBlend)
             weaponHandBlend.AddItem(&item, extraItem, fUpdateTime, kTransform);
         smoothingStep.AddItem(item, extraItem, kTransform);
@@ -675,6 +677,8 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
             {
                 fUpdateTime = WeaponParentSwitch::GetUpdateTime(extraItem, pkInterpTarget, fUpdateTime);
                 bReturnValue = m_pkSingleInterpolator->Update(fUpdateTime, pkInterpTarget, kValue);
+                if (bReturnValue)
+                    AimPitch::Apply(kExtraData, extraItem, pkInterpTarget, kValue);
             }
             if (!bReturnValue)
                 kValue.MakeInvalid();
@@ -1183,6 +1187,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         return;
     }
     const auto disabledBlendSmoothing = DisabledBlendSmoothing();
+    const AimPitch::Shares aimPitchShares(*this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
@@ -1220,6 +1225,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         
         extraInterpItem.sequence = this;
         extraInterpItem.noSmoothing = disabledBlendSmoothing;
+        extraInterpItem.aimPitchShare = aimPitchShares.Get(idTag.m_kAVObjectName);
         if (WeaponHandBlend::IsWeaponNode(target))
             WeaponParentSwitch::Init(extraInterpItem, *this);
 

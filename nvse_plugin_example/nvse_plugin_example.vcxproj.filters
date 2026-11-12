@@ -82,6 +82,7 @@
     <ClCompile Include="blend_fixes.cpp" />
     <ClCompile Include="accum_blend_fix.cpp" />
     <ClCompile Include="additive_anims.cpp" />
+    <ClCompile Include="aim_pitch.cpp" />
     <ClCompile Include="anim_switch.cpp" />
     <ClCompile Include="blend_smoothing.cpp" />
     <ClCompile Include="blend_transitions.cpp" />
@@ -197,6 +198,7 @@
     <ClInclude Include="string_view_util.h" />
     <ClInclude Include="accum_blend_fix.h" />
     <ClInclude Include="additive_anims.h" />
+    <ClInclude Include="aim_pitch.h" />
     <ClInclude Include="anim_switch.h" />
     <ClInclude Include="blend_smoothing.h" />
     <ClInclude Include="blend_transitions.h" />

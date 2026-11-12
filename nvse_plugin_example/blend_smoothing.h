@@ -68,6 +68,8 @@ struct kBlendInterpItem
     kInterpDebugState debugState = kInterpDebugState::NotSet;
     // its sequence has a noBlendSmoothing or noBlend text key: while it is attached, the node is blended as computed
     bool noSmoothing = false;
+    // its sequence has an aimPitch text key: the share of the actor's pitch its pose of the bone is turned by (AimPitch)
+    float aimPitchShare = 0.0f;
     bool isAdditive = false;
     kAdditiveInterpMetadata additiveMetadata;
     // Weapon node items of equip/unequip animations: where the track switches parent space (WeaponParentSwitch)
@@ -107,6 +109,7 @@ struct kBlendInterpItem
         detached = false;
         blendIndex = INVALID_INDEX;
         noSmoothing = false;
+        aimPitchShare = 0.0f;
         isAdditive = false;
         additiveMetadata.ClearValues();
         parentSwitch.reset();

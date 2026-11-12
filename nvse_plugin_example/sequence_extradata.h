@@ -78,6 +78,9 @@ public:
         float fTime = 0.0f;
     };
     OpenSwitch openSwitch;
+    // The actor's pitch in radians, positive looking down, as of its last bone update (AimPitch::Update). Third person
+    // skeletons only
+    float aimPitch = 0.0f;
 
     NiNewRTTI(kAnimationExtraData, NiExtraData)
 

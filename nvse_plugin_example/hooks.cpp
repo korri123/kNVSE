@@ -6,6 +6,7 @@
 
 #include "accum_blend_fix.h"
 #include "additive_anims.h"
+#include "aim_pitch.h"
 #include "anim_fixes.h"
 #include "anim_switch.h"
 #include "GameProcess.h"
@@ -934,7 +935,10 @@ void ApplyHooks()
 	if (conf.blendSmoothing && conf.fixBlendFromPose)
 		PoseBlendFixes::ApplyHooks();
 	if (conf.blendSmoothing)
+	{
 		MovementTransitions::WriteHooks();
+		AimPitch::WriteHooks();
+	}
 	
 	if (ini.GetOrCreate("Engine Fixes", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{
@@ -1297,6 +1301,7 @@ void ApplyHooks()
 	WriteRelCall(0x8885C9, INLINE_HOOK(void, __fastcall, AnimData* animData, void*, Actor* actor)
 	{
 		OnActorUpdateAnimation::Dispatch(actor);
+		AimPitch::Update(animData, actor);
 		ThisStdCall(uiAnimDataUpdateControllersAddr, animData, actor);
 	}), &uiAnimDataUpdateControllersAddr);
 

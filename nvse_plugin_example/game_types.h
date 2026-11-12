@@ -230,7 +230,7 @@ namespace Decoding
 		MagicTarget* magicTarget1BC;	// 1BC
 		AnimData* animData;			// 1C0
 		BSAnimGroupSequence* weaponSequence[3];	// 1C4
-		float angle1D0;
+		float aimChaseLookAngle;	// 1D0 radians added to Actor::GetLooking for the aim up/down weights, decays in UpdateAimSequences
 		float time1D4;
 		UInt8 byte1D8;
 		UInt8 isUsingAutomaticWeapon;
