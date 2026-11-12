@@ -649,7 +649,10 @@ public:
 	UInt16				m_usMaxSize;		// 016 - size ok
 	// 018
 
-	void SetName(const char* newName);
+	void SetName(const NiFixedString& name)
+	{
+		ThisStdCall(0xA5B950, this, &name);
+	}
 
 	bool AddExtraData(NiExtraData* extraData)
 	{
@@ -2996,6 +2999,11 @@ public:
 	void ResetAndFillFromScenegraph()
 	{
 		ThisStdCall(0xA6E960, this);
+	}
+
+	void SetAVObject(const NiFixedString& name, NiAVObject* object)
+	{
+		ThisStdCall(0xA2EE40, this, &name, object);
 	}
 };
 

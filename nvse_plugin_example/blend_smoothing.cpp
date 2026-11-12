@@ -5,6 +5,7 @@
 #include "hooks.h"
 #include "SafeWrite.h"
 #include "sequence_extradata.h"
+#include "skeleton_nodes.h"
 #include "utility.h"
 
 void* g_vtblExtraData[37] = {};
@@ -309,6 +310,9 @@ namespace
     thread_local std::vector<NiControllerSequence*> g_activeSequences;
     void __fastcall HandleReloadTargets(NiControllerManager* manager)
     {
+        // the palette was just refilled from the scene graph; every sequence is bound to it again below
+        SkeletonNodes::Restore(manager);
+
         if (manager->m_spObjectPalette)
         {
             for (const auto& item : manager->m_spObjectPalette->m_kHash)

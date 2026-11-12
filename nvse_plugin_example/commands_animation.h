@@ -246,6 +246,8 @@ struct AnimTime
 	using TimedCallbacks = TimedExecution<std::function<void()>>;
 	std::optional<TimedCallbacks> callbacksBase;
 	TimedCallbacks::Context callbacks;
+	// the sequence has spawn:/despawn: keys (SpawnKeys, in its SequenceExtraData)
+	bool hasSpawnKeys = false;
 
 	bool hasCustomAnimGroups = false;
 	std::set<std::pair<Script*, std::string>> cleanUpScripts;

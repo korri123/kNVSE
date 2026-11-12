@@ -392,6 +392,8 @@
     <ClCompile Include="accum_blend_fix.cpp" />
     <ClCompile Include="additive_anims.cpp" />
     <ClCompile Include="aim_pitch.cpp" />
+    <ClCompile Include="spawn_keys.cpp" />
+    <ClCompile Include="skeleton_nodes.cpp" />
     <ClCompile Include="anim_fixes.cpp" />
     <ClCompile Include="up_down_variant_fix.cpp" />
     <ClCompile Include="bethesda\archive.cpp" />
@@ -469,6 +471,8 @@
     <ClInclude Include="accum_blend_fix.h" />
     <ClInclude Include="additive_anims.h" />
     <ClInclude Include="aim_pitch.h" />
+    <ClInclude Include="spawn_keys.h" />
+    <ClInclude Include="skeleton_nodes.h" />
     <ClInclude Include="up_down_variant_fix.h" />
     <ClInclude Include="anim_fixes.h" />
     <ClInclude Include="bethesda\bethesda_types.h" />

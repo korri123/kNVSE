@@ -28,6 +28,7 @@
 #include "commands_misc.h"
 #endif
 #include "knvse_events.h"
+#include "spawn_keys.h"
 #include "debug_tools.h"
 #include "gamebryo/NiStream.h"
 
@@ -559,8 +560,11 @@ void HandleCustomTextKeys()
 			erase();
 			continue;
 		}
+		if (animTime.hasSpawnKeys)
+			SpawnKeys::Update(animData, anim, time);
 		++it;
 	}
+	SpawnKeys::EndFrame();
 }
 
 void HandleAnimTimes()

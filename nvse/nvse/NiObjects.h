@@ -70,8 +70,8 @@ public:
 	/*094*/virtual void		Unk_25(UInt32 arg1);
 	/*098*/virtual void		Unk_26(UInt32 arg1);
 	/*09C*/virtual NiAVObject* GetObjectByName(const NiFixedString& objName);
-	/*0A0*/virtual void		Unk_28(UInt32 arg1, UInt32 arg2, UInt32 arg3);
-	/*0A4*/virtual void		Unk_29(void* updParams, UInt32 arg2);
+	/*0A0*/virtual void		SetSelectiveUpdateFlags(bool& bSelectiveUpdate, BOOL bSelectiveUpdateTransforms, bool& bRigid);
+	/*0A4*/virtual void		UpdateDownwardPass(NiUpdateData& updateData, UInt32 flags);
 	/*0A8*/virtual void		Unk_2A(UInt32 arg1, UInt32 arg2);
 	/*0AC*/virtual void		Unk_2B(UInt32 arg1, UInt32 arg2);
 	/*0B0*/virtual void		Unk_2C(UInt32 arg1);
@@ -342,6 +342,8 @@ public:
 class NiNode : public NiAVObject
 {
 public:
+	CREATE_OBJECT(NiNode, 0xA5F030);
+
 	/*0DC*/virtual void		AddObject(NiAVObject* object, bool arg2);
 	/*0E0*/virtual void		AddObjectAt(UInt32 index, NiAVObject* object);
 	/*0E4*/virtual void		RemoveObject2(NiAVObject* toRemove, NiAVObject** arg2);

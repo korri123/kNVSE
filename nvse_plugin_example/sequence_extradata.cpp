@@ -5,6 +5,7 @@
 
 #include "GameAPI.h"
 #include "SafeWrite.h"
+#include "spawn_keys.h"
 #include "utility.h"
 
 namespace
@@ -58,11 +59,25 @@ namespace
         ThisStdCall(0xA30880, sequence); // NiControllerSequence::ClearTargets
         SequenceExtraDatas::Delete(sequence);
     }
+
+    // NiControllerManager::AddSequence binding the sequence it adds (NiControllerSequence::StoreTargets): m_pkOwner is
+    // set, the sequence not in the manager's array yet. Not reached for a null manager (JohnnyGuitar's fix of the check at
+    // 0xA2F0CA returns before)
+    bool __fastcall StoreTargetsOnJoin(NiControllerSequence* sequence, void*, NiAVObject* root)
+    {
+        SpawnKeys::OnSequenceJoin(*sequence);
+        if (sequence->StoreTargets(root))
+            return true;
+        // AddSequence clears m_pkOwner and gives up
+        SequenceExtraDatas::Delete(sequence);
+        return false;
+    }
 }
 
 void kAnimationExtraData::Destroy(bool freeMem)
 {
     this->entries.~vector();
+    this->addedNodes.~vector();
     ThisStdCall(0xA7B300, this); // ~NiExtraData
     if ((freeMem & 1) != 0)
         NiDelete(this);
@@ -93,6 +108,7 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
     new(&extraData->entries) std::vector<Entry>();
     new(&extraData->openSwitch) OpenSwitch();
     extraData->aimPitch = 0.0f;
+    new(&extraData->addedNodes) std::vector<SkeletonNodes::Node>();
     PopulateVtable(extraData);
     extraData->m_kName = ExtraDataName();
     obj->AddExtraData(extraData);
@@ -136,6 +152,7 @@ void SequenceExtraDatas::Delete(const NiControllerSequence* sequence)
 
 void SequenceExtraDatas::WriteHooks()
 {
+    WriteRelCall(0xA2F0F6, StoreTargetsOnJoin); // NiControllerManager::AddSequence
     WriteRelCall(0xA2E933, ClearTargetsAndDelete); // NiControllerManager::RemoveSequence
     WriteRelCall(0xA2E9BC, ClearTargetsAndDelete); // NiControllerManager::RemoveAllSequences
 }

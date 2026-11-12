@@ -527,6 +527,9 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 		animTime.allowAttack = true;
 		animTime.allowAttackTime = time;
 	}
+	// its spawn:/despawn: keys were kept when it joined the manager (SpawnKeys::OnSequenceJoin, the player's sequences)
+	if (SpawnKeys::Has(*anim))
+		getAnimTimeStruct().hasSpawnKeys = true;
 
 	const auto basePath = GetAnimBasePath(anim->m_kName.Str());
 	if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
