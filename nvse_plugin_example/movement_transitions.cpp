@@ -602,18 +602,22 @@ namespace
 		return BlendFixes::ContinuedVariantStateHook(sequence);
 	}
 
-	// Animation::GetGroup of the movement section of the 1st person skeleton in PlayerMover::Update: the player moves by the
-	// 1st person skeleton's movement when it plays the same group as the 3rd person one. While only the 3rd person one plays
-	// a start or stop animation, the player moves by that
+	// Animation::GetGroup of the movement section of the 1st person skeleton in PlayerMover::Update: in 1st person the
+	// player moves by the 1st person skeleton's movement when it plays the same group as the 3rd person one, else by the
+	// 3rd person one's. A start or stop animation only plays on the skeletons that have one, and the other's movement
+	// section is empty or on to another group meanwhile (a stop: blended out, its movement dropped): the player moves by
+	// the 1st person skeleton while that plays one, by the 3rd person one while only that does
 	UInt16 __fastcall FirstPersonMovementGroupHook(AnimData* animData, void*, eAnimSequence sequenceId)
 	{
 		const UInt16 groupId = animData->groupIDs[sequenceId];
 		if (sequenceId != kSequence_Movement)
 			return groupId;
 		const auto* thirdPerson = g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr;
-		if (thirdPerson && thirdPerson != animData &&
-			MovementTransitions::Of(thirdPerson->animSequence[kSequence_Movement]) != MovementTransition::None &&
-			MovementTransitions::Of(animData->animSequence[kSequence_Movement]) == MovementTransition::None)
+		if (!thirdPerson || thirdPerson == animData)
+			return groupId;
+		if (MovementTransitions::Of(animData->animSequence[kSequence_Movement]) != MovementTransition::None)
+			return thirdPerson->groupIDs[kSequence_Movement];
+		if (MovementTransitions::Of(thirdPerson->animSequence[kSequence_Movement]) != MovementTransition::None)
 			return 0xFFFF;
 		return groupId;
 	}
