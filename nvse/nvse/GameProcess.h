@@ -207,6 +207,24 @@ struct AnimData
 	{
 		ThisStdCall(0x499240, this, abReload);
 	}
+
+	// Animation::BlendOut
+	void BlendOut(eAnimSequence sequenceId, bool bChar)
+	{
+		ThisStdCall(0x4994F0, this, sequenceId, bChar);
+	}
+
+	// Animation::GetDelta: the actor's movement in this update, the accum root's translation delta
+	bool GetDelta(NiPoint3* delta, TESObjectREFR* ref, bool bRotation, bool bNoHeight)
+	{
+		return ThisStdCall<bool>(0x494390, this, delta, ref, bRotation, bNoHeight);
+	}
+
+	// Animation::ShouldBeMoving
+	bool ShouldBeMoving()
+	{
+		return ThisStdCall<bool>(0x495BE0, this);
+	}
 };
 STATIC_ASSERT(sizeof(AnimData) == 0x13C);
 enum WeaponModFlags: UInt32;

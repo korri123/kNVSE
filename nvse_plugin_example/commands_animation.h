@@ -298,7 +298,9 @@ struct AnimPath
 {
 	std::string_view path;
 	bool partialReload = false;
+	// _start / _stop: a start or stop animation of a walk or run (MovementTransitions), never picked as the group's animation
 	bool isStartAnim = false;
+	bool isStopAnim = false;
 	bool isAmmoSwap = false;
 };
 
@@ -337,7 +339,7 @@ struct SavedAnims
 	std::string_view conditionScriptText;
 	bool pollCondition = false;
 	bool matchBaseGroupId = false;
-	bool hasStartAnim = false;
+	bool hasMovementTransitions = false;
 	bool hasPartialReload = false;
 	bool hasAmmoSwap = false;
 	bool disabled = false;
@@ -490,6 +492,8 @@ struct BSAnimationContext
 
 std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData);
 std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UInt16 groupId, AnimData* animData);
+// One file of the set, linked to it
+std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, const AnimPath& animPath, AnimData* animData);
 BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence);
 float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence);

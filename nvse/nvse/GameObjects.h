@@ -391,7 +391,7 @@ struct PathingRequest
 	UInt8 byte099;
 	UInt8 byte09A;
 	UInt8 byte09B;
-	UInt8 byte09C;
+	UInt8 bSoftGoalRadius;	// 09C: DetailedActorPathHandler goes on to 5 units from the goal
 	UInt8 byte09D;
 	UInt8 byte09E;
 	UInt8 byte09F;
@@ -406,13 +406,40 @@ struct PathingRequest
 	UInt8 gap0AD[3];
 };
 
+struct PathingNode
+{
+	UInt32 flags;
+	PathingLocation location;
+
+	// PathingNode::IsTeleportDoorNode
+	bool IsTeleportDoor() const { return (flags & 3) == 3; }
+};
+
+struct PathingSolution
+{
+	UInt32 vtbl;
+	UInt32 refCount;
+	UInt32 virtualNodes[4];				// 08
+	SInt32 firstLoadedVirtualNode;		// 18
+	SInt32 lastLoadedVirtualNode;		// 1C
+	UInt32 currentNodesVtbl;			// 20 BSSimpleArray<PathingNode>
+	PathingNode* currentNodes;			// 24
+	UInt32 numCurrentNodes;				// 28
+	UInt32 currentNodesAlloc;			// 2C
+	UInt32 previousNodes[4];			// 30
+	UInt8 bIncompletePath;				// 40
+
+	PathingNode* GetLastNode() { return ThisStdCall<PathingNode*>(0x6B05A0, this); }
+	PathingNode* GetNode(UInt32 index) { return ThisStdCall<PathingNode*>(0x6E7970, this, index); }
+};
+
 struct ActorPathHandler
 {
 	virtual ~ActorPathHandler();
 	UInt32 actor;
 	UInt32 actorMover;
-	UInt32 pathingSolution;
-	UInt32 pathingRequest;
+	PathingSolution* pathingSolution;
+	PathingRequest* pathingRequest;
 };
 
 struct DetailedActorPathHandler : ActorPathHandler
@@ -437,9 +464,9 @@ struct DetailedActorPathHandler : ActorPathHandler
 	UInt32 unk58;
 	UInt32 unk5C;
 	UInt32 moveFlags60;
-	UInt32 unk64;
+	UInt32 currentNodeIndex;	// 64: heading for node currentNodeIndex + 1
 	UInt32 unk68;
-	UInt32 unk6C;
+	float fPathLength;			// 6C
 	UInt32 unk70;
 	UInt32 unk74;
 	UInt32 unk78;
@@ -455,20 +482,30 @@ struct DetailedActorPathHandler : ActorPathHandler
 	UInt32 unkA0;
 	UInt32 unkA4;
 	UInt32 unkA8;
-	UInt32 unkAC;
+	float fGoalRadiusSqr;		// AC
 	UInt32 unkB0;
-	UInt32 unkB4;
+	float fDistanceTraveled;	// B4
 	UInt32 unkB8;
 	UInt32 unkBC;
 	UInt32 unkC0;
 	UInt32 unkC4;
-	UInt32 unkC8;
+	UInt32 eState;				// C8: 2 moving, 5 goal reached
 	UInt32 unkCC;
 	UInt32 unkD0;
 	UInt32 unkD4;
 	UInt32 unkD8;
-	UInt32 unkDC;
-	UInt32 unkE0;
+	UInt8 bRotating;			// DC
+	UInt8 bRotatesRight;
+	UInt8 bStaticAvoidance;
+	UInt8 bEndUpdatePath;
+	UInt8 bWaitingForUpdate;	// E0
+	UInt8 gapE1[3];
+
+	enum State : UInt32
+	{
+		kState_Moving = 2,
+		kState_GoalReached = 5,
+	};
 };
 
 
@@ -495,8 +532,8 @@ public:
 	UInt32 unk0C;
 	NiPoint3 overrideMovement;
 	PathingRequest* pathingRequest;
-	void* pathingSolution;
-	DetailedActorPathHandler* pathHandler;
+	PathingSolution* pathingSolution;
+	DetailedActorPathHandler* pathHandler;	// or another ActorPathHandler: check the vtable
 	Actor* actor;
 	UInt32 unk2C;
 	void* pathingMsgQueue;
@@ -505,21 +542,37 @@ public:
 	UInt32 movementFlags2;
 	UInt32 unk40;
 	PathingLocation pathingLocation;
-	UInt32 unk6C;
-	UInt8 byte70;
+	UInt32 eState;					// 6C
+	UInt8 bPathingFailed;			// 70
 	UInt8 bStrafeMoveFlags71;
-	UInt8 bResetMoveFlag72;
+	UInt8 bStopMovementNextUpdate;	// 72
 	UInt8 gap73;
-	UInt8 byte74;
+	UInt8 bWaitingForPath;			// 74
 	UInt8 byte75;
 	UInt8 byte76;
 	UInt8 isOverrideMovement;
-	UInt32 bHasResetMoveFlag78;
+	UInt8 bStopCurrentMoveAnim;		// 78: the movement flags and delta are dropped while the walk still plays
+	UInt8 gap79[3];
+
+	enum State : UInt32
+	{
+		kState_Moving = 3,
+	};
+
+	// the path is done: the movement stops on the next update
+	void StopMoving() { ThisStdCall(0x9DD0A0, this); }
 	UInt32 unk7C;
 	UInt32 unk80;
 	UInt32 count84;
 
 };
+
+STATIC_ASSERT(offsetof(PathingRequest, bSoftGoalRadius) == 0x9C);
+STATIC_ASSERT(offsetof(PathingSolution, bIncompletePath) == 0x40);
+STATIC_ASSERT(offsetof(DetailedActorPathHandler, fGoalRadiusSqr) == 0xAC);
+STATIC_ASSERT(offsetof(DetailedActorPathHandler, bRotating) == 0xDC);
+STATIC_ASSERT(offsetof(ActorMover, eState) == 0x6C);
+STATIC_ASSERT(offsetof(ActorMover, bStopCurrentMoveAnim) == 0x78);
 
 class PlayerMover : public ActorMover
 {

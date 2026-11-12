@@ -8,6 +8,7 @@
 #include "anim_switch.h"
 #include "blend_fixes.h"
 #include "hooks.h"
+#include "sequence_extradata.h"
 
 void SetAnimDataState(AnimData* animData, BSAnimGroupSequence* pkSequence)
 {
@@ -43,6 +44,7 @@ namespace
 	constexpr unsigned int kGaitSamples = 32;
 	constexpr unsigned int kLegBones = 3;
 	using Legs = std::array<std::array<NiAVObject*, kLegBones>, 2>;
+	using LegInterpolators = std::array<std::array<NiInterpolator*, kLegBones>, 2>;
 	// both feet relative to their own mean over the cycle, in the thighs' parent space
 	using FeetCycle = std::array<std::array<NiPoint3, 2>, kGaitSamples>;
 
@@ -60,6 +62,30 @@ namespace
 				if (!(legs[leg][bone] = animData->nBip01->GetObjectByName(names[leg][bone])))
 					return false;
 		return true;
+	}
+
+	bool GetLegInterpolators(const NiControllerSequence* sequence, const Legs& legs, LegInterpolators& interpolators)
+	{
+		for (unsigned int leg = 0; leg < 2; ++leg)
+		{
+			for (unsigned int bone = 0; bone < kLegBones; ++bone)
+			{
+				const auto* block = sequence->GetControlledBlock(legs[leg][bone]->m_pcName);
+				if (!block || !block->m_spInterpolator)
+					return false;
+				interpolators[leg][bone] = block->m_spInterpolator;
+			}
+		}
+		return true;
+	}
+
+	// Interpolators are shared by every clone of a KF and cache their last evaluation by time: sampling other times must
+	// not leave that cache claiming them (as WeaponHandBlend does)
+	void ResetLastTimes(const LegInterpolators& interpolators)
+	{
+		for (const auto& legInterpolators : interpolators)
+			for (auto* interpolator : legInterpolators)
+				interpolator->m_fLastTime = -NI_INFINITY;
 	}
 
 	// A node's local transform as the interpolator animates it at fTime; channels it does not animate keep the node's
@@ -81,43 +107,74 @@ namespace
 		return result;
 	}
 
-	// The feet over one cycle of the sequence. Interpolators are shared by every clone of a KF and cache their last
-	// evaluation by time: sampling other times must not leave that cache claiming them (as WeaponHandBlend does).
-	bool SampleFeet(const NiControllerSequence* sequence, const Legs& legs, FeetCycle& cycle)
+	// Both feet in the thighs' parent space, from the leg bones' local transforms
+	template <typename GetLocal>
+	std::array<NiPoint3, 2> GetFeet(const Legs& legs, GetLocal&& getLocal)
 	{
-		std::array<std::array<NiInterpolator*, kLegBones>, 2> interpolators{};
+		std::array<NiPoint3, 2> feet;
 		for (unsigned int leg = 0; leg < 2; ++leg)
 		{
-			for (unsigned int bone = 0; bone < kLegBones; ++bone)
-			{
-				const auto* block = sequence->GetControlledBlock(legs[leg][bone]->m_pcName);
-				if (!block || !block->m_spInterpolator)
-					return false;
-				interpolators[leg][bone] = block->m_spInterpolator;
-			}
+			NiTransform chain = getLocal(leg, 0);
+			for (unsigned int bone = 1; bone < kLegBones; ++bone)
+				chain = chain * getLocal(leg, bone);
+			feet[leg] = chain.m_Translate;
 		}
+		return feet;
+	}
+
+	std::array<NiPoint3, 2> SampleFeetAt(const LegInterpolators& interpolators, const Legs& legs, float fTime)
+	{
+		return GetFeet(legs, [&](unsigned int leg, unsigned int bone)
+		{
+			return SampleLocal(interpolators[leg][bone], legs[leg][bone], fTime);
+		});
+	}
+
+	// The left foot relative to the right one: where the feet are in the step, whatever the pelvis does
+	NiPoint3 GetStride(const std::array<NiPoint3, 2>& feet)
+	{
+		return feet[0] - feet[1];
+	}
+
+	// The stride of the skeleton's last evaluated pose
+	NiPoint3 GetCurrentStride(const Legs& legs)
+	{
+		return GetStride(GetFeet(legs, [&](unsigned int leg, unsigned int bone) { return legs[leg][bone]->m_kLocal; }));
+	}
+
+	// The feet over one cycle of the sequence
+	bool SampleFeet(const NiControllerSequence* sequence, const Legs& legs, FeetCycle& cycle)
+	{
+		LegInterpolators interpolators;
+		if (!GetLegInterpolators(sequence, legs, interpolators))
+			return false;
 		const float fBegin = sequence->m_fBeginKeyTime;
 		const float fLength = sequence->m_fEndKeyTime - fBegin;
 		std::array<NiPoint3, 2> mean{};
 		for (unsigned int sample = 0; sample < kGaitSamples; ++sample)
 		{
-			const float fTime = fBegin + fLength * static_cast<float>(sample) / kGaitSamples;
+			cycle[sample] = SampleFeetAt(interpolators, legs, fBegin + fLength * static_cast<float>(sample) / kGaitSamples);
 			for (unsigned int leg = 0; leg < 2; ++leg)
-			{
-				NiTransform chain = SampleLocal(interpolators[leg][0], legs[leg][0], fTime);
-				for (unsigned int bone = 1; bone < kLegBones; ++bone)
-					chain = chain * SampleLocal(interpolators[leg][bone], legs[leg][bone], fTime);
-				cycle[sample][leg] = chain.m_Translate;
-				mean[leg] += chain.m_Translate;
-			}
+				mean[leg] += cycle[sample][leg];
 		}
-		for (const auto& legInterpolators : interpolators)
-			for (auto* interpolator : legInterpolators)
-				interpolator->m_fLastTime = -NI_INFINITY;
+		ResetLastTimes(interpolators);
 		for (auto& feet : cycle)
 			for (unsigned int leg = 0; leg < 2; ++leg)
 				feet[leg] -= mean[leg] / static_cast<float>(kGaitSamples);
 		return true;
+	}
+
+	// The fraction of a cycle of the lowest of costs sampled evenly over it, between samples: the vertex of the parabola
+	// through the lowest sample and its neighbours
+	float FindCyclicMinimum(const std::array<float, kGaitSamples>& costs)
+	{
+		const auto best = static_cast<unsigned int>(std::ranges::min_element(costs) - costs.begin());
+		const float fBefore = costs[(best + kGaitSamples - 1) % kGaitSamples];
+		const float fAfter = costs[(best + 1) % kGaitSamples];
+		const float fCurvature = fBefore - 2.0f * costs[best] + fAfter;
+		const float fDelta = fCurvature > 0.0f ? std::clamp(0.5f * (fBefore - fAfter) / fCurvature, -0.5f, 0.5f) : 0.0f;
+		const float fFraction = (static_cast<float>(best) + fDelta) / kGaitSamples;
+		return fFraction - std::floor(fFraction);
 	}
 
 	// The fraction of a cycle by which the destination's steps lag the source's: where the feet of both cycles match
@@ -126,7 +183,6 @@ namespace
 	float FindCycleOffset(const FeetCycle& source, const FeetCycle& dest)
 	{
 		std::array<float, kGaitSamples> costs{};
-		unsigned int best = 0;
 		for (unsigned int shift = 0; shift < kGaitSamples; ++shift)
 		{
 			float cost = 0.0f;
@@ -137,15 +193,8 @@ namespace
 					cost += (source[sample][leg] - dst[leg]).SqrLength();
 			}
 			costs[shift] = cost;
-			if (cost < costs[best])
-				best = shift;
 		}
-		// between samples: the vertex of the parabola through the best shift and its neighbours
-		const float fBefore = costs[(best + kGaitSamples - 1) % kGaitSamples];
-		const float fAfter = costs[(best + 1) % kGaitSamples];
-		const float fCurvature = fBefore - 2.0f * costs[best] + fAfter;
-		const float fDelta = fCurvature > 0.0f ? std::clamp(0.5f * (fBefore - fAfter) / fCurvature, -0.5f, 0.5f) : 0.0f;
-		return (static_cast<float>(best) + fDelta) / kGaitSamples;
+		return FindCyclicMinimum(costs);
 	}
 
 	// The time in pkDest's cycle at which its steps match where pkSource is in its cycle, or NAN when either is not a
@@ -165,6 +214,33 @@ namespace
 		float fPhase = fSourcePhase + FindCycleOffset(source, dest);
 		fPhase -= std::floor(fPhase);
 		return pkDest->m_fBeginKeyTime + fPhase * (pkDest->m_fEndKeyTime - pkDest->m_fBeginKeyTime);
+	}
+
+	// The time in the gait's cycle whose stride matches the skeleton's pose best, or NAN without leg tracks. For a gait
+	// following a start or stop animation: those are no cycle to line up with, only a pose to continue from
+	float FindGaitTimeMatchingPose(AnimData* animData, const BSAnimGroupSequence* gait)
+	{
+		Legs legs;
+		LegInterpolators interpolators;
+		if (!IsGaitCycle(gait) || !GetLegs(animData, legs) || !GetLegInterpolators(gait, legs, interpolators))
+			return NAN;
+		const NiPoint3 stride = GetCurrentStride(legs);
+		const float fBegin = gait->m_fBeginKeyTime;
+		const float fLength = gait->m_fEndKeyTime - fBegin;
+		std::array<float, kGaitSamples> costs{};
+		for (unsigned int sample = 0; sample < kGaitSamples; ++sample)
+		{
+			const float fTime = fBegin + fLength * static_cast<float>(sample) / kGaitSamples;
+			costs[sample] = (GetStride(SampleFeetAt(interpolators, legs, fTime)) - stride).SqrLength();
+		}
+		ResetLastTimes(interpolators);
+		return fBegin + fLength * FindCyclicMinimum(costs);
+	}
+
+	bool IsMovementTransition(const NiControllerSequence* sequence)
+	{
+		const auto* extraData = SequenceExtraDatas::Get(sequence);
+		return extraData && extraData->movementTransition != MovementTransition::None;
 	}
 
 	// m: text keys (the engine's morph tag, NiControllerSequence::pMorphTag): whole keys starting with "m:" in any case,
@@ -210,11 +286,12 @@ namespace
 	}
 }
 
-BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence)
+BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* pkSequence, float fDuration)
 {
 	FixJumpLoopMovementSpeed(animData, pkSequence);
 	
-	const float fDuration = pkSequence->GetEaseInTime();
+	if (std::isnan(fDuration))
+		fDuration = pkSequence->GetEaseInTime();
 	auto* currentMoveAnim = animData->animSequence[kSequence_Movement];
 	if (!currentMoveAnim)
 	{
@@ -231,13 +308,19 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 
 	// a sequence started from inactive cross fades from the point the playing one is at: between their m: keys where
 	// both have the same, else for a variant of the gait playing (weapon type switched at an equip's Attach or unequip's
-	// Detach key, sneaking, ...) at the same step
+	// Detach key, sneaking, ...) at the same step, and after a start or stop animation at the step the legs are at. Start
+	// and stop animations themselves play from their beginning
 	float fStartTime = NAN;
 	bool bFollowMorphKeys = false;
 	if (currentMoveAnim && currentMoveAnim != pkSequence && pkSequence->m_eState == NiControllerSequence::INACTIVE &&
-		(currentMoveAnim->m_eState == NiControllerSequence::ANIMATING || currentMoveAnim->m_eState == NiControllerSequence::EASEIN))
+		(currentMoveAnim->m_eState == NiControllerSequence::ANIMATING || currentMoveAnim->m_eState == NiControllerSequence::EASEIN) &&
+		!IsMovementTransition(pkSequence))
 	{
-		if (g_pluginSettings.fixMovementMorphKeys && CanFollowMorphKeys(currentMoveAnim, pkSequence))
+		if (IsMovementTransition(currentMoveAnim))
+		{
+			fStartTime = FindGaitTimeMatchingPose(animData, pkSequence);
+		}
+		else if (g_pluginSettings.fixMovementMorphKeys && CanFollowMorphKeys(currentMoveAnim, pkSequence))
 		{
 			// as the engine's morph does (NiControllerSequence::Update, MORPHSOURCE)
 			fStartTime = pkSequence->FindCorrespondingMorphFrame(currentMoveAnim, currentMoveAnim->m_fOffset + fTime);
@@ -303,3 +386,14 @@ void MovementBlendFixes::TrackLastEaseOut(AnimData* animData)
 		animData->animSequence[kSequence_Movement] = last;
 }
 
+
+float MovementBlendFixes::GetStrideMismatch(AnimData* animData, const NiControllerSequence* sequence, float fTime)
+{
+	Legs legs;
+	LegInterpolators interpolators;
+	if (!GetLegs(animData, legs) || !GetLegInterpolators(sequence, legs, interpolators))
+		return NAN;
+	const NiPoint3 stride = GetStride(SampleFeetAt(interpolators, legs, fTime));
+	ResetLastTimes(interpolators);
+	return (stride - GetCurrentStride(legs)).SqrLength();
+}

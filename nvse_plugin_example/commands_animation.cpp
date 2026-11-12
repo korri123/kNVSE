@@ -25,6 +25,7 @@
 #include "anim_fixes.h"
 #include "anim_switch.h"
 #include "blend_fixes.h"
+#include "movement_transitions.h"
 #include "nihooks.h"
 #include "NiNodes.h"
 #include "NiObjects.h"
@@ -247,15 +248,21 @@ std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, Ani
 }
 
 
+std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, const AnimPath& animPath, AnimData* animData)
+{
+	const auto animCtx = LoadCustomAnimation(animPath.path, animData);
+	if (!animCtx)
+		return std::nullopt;
+	animBundle.linkedSequences.insert(animCtx->anim);
+	if (animCtx->anim && (animPath.isStartAnim || animPath.isStopAnim))
+		MovementTransitions::FixEndKey(animCtx->anim);
+	return animCtx;
+}
+
 std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UInt16 groupId, AnimData* animData)
 {
 	if (const auto* animPath = GetAnimPath(animBundle, groupId, animData))
-	{
-		const auto animCtx = LoadCustomAnimation(animPath->path, animData);
-		if (animCtx)
-			animBundle.linkedSequences.insert(animCtx->anim);
-		return animCtx;
-	}
+		return LoadCustomAnimation(animBundle, *animPath, animData);
 	return std::nullopt;
 }
 
@@ -621,11 +628,6 @@ void SavedAnims::Load()
 			anim->partialReload = true;
 			hasPartialReload = true;
 		}
-		if (!anim->isStartAnim && sv::contains_ci(fileStem, "_start"))
-		{
-			anim->isStartAnim = true;
-			hasStartAnim = true;
-		}
 		if (!anim->isAmmoSwap && sv::contains_ci(fileStem, "_ammo_swap"))
 		{
 			anim->isAmmoSwap = true;
@@ -725,7 +727,7 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 	const auto getAnimPath = [&]() -> AnimPath*
 	{
 		const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
-		if (ctx.anims.size() == 1 && !idleFileStem) [[likely]]
+		if (ctx.anims.size() == 1 && !idleFileStem && !ctx.hasMovementTransitions) [[likely]]
 			return ctx.anims[0].get();
 		auto candidates = ctx.anims 
             | std::views::transform([](const auto& anim) { return anim.get(); }) 
@@ -738,17 +740,15 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 				return IsIdleFileStem(*animPath, *idleFileStem);
 			}) | std::ranges::to<std::vector<AnimPath*>>();
 		}
-		const auto baseGroupId = static_cast<AnimGroupID>(groupId);
-		if (ctx.hasStartAnim)
+		// start and stop animations only play through MovementTransitions
+		if (ctx.hasMovementTransitions)
 		{
-			const auto* groupInfo = GetGroupInfo(baseGroupId);
-			auto* anim = animData->animSequence[groupInfo->sequenceType];
-			const auto useStartAnim = !anim || !anim->animGroup || anim->animGroup->GetBaseGroupID() != baseGroupId;
-			candidates = candidates | std::views::filter([=](const auto& animPath)
+			candidates = candidates | std::views::filter([](const AnimPath* animPath)
 			{
-				return animPath->isStartAnim == useStartAnim;
+				return !animPath->isStartAnim && !animPath->isStopAnim;
 			}) | std::ranges::to<std::vector<AnimPath*>>();
 		}
+		const auto baseGroupId = static_cast<AnimGroupID>(groupId);
 		if (IsAnimGroupReload(baseGroupId))
 		{
 			if (ctx.hasAmmoSwap)
@@ -1131,7 +1131,7 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		return true;
 	}
 	
-	anims.anims.emplace_back(std::make_unique<AnimPath>(path));
+	MovementTransitions::TagPath(anims, *anims.anims.emplace_back(std::make_unique<AnimPath>(path)), groupId);
 	anims.matchBaseGroupId = data.matchBaseGroupId;
 	anims.conditionScript = data.conditionScript;
 	anims.pollCondition = data.pollCondition;
@@ -3422,6 +3422,16 @@ void CreateCommands(NVSECommandBuilder& builder)
 		{
 			g_pluginSettings.fixMovementMorphKeys = !g_pluginSettings.fixMovementMorphKeys;
 			*result = g_pluginSettings.fixMovementMorphKeys;
+		}
+		else if (featureName.str() == "accumRootBlend")
+		{
+			g_pluginSettings.fixAccumRootBlend = !g_pluginSettings.fixAccumRootBlend;
+			*result = g_pluginSettings.fixAccumRootBlend;
+		}
+		else if (featureName.str() == "movementTransitions")
+		{
+			g_pluginSettings.movementTransitions = !g_pluginSettings.movementTransitions;
+			*result = g_pluginSettings.movementTransitions;
 		}
 		
 		return true;

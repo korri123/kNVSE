@@ -4,6 +4,7 @@
 #include <span>
 #include <unordered_set>
 
+#include "accum_blend_fix.h"
 #include "additive_anims.h"
 #include "anim_fixes.h"
 #include "anim_switch.h"
@@ -21,6 +22,7 @@
 #include "jip_fixes.h"
 #include "knvse_events.h"
 #include "movement_blend_fixes.h"
+#include "movement_transitions.h"
 #include "npc_looping_reload_fix.h"
 #include "pose_blend_fixes.h"
 #include "sequence_extradata.h"
@@ -142,7 +144,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	if (g_pluginSettings.blendSmoothing && destAnimGroup && destAnimGroup->GetSequenceType() == kSequence_Movement)
 	{
 		JIPFixes::CallSetAnimGroupEvent(animData, static_cast<AnimGroupID>(destAnimGroup->groupID));
-		result = MovementBlendFixes::PlayMovementAnim(animData, destAnim);
+		result = destAnim = MovementTransitions::PlayMovementAnim(animData, destAnim, animGroupId);
 	}
 	else
 	{
@@ -779,7 +781,7 @@ void ApplyFixLoopingReloadStartHooks()
 					return; // do nothing
 			}
 			// original call; blends to aim anim
-			ThisStdCall(0x4994F0, animData, sequenceId, bChar);
+			animData->BlendOut(sequenceId, bChar);
 		}));
 	}
 #endif
@@ -895,6 +897,7 @@ void ApplyHooks()
 	conf.fixGaitSwitch = ini.GetOrCreate("Blend Fixes", "bFixGaitSwitch", 1, "; keep walking and running in step when the game switches to another version of the same movement animation (to the drawn weapon's at the point of drawing or holstering where the weapon reaches the hand or holster, sneaking, power armor): the new one starts at the step the legs are at instead of its first frame, so the feet don't slide or scissor through the blend. Requires bBlendSmoothing.");
 	conf.fixMovementMorphKeys = ini.GetOrCreate("Blend Fixes", "bFixMovementMorphKeys", 1, "; make m: text keys (m:L, m:R, ...) keep movement animations in step, as they do in the game without bBlendSmoothing: switching between two movement animations with the same set of m: keys starts the new one at the point between its keys that matches where the old one is, and the old one follows the new one's cycle while it fades out. Unlike the game, the two need not animate the same number of bones or start with the same m: key. Used instead of bFixGaitSwitch where both animations have them. Requires bBlendSmoothing.");
 	conf.fixOverlappingBlends = ini.GetOrCreate("Blend Fixes", "bFixOverlappingBlends", 1, "; blend animation switches that overlap on the same bones (holstering while the run switches to the unarmed one, aiming while the strafe changes, ...) as a mix of what each switch goes from and to: the game only blends the two highest priorities on a bone, so the hand lingered at the holster for a moment when holstering a weapon while running in third person. Bones with one switch at a time blend as before. Requires bBlendSmoothing.");
+	conf.movementTransitions = ini.GetOrCreate("Blend Fixes", "bMovementTransitions", 1, "; play start and stop animations of walks and runs: files in an AnimGroupOverride folder named like the walk or run they belong to with _start or _stop in the name (mtforward_start.kf, 2hafastforward_stop_a.kf; the KF's cycle type may be Clamp). A start animation plays when an actor starts walking or running from standing and goes on to the walk at its End text key, a stop animation (of several, the one whose first frame has the feet closest to where they are: stops on the left and right foot) plays when the player stops and blends to the idle at its End key. NPCs walking to the end of a path start theirs before they get there, where its root motion ends at the point they stop, so they stop where they would have; NPCs stopped by anything else (dialogue, waiting for another actor) stop as before. Both move the actor by their root motion. Requires bBlendSmoothing.");
 	conf.fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim button. kNVSE will trigger a blend to the hipfire attack animation when the attack key is released.");
 
 	conf.fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
@@ -930,6 +933,8 @@ void ApplyHooks()
 	AnimSwitch::WriteHooks();
 	if (conf.blendSmoothing && conf.fixBlendFromPose)
 		PoseBlendFixes::ApplyHooks();
+	if (conf.blendSmoothing)
+		MovementTransitions::WriteHooks();
 	
 	if (ini.GetOrCreate("Engine Fixes", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
 	{
@@ -943,6 +948,10 @@ void ApplyHooks()
 
 	if (ini.GetOrCreate("Engine Fixes", "bFixNPCLoopingReloads", 1, "; fix NPCs loading the whole clip of a weapon with a looping reload (Cowboy Repeater, lever-action shotgun, ...) in one round: they load one round per loop, like the player. Needs xNVSE 6.4.9 or newer."))
 		NPCLoopingReloadFix::ApplyHooks(fixModReloadAnims);
+
+	conf.fixAccumRootBlend = ini.GetOrCreate("Engine Fixes", "bFixAccumRootBlend", 1, "; fix actors stalling for a frame (or slowing down for one) at the start and end of blends between animations that move them by their root motion: the game's blend of the root's movement lost a frame of it whenever an animation joined or left the blend. Vanilla walks and runs hide it (the game moves the actor at the walk's average speed while a walk blends in); start and stop animations (bMovementTransitions) do not.");
+	if (conf.fixAccumRootBlend)
+		AccumBlendFix::WriteHooks();
 
 	if (ini.GetOrCreate("Engine Fixes", "bFixIdleStrafing", 1, "; allow player to strafe/turn sideways mid idle animation"))
 		FixIdleAnimStrafe();
@@ -1039,11 +1048,12 @@ void ApplyHooks()
 	}));
 
 	// BSAnimGroupSequence::GetCycleType
-	// stop dumb limitation on CLAMP sequences not being allowed to locomotion
+	// stop dumb limitation on CLAMP sequences not being allowed to locomotion; start and stop animations play once
 	WriteRelCall(0x4909BC, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* anim)
 	{
 		const static NiFixedString key = "allowClampInLocomotion";
-		if (anim->m_spTextKeys->FindFirstByName(key))
+		if (anim->m_spTextKeys->FindFirstByName(key) ||
+			(anim->animGroup && MovementTransitions::GetPathTransition(anim->m_kName.Str(), anim->animGroup->groupID) != MovementTransition::None))
 			return NiControllerSequence::kCycle_Loop;
 		return anim->m_eCycleType;
 	}));
@@ -1326,6 +1336,9 @@ void ApplyHooks()
 			return NiControllerSequence::INACTIVE;
 		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
 			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
+		// a stop animation plays to its End key, where Animation::Update blends the section out
+		if (MovementTransitions::Of(anim) == MovementTransition::Stop) [[msvc::noinline_calls]]
+			return NiControllerSequence::INACTIVE;
 		// stop game from not ending move anims immediately
 		return NiControllerSequence::ANIMATING;
 	}));
@@ -1539,6 +1552,8 @@ void WriteDelayedHooks()
 	ModReloadAnimFix::WriteDelayedHooks();
 	NPCLoopingReloadFix::WriteDelayedHooks();
 	BlendFixes::WriteDelayedHooks();
+	if (g_pluginSettings.blendSmoothing)
+		MovementTransitions::WriteDelayedHooks();
 
 	// hooking TESForm::GetFlags
 	// Runs on empty clip when reloading

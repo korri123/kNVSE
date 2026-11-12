@@ -1492,6 +1492,22 @@ struct NiQuatTransform
 		return m_kTranslate;
 	}
 
+	// NiQuatTransform::HierApply: kChild, given relative to this transform, made relative to this one's parent
+	NiQuatTransform HierApply(const NiQuatTransform& kChild) const
+	{
+		NiQuatTransform kResult;
+		ThisStdCall<NiQuatTransform*>(0xA38830, this, &kResult, &kChild);
+		return kResult;
+	}
+
+	// NiQuatTransform::HierInvert
+	NiQuatTransform HierInvert() const
+	{
+		NiQuatTransform kResult;
+		ThisStdCall(0xA386A0, this, &kResult);
+		return kResult;
+	}
+
 	NiQuatTransform operator*(const NiQuatTransform& kTransform) const
 	{
 		NiQuatTransform kDest;
@@ -2386,6 +2402,12 @@ public:
 	bool m_bReset;
 
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
+
+	// NiBlendAccumTransformInterpolator::CalculateValue: the item's delta since its last update
+	void CalculateValue(UInt8 ucIndex, float fTime, NiObjectNET* pkInterpTarget)
+	{
+		ThisStdCall(0xA39F60, this, ucIndex, fTime, pkInterpTarget);
+	}
 };
 
 class NiBlendTransformInterpolator : public NiBlendInterpolator

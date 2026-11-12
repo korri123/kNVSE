@@ -80,12 +80,14 @@
     <ClCompile Include="decompiled\AnimDataHooks.cpp" />
     <ClCompile Include="knvse_events.cpp" />
     <ClCompile Include="blend_fixes.cpp" />
+    <ClCompile Include="accum_blend_fix.cpp" />
     <ClCompile Include="additive_anims.cpp" />
     <ClCompile Include="anim_switch.cpp" />
     <ClCompile Include="blend_smoothing.cpp" />
     <ClCompile Include="blend_transitions.cpp" />
     <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
     <ClCompile Include="movement_blend_fixes.cpp" />
+    <ClCompile Include="movement_transitions.cpp" />
     <ClCompile Include="npc_looping_reload_fix.cpp" />
     <ClCompile Include="pose_blend_fixes.cpp" />
     <ClCompile Include="weapon_parent_switch.cpp" />
@@ -193,6 +195,7 @@
     <ClInclude Include="lib\json\json.h" />
     <ClInclude Include="blend_fixes.h" />
     <ClInclude Include="string_view_util.h" />
+    <ClInclude Include="accum_blend_fix.h" />
     <ClInclude Include="additive_anims.h" />
     <ClInclude Include="anim_switch.h" />
     <ClInclude Include="blend_smoothing.h" />
@@ -200,6 +203,7 @@
     <ClInclude Include="containers.h" />
     <ClInclude Include="lib\memory_pool\MemoryPool.h" />
     <ClInclude Include="movement_blend_fixes.h" />
+    <ClInclude Include="movement_transitions.h" />
     <ClInclude Include="npc_looping_reload_fix.h" />
     <ClInclude Include="pose_blend_fixes.h" />
     <ClInclude Include="weapon_parent_switch.h" />

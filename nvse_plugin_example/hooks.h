@@ -36,6 +36,8 @@ struct PluginINISettings
     bool fixGaitSwitch = true;
     bool fixMovementMorphKeys = true;
     bool fixOverlappingBlends = true;
+    bool movementTransitions = true;
+    bool fixAccumRootBlend = true;
 #if _DEBUG
     bool weaponHandBlendDebugLog = false;
 #endif

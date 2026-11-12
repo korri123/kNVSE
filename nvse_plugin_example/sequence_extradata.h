@@ -1,9 +1,19 @@
 ﻿#pragma once
 
+#include <cmath>
 #include <optional>
 #include <vector>
 
 #include "additive_anims.h"
+
+// A start or stop animation of a walk or run (an AnimGroupOverride file tagged _start or _stop), as MovementTransitions
+// plays it in the movement section
+enum class MovementTransition : UInt8
+{
+    None,
+    Start,
+    Stop,
+};
 
 class SequenceExtraData
 {
@@ -32,6 +42,15 @@ public:
     // that sequence, so Animation::Update acts on its group's keys and scales its clock while it eases in, as for the
     // ANIMATING sequence it replaced. Dropped when the sequence is activated again
     bool continuesVariant = false;
+    // Set by MovementTransitions on the sequences it plays as start or stop animations. Those are only ever played as such
+    // (normal picks leave the tagged files out), so it holds for as long as the sequence belongs to the manager
+    MovementTransition movementTransition = MovementTransition::None;
+    // An NPC's stop animation (MovementTransitions' arrivals): the goal of the path it was started for (once per approach),
+    // and the distance to the stop point as of the last update
+    NiPoint3 arrivalGoal{ NAN, NAN, NAN };
+    float fArrivalDistance = NAN;
+    // A stop animation's whole root motion at scale 1 (MovementTransitions' arrivals), once sampled
+    float fRootDistance = NAN;
     std::optional<AdditiveSequenceMetadata> additiveMetadata;
     std::optional<HardCut> hardCut;
     std::optional<SwitchMembership> switchMembership;

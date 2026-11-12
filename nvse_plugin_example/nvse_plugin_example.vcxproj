@@ -389,6 +389,7 @@
     <ClCompile Include="..\nvse\nvse\SafeWrite.cpp" />
     <ClCompile Include="..\nvse\nvse\Utilities.cpp" />
     <ClCompile Include="..\nvse\nvse\utility.cpp" />
+    <ClCompile Include="accum_blend_fix.cpp" />
     <ClCompile Include="additive_anims.cpp" />
     <ClCompile Include="anim_fixes.cpp" />
     <ClCompile Include="bethesda\archive.cpp" />
@@ -429,6 +430,7 @@
     <ClCompile Include="lib\memory_pool\MemoryPool.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="movement_blend_fixes.cpp" />
+    <ClCompile Include="movement_transitions.cpp" />
     <ClCompile Include="npc_looping_reload_fix.cpp" />
     <ClCompile Include="pose_blend_fixes.cpp" />
     <ClCompile Include="weapon_parent_switch.cpp" />
@@ -462,6 +464,7 @@
     <ClInclude Include="..\nvse\nvse\SafeWrite.h" />
     <ClInclude Include="..\nvse\nvse\Utilities.h" />
     <ClInclude Include="..\nvse\nvse\utility.h" />
+    <ClInclude Include="accum_blend_fix.h" />
     <ClInclude Include="additive_anims.h" />
     <ClInclude Include="anim_fixes.h" />
     <ClInclude Include="bethesda\bethesda_types.h" />
@@ -491,6 +494,7 @@
     <ClInclude Include="main.h" />
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="movement_blend_fixes.h" />
+    <ClInclude Include="movement_transitions.h" />
     <ClInclude Include="npc_looping_reload_fix.h" />
     <ClInclude Include="pose_blend_fixes.h" />
     <ClInclude Include="weapon_parent_switch.h" />
