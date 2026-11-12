@@ -27,6 +27,7 @@
 #include "npc_looping_reload_fix.h"
 #include "pose_blend_fixes.h"
 #include "sequence_extradata.h"
+#include "up_down_variant_fix.h"
 #include "weapon_hand_blend.h"
 
 bool g_startedAnimation = false;
@@ -956,6 +957,9 @@ void ApplyHooks()
 	conf.fixAccumRootBlend = ini.GetOrCreate("Engine Fixes", "bFixAccumRootBlend", 1, "; fix actors stalling for a frame (or slowing down for one) at the start and end of blends between animations that move them by their root motion: the game's blend of the root's movement lost a frame of it whenever an animation joined or left the blend. Vanilla walks and runs hide it (the game moves the actor at the walk's average speed while a walk blends in); start and stop animations (bMovementTransitions) do not.");
 	if (conf.fixAccumRootBlend)
 		AccumBlendFix::WriteHooks();
+
+	if (ini.GetOrCreate("Engine Fixes", "bFixAimUpDownVariants", 1, "; fix third person aim and attack animations not following the pitch (looking up or down) for weapon types whose up/down KFs are in more than one archive: the game failed to find the up and down animations that go with the playing one when a KF is listed twice (2haaimup in Update.bsa: the Service Rifle, Assault Carbine, ...; 2hh via Old World Blues, h2h via Dead Money, 1hpattack8 via Update.bsa) or a group has several KFs."))
+		UpDownVariantFix::WriteHooks();
 
 	if (ini.GetOrCreate("Engine Fixes", "bFixIdleStrafing", 1, "; allow player to strafe/turn sideways mid idle animation"))
 		FixIdleAnimStrafe();

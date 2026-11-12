@@ -393,6 +393,7 @@
     <ClCompile Include="additive_anims.cpp" />
     <ClCompile Include="aim_pitch.cpp" />
     <ClCompile Include="anim_fixes.cpp" />
+    <ClCompile Include="up_down_variant_fix.cpp" />
     <ClCompile Include="bethesda\archive.cpp" />
     <ClCompile Include="bethesda\bsfile.cpp" />
     <ClCompile Include="anim_switch.cpp" />
@@ -468,6 +469,7 @@
     <ClInclude Include="accum_blend_fix.h" />
     <ClInclude Include="additive_anims.h" />
     <ClInclude Include="aim_pitch.h" />
+    <ClInclude Include="up_down_variant_fix.h" />
     <ClInclude Include="anim_fixes.h" />
     <ClInclude Include="bethesda\bethesda_types.h" />
     <ClInclude Include="anim_switch.h" />
