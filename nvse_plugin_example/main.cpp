@@ -903,5 +903,6 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	DebugTools::InstallAssertHook();
 	DebugTools::StartCommandPipe();
 	DebugTools::StartBackgroundMode();
+	DebugTools::StartTestGame();
 	return true;
 }

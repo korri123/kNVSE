@@ -2,7 +2,6 @@
 
 #if _DEBUG
 #include <cstdio>
-#include <fstream>
 
 #include "SafeWrite.h"
 #include "utility.h"
@@ -10,7 +9,6 @@
 namespace
 {
     constexpr auto kRequestFile = "kNVSE-debug-background.txt";
-    constexpr ULONGLONG kRequestMaxAgeSeconds = 120;
 
     constexpr UInt32 kCreateGameWindowCall = 0x86AF42;   // WinMain
     constexpr UInt32 kCreateRenderWindowCall = 0x4DA89C; // TESRenderer::Init
@@ -94,18 +92,9 @@ void DebugTools::StartBackgroundMode()
 {
     // a file rather than an environment variable: a game started through a running Mod Organizer gets that
     // instance's environment
-    const auto path = TempFilePath(kRequestFile);
-    WIN32_FILE_ATTRIBUTE_DATA attributes;
-    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &attributes))
+    const auto request = TakeRequest(kRequestFile);
+    if (request.empty())
         return;
-    std::string request;
-    std::getline(std::ifstream(path), request);
-    DeleteFileA(path.c_str());
-    FILETIME now;
-    GetSystemTimeAsFileTime(&now);
-    const auto toSeconds = [](const FILETIME& time) { return ULARGE_INTEGER{time.dwLowDateTime, time.dwHighDateTime}.QuadPart / 10'000'000; };
-    if (toSeconds(now) - toSeconds(attributes.ftLastWriteTime) > kRequestMaxAgeSeconds)
-        return; // left by a launch that never got here
     int x, y, width, height;
     if (sscanf_s(request.c_str(), "%d,%d,%d,%d", &x, &y, &width, &height) != 4)
     {

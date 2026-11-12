@@ -24,11 +24,22 @@ namespace DebugTools
     // click into the picture. The game keeps running while another window has the foreground.
     void StartBackgroundMode();
 
+    // Test start. On when the temp directory holds kNVSE-debug-start.txt with a cell's editor ID, written at most two
+    // minutes before; the file is deleted. The main menu's Continue (which Stewie's bAutoContinueGame presses one frame
+    // after the menu opens) starts a new game in that cell instead, as `coc <cell>` from the main menu does: a default
+    // character, independent of the saves. Saves of that game go to Saves\kNVSE-test\, so autosaves made while
+    // testing are not what the user's next game continues.
+    void StartTestGame();
+
     // Every NVSE message (NVSEMessagingInterface::Message::type) passes through here.
     void HandleMessage(unsigned int type);
 
 #if _DEBUG
     std::string TempFilePath(const char* name);
+
+    // The first line of the request file `name` in the temp directory, which is deleted; empty when there is none or
+    // it is older than two minutes (left by a launch that never got this far).
+    std::string TakeRequest(const char* name);
 
     namespace Input
     {

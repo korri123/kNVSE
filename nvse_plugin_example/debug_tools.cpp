@@ -14,6 +14,7 @@
 #include <thread>
 
 #include "GameAPI.h"
+#include "GameSettings.h"
 #include "PluginAPI.h"
 #include "GameScript.h"
 #include "main.h"
@@ -166,6 +167,23 @@ namespace
         *returnValue = 1; // _CrtDbgReport returns 1, so the failing site executes _CrtDbgBreak
         return TRUE; // handled: no dialog
     }
+
+    constexpr auto kTestStartFile = "kNVSE-debug-start.txt";
+    constexpr ULONGLONG kRequestMaxAgeSeconds = 120;
+    constexpr UInt32 kContinueGame = 0x7D3190; // MenuButton:YesContinueGame
+    const auto kLocalSavePath = reinterpret_cast<Setting*>(0x11C3F74); // sLocalSavePath:General
+    constexpr auto kTestSavePath = "Saves\\kNVSE-test\\";
+
+    std::string g_testCell;
+
+    // Replaces the main menu's Continue. The save path is read where it is used (GetSaveDirectoryPath 0x84FF30, which
+    // also creates the folder, and the save list), and the INI is read by now.
+    void __cdecl StartTestGameInCell()
+    {
+        kLocalSavePath->Set(kTestSavePath);
+        DebugPrint(FormatString("DebugTools: starting a new game in %s instead of continuing", g_testCell.c_str()));
+        RunConsoleLine(("coc " + g_testCell).c_str());
+    }
 }
 
 std::string DebugTools::TempFilePath(const char* name)
@@ -173,6 +191,30 @@ std::string DebugTools::TempFilePath(const char* name)
     char tempDir[MAX_PATH];
     GetTempPathA(MAX_PATH, tempDir);
     return std::string(tempDir) + name;
+}
+
+std::string DebugTools::TakeRequest(const char* name)
+{
+    const auto path = TempFilePath(name);
+    WIN32_FILE_ATTRIBUTE_DATA attributes;
+    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &attributes))
+        return {};
+    std::string request;
+    std::getline(std::ifstream(path), request);
+    DeleteFileA(path.c_str());
+    FILETIME now;
+    GetSystemTimeAsFileTime(&now);
+    const auto toSeconds = [](const FILETIME& time) { return ULARGE_INTEGER{time.dwLowDateTime, time.dwHighDateTime}.QuadPart / 10'000'000; };
+    if (toSeconds(now) - toSeconds(attributes.ftLastWriteTime) > kRequestMaxAgeSeconds)
+        return {};
+    return request;
+}
+
+void DebugTools::StartTestGame()
+{
+    g_testCell = TakeRequest(kTestStartFile);
+    if (!g_testCell.empty())
+        WriteRelJump(kContinueGame, StartTestGameInCell);
 }
 
 void DebugTools::HandleMessage(unsigned int type)
@@ -204,6 +246,10 @@ void DebugTools::StartCommandPipe()
 }
 
 void DebugTools::InstallAssertHook()
+{
+}
+
+void DebugTools::StartTestGame()
 {
 }
 
