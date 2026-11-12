@@ -1749,7 +1749,7 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 		if (const auto* animGroupInfo = anim->animGroup->GetGroupInfo())
 		{
 			builder.Add("sequenceType", animGroupInfo->sequenceType);
-			builder.Add("keyType", animGroupInfo->keyType);
+			builder.Add("keyType", animGroupInfo->actionType);
 			builder.Add("animGroupName", animGroupInfo->name);
 		}
 	}
@@ -3377,6 +3377,14 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 		return true;
 	}, nullptr, "LoadAnim");
+
+	builder.Create("CanFireWeapon", kRetnType_Default, {}, true, [](COMMAND_ARGS)
+	{
+		*result = 0;
+		if (auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor))
+			*result = AllowAttackKey::CanFireWeapon(actor);
+		return true;
+	});
 
 #undef PARAM
 #undef OPT_PARAM

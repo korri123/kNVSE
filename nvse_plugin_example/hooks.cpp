@@ -646,6 +646,119 @@ namespace AllowAttackKey
 		WriteRelCall(0x893E32, ReloadAnimActionHook<&g_reloadAnimActionAddr1>, &g_reloadAnimActionAddr1);
 		WriteRelCall(0x893E42, ReloadAnimActionHook<&g_reloadAnimActionAddr2>, &g_reloadAnimActionAddr2);
 	}
+
+	// Stewie's Tweaks bFireWhileAiming replaces the TESAnimGroup::IsAimAnim call at 0x894375 in Actor::FiresWeapon: outside
+	// VATS the player fires while the aim sequences still blend in, except with two-handle weapons that use reload G
+	// (grenade launchers). Its hook reads the caller's frame, so it can't be called from here.
+	bool FireWhileAimingTweakApplies(const TESObjectWEAP* weapon)
+	{
+		constexpr UInt32 isAimAnimCall = 0x894375;
+		constexpr UInt32 isAimAnim = 0x4937C0; // TESAnimGroup::IsAimAnim, the same test as TESAnimGroup::IsAim
+		if (*reinterpret_cast<UInt8*>(isAimAnimCall) != 0xE8 || GetRelJumpAddr(isAimAnimCall) == isAimAnim)
+			return false;
+		return VATSCameraData::GetSingleton()->eMode == VATSCameraData::VATS_MODE_NONE && weapon
+			&& !(weapon->eWeaponType == TESObjectWEAP::kWeapType_TwoHandHandle && weapon->reloadAnim == TESObjectWEAP::eReload_G);
+	}
+
+	// Out of ammo as Actor::FiresWeapon (0x893A40) decides it: it clicks instead of attacking. Stewie's Tweaks replaces two
+	// jumps of that check with hooks that read its frame, so their rules are repeated here while their jumps are in place:
+	// bClipSizeMatters (0x893C13): outside VATS the player needs a whole shot's ammo in the clip, any round left won't do;
+	// its god mode fix (0x893C37, always on): the player fires without ammo in god mode, unless demigod mode is on.
+	bool HasAmmoToFire(Actor* actor, TESObjectWEAP* weapon)
+	{
+		const auto isJumpAt = [](UInt32 address) { return *reinterpret_cast<UInt8*>(address) == 0xE9; };
+		const auto isPlayer = actor == g_thePlayer;
+		const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+		bool outOfAmmo = false;
+		if (weapon->ammo.IsRockItLauncher())
+			outOfAmmo = !isPlayer || !g_thePlayer->GetRockItAmmoCount();
+		else if (weapon->GetEquippedAmmo(actor))
+			outOfAmmo = !ammoInfo || ammoInfo->count < weapon->ammoUse;
+		const auto clipSizeMatters = isJumpAt(0x893C13) && isPlayer
+			&& VATSCameraData::GetSingleton()->eMode == VATSCameraData::VATS_MODE_NONE;
+		if (outOfAmmo && ammoInfo && ammoInfo->count && !clipSizeMatters)
+			outOfAmmo = false;
+		if (outOfAmmo && isJumpAt(0x893C37) && isPlayer && IsGodMode() && !IsDemigodMode())
+			outOfAmmo = false;
+		return !outOfAmmo;
+	}
+
+	bool CanFireWeapon(Actor* actor)
+	{
+		auto* process = actor->baseProcess;
+		if (!process)
+			return false;
+		const auto isPlayer = actor == g_thePlayer;
+
+		// PlayerCharacter::Update only reads the attack control when these pass (0x941E64-0x9420F7)
+		if (isPlayer)
+		{
+			if (Interface::IsInMenuMode())
+				return false;
+			if (g_thePlayer->disabledControlFlags & PlayerCharacter::kControlFlag_Fight)
+				return false;
+			if (g_thePlayer->grabType == PlayerCharacter::kGrabType_InventoryDrop || g_thePlayer->grabType == PlayerCharacter::kGrabType_Telekinesis)
+				return false;
+			if (actor->actorMover && actor->actorMover->GetMovementFlags() & kMoveFlag_Swimming)
+				return false;
+		}
+		if (actor->IsKnockedOut() || actor->IsParalyzed() || actor->lifeState != 0
+			|| process->GetCurrentAnimAction() == kAnimAction_Stagger || process->GetSitSleepState() != 0)
+			return false;
+
+		// Actor::FiresWeapon, through the calls kNVSE (allowAttack, interruptLoop) and Stewie's Tweaks patch
+		auto* weaponInfo = process->GetWeaponInfo();
+		auto* weapon = weaponInfo ? weaponInfo->weapon : nullptr;
+		if (weapon && !HasAmmoToFire(actor, weapon))
+			return false;
+		const auto animAction = ReloadAnimActionHook<&g_reloadAnimActionAddr1>(actor);
+		if (animAction == kAnimAction_Reload || animAction == kAnimAction_ReloadLoop)
+			return false;
+		if (!actor->IsWeaponDrawn())
+			return false;
+		if (!AllowAttackHook(reinterpret_cast<Decoding::HighProcess*>(process)))
+			return false;
+		auto* animData = isPlayer ? g_thePlayer->GetAnimData() : process->GetAnimData();
+		if (!animData)
+			return false;
+		auto* sequence = animData->GetCurrentSequence(kSequence_Weapon);
+		if (!sequence || !sequence->animGroup)
+			return false;
+		auto* group = sequence->animGroup.data;
+		if (group->IsAim() && !(isPlayer && FireWhileAimingTweakApplies(weapon)))
+		{
+			if (sequence->m_eState != NiControllerSequence::ANIMATING)
+				return false;
+			for (const auto sequenceId : { kSequence_WeaponUp, kSequence_WeaponDown })
+			{
+				const auto* pitchSequence = animData->GetCurrentSequence(sequenceId);
+				if (pitchSequence && pitchSequence->m_eState != NiControllerSequence::ANIMATING)
+					return false;
+			}
+			if (!isPlayer && actor->typeID == kFormType_Character)
+			{
+				const auto isSneakGroup = group->GetMoveType() == kAnimMoveType_Sneaking;
+				if (isSneakGroup != actor->IsSneaking())
+					return false;
+			}
+		}
+		else if (group->IsAttack())
+		{
+			switch (group->GetGroupInfo()->actionType)
+			{
+			case kAnimGroupActionType_Loop:
+			case kAnimGroupActionType_AttackSpin:
+				break;
+			case kAnimGroupActionType_Attack: // the next attack starts once the group action reaches AGA_ATTACK_STOP (3)
+				if (animData->sequenceState1[kSequence_Weapon] != kSeqState_Unk3)
+					return false;
+				break;
+			default:
+				return false;
+			}
+		}
+		return true;
+	}
 	
 }
 

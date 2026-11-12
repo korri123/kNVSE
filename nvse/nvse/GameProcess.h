@@ -599,7 +599,7 @@ public:
 	virtual void	Unk_12C();
 	virtual void	Unk_12D();
 	virtual void	Unk_12E();
-	virtual void	Unk_12F();
+	virtual UInt32	GetSitSleepState();
 	virtual void	Unk_130();
 	virtual void	Unk_131();
 	virtual void	Unk_132();

@@ -819,6 +819,12 @@ public:
 	~BGSAmmoForm();
 
 	TESForm* ammo; // 04	either TESAmmo or BGSListForm
+
+	// the ammo form is a list whose first entry isn't ammo (the Rock-It Launcher's junk list)
+	bool IsRockItLauncher() const
+	{
+		return ThisStdCall<bool>(0x474A80, this);
+	}
 };
 
 // 008
@@ -2878,6 +2884,12 @@ public:
 	{
 		float attackMultipler = ThisStdCall<float>(0x646020, this, hasIncreasedRateOfFire);
 		return 1.0f / (attackMultipler * fireRate);
+	}
+
+	// the actor's loaded ammo, else the weapon's default ammo
+	TESAmmo* GetEquippedAmmo(Actor* actor) const
+	{
+		return ThisStdCall<TESAmmo*>(0x525980, this, actor);
 	}
 
 };

@@ -575,6 +575,12 @@ bool IsGodMode()
 	return *godMode;
 }
 
+bool IsDemigodMode()
+{
+	// g_bIsDemigodMode, or the bSetDemigodMode:GamePlay game setting's value
+	return *reinterpret_cast<bool*>(0x11E07BB) || *reinterpret_cast<bool*>(0x11E0898);
+}
+
 void HandleBurstFire()
 {
 	auto iter = g_burstFireQueue.begin();

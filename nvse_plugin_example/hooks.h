@@ -60,6 +60,13 @@ namespace LoopingReloadPauseFix
 
 void WriteDelayedHooks();
 
+namespace AllowAttackKey
+{
+    // Whether the actor's attack would start now if attack were pressed: the checks of PlayerCharacter::Update and
+    // Actor::FiresWeapon, with the allowAttack/interruptLoop text keys and Stewie's Tweaks bFireWhileAiming
+    bool CanFireWeapon(Actor* actor);
+}
+
 inline float GetDefaultBlendTime()
 {
     return GetIniFloat(0x11C56FC);

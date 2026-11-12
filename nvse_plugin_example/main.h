@@ -45,6 +45,7 @@ void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* an
 void Save3rdPersonAnimGroupData(BSAnimGroupSequence* anim3rd);
 
 bool IsGodMode();
+bool IsDemigodMode();
 
 float GetAnimTime(const NiControllerSequence* anim);
 void HandleCustomTextKeys();

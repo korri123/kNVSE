@@ -1190,7 +1190,7 @@ namespace AnimGroup
 		if (groupID >= kAnimGroup_AttackLoop && groupID <= kAnimGroup_AttackLoopISDown)
 			return true;
 		const auto* info = GetGroupInfo(groupID);
-		return info->keyType >= 5 && info->keyType <= 9;
+		return info->actionType >= kAnimGroupActionType_Attack && info->actionType <= kAnimGroupActionType_AttackSpin;
 	}
 
 	inline bool IsAttackIS(AnimGroupID groupID)

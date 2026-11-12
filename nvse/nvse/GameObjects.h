@@ -721,6 +721,16 @@ public:
 		return ThisStdCall<bool>(0x8B7B70, this);
 	}
 
+	bool IsSneaking() const
+	{
+		return ThisStdCall<bool>(0x4997B0, this);
+	}
+
+	bool IsWeaponDrawn() const
+	{
+		return ThisStdCall<bool>(0x8A16D0, this);
+	}
+
 	bool IsFemale() const
 	{
 		return IS_ID(baseForm, TESNPC) && static_cast<TESNPC*>(baseForm)->baseData.IsFemale();
@@ -789,6 +799,13 @@ public:
 		kControlFlag_Sneak			= 1 << 6,
 	};
 
+	enum GrabType : UInt32 {
+		kGrabType_None			= 0,
+		kGrabType_Normal		= 1,
+		kGrabType_InventoryDrop	= 2,
+		kGrabType_Telekinesis	= 3,
+	};
+
 	virtual void		Unk_139(void);
 	virtual void		Unk_13A(void);
 
@@ -825,7 +842,7 @@ public:
 	UInt32								unk61C[6];				// 61C
 	void* ptr634;				// 634	bhkMouseSpringAction when there's a grabbed reference
 	TESObjectREFR* grabbedRef;			// 638
-	UInt32								unk63C;					// 63C
+	UInt32								grabType;				// 63C	kGrabType_xxx
 	UInt32								unk640;					// 640
 	float								grabbedWeight;			// 644
 
@@ -938,6 +955,7 @@ public:
 	bool IsFirstPerson() { return !thirdPersonConsistent; }
 	UInt32 GetMovementFlags() { return actorMover->GetMovementFlags(); }	// 11: IsSwimming, 9: IsSneaking, 8: IsRunning, 7: IsWalking, 0: keep moving
 	bool IsPlayerSwimming() { return (GetMovementFlags()  >> 11) & 1; }
+	UInt32 GetRockItAmmoCount() const { return ThisStdCall<UInt32>(0x969040, this); }
 
 	static PlayerCharacter*	GetSingleton();
 	bool SetSkeletonPath(const char* newPath);

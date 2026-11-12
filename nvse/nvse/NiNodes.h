@@ -3085,13 +3085,29 @@ enum eAnimSequence
 	kSequence_Death = 0x14,
 };
 
+// ANIM_GROUP_ACTION_TYPE: what Animation::Update does at a group's action keys (Hit, Attach, Eject, ...)
+enum AnimGroupActionType : UInt32
+{
+	kAnimGroupActionType_StartStop = 0x0,
+	kAnimGroupActionType_Loop = 0x1,
+	kAnimGroupActionType_SpecialIdleLoop = 0x2,
+	kAnimGroupActionType_Equip = 0x3,
+	kAnimGroupActionType_Unequip = 0x4,
+	kAnimGroupActionType_Attack = 0x5,
+	kAnimGroupActionType_AttackPower = 0x6,
+	kAnimGroupActionType_AttackThrow = 0x7,
+	kAnimGroupActionType_AttackMine = 0x8,
+	kAnimGroupActionType_AttackSpin = 0x9,
+	kAnimGroupActionType_LoopingReload = 0xA,
+};
+
 struct AnimGroupInfo
 {
 	const char* name;
 	bool supportsVariants;
 	UInt8 pad[3];
 	UInt32 sequenceType;
-	UInt32 keyType;
+	AnimGroupActionType actionType;
 	UInt32 unk10;
 	UInt32 unk14[4];
 };
