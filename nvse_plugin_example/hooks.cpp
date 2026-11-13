@@ -1575,6 +1575,17 @@ void WriteDelayedHooks()
 		return NiControllerSequence::ANIMATING;
 	}));
 
+	// Actor::PickAnimations picks the jump loop of an actor in the air only while its anim action is None, Attack,
+	// Attack_Follow_Through or Wait_For_Lower_Body_Anim (the switch at 0x89676B, on the action + 1 through this byte
+	// table). Attack_Eject, between Attack and Attack_Follow_Through, is not among them: the update that starts with it
+	// picks the weapon's group, which blends the movement section out (0x897735), and a falling actor's jump loop is not
+	// picked again until its fall time has passed. With no jump animation in the movement section,
+	// Actor::UpdateRagdollAnimState runs foot IK in the air, which pulls the pelvis down to the ground as it comes into
+	// reach: firing in mid-jump made the character dip up to 16 units for a few frames before landing
+	constexpr UInt32 kJumpPickActionCases = 0x897818;
+	SafeWrite8(kJumpPickActionCases + Decoding::kAnimAction_Attack_Eject + 1,
+		*reinterpret_cast<UInt8*>(kJumpPickActionCases + Decoding::kAnimAction_Attack + 1));
+
 	// hooking TESForm::GetFlags
 	// Runs on empty clip when reloading
 	// nvac hooks here so it has to be delayed
