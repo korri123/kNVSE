@@ -72,7 +72,7 @@ namespace
 
 void WeaponParentSwitch::Init(kBlendInterpItem& item, const NiControllerSequence& sequence)
 {
-    item.parentSwitch.reset();
+    item.hasParentSwitch = false;
     if (!g_pluginSettings.fixWeaponParentSwitch || !sequence.m_spTextKeys || !MovesWeapon(sequence))
         return;
     auto* transform = item.interpolator ? NI_DYNAMIC_CAST(NiTransformInterpolator, item.interpolator.data) : nullptr;
@@ -117,13 +117,14 @@ void WeaponParentSwitch::Init(kBlendInterpItem& item, const NiControllerSequence
     if (fLastOldKey == INFINITY)
         return;
     item.parentSwitch = Window{ fLastOldKey, fSwitchKey, *bToRightHand };
+    item.hasParentSwitch = true;
 }
 
 float WeaponParentSwitch::GetUpdateTime(const kBlendInterpItem* item, const NiObjectNET* weapon, float fTime)
 {
-    if (!item || !item->parentSwitch)
+    if (!item || !item->hasParentSwitch)
         return fTime;
-    const auto& window = *item->parentSwitch;
+    const auto& window = item->parentSwitch;
     // the engine reparents the node at its own time for the key, which kNVSE moves for respectEndKey animations: go by
     // the parent the node has, not by the time
     const auto* parent = static_cast<const NiAVObject*>(weapon)->m_pkParent;

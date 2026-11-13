@@ -1,6 +1,6 @@
 ﻿#pragma once
+#include <cstddef>
 #include <memory>
-#include <optional>
 
 #include "GameAPI.h"
 #include "weapon_hand_blend.h"
@@ -50,30 +50,39 @@ enum class kWeightType: UInt8
 
 struct kBlendInterpItem
 {
+    // Read for every item on every evaluation of its bone's blend (NiBlendTransformInterpolator, BlendSmoothing): kept
+    // together at the start, with the flags of the features below so that their data is only read for the items that
+    // have it
     NiPointer<NiInterpolator> interpolator = nullptr;
     // The sequence that has this item's interpolator attached; null once the sequence detaches it, including while a
     // detached item is still fading out. Every path that removes or destroys a sequence detaches it first (retail
     // NiControllerSequence::ClearTargets and the destructor hook both Deactivate), so this never points at a dead sequence.
     NiControllerSequence* sequence = nullptr;
-    NiBlendInterpolator* blendInterp = nullptr;
     kWeightState translateWeight;
     kWeightState rotateWeight;
     kWeightState scaleWeight;
     // m_fWeight and m_fEaseSpinner of its blend item when the blend interpolator was last evaluated
     float lastWeight = -NI_INFINITY;
     float lastEaseSpinner = -NI_INFINITY;
+    // its sequence has an aimPitch text key: the share of the actor's pitch its pose of the bone is turned by (AimPitch)
+    float aimPitchShare = 0.0f;
     bool detached = false;
+    // its sequence has a noBlendSmoothing or noBlend text key: while it is attached, the node is blended as computed
+    bool noSmoothing = false;
+    // additiveMetadata is set
+    bool isAdditive = false;
+    // parentSwitch is set
+    bool hasParentSwitch = false;
+
+    // Used when the item is attached and detached, or by few items
+    NiBlendInterpolator* blendInterp = nullptr;
+    // its index in the blend interpolator while it is detached
     unsigned char blendIndex = INVALID_INDEX;
     // diagnostics only: how the item got into its current state
     kInterpDebugState debugState = kInterpDebugState::NotSet;
-    // its sequence has a noBlendSmoothing or noBlend text key: while it is attached, the node is blended as computed
-    bool noSmoothing = false;
-    // its sequence has an aimPitch text key: the share of the actor's pitch its pose of the bone is turned by (AimPitch)
-    float aimPitchShare = 0.0f;
-    bool isAdditive = false;
     kAdditiveInterpMetadata additiveMetadata;
     // Weapon node items of equip/unequip animations: where the track switches parent space (WeaponParentSwitch)
-    std::optional<WeaponParentSwitch::Window> parentSwitch;
+    WeaponParentSwitch::Window parentSwitch{};
 
     bool IsSmoothedWeightZero() const
     {
@@ -112,9 +121,12 @@ struct kBlendInterpItem
         aimPitchShare = 0.0f;
         isAdditive = false;
         additiveMetadata.ClearValues();
-        parentSwitch.reset();
+        hasParentSwitch = false;
     }
 };
+
+// what every evaluation reads fits a cache line
+static_assert(offsetof(kBlendInterpItem, blendInterp) <= 64);
 
 class kBlendInterpolatorExtraData : public NiExtraData
 {
