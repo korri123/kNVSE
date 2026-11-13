@@ -8,6 +8,7 @@
 #include "hooks.h"
 #include "NiObjects.h"
 #include "string_view_util.h"
+#include "text_key_arguments.h"
 #include "utility.h"
 
 using WeaponHandBlend::Acceptance;
@@ -271,32 +272,26 @@ namespace
         t_spaceKeys.clear();
         if (!sequence.m_spTextKeys)
             return;
-        constexpr std::string_view kPrefix = "weaponSpace:";
         for (const NiTextKey& key : sequence.m_spTextKeys->GetKeys())
         {
-            const char* text = key.m_kText.CStr();
-            if (!text || !StartsWith(text, kPrefix.data()))
+            const auto value = TextKeys::GetArguments(key.m_kText.Str(), "weaponSpace");
+            if (!value || value->empty())
                 continue;
-            std::string_view value(text + kPrefix.size());
-            const auto first = value.find_first_not_of(" \t");
-            if (first == std::string_view::npos)
-                continue;
-            value = value.substr(first, value.find_last_not_of(" \t") - first + 1);
             Space space;
-            if (sv::equals_ci(value, "right"))
+            if (sv::equals_ci(*value, "right"))
                 space = Space::Right;
-            else if (sv::equals_ci(value, "left"))
+            else if (sv::equals_ci(*value, "left"))
                 space = Space::Left;
-            else if (sv::equals_ci(value, "body"))
+            else if (sv::equals_ci(*value, "body"))
                 space = Space::Body;
-            else if (sv::equals_ci(value, "auto"))
+            else if (sv::equals_ci(*value, "auto"))
                 space = Space::Auto;
-            else if (sv::equals_ci(value, "off"))
+            else if (sv::equals_ci(*value, "off"))
                 space = Space::Off;
             else
             {
                 DebugPrint(FormatString("WeaponHandBlend: %s has an unknown text key \"%s\" (expected weaponSpace: right, left, body, auto or off)",
-                    sequence.m_kName.CStr(), text));
+                    sequence.m_kName.CStr(), key.m_kText.CStr()));
                 continue;
             }
             t_spaceKeys.push_back({ key.m_fTime, space });

@@ -84,6 +84,7 @@
     <ClCompile Include="additive_anims.cpp" />
     <ClCompile Include="aim_pitch.cpp" />
     <ClCompile Include="spawn_keys.cpp" />
+    <ClCompile Include="text_key_arguments.cpp" />
     <ClCompile Include="skeleton_nodes.cpp" />
     <ClCompile Include="up_down_variant_fix.cpp" />
     <ClCompile Include="anim_switch.cpp" />
@@ -203,6 +204,7 @@
     <ClInclude Include="additive_anims.h" />
     <ClInclude Include="aim_pitch.h" />
     <ClInclude Include="spawn_keys.h" />
+    <ClInclude Include="text_key_arguments.h" />
     <ClInclude Include="skeleton_nodes.h" />
     <ClInclude Include="up_down_variant_fix.h" />
     <ClInclude Include="anim_switch.h" />

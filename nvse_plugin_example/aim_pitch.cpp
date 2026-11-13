@@ -9,6 +9,7 @@
 #include "SafeWrite.h"
 #include "sequence_extradata.h"
 #include "string_view_util.h"
+#include "text_key_arguments.h"
 #include "utility.h"
 
 namespace
@@ -17,37 +18,6 @@ namespace
 
     // What the vanilla rifle aimup/aimdown KFs turn (30 degrees each at the full 90)
     constexpr std::string_view kDefaultBones[] = { "Bip01 Spine", "Bip01 Spine1", "Bip01 Spine2" };
-
-    // The arguments of an aimPitch text key ("aimPitch" or "aimPitch: ..."), null for any other key
-    const char* GetArguments(const char* text)
-    {
-        if (!text || _strnicmp(text, kKeyName.data(), kKeyName.size()) != 0)
-            return nullptr;
-        const char* rest = text + kKeyName.size();
-        if (*rest == ':')
-            return rest + 1;
-        if (*rest == '\0' || *rest == ' ' || *rest == '\t')
-            return rest;
-        return nullptr;
-    }
-
-    const char* FindArguments(const NiControllerSequence& sequence)
-    {
-        if (!sequence.m_spTextKeys)
-            return nullptr;
-        for (const NiTextKey& key : sequence.m_spTextKeys->GetKeys())
-            if (const char* arguments = GetArguments(key.m_kText.CStr()))
-                return arguments;
-        return nullptr;
-    }
-
-    std::string_view Trim(std::string_view text)
-    {
-        const auto first = text.find_first_not_of(" \t");
-        if (first == std::string_view::npos)
-            return {};
-        return text.substr(first, text.find_last_not_of(" \t") - first + 1);
-    }
 
     // MiddleHighProcess::UpdateAimSequences (0x9295C0), virtual: Actor::Update calls it every frame for third person
     // skeletons, Actor::StartWeaponGroup after starting a weapon group and its up/down variants
@@ -77,25 +47,23 @@ namespace
 
 bool AimPitch::HasKey(const NiControllerSequence& sequence)
 {
-    return FindArguments(sequence) != nullptr;
+    return TextKeys::FindArguments(sequence, kKeyName).has_value();
 }
 
 AimPitch::Shares::Shares(const NiControllerSequence& sequence)
 {
-    const char* arguments = FindArguments(sequence);
+    const auto arguments = TextKeys::FindArguments(sequence, kKeyName);
     if (!arguments)
         return;
-    std::string_view rest = Trim(arguments);
-    if (rest.empty())
+    if (arguments->empty())
     {
         m_default = true;
         return;
     }
-    while (!rest.empty())
+    TextKeys::ArgumentReader reader(*arguments);
+    while (const auto next = reader.Next())
     {
-        const auto comma = rest.find(',');
-        const auto entry = Trim(rest.substr(0, comma));
-        rest = comma == std::string_view::npos ? std::string_view() : rest.substr(comma + 1);
+        const auto entry = *next;
         if (entry.empty())
             continue;
         const auto space = entry.find_last_of(" \t");
@@ -108,7 +76,7 @@ AimPitch::Shares::Shares(const NiControllerSequence& sequence)
                 static_cast<int>(entry.size()), entry.data(), sequence.m_kName.CStr(), kMaxBones));
             continue;
         }
-        m_entries[m_count++] = { Trim(entry.substr(0, space)), share };
+        m_entries[m_count++] = { sv::trim(entry.substr(0, space)), share };
     }
 }
 

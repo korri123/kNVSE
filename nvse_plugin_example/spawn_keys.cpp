@@ -12,12 +12,13 @@
 #include "sequence_extradata.h"
 #include "skeleton_nodes.h"
 #include "string_view_util.h"
+#include "text_key_arguments.h"
 #include "utility.h"
 
 namespace
 {
-    constexpr std::string_view kSpawnKey = "spawn:";
-    constexpr std::string_view kDespawnKey = "despawn:";
+    constexpr std::string_view kSpawnKey = "spawn";
+    constexpr std::string_view kDespawnKey = "despawn";
     constexpr const char* kDefaultParent = "Weapon";
 
     // A mesh shown by an animation
@@ -43,27 +44,6 @@ namespace
         static std::unordered_set<std::string> s_logged;
         if (s_logged.insert(message).second)
             ERROR_LOG("SpawnKeys: " + message);
-    }
-
-    std::string_view Trim(std::string_view text)
-    {
-        const auto first = text.find_first_not_of(" \t");
-        if (first == std::string_view::npos)
-            return {};
-        return text.substr(first, text.find_last_not_of(" \t") - first + 1);
-    }
-
-    std::vector<std::string_view> SplitArguments(std::string_view text)
-    {
-        std::vector<std::string_view> result;
-        while (true)
-        {
-            const auto comma = text.find(',');
-            result.push_back(Trim(text.substr(0, comma)));
-            if (comma == std::string_view::npos)
-                return result;
-            text.remove_prefix(comma + 1);
-        }
     }
 
     bool IsNifPath(std::string_view mesh)
@@ -186,24 +166,26 @@ std::optional<SpawnKeys::Keys> SpawnKeys::Parse(const NiControllerSequence& sequ
     Keys keys;
     for (const NiTextKey& key : sequence.m_spTextKeys->GetKeys())
     {
-        std::string_view text = key.m_kText.Str();
-        bool spawn;
-        if (sv::starts_with_ci(text, kSpawnKey))
-        {
-            spawn = true;
-            text.remove_prefix(kSpawnKey.size());
-        }
-        else if (sv::starts_with_ci(text, kDespawnKey))
+        const std::string_view text = key.m_kText.Str();
+        bool spawn = true;
+        auto rest = TextKeys::GetArguments(text, kSpawnKey);
+        if (!rest)
         {
             spawn = false;
-            text.remove_prefix(kDespawnKey.size());
+            rest = TextKeys::GetArguments(text, kDespawnKey);
         }
-        else
+        if (!rest)
             continue;
-        const auto arguments = SplitArguments(text);
+        // <bone>, <mesh>, <parent>: the first three, and how many there are
+        std::string_view arguments[3];
+        size_t count = 0;
+        TextKeys::ArgumentReader reader(*rest);
+        for (auto argument = reader.Next(); argument; argument = reader.Next(), ++count)
+            if (count < std::size(arguments))
+                arguments[count] = *argument;
         const auto boneName = arguments[0];
-        if (boneName.empty() || (spawn && (arguments.size() < 2 || arguments.size() > 3 || arguments[1].empty()))
-            || (!spawn && arguments.size() != 1))
+        if (boneName.empty() || (spawn && (count < 2 || count > 3 || arguments[1].empty()))
+            || (!spawn && count != 1))
         {
             LogOnce(FormatString("%s: can't use \"%s\" (expected spawn: <bone>, <mesh>[, <parent>] or despawn: <bone>)",
                 sequence.m_kName.CStr(), key.m_kText.CStr()));
@@ -222,7 +204,7 @@ std::optional<SpawnKeys::Keys> SpawnKeys::Parse(const NiControllerSequence& sequ
             const auto name = idTag != idTags.end() ? idTag->m_kAVObjectName : NiFixedString(std::string(boneName).c_str());
             bone = keys.bones.insert(keys.bones.end(), Bone{ name, NiFixedString(kDefaultParent) });
         }
-        if (spawn && arguments.size() == 3 && !arguments[2].empty())
+        if (spawn && count == 3 && !arguments[2].empty())
         {
             if (bone->parentSet && !sv::equals_ci(bone->parent.Str(), arguments[2]))
                 LogOnce(FormatString("%s: \"%s\" has two parents, keeping \"%s\"", sequence.m_kName.CStr(),

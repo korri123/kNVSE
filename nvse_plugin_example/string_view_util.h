@@ -38,6 +38,15 @@ namespace sv
         return left.size() == right.size() && _strnicmp(left.data(), right.data(), left.size()) == 0;
     }
 
+    // without leading and trailing spaces and tabs
+    inline std::string_view trim(std::string_view text)
+    {
+        const auto first = text.find_first_not_of(" \t");
+        if (first == std::string_view::npos)
+            return {};
+        return text.substr(first, text.find_last_not_of(" \t") - first + 1);
+    }
+
     inline bool contains_ci(std::string_view left, std::string_view right)
     {
         return FindStringCI(left, right);

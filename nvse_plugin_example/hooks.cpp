@@ -27,6 +27,7 @@
 #include "npc_looping_reload_fix.h"
 #include "pose_blend_fixes.h"
 #include "sequence_extradata.h"
+#include "text_key_arguments.h"
 #include "up_down_variant_fix.h"
 #include "weapon_hand_blend.h"
 
@@ -321,10 +322,13 @@ bool __fastcall IsCustomAnimKey(const char* key)
 {
 	const static auto customKeys = {
 		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:",
-		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion", "noBlendSmoothing", "weaponSpace:",
-		"spawn:", "despawn:", "allowFirstPerson"
+		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion", "noBlendSmoothing",
+		"allowFirstPerson"
 	};
-	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)));
+	// keys with arguments, matched as their features read them (TextKeys::GetArguments)
+	const static auto argumentKeys = { "aimPitch", "weaponSpace", "spawn", "despawn" };
+	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)))
+		|| ra::any_of(argumentKeys, _L(const char* name, TextKeys::GetArguments(key, name).has_value()));
 }
 
 __declspec(naked) void KeyStringCrashFixHook()
