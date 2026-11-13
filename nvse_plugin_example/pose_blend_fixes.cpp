@@ -11,32 +11,24 @@
 
 namespace
 {
-    struct CutSequence
-    {
-        NiControllerSequence* sequence;
-        SequenceExtraData::HardCut cut;
-    };
+    using HardCut = kAnimationExtraData::HardCut;
 
     // The sequences of the Animation's manager that Animation::ClearGroup cut off for this switch. Its callers start the
     // next sequence in the same update (StartGroup itself, Actor::ForceIdleAnimation, Actor::StopAttack,
-    // InterfaceManager::UpdatePipboy, ...). The record lives in the sequence's extra data, which is dropped when the
-    // sequence leaves the manager, so every sequence returned is still owned by it. Taken out of the extra data, as
-    // activating sequences may add entries to it.
-    std::vector<CutSequence> TakeHardCuts(const AnimSwitch& animSwitch, NiControllerManager* manager)
+    // InterfaceManager::UpdatePipboy, ...). A sequence's cut is dropped when it leaves the manager, so every sequence
+    // returned is still owned by it. Taken off the node: the manager's other cuts are of switches that are over
+    std::vector<HardCut> TakeHardCuts(const AnimSwitch& animSwitch, const NiControllerManager* manager)
     {
-        std::vector<CutSequence> cuts;
+        std::vector<HardCut> cuts;
         auto* nodeData = manager->m_pkTarget ? kAnimationExtraData::Get(manager->m_pkTarget) : nullptr;
         if (!nodeData)
             return cuts;
-        for (auto& entry : nodeData->entries)
+        for (const auto& cut : nodeData->hardCuts)
         {
-            auto& hardCut = entry.data.hardCut;
-            if (entry.manager != manager || !hardCut)
-                continue;
-            if (hardCut->uiSwitch == animSwitch.GetID())
-                cuts.push_back({ entry.sequence, *hardCut });
-            hardCut.reset();
+            if (cut.manager == manager && cut.uiSwitch == animSwitch.GetID())
+                cuts.push_back(cut);
         }
+        std::erase_if(nodeData->hardCuts, [&](const HardCut& cut) { return cut.manager == manager; });
         return cuts;
     }
 
@@ -55,10 +47,9 @@ namespace
     }
 
     // Brings a hard cut sequence back and fades it out from where the cut left it
-    void FadeOut(const AnimSwitch& animSwitch, NiControllerManager* manager, const CutSequence& cutSequence, float fDuration)
+    void FadeOut(const AnimSwitch& animSwitch, NiControllerManager* manager, const HardCut& cut, float fDuration)
     {
-        auto* sequence = cutSequence.sequence;
-        const auto& cut = cutSequence.cut;
+        auto* sequence = cut.sequence;
         if (sequence->m_eState != NiControllerSequence::INACTIVE)
             return;
         switch (cut.eState)
@@ -96,7 +87,7 @@ namespace
     {
         const auto animSwitch = AnimSwitch::Current(animData);
         const auto cuts = TakeHardCuts(animSwitch, manager);
-        const bool bRestart = std::ranges::any_of(cuts, [&](const CutSequence& cut) { return cut.sequence == sequence; });
+        const bool bRestart = std::ranges::any_of(cuts, [&](const HardCut& cut) { return cut.sequence == sequence; });
         // a sequence cut to start over from its first frame has nothing of its own to fade out
         if (bRestart || fDestFrame != 0.0f || pkSequenceToSynchronize || IsPosedByRagdoll(animData))
             return manager->BlendFromPose(sequence, fDestFrame, fDuration, iPriority, pkSequenceToSynchronize);
@@ -124,14 +115,19 @@ void PoseBlendFixes::RecordHardCut(AnimData* animData, NiControllerSequence* seq
 {
     if (fEaseOut > 0.0f || !sequence || sequence->m_eState == NiControllerSequence::INACTIVE)
         return;
-    // before GetOrCreate: opening the switch may add the node's extra data
+    const NiControllerManager* manager = sequence->m_pkOwner;
+    if (!manager || !manager->m_pkTarget)
+        return;
     const UInt32 uiSwitch = AnimSwitch::Current(animData).GetID();
-    if (auto* extraData = SequenceExtraDatas::GetOrCreate(sequence))
+    auto& cuts = kAnimationExtraData::GetOrCreate(manager->m_pkTarget)->hardCuts;
+    // a cut is for the sequence started in the same switch: the manager's cuts of earlier switches are over
+    std::erase_if(cuts, [&](const HardCut& cut)
     {
-        const Ease* ease = Eases::Find(*sequence);
-        extraData->hardCut = { sequence->m_eState, sequence->m_fStartTime, sequence->m_fEndTime, uiSwitch,
-            ease ? *ease : Ease() };
-    }
+        return cut.manager == manager && (cut.uiSwitch != uiSwitch || cut.sequence == sequence);
+    });
+    const Ease* ease = Eases::Find(*sequence);
+    cuts.push_back({ manager, sequence, sequence->m_eState, sequence->m_fStartTime, sequence->m_fEndTime, uiSwitch,
+        ease ? *ease : Ease() });
 }
 
 void PoseBlendFixes::ApplyHooks()

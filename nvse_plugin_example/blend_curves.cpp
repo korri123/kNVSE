@@ -132,23 +132,26 @@ namespace
     // the sequence is evaluated at
     void Resolve(const NiControllerSequence& sequence, const Ease& ease, kAnimationExtraData& nodeData, float fScaledTime)
     {
-        const auto memberEase = [&](kAnimationExtraData::Entry& entry) -> Ease*
+        const auto& keys = nodeData.sequenceKeys;
+        auto& data = nodeData.sequenceData;
+        const auto memberEase = [&](size_t i) -> Ease*
         {
-            Ease& other = entry.data.ease;
-            if (entry.manager != sequence.m_pkOwner || other.eState != entry.sequence->m_eState)
+            Ease& other = data[i].ease;
+            if (keys[i].manager != sequence.m_pkOwner || other.eState != keys[i].sequence->m_eState)
                 return nullptr;
             return &other == &ease || (ease.uiSwitch && other.uiSwitch == ease.uiSwitch) ? &other : nullptr;
         };
         const auto find = [&](Direction direction) -> const BlendCurve*
         {
-            for (auto& entry : nodeData.entries)
+            for (size_t i = 0; i < keys.size(); ++i)
             {
-                if (entry.data.blendCurveKeys.empty() || !memberEase(entry))
+                if (data[i].blendCurveKeys.empty() || !memberEase(i))
                     continue;
-                if (Eases::IsRising(entry.sequence->m_eState) != (direction == Direction::In))
+                const NiControllerSequence* member = keys[i].sequence;
+                if (Eases::IsRising(member->m_eState) != (direction == Direction::In))
                     continue;
-                const float fTime = entry.sequence == &sequence ? fScaledTime : entry.sequence->GetSequenceTime();
-                if (const auto* curve = FindKey(entry.data.blendCurveKeys, direction, fTime))
+                const float fTime = member == &sequence ? fScaledTime : member->GetSequenceTime();
+                if (const auto* curve = FindKey(data[i].blendCurveKeys, direction, fTime))
                     return curve;
             }
             return nullptr;
@@ -157,9 +160,9 @@ namespace
         if (!found)
             found = find(Direction::Out);
         const BlendCurve curve = found ? *found : BlendCurve();
-        for (auto& entry : nodeData.entries)
+        for (size_t i = 0; i < keys.size(); ++i)
         {
-            if (Ease* member = memberEase(entry))
+            if (Ease* member = memberEase(i))
             {
                 member->switchCurve = curve;
                 member->bCurveResolved = true;

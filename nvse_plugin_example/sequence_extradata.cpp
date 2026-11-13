@@ -38,12 +38,21 @@ namespace
         return manager && manager->m_pkTarget ? kAnimationExtraData::Get(manager->m_pkTarget) : nullptr;
     }
 
-    kAnimationExtraData::Entry* FindEntry(kAnimationExtraData* nodeData, const NiControllerSequence* sequence)
+    SequenceExtraData* FindData(kAnimationExtraData* nodeData, const NiControllerSequence* sequence)
     {
-        for (auto& entry : nodeData->entries)
-            if (entry.sequence == sequence && entry.manager == sequence->m_pkOwner)
-                return &entry;
-        return nullptr;
+        const kAnimationExtraData::SequenceKey key{ sequence->m_pkOwner, sequence };
+        const auto& keys = nodeData->sequenceKeys;
+        // Fibonacci hashing: sequences are heap blocks, the low bits of their addresses alike
+        UInt16& hint = nodeData->sequenceHints[reinterpret_cast<UInt32>(sequence) * 0x9E3779B1u >>
+            (32 - kAnimationExtraData::kSequenceHintBits)];
+        if (hint < keys.size() && keys[hint] == key)
+            return &nodeData->sequenceData[hint];
+        const auto iter = std::ranges::find(keys, key);
+        if (iter == keys.end())
+            return nullptr;
+        const auto index = static_cast<size_t>(iter - keys.begin());
+        hint = static_cast<UInt16>(index);
+        return &nodeData->sequenceData[index];
     }
 
     // NiControllerManager::RemoveSequence and RemoveAllSequences clear a sequence's targets just before it leaves the
@@ -78,7 +87,9 @@ namespace
 
 void kAnimationExtraData::Destroy(bool freeMem)
 {
-    this->entries.~vector();
+    this->sequenceKeys.~vector();
+    this->sequenceData.~vector();
+    this->hardCuts.~vector();
     this->addedNodes.~vector();
     ThisStdCall(0xA7B300, this); // ~NiExtraData
     if ((freeMem & 1) != 0)
@@ -107,7 +118,10 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
         return extraData;
     auto* extraData = NiNew<kAnimationExtraData>();
     ThisStdCall(0xA7B2E0, extraData); // NiExtraData::NiExtraData
-    new(&extraData->entries) std::vector<Entry>();
+    new(&extraData->sequenceKeys) std::vector<SequenceKey>();
+    new(&extraData->sequenceData) std::vector<SequenceExtraData>();
+    std::ranges::fill(extraData->sequenceHints, UInt16(0));
+    new(&extraData->hardCuts) std::vector<HardCut>();
     new(&extraData->openSwitch) OpenSwitch();
     extraData->aimPitch = 0.0f;
     extraData->namedCurveEaseEnd = -NI_INFINITY;
@@ -121,8 +135,7 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
 SequenceExtraData* SequenceExtraDatas::Get(const NiControllerSequence* sequence)
 {
     auto* nodeData = GetNodeData(sequence);
-    auto* entry = nodeData ? FindEntry(nodeData, sequence) : nullptr;
-    return entry ? &entry->data : nullptr;
+    return nodeData ? FindData(nodeData, sequence) : nullptr;
 }
 
 SequenceExtraData* SequenceExtraDatas::GetOrCreate(NiControllerSequence* sequence)
@@ -131,9 +144,10 @@ SequenceExtraData* SequenceExtraDatas::GetOrCreate(NiControllerSequence* sequenc
     if (!manager || !manager->m_pkTarget)
         return nullptr;
     auto* nodeData = kAnimationExtraData::GetOrCreate(manager->m_pkTarget);
-    if (auto* entry = FindEntry(nodeData, sequence))
-        return &entry->data;
-    return &nodeData->entries.emplace_back(manager, sequence).data;
+    if (auto* data = FindData(nodeData, sequence))
+        return data;
+    nodeData->sequenceKeys.push_back({ manager, sequence });
+    return &nodeData->sequenceData.emplace_back();
 }
 
 void SequenceExtraDatas::Delete(const NiControllerSequence* sequence)
@@ -141,16 +155,25 @@ void SequenceExtraDatas::Delete(const NiControllerSequence* sequence)
     auto* nodeData = GetNodeData(sequence);
     if (!nodeData)
         return;
-    auto& entries = nodeData->entries;
-    const auto iter = std::ranges::find_if(entries, [&](const kAnimationExtraData::Entry& entry)
+    const NiControllerManager* manager = sequence->m_pkOwner;
+    std::erase_if(nodeData->hardCuts, [&](const kAnimationExtraData::HardCut& cut)
     {
-        return entry.sequence == sequence && entry.manager == sequence->m_pkOwner;
+        return cut.sequence == sequence && cut.manager == manager;
     });
-    if (iter == entries.end())
+    auto& keys = nodeData->sequenceKeys;
+    auto& data = nodeData->sequenceData;
+    const auto iter = std::ranges::find(keys, kAnimationExtraData::SequenceKey{ manager, sequence });
+    if (iter == keys.end())
         return;
-    if (&*iter != &entries.back())
-        *iter = std::move(entries.back());
-    entries.pop_back();
+    // the last one takes its place
+    const auto index = static_cast<size_t>(iter - keys.begin());
+    if (index != keys.size() - 1)
+    {
+        keys[index] = keys.back();
+        data[index] = std::move(data.back());
+    }
+    keys.pop_back();
+    data.pop_back();
 }
 
 void SequenceExtraDatas::WriteHooks()

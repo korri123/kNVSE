@@ -22,17 +22,6 @@ enum class MovementTransition : UInt8
 class SequenceExtraData
 {
 public:
-    // Animation::ClearGroup deactivating the sequence without an ease-out (PoseBlendFixes): its state, window and ease
-    // just before, and the switch that cut it
-    struct HardCut
-    {
-        NiControllerSequence::AnimState eState;
-        float fStartTime;
-        float fEndTime;
-        UInt32 uiSwitch;
-        Ease ease;
-    };
-
     bool startInReloadTargets = false;
     bool needsStoreTargets = false;
     // Set by MovementTransitions on the sequences it plays as start or stop animations. Those are only ever played as such
@@ -45,7 +34,6 @@ public:
     // A stop animation's whole root motion at scale 1 (MovementTransitions' arrivals), once sampled
     float fRootDistance = NAN;
     std::optional<AdditiveSequenceMetadata> additiveMetadata;
-    std::optional<HardCut> hardCut;
     // The sequence's spawn:/despawn: keys (SpawnKeys), parsed when it joined the manager. The player's sequences only
     std::optional<SpawnKeys::Keys> spawnKeys;
     // The sequence's blendCurve/blendInCurve/blendOutCurve keys (BlendCurves), parsed when it joined the manager
@@ -61,13 +49,37 @@ public:
 class kAnimationExtraData : public NiExtraData
 {
 public:
-    struct Entry
+    // The sequences kNVSE has data of and, at the same index, that data. Apart, so that finding a sequence reads 8 bytes
+    // per sequence and not its data: BlendTransitions asks for the ease of every easing animation of every bone
+    struct SequenceKey
     {
-        NiControllerManager* manager;
-        NiControllerSequence* sequence;
-        SequenceExtraData data;
+        const NiControllerManager* manager;
+        const NiControllerSequence* sequence;
+
+        bool operator==(const SequenceKey&) const = default;
     };
-    std::vector<Entry> entries;
+    std::vector<SequenceKey> sequenceKeys;
+    std::vector<SequenceExtraData> sequenceData;
+    // Where the sequences looked up last were found, by a hash of their address: tried first, as the same few easing
+    // sequences are looked up for each of their bones. An index that is out of date is harmless: it is checked against
+    // sequenceKeys
+    static constexpr unsigned int kSequenceHintBits = 6;
+    UInt16 sequenceHints[1u << kSequenceHintBits];
+    // Animation::ClearGroup deactivating a sequence without an ease-out (PoseBlendFixes): its state, window and ease
+    // just before, and the switch that cut it. Only the cuts of a manager's latest switch that cut any are kept, and a
+    // sequence's cut goes with the sequence when it leaves the manager (SequenceExtraDatas::Delete): the address of a
+    // sequence that is gone could be that of a new one
+    struct HardCut
+    {
+        const NiControllerManager* manager;
+        NiControllerSequence* sequence;
+        NiControllerSequence::AnimState eState;
+        float fStartTime;
+        float fEndTime;
+        UInt32 uiSwitch;
+        Ease ease;
+    };
+    std::vector<HardCut> hardCuts;
     // The switch the Animation animating this node is making (AnimSwitch::Current): one per update of the Animation
     struct OpenSwitch
     {
@@ -106,7 +118,7 @@ namespace SequenceExtraDatas
     SequenceExtraData* Get(const NiControllerSequence* sequence);
     // null if the sequence has no manager or the manager no target
     SequenceExtraData* GetOrCreate(NiControllerSequence* sequence);
-    // call while sequence->m_pkOwner is still set
+    // call while sequence->m_pkOwner is still set. Also drops what else the node keeps of the sequence (its hard cut)
     void Delete(const NiControllerSequence* sequence);
 
     void WriteHooks();
