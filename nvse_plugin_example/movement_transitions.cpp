@@ -73,6 +73,34 @@ namespace
 		return paths;
 	}
 
+	// Whether the start or stop animation may play on the skeleton. The player's 3rd person skeleton in 1st person: only
+	// with an allowFirstPerson text key. The view shows the 1st person skeleton, and the player moves by the 3rd person
+	// one's root motion while only it plays a start or stop animation (FirstPersonMovementGroupHook): a 3rd person clip
+	// would move the camera through a start or stop the arms don't show
+	bool IsAllowed(const AnimData* animData, const BSAnimGroupSequence* sequence)
+	{
+		if (animData->actor != g_thePlayer || animData == g_thePlayer->firstPersonAnimData || g_thePlayer->IsThirdPerson())
+			return true;
+		const static NiFixedString kKey = "allowFirstPerson";
+		return sequence->m_spTextKeys && sequence->m_spTextKeys->FindFirstByName(kKey);
+	}
+
+	// One of the set's start animations at random that may play on the skeleton (IsAllowed)
+	BSAnimGroupSequence* PickStart(AnimData* animData, SavedAnims& set)
+	{
+		auto paths = GetTransitionPaths(set, MovementTransition::Start);
+		while (!paths.empty())
+		{
+			const auto index = GetRandomUInt(paths.size());
+			const auto animCtx = LoadCustomAnimation(set, *paths[index], animData);
+			auto* sequence = animCtx ? animCtx->anim.data : nullptr;
+			if (sequence && IsAllowed(animData, sequence))
+				return sequence;
+			paths.erase(paths.begin() + index);
+		}
+		return nullptr;
+	}
+
 	// Start and stop animations and what blends with them in the movement section play at fMoveSpeed (ClockStateHook), so
 	// blends into and out of them take their ease time in the animations' time
 	float ToRealTime(const AnimData* animData, float fAnimTime)
@@ -216,7 +244,7 @@ namespace
 		{
 			const auto animCtx = LoadCustomAnimation(*set, *path, animData);
 			auto* sequence = animCtx ? animCtx->anim.data : nullptr;
-			if (!sequence)
+			if (!sequence || !IsAllowed(animData, sequence))
 				continue;
 			const float fMismatch = MovementBlendFixes::GetStrideMismatch(animData, sequence, sequence->m_fBeginKeyTime);
 			if (std::isnan(fMismatch))
@@ -695,19 +723,14 @@ BSAnimGroupSequence* MovementTransitions::PlayMovementAnim(AnimData* animData, B
 	{
 		if (auto* set = FindOverrideSet(animData, groupId, MovementTransition::Start))
 		{
-			const auto paths = GetTransitionPaths(*set, MovementTransition::Start);
-			if (!paths.empty())
+			auto* start = PickStart(animData, *set);
+			if (start && Play(animData, start, groupId, MovementTransition::Start))
 			{
-				const auto animCtx = LoadCustomAnimation(*set, *paths[GetRandomUInt(paths.size())], animData);
-				auto* start = animCtx ? animCtx->anim.data : nullptr;
-				if (start && Play(animData, start, groupId, MovementTransition::Start))
-				{
-					// at its End key Animation::Update starts the queued group, the walk or run (or blends out the section
-					// when the actor no longer moves)
-					animData->queuedGroupIDs[kSequence_Movement] = groupId;
-					animData->queuedGroupSequenceStates[kSequence_Movement] = static_cast<UInt32>(-1);
-					return start;
-				}
+				// at its End key Animation::Update starts the queued group, the walk or run (or blends out the section
+				// when the actor no longer moves)
+				animData->queuedGroupIDs[kSequence_Movement] = groupId;
+				animData->queuedGroupSequenceStates[kSequence_Movement] = static_cast<UInt32>(-1);
+				return start;
 			}
 		}
 	}

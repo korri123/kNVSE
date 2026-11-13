@@ -22,6 +22,9 @@ struct SavedAnims;
 // Both move the actor by their root motion. Clips are taken from the folder the group's animation comes from, or from
 // one that has only start/stop animations of the group (they go with whatever walk plays, another folder's or the
 // vanilla one), so weapon, actor and condition scoping and _1stperson work as for any override.
+// In 1st person the player's 3rd person skeleton plays only start and stop animations with an allowFirstPerson text
+// key: while only that skeleton plays one, the player moves by its root motion, which the 1st person view doesn't show.
+// Start and stop animations in _1stperson folders play on the 1st person skeleton and move the player by theirs.
 namespace MovementTransitions
 {
     // _start or _stop in the file name of a walk or run group's file: in other groups those are ordinary animations
