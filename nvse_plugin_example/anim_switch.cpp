@@ -4,6 +4,15 @@
 #include "sequence_extradata.h"
 #include "utility.h"
 
+namespace
+{
+    // When the ease the sequence is in ends, in its owner's time: until its first update the window is the duration alone
+    float GetEaseEnd(const NiControllerSequence& sequence, float fTime)
+    {
+        return sequence.m_fStartTime == -NI_INFINITY ? fTime + sequence.m_fEndTime : sequence.m_fEndTime;
+    }
+}
+
 AnimSwitch AnimSwitch::Current(AnimData* animData)
 {
     NiControllerManager* manager = animData ? animData->controllerManager : nullptr;
@@ -30,12 +39,20 @@ bool AnimSwitch::EaseOut(NiControllerSequence* sequence, float fDuration) const
     case NiControllerSequence::EASEOUT:
         return true;
     case NiControllerSequence::EASEIN:
+    {
+        // the switch that was easing it in, asked before its ease turns around
+        const UInt32 uiEasedInBy = Of(sequence);
         if (fDuration > 0.0f && sequence->DeactivateNoReset(fDuration, false, m_fTime))
         {
-            Add(sequence);
+            if (Join(sequence))
+            {
+                TakeOver(sequence, uiEasedInBy);
+                CoverEaseIns();
+            }
             return true;
         }
         break;
+    }
     default:
         break;
     }
@@ -64,20 +81,83 @@ bool AnimSwitch::EaseIn(NiControllerSequence* sequence, float fDuration) const
 
 void AnimSwitch::Add(NiControllerSequence* sequence) const
 {
+    if (Join(sequence))
+        CoverEaseIns();
+}
+
+bool AnimSwitch::Join(NiControllerSequence* sequence) const
+{
     // ids count per scene root: a sequence of another manager has its own
     if (!m_uiID || !sequence || sequence->m_pkOwner != m_pkManager)
-        return;
+        return false;
     const auto eState = sequence->m_eState;
     if (eState != NiControllerSequence::EASEIN && eState != NiControllerSequence::EASEOUT)
-        return;
+        return false;
     auto* extraData = SequenceExtraDatas::GetOrCreate(sequence);
     if (!extraData)
-        return;
+        return false;
     Ease& ease = Eases::Get(*extraData, *sequence, Eases::GetSpinner(*sequence, m_fTime));
     if (ease.uiSwitch != m_uiID)
     {
         ease.uiSwitch = m_uiID;
         ease.bCurveResolved = false;
+    }
+    return true;
+}
+
+void AnimSwitch::TakeOver(NiControllerSequence* sequence, UInt32 uiEasedInBy) const
+{
+    if (Ease* ease = Eases::Find(*sequence))
+        ease->bMakesWay = true;
+    if (!uiEasedInBy)
+        return;
+    for (auto* other : m_pkManager->m_kActiveSequences.ToSpan())
+    {
+        Ease* ease = other ? Eases::Find(*other) : nullptr;
+        if (!ease || ease->uiSwitch != uiEasedInBy)
+            continue;
+        // all of them: a cross fade split over two switches is blended as two eases that have nothing to do with each
+        // other (BlendTransitions)
+        if (ease->uiSwitch != m_uiID)
+        {
+            ease->uiSwitch = m_uiID;
+            ease->bCurveResolved = false;
+        }
+        if (other->m_eState == NiControllerSequence::EASEOUT)
+            ease->bMakesWay = true;
+    }
+}
+
+void AnimSwitch::CoverEaseIns() const
+{
+    const auto activeSequences = m_pkManager->m_kActiveSequences.ToSpan();
+    float fLastEaseInEnd = -NI_INFINITY;
+    for (const auto* sequence : activeSequences)
+    {
+        if (sequence && sequence->m_eState == NiControllerSequence::EASEIN && Of(sequence) == m_uiID)
+            fLastEaseInEnd = max(fLastEaseInEnd, GetEaseEnd(*sequence, m_fTime));
+    }
+    if (fLastEaseInEnd == -NI_INFINITY)
+        return;
+    for (auto* sequence : activeSequences)
+    {
+        if (!sequence || sequence->m_eState != NiControllerSequence::EASEOUT)
+            continue;
+        const Ease* ease = Eases::Find(*sequence);
+        if (!ease || ease->uiSwitch != m_uiID || !ease->bMakesWay || GetEaseEnd(*sequence, m_fTime) >= fLastEaseInEnd)
+            continue;
+        if (sequence->m_fStartTime == -NI_INFINITY)
+        {
+            // not updated since it was eased out: the window is still its length
+            sequence->m_fEndTime = fLastEaseInEnd - m_fTime;
+            continue;
+        }
+        const float fSpinner = Eases::GetSpinner(*sequence, m_fTime);
+        if (fSpinner <= 0.0f)
+            continue;
+        // the spinner stays where it is, and reaches 0 at the new end
+        sequence->m_fEndTime = fLastEaseInEnd;
+        sequence->m_fStartTime = fLastEaseInEnd - (fLastEaseInEnd - m_fTime) / fSpinner;
     }
 }
 
