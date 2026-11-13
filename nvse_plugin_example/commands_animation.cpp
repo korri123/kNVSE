@@ -646,7 +646,10 @@ void SavedAnims::Load()
 	loaded.store(true, std::memory_order_release);
 }
 
-std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData)
+// transition: None for the group's animation, else its start or stop animations (MovementTransitions). Sets without a
+// file of the kind asked for are passed over: one with only start and stop animations must not hide the walk of the
+// sets below it
+std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, MovementTransition transition)
 {
 	if (const auto stacksIter = overrides.stacks.find(groupId); stacksIter != overrides.stacks.end())
 	{
@@ -658,6 +661,8 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 		for (auto& ctx : ra::reverse_view(stack))
 		{
 			if (!ctx->MatchesConditions(actor) || ctx->disabled)
+				continue;
+			if ((ctx->hasMovementTransitions || transition != MovementTransition::None) && !MovementTransitions::HasPaths(*ctx, transition))
 				continue;
 			const auto initAnimTime = [&](SavedAnims* savedAnims)
 			{
@@ -677,7 +682,8 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 				continue;
 			if (ctx->conditionScript)
 			{
-				if (ctx->pollCondition)
+				// start and stop animations are looked up when one is due: the poll plays the set's group
+				if (ctx->pollCondition && transition == MovementTransition::None)
 					initAnimTime(ctx.get()); // init'd here so conditions can activate despite not being overridden
 				NVSEArrayVarInterface::Element result;
 				if (!CallFunction(*ctx->conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
@@ -692,11 +698,11 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 	return std::nullopt;
 }
 
-std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, FullAnimGroupID animGroupId, AnimData* animData)
+std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, FullAnimGroupID animGroupId, AnimData* animData, MovementTransition transition)
 {
 	if (const auto mapIter = map.find(id); mapIter != map.end())
 	{
-		return PickAnimation(mapIter->second, animGroupId, animData);
+		return PickAnimation(mapIter->second, animGroupId, animData, transition);
 	}
 	return std::nullopt;
 }
@@ -813,7 +819,7 @@ thread_local AnimationResultCache g_animationResultCache;
 
 std::shared_mutex g_overrideMapMutex;
 
-std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData)
+std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData, MovementTransition transition)
 {
 	// wait for file loading to finish
 	if (g_animFileThread.joinable())
@@ -821,7 +827,7 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return std::nullopt;
-	const auto cacheKey = std::make_pair(animGroupId, animData);
+	const auto cacheKey = std::make_pair(animGroupId | static_cast<UInt32>(transition) << 16, animData);
 	std::optional<AnimationResult>* cachePtr = nullptr;
 	const auto useCache = g_isThreadCacheEnabled;
 	if (useCache)
@@ -849,12 +855,12 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 		auto& modIndexMap = GetModIndexMap(firstPerson);
 		const auto getFormAnimation = [&](TESForm* form) -> std::optional<AnimationResult>
 		{
-			if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData))
+			if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData, transition))
 				return lResult;
 			// mod index
 			if (!modIndexResult.has_value() && ra::find(*visitedModIndices, form->GetModIndex()) == visitedModIndices->end())
 			{
-				modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData);
+				modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData, transition);
 				visitedModIndices->push_back(form->GetModIndex());
 			}
 			return std::nullopt;
@@ -881,7 +887,7 @@ std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, An
 		if (modIndexResult)
 			return modIndexResult;
 		// non-form ID dependent animations (global replacers)
-		if ((result = PickAnimation(modIndexMap[0xFF], animGroupId, animData)))
+		if ((result = PickAnimation(modIndexMap[0xFF], animGroupId, animData, transition)))
 			return result;
 		return std::nullopt;
 	};

@@ -19,9 +19,9 @@ struct SavedAnims;
 //   Walking again before it is halfway through blends back to the walk, later it starts with the start animation.
 // - Stop, NPCs walking a path: before they get to where the engine stops them, once the stop animation's root motion
 //   reaches that point (StartArrival), scaled to land there; see the NPC arrivals in the source.
-// Both move the actor by their root motion. Clips are taken from the folder the group's animation comes from (or that
-// overrides it with only start/stop animations, over the vanilla walk), so weapon, actor and condition scoping and
-// _1stperson work as for any override.
+// Both move the actor by their root motion. Clips are taken from the folder the group's animation comes from, or from
+// one that has only start/stop animations of the group (they go with whatever walk plays, another folder's or the
+// vanilla one), so weapon, actor and condition scoping and _1stperson work as for any override.
 namespace MovementTransitions
 {
     // _start or _stop in the file name of a walk or run group's file: in other groups those are ordinary animations
@@ -29,6 +29,8 @@ namespace MovementTransitions
     // A file added to an override set of groupId (SetOverrideAnimation): marks it and the set when it is a start or stop
     // animation
     void TagPath(SavedAnims& set, AnimPath& animPath, UInt16 groupId);
+    // Whether the set has a file of that kind: a start or stop animation, or (None) an animation of the group itself
+    bool HasPaths(const SavedAnims& set, MovementTransition transition);
     // The engine goes on from a start or stop animation at its End key (Animation::Update). BSAnimGroupSequence::
     // InitAnimGroup leaves End as it is when the KF has none or it is not after Start (it only warns), which would be at
     // once: then it is the animation's end. Applied when one is loaded (LoadCustomAnimation)

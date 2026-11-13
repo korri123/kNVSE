@@ -24,6 +24,7 @@
 #include "SimpleINILibrary.h"
 #include "anim_switch.h"
 #include "blend_fixes.h"
+#include "movement_transitions.h"
 #if _DEBUG
 #include "commands_misc.h"
 #endif
@@ -292,6 +293,12 @@ void HandlePollConditionAnims()
 			erase();
 			continue;
 		}
+
+		// a start or stop animation of the group plays (MovementTransitions), which can come from another set than the
+		// walk's (one with only those): playing the group for this set would start it over on every frame, the walk
+		// easing out and the player moving on for as long. The condition picks the animation it goes on to
+		if (MovementTransitions::Of(curAnim) != MovementTransition::None)
+			continue;
 		
 		if (conditionScript)
 		{

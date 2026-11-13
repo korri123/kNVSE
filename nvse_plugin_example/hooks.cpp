@@ -1056,17 +1056,6 @@ void ApplyHooks()
 		return defaultData;
 	}));
 
-	// BSAnimGroupSequence::GetCycleType
-	// stop dumb limitation on CLAMP sequences not being allowed to locomotion; start and stop animations play once
-	WriteRelCall(0x4909BC, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* anim)
-	{
-		const static NiFixedString key = "allowClampInLocomotion";
-		if (anim->m_spTextKeys->FindFirstByName(key) ||
-			(anim->animGroup && MovementTransitions::GetPathTransition(anim->m_kName.Str(), anim->animGroup->groupID) != MovementTransition::None))
-			return NiControllerSequence::kCycle_Loop;
-		return anim->m_eCycleType;
-	}));
-
 	// NiControllerSequence destructor
 	WriteRelCall(0xA35649, INLINE_HOOK(void, __fastcall, NiControllerSequence* anim)
 	{
@@ -1332,27 +1321,6 @@ void ApplyHooks()
 		return ThisStdCall<double>(0x646020, weap, hasMod);
 	}), &uiGetAttackSpeedMultGetAnimAttackMultAddr);
 
-	// NiControllerSequence::GetState of the movement sequence in Actor::PickAnimations, deciding whether to BlendOut the
-	// movement section because the group picked this update belongs to another section ([ebp-0x40], its base group)
-	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
-	{
-		// INACTIVE -> do not end movement
-		// ANIMATING -> end movement
-		// Equip/Unequip are picked on the update they start, the next one picks the movement group again from the move
-		// flags: ending the movement there restarted it (from a frozen pose, BlendFromPose, with the gait at its first
-		// frame) on every draw and holster while moving. Their legs are below the movement's priority anyway.
-		const auto pickedGroup = GET_CALLER_VAR_LAMBDA(UInt32, -0x40) & 0xFF;
-		if (pickedGroup == kAnimGroup_Equip || pickedGroup == kAnimGroup_Unequip)
-			return NiControllerSequence::INACTIVE;
-		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
-			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
-		// a stop animation plays to its End key, where Animation::Update blends the section out
-		if (MovementTransitions::Of(anim) == MovementTransition::Stop) [[msvc::noinline_calls]]
-			return NiControllerSequence::INACTIVE;
-		// stop game from not ending move anims immediately
-		return NiControllerSequence::ANIMATING;
-	}));
-
 	// NiControllerManager::DeactivateSequence in Animation::ClearGroup: the Animation at [ebp-8], the section at [ebp-4]
 	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
 	{
@@ -1564,6 +1532,43 @@ void WriteDelayedHooks()
 	BlendFixes::WriteDelayedHooks();
 	if (g_pluginSettings.blendSmoothing)
 		MovementTransitions::WriteDelayedHooks();
+
+	// The two below: NVAC replaces these calls with the getter's body once the plugins have loaded (its lists of calls to
+	// BSAnimGroupSequence::GetCycleType and GetState, every one that still has a call opcode), so written at load they
+	// were gone with it installed: Clamp start and stop animations failed to load, a looping stop animation was cut as
+	// soon as it had blended in and its movement dropped, and the walk ended on every draw and holster
+
+	// BSAnimGroupSequence::GetCycleType
+	// stop dumb limitation on CLAMP sequences not being allowed to locomotion; start and stop animations play once
+	WriteRelCall(0x4909BC, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* anim)
+	{
+		const static NiFixedString key = "allowClampInLocomotion";
+		if (anim->m_spTextKeys->FindFirstByName(key) ||
+			(anim->animGroup && MovementTransitions::GetPathTransition(anim->m_kName.Str(), anim->animGroup->groupID) != MovementTransition::None))
+			return NiControllerSequence::kCycle_Loop;
+		return anim->m_eCycleType;
+	}));
+
+	// NiControllerSequence::GetState of the movement sequence in Actor::PickAnimations, deciding whether to BlendOut the
+	// movement section because the group picked this update belongs to another section ([ebp-0x40], its base group)
+	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
+	{
+		// INACTIVE -> do not end movement
+		// ANIMATING -> end movement
+		// Equip/Unequip are picked on the update they start, the next one picks the movement group again from the move
+		// flags: ending the movement there restarted it (from a frozen pose, BlendFromPose, with the gait at its first
+		// frame) on every draw and holster while moving. Their legs are below the movement's priority anyway.
+		const auto pickedGroup = GET_CALLER_VAR_LAMBDA(UInt32, -0x40) & 0xFF;
+		if (pickedGroup == kAnimGroup_Equip || pickedGroup == kAnimGroup_Unequip)
+			return NiControllerSequence::INACTIVE;
+		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
+			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
+		// a stop animation plays to its End key, where Animation::Update blends the section out
+		if (MovementTransitions::Of(anim) == MovementTransition::Stop) [[msvc::noinline_calls]]
+			return NiControllerSequence::INACTIVE;
+		// stop game from not ending move anims immediately
+		return NiControllerSequence::ANIMATING;
+	}));
 
 	// hooking TESForm::GetFlags
 	// Runs on empty clip when reloading

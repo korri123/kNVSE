@@ -36,14 +36,28 @@ namespace
 		return sequence && sequence->animGroup && IsGait(sequence->animGroup->groupID);
 	}
 
-	// The override set HandleAnimationChange takes the group's animation from
-	SavedAnims* FindOverrideSet(AnimData* animData, UInt16 groupId)
+	MovementTransition GetTransition(const AnimPath& path)
 	{
-		if (const auto baseResult = GetActorAnimation(groupId & 0xFF, animData); baseResult && baseResult->animBundle->matchBaseGroupId)
-			return baseResult->animBundle;
-		if (const auto result = GetActorAnimation(groupId, animData))
-			return result->animBundle;
-		return nullptr;
+		return path.isStartAnim ? MovementTransition::Start : path.isStopAnim ? MovementTransition::Stop : MovementTransition::None;
+	}
+
+	// The override set a walk or run group's start or stop animations come from: the one HandleAnimationChange takes the
+	// group's animation from, or one without an animation of the group (start and stop animations for whatever walk
+	// plays). Those of a set whose walk another set overrides stay with that walk
+	SavedAnims* FindOverrideSet(AnimData* animData, UInt16 groupId, MovementTransition transition)
+	{
+		const auto find = [&](MovementTransition kind) -> SavedAnims*
+		{
+			if (const auto baseResult = GetActorAnimation(groupId & 0xFF, animData, kind); baseResult && baseResult->animBundle->matchBaseGroupId)
+				return baseResult->animBundle;
+			if (const auto result = GetActorAnimation(groupId, animData, kind))
+				return result->animBundle;
+			return nullptr;
+		};
+		auto* set = find(transition);
+		if (set && MovementTransitions::HasPaths(*set, MovementTransition::None) && set != find(MovementTransition::None))
+			return nullptr;
+		return set;
 	}
 
 	std::vector<const AnimPath*> GetTransitionPaths(SavedAnims& set, MovementTransition transition)
@@ -53,7 +67,7 @@ namespace
 			return paths;
 		for (const auto& path : set.anims)
 		{
-			if (transition == MovementTransition::Start ? path->isStartAnim : path->isStopAnim)
+			if (GetTransition(*path) == transition)
 				paths.push_back(path.get());
 		}
 		return paths;
@@ -187,7 +201,7 @@ namespace
 		const UInt16 groupId = gait == current ? animData->groupIDs[kSequence_Movement] : gait->animGroup->groupID;
 		if (!IsGait(groupId))
 			return false;
-		auto* set = FindOverrideSet(animData, groupId);
+		auto* set = FindOverrideSet(animData, groupId, MovementTransition::Stop);
 		if (!set)
 			return false;
 		const auto paths = GetTransitionPaths(*set, MovementTransition::Stop);
@@ -410,7 +424,7 @@ namespace
 		const auto arrival = GetArrival(animData->actor);
 		if (arrival.state != Arrival::State::Moving)
 			return false;
-		auto* set = FindOverrideSet(animData, groupId);
+		auto* set = FindOverrideSet(animData, groupId, MovementTransition::Stop);
 		if (!set)
 			return false;
 		const auto paths = GetTransitionPaths(*set, MovementTransition::Stop);
@@ -662,6 +676,11 @@ void MovementTransitions::TagPath(SavedAnims& set, AnimPath& animPath, UInt16 gr
 	}
 }
 
+bool MovementTransitions::HasPaths(const SavedAnims& set, MovementTransition transition)
+{
+	return std::ranges::any_of(set.anims, [&](const auto& path) { return GetTransition(*path) == transition; });
+}
+
 MovementTransition MovementTransitions::Of(const NiControllerSequence* sequence)
 {
 	if (!sequence)
@@ -674,7 +693,7 @@ BSAnimGroupSequence* MovementTransitions::PlayMovementAnim(AnimData* animData, B
 {
 	if (IsEnabled() && IsGait(groupId) && IsStanding(animData))
 	{
-		if (auto* set = FindOverrideSet(animData, groupId))
+		if (auto* set = FindOverrideSet(animData, groupId, MovementTransition::Start))
 		{
 			const auto paths = GetTransitionPaths(*set, MovementTransition::Start);
 			if (!paths.empty())
