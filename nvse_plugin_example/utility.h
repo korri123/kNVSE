@@ -95,6 +95,9 @@ int HexStringToInt(const std::string& str);
 
 void DebugPrint(const std::string& str);
 #define ERROR_LOG(msg) do { if (g_errorLogLevel >= 1) DebugPrint(msg); } while (0)
+// DebugPrint the first time a message is passed, from any thread: sequences join managers and blend on AI threads too
+void DebugPrintOnce(const std::string& str);
+#define ERROR_LOG_ONCE(msg) do { if (g_errorLogLevel >= 1) DebugPrintOnce(msg); } while (0)
 
 // if player is in third person, returns true if anim data is the first person and vice versa
 bool IsPlayersOtherAnimData(AnimData* animData);

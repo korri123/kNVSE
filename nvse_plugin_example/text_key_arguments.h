@@ -5,7 +5,8 @@
 
 class NiControllerSequence;
 
-// Text keys of kNVSE's features that take arguments ("aimPitch", "spawn", "despawn", "weaponSpace") share one form:
+// Text keys of kNVSE's features that take arguments ("aimPitch", "spawn", "despawn", "weaponSpace", "blendCurve",
+// "blendInCurve", "blendOutCurve") share one form:
 //   "<name>"                     no arguments
 //   "<name>: <arg>, <arg>, ..."  the colon may be left out ("<name> <arg>, ..."), spaces and tabs around it are ignored
 // The name is matched in any case and must be followed by the end, a colon, a space or a tab, so "aimPitchFoo" is no

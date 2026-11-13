@@ -212,9 +212,9 @@ namespace
 
 		const auto fTime = animData->timePassed;
 		const auto destFrame = sourceSeq->m_fLastScaledTime / sourceSeq->m_fEndKeyTime * targetSeq->m_fEndKeyTime;
-		const auto* sourceExtraData = SequenceExtraDatas::Get(sourceSeq);
+		const Ease* sourceEase = Eases::Find(*sourceSeq);
 		const bool sourceAnimating = sourceSeq->m_eState == NiControllerSequence::ANIMATING
-			|| (sourceExtraData && sourceExtraData->continuesVariant);
+			|| (sourceEase && sourceEase->bContinuesVariant);
 
 		const auto animSwitch = AnimSwitch::Current(animData);
 		animSwitch.EaseOut(sourceSeq, blend);
@@ -222,7 +222,7 @@ namespace
 			return false;
 		if (sourceAnimating)
 			if (auto* targetExtraData = SequenceExtraDatas::GetOrCreate(targetSeq))
-				targetExtraData->continuesVariant = true;
+				Eases::Get(*targetExtraData, *targetSeq, Eases::GetSpinner(*targetSeq, fTime)).bContinuesVariant = true;
 		targetSeq->m_fOffset = destFrame / targetSeq->m_fFrequency - fTime;
 		targetSeq->Update(fTime, true);
 
@@ -365,7 +365,7 @@ NiControllerSequence::AnimState __fastcall BlendFixes::ContinuedVariantStateHook
 {
 	if (sequence->m_eState == NiControllerSequence::EASEIN)
 	{
-		if (const auto* extraData = SequenceExtraDatas::Get(sequence); extraData && extraData->continuesVariant)
+		if (const Ease* ease = Eases::Find(*sequence); ease && ease->bContinuesVariant)
 			return NiControllerSequence::ANIMATING;
 	}
 	return sequence->m_eState;

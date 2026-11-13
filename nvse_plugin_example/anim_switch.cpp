@@ -70,16 +70,21 @@ void AnimSwitch::Add(NiControllerSequence* sequence) const
     const auto eState = sequence->m_eState;
     if (eState != NiControllerSequence::EASEIN && eState != NiControllerSequence::EASEOUT)
         return;
-    if (auto* extraData = SequenceExtraDatas::GetOrCreate(sequence))
-        extraData->switchMembership = { m_uiID, eState };
+    auto* extraData = SequenceExtraDatas::GetOrCreate(sequence);
+    if (!extraData)
+        return;
+    Ease& ease = Eases::Get(*extraData, *sequence, Eases::GetSpinner(*sequence, m_fTime));
+    if (ease.uiSwitch != m_uiID)
+    {
+        ease.uiSwitch = m_uiID;
+        ease.bCurveResolved = false;
+    }
 }
 
 UInt32 AnimSwitch::Of(const NiControllerSequence* sequence)
 {
-    const auto* extraData = SequenceExtraDatas::Get(sequence);
-    if (!extraData || !extraData->switchMembership || extraData->switchMembership->eState != sequence->m_eState)
-        return 0;
-    return extraData->switchMembership->uiSwitch;
+    const Ease* ease = Eases::Find(*sequence);
+    return ease ? ease->uiSwitch : 0;
 }
 
 // The engine's own eases. Animation::StartGroup (0x4949A0) keeps its Animation at [ebp-0x5C]; the sequences

@@ -5,6 +5,8 @@
 #include <vector>
 
 #include "additive_anims.h"
+#include "blend_curves.h"
+#include "ease.h"
 #include "skeleton_nodes.h"
 #include "spawn_keys.h"
 
@@ -20,30 +22,19 @@ enum class MovementTransition : UInt8
 class SequenceExtraData
 {
 public:
-    // Animation::ClearGroup deactivating the sequence without an ease-out (PoseBlendFixes): its state just before, and
-    // the switch that cut it
+    // Animation::ClearGroup deactivating the sequence without an ease-out (PoseBlendFixes): its state, window and ease
+    // just before, and the switch that cut it
     struct HardCut
     {
         NiControllerSequence::AnimState eState;
         float fStartTime;
         float fEndTime;
         UInt32 uiSwitch;
-    };
-
-    // The switch that eased the sequence in or out (AnimSwitch). Holds while the sequence stays in that state, and is
-    // dropped when it is activated again
-    struct SwitchMembership
-    {
-        UInt32 uiSwitch;
-        NiControllerSequence::AnimState eState;
+        Ease ease;
     };
 
     bool startInReloadTargets = false;
     bool needsStoreTargets = false;
-    // Cross faded in from another variant of its group at the same point (BlendFixes' TransitionToVariant): it continues
-    // that sequence, so Animation::Update acts on its group's keys and scales its clock while it eases in, as for the
-    // ANIMATING sequence it replaced. Dropped when the sequence is activated again
-    bool continuesVariant = false;
     // Set by MovementTransitions on the sequences it plays as start or stop animations. Those are only ever played as such
     // (normal picks leave the tagged files out), so it holds for as long as the sequence belongs to the manager
     MovementTransition movementTransition = MovementTransition::None;
@@ -55,9 +46,12 @@ public:
     float fRootDistance = NAN;
     std::optional<AdditiveSequenceMetadata> additiveMetadata;
     std::optional<HardCut> hardCut;
-    std::optional<SwitchMembership> switchMembership;
     // The sequence's spawn:/despawn: keys (SpawnKeys), parsed when it joined the manager. The player's sequences only
     std::optional<SpawnKeys::Keys> spawnKeys;
+    // The sequence's blendCurve/blendInCurve/blendOutCurve keys (BlendCurves), parsed when it joined the manager
+    BlendCurves::Keys blendCurveKeys;
+    // The ease the sequence is in, or was last in (Eases::Find tells)
+    Ease ease;
 };
 
 // kNVSE's data about the sequences of the NiControllerManagers animating a node, kept as extra data on that node (the
@@ -85,6 +79,9 @@ public:
     // The actor's pitch in radians, positive looking down, as of its last bone update (AimPitch::Update). Third person
     // skeletons only
     float aimPitch = 0.0f;
+    // The latest end, in the managers' time, of the eases BlendCurves shaped with a curve a text key named: a sequence
+    // whose ease ends after it has none (BlendCurves::HasNamedCurve, asked for every bone)
+    float namedCurveEaseEnd = -NI_INFINITY;
     // The nodes kNVSE added to this skeleton (SkeletonNodes), added again when the model they were under comes back
     std::vector<SkeletonNodes::Node> addedNodes;
 

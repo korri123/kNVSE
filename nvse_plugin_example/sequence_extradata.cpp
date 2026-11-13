@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "blend_curves.h"
 #include "GameAPI.h"
 #include "SafeWrite.h"
 #include "spawn_keys.h"
@@ -66,6 +67,7 @@ namespace
     bool __fastcall StoreTargetsOnJoin(NiControllerSequence* sequence, void*, NiAVObject* root)
     {
         SpawnKeys::OnSequenceJoin(*sequence);
+        BlendCurves::OnSequenceJoin(*sequence);
         if (sequence->StoreTargets(root))
             return true;
         // AddSequence clears m_pkOwner and gives up
@@ -108,6 +110,7 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
     new(&extraData->entries) std::vector<Entry>();
     new(&extraData->openSwitch) OpenSwitch();
     extraData->aimPitch = 0.0f;
+    extraData->namedCurveEaseEnd = -NI_INFINITY;
     new(&extraData->addedNodes) std::vector<SkeletonNodes::Node>();
     PopulateVtable(extraData);
     extraData->m_kName = ExtraDataName();

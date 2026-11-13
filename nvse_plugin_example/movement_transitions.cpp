@@ -351,14 +351,6 @@ namespace
 		return std::hypot(goal.x - other.x, goal.y - other.y) <= kGoalMovedDistance;
 	}
 
-	// A sequence's time as of its last update, its beginning when it is about to start over
-	float GetSequenceTime(const NiControllerSequence* sequence)
-	{
-		if (sequence->m_fOffset == -NI_INFINITY || sequence->m_fLastScaledTime == -NI_INFINITY)
-			return sequence->m_fBeginKeyTime;
-		return sequence->m_fLastScaledTime;
-	}
-
 	// The scale of the actor's movement: its root's (the accum root's parent)
 	float GetRootScale(const AnimData* animData)
 	{
@@ -484,7 +476,7 @@ namespace
 			else
 			{
 				const RootTrack track(animData, sequence);
-				fLeft = track ? track.DistanceToEnd(GetSequenceTime(sequence)) : 0.0f;
+				fLeft = track ? track.DistanceToEnd(sequence->GetSequenceTime()) : 0.0f;
 			}
 			// no root motion: not one to stop with
 			if (fLeft <= 0.0f)
@@ -511,7 +503,7 @@ namespace
 			// one still easing out (the NPC walked on from it) eases back in where it is: moving its clock would move
 			// the root, and with it the NPC, by as much at once
 			const bool bStartOver = sequence->m_eState == NiControllerSequence::INACTIVE;
-			const float fTime = bStartOver ? track.TimeAtDistanceToEnd(arrival.fDistance) : GetSequenceTime(sequence);
+			const float fTime = bStartOver ? track.TimeAtDistanceToEnd(arrival.fDistance) : sequence->GetSequenceTime();
 			const float fMismatch = MovementBlendFixes::GetStrideMismatch(animData, sequence, fTime);
 			candidates.push_back({ sequence, fTime, bStartOver, std::isnan(fMismatch) ? NI_INFINITY : fMismatch });
 		}
@@ -547,7 +539,7 @@ namespace
 		if (!extraData || !track || !IsSameGoal(arrival.goal, extraData->arrivalGoal) || arrival.fDistance > extraData->fArrivalDistance + kGoalMovedDistance)
 			return false;
 		extraData->fArrivalDistance = arrival.fDistance;
-		if (track.DistanceToEnd(GetSequenceTime(stop)) >= 1.0f)
+		if (track.DistanceToEnd(stop->GetSequenceTime()) >= 1.0f)
 			return true;
 		if (arrival.fDistance > kArrivalSlack)
 			return false;
@@ -586,7 +578,7 @@ namespace
 			return bResult;
 		// the delta is the root motion of the last update, which took the animation to its last time
 		const float fStep = std::hypot(delta->x, delta->y);
-		const float fLeft = fStep + track.DistanceToEnd(GetSequenceTime(stop));
+		const float fLeft = fStep + track.DistanceToEnd(stop->GetSequenceTime());
 		if (fLeft > 0.01f)
 		{
 			const float fWarp = std::clamp(arrival.fDistance / fLeft, kMinWarp, kMaxWarp);

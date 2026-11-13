@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "game_types.h"
 #include "GameObjects.h"
@@ -41,9 +40,7 @@ namespace
 
     void LogOnce(const std::string& message)
     {
-        static std::unordered_set<std::string> s_logged;
-        if (s_logged.insert(message).second)
-            ERROR_LOG("SpawnKeys: " + message);
+        ERROR_LOG_ONCE("SpawnKeys: " + message);
     }
 
     bool IsNifPath(std::string_view mesh)

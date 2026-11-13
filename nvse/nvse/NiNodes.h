@@ -2059,6 +2059,15 @@ public:
 		return m_fLastTime;
 	}
 
+	// The time the sequence is at as of its last update; its beginning when it is about to start over (m_fOffset is unset
+	// until the first update, and m_fLastScaledTime still the previous play's)
+	float GetSequenceTime() const
+	{
+		if (m_fOffset == -NI_INFINITY || m_fLastScaledTime == -NI_INFINITY)
+			return m_fBeginKeyTime;
+		return m_fLastScaledTime;
+	}
+
 	// The time in this sequence's cycle corresponding to pkSourceSequence's fSourceTime (unscaled, its owner time plus
 	// offset) at the m: keys both have
 	float FindCorrespondingMorphFrame(NiControllerSequence* pkSourceSequence, float fSourceTime) const;

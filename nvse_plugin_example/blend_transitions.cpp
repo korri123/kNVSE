@@ -1,13 +1,9 @@
 #include "blend_transitions.h"
 
 #include <algorithm>
-#if _DEBUG
-#include <mutex>
-#include <string>
-#include <unordered_set>
-#endif
 
 #include "anim_switch.h"
+#include "blend_curves.h"
 #include "blend_smoothing.h"
 #include "hooks.h"
 #include "utility.h"
@@ -33,6 +29,8 @@ namespace
         bool bTo = false;
         // it has an animation on this bone that can take it over: none below the highest one not easing
         bool bRelevant = false;
+        // its curve was named by a key (BlendCurves): the bone shows the spinners as they are
+        bool bNamedCurve = false;
         unsigned int uiBit = 0;
         float fProgress = 0.0f;
     };
@@ -58,12 +56,8 @@ namespace
     void ReportUndeclaredEase(const NiControllerSequence* sequence)
     {
 #if _DEBUG
-        static std::mutex mutex;
-        static std::unordered_set<std::string> reported;
         const char* name = sequence->m_kName.CStr();
-        std::scoped_lock lock(mutex);
-        if (reported.emplace(name ? name : "").second)
-            DebugPrint(FormatString("BlendTransitions: no switch declared for the ease of %s", name ? name : "(unnamed)"));
+        DebugPrintOnce(FormatString("BlendTransitions: no switch declared for the ease of %s", name ? name : "(unnamed)"));
 #endif
     }
 
@@ -76,16 +70,23 @@ namespace
     // How far the bone has switched to the switch's "to" end when it is the only switch: what the regular blend gives it
     float GetProgress(const Switch& s)
     {
-        if (!s.bFrom)
-            return EaseCurve(s.fToSpinner);
-        if (!s.bTo)
-            return 1.0f - EaseCurve(s.fFromSpinner);
-        if (s.cFromPriority == s.cToPriority)
+        if (s.bFrom && s.bTo && s.cFromPriority == s.cToPriority)
         {
             // a cross fade at one priority is shared by spinner (ComputeNormalizedWeights' cross fade rule)
             const float fSum = s.fFromSpinner + s.fToSpinner;
             return fSum > 0.0f ? s.fToSpinner / fSum : 0.0f;
         }
+        if (s.bNamedCurve)
+        {
+            // the higher priority takes exactly its spinner (ComputeNormalizedWeightsOfTwoHighestPriorities)
+            if (!s.bFrom || (s.bTo && s.cToPriority > s.cFromPriority))
+                return s.fToSpinner;
+            return 1.0f - s.fFromSpinner;
+        }
+        if (!s.bFrom)
+            return EaseCurve(s.fToSpinner);
+        if (!s.bTo)
+            return 1.0f - EaseCurve(s.fFromSpinner);
         // across two priorities the higher takes its spinner's share, normalized against the lower one's
         const float fSum = s.fFromSpinner * s.fFromSpinner + s.fToSpinner * s.fToSpinner;
         return fSum > 0.0f ? s.fToSpinner * s.fToSpinner / fSum : 0.0f;
@@ -148,7 +149,11 @@ bool BlendTransitions::ComputeNormalizedWeights(const Items& items)
         }
         auto iter = ra::find_if(switches, [&](const Switch& s) { return s.owner == sequence->m_pkOwner && s.uiID == uiSwitch; });
         if (iter == switches.end())
+        {
             iter = switches.insert(switches.end(), Switch{ sequence->m_pkOwner, uiSwitch });
+            // every sequence of a switch takes its curve
+            iter->bNamedCurve = BlendCurves::HasNamedCurve(*sequence);
+        }
         entry.iSwitch = static_cast<int>(iter - switches.begin());
         auto& s = *iter;
         auto& bSide = bTo ? s.bTo : s.bFrom;

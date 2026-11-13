@@ -83,6 +83,8 @@ namespace
         sequence->m_eState = cut.eState;
         sequence->m_fStartTime = cut.fStartTime;
         sequence->m_fEndTime = cut.fEndTime;
+        if (auto* extraData = SequenceExtraDatas::Get(sequence))
+            extraData->ease = cut.ease;
         if (cut.eState == NiControllerSequence::EASEIN)
             animSwitch.EaseOut(sequence, fDuration);
         else
@@ -125,7 +127,11 @@ void PoseBlendFixes::RecordHardCut(AnimData* animData, NiControllerSequence* seq
     // before GetOrCreate: opening the switch may add the node's extra data
     const UInt32 uiSwitch = AnimSwitch::Current(animData).GetID();
     if (auto* extraData = SequenceExtraDatas::GetOrCreate(sequence))
-        extraData->hardCut = { sequence->m_eState, sequence->m_fStartTime, sequence->m_fEndTime, uiSwitch };
+    {
+        const Ease* ease = Eases::Find(*sequence);
+        extraData->hardCut = { sequence->m_eState, sequence->m_fStartTime, sequence->m_fEndTime, uiSwitch,
+            ease ? *ease : Ease() };
+    }
 }
 
 void PoseBlendFixes::ApplyHooks()

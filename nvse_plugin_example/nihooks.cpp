@@ -15,6 +15,7 @@
 
 #include "additive_anims.h"
 #include "aim_pitch.h"
+#include "blend_curves.h"
 #include "blend_smoothing.h"
 #include "blend_transitions.h"
 #include "sequence_extradata.h"
@@ -977,6 +978,27 @@ static void ComputeNormalizedWeightsOfTwoHighestPriorities(
     float fOneOverTotalSumOfWeights =
         (fTotalSumOfWeights > 0.0f) ? (1.0f / fTotalSumOfWeights) : 0.0f;
 
+    // A blend curve an animation named (BlendCurves) is what the bone shows: the highest priority takes exactly its ease
+    // spinner, the next one the rest, each shared by real weight. The single normalization above weighs the spinner in
+    // twice, giving a higher priority easing in over a lower one about s^2 / (s^2 + 1 - s)
+    float fOneOverHighSumOfWeights = fOneOverTotalSumOfWeights;
+    float fOneOverNextHighSumOfWeights = fOneOverTotalSumOfWeights;
+    if (fHighEaseSpinner < 1.0f && fHighSumOfWeights > 0.0f && fNextHighSumOfWeights > 0.0f)
+    {
+        const bool bNamedCurve = std::ranges::any_of(items, [&](auto& item)
+        {
+            const auto& kItem = *item.first;
+            return kItem.m_spInterpolator != nullptr && !isDetached(item) && kItem.m_cPriority == cHighPriority &&
+                kItem.m_fEaseSpinner < 1.0f && item.second && item.second->sequence &&
+                BlendCurves::HasNamedCurve(*item.second->sequence);
+        });
+        if (bNamedCurve)
+        {
+            fOneOverHighSumOfWeights = 1.0f / fHighSumOfWeights;
+            fOneOverNextHighSumOfWeights = 1.0f / fNextHighSumOfWeights;
+        }
+    }
+
     // Compute normalized weights.
     for (auto& item : items)
     {
@@ -992,14 +1014,14 @@ static void ComputeNormalizedWeightsOfTwoHighestPriorities(
             {
                 kItem.m_fNormalizedWeight = fHighEaseSpinner *
                     kItem.m_fWeight * kItem.m_fEaseSpinner *
-                    fOneOverTotalSumOfWeights;
+                    fOneOverHighSumOfWeights;
                 continue;
             }
             if (kItem.m_cPriority == cNextHighPriority)
             {
                 kItem.m_fNormalizedWeight = fOneMinusHighEaseSpinner *
                     kItem.m_fWeight * kItem.m_fEaseSpinner *
-                    fOneOverTotalSumOfWeights;
+                    fOneOverNextHighSumOfWeights;
                 continue;
             }
             kItem.m_fNormalizedWeight = 0.0f;
@@ -1157,13 +1179,9 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
     auto* sequenceExtraData = SequenceExtraDatas::Get(this);
-    // the ease that brought it here is over: whatever eases it next declares its switch (AnimSwitch) and says whether
-    // it continues a variant
+    // activated (Activate, StartBlend, StartMorph): whatever ease it was last in is over
     if (sequenceExtraData)
-    {
-        sequenceExtraData->switchMembership.reset();
-        sequenceExtraData->continuesVariant = false;
-    }
+        sequenceExtraData->ease = Ease();
 
     if (sequenceExtraData && sequenceExtraData->needsStoreTargets)
     {
@@ -1381,7 +1399,9 @@ bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition, 
         return false;
     }
         
-    m_eState = bTransition ? TRANSDEST : EASEIN;
+    const auto eNewState = bTransition ? TRANSDEST : EASEIN;
+    Eases::Reverse(*this, eNewState, fCurrentAnimLevel);
+    m_eState = eNewState;
     m_fLastTime = -NI_INFINITY;
     return true;
 }
@@ -1676,26 +1696,18 @@ void NiControllerSequence::ReleaseFollowers(float fTime) const
     }
 }
 
-// fBlendEaseCurve: the engine moves ease and transition spinners at constant speed, so blends start and stop at once.
-// Mixed with their smoothstep they speed up and slow down instead, and still end on time. The curve is point symmetric
-// (1 - curve(x) == curve(1 - x)): a cross fade's two spinners still add up to 1, and an ease reversed where it is
-// (ActivateNoReset, DeactivateNoReset), which mirrors its times, continues from the spinner it had
-static float ApplyBlendEaseCurve(float fSpinner)
-{
-    const float fCurve = g_pluginSettings.blendEaseCurve;
-    if (fCurve <= 0.0f || fSpinner <= 0.0f || fSpinner >= 1.0f)
-        return fSpinner;
-    const float fSmoothStep = fSpinner * fSpinner * (3.0f - 2.0f * fSpinner);
-    return fSpinner + (fSmoothStep - fSpinner) * fCurve;
-}
-
-// The call in NiControllerSequence::Update (0xA34E7B), the engine's only one: every blend item's ease spinner comes from here
+// The call in NiControllerSequence::Update (0xA34E7B), the engine's only one: every blend item's ease spinner comes from
+// here, shaped by its blend curve (BlendCurves)
 void NiControllerSequence::SetInterpsWeightAndTime(float fWeight, float fEaseSpinner, float fTime)
 {
-    fEaseSpinner = ApplyBlendEaseCurve(fEaseSpinner);
-    // a transition's spinner arrives multiplied into the weight
-    if ((m_eState == TRANSSOURCE || m_eState == TRANSDEST) && m_fSeqWeight > 0.0f)
-        fWeight = m_fSeqWeight * ApplyBlendEaseCurve(fWeight / m_fSeqWeight);
+    // a transition's spinner arrives multiplied into the weight, an ease's as the ease spinner; the other one is 1
+    if (m_eState == TRANSSOURCE || m_eState == TRANSDEST)
+    {
+        if (m_fSeqWeight > 0.0f)
+            fWeight = m_fSeqWeight * BlendCurves::Shape(*this, fWeight / m_fSeqWeight, fTime);
+    }
+    else
+        fEaseSpinner = BlendCurves::Shape(*this, fEaseSpinner, fTime);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
@@ -2097,7 +2109,9 @@ bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime, bool bTransitio
         return false;
     }
     
-    m_eState = bTransition ? TRANSSOURCE : EASEOUT;
+    const auto eNewState = bTransition ? TRANSSOURCE : EASEOUT;
+    Eases::Reverse(*this, eNewState, fCurrentEaseLevel);
+    m_eState = eNewState;
     return true;
 }
 

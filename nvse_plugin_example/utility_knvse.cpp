@@ -1,3 +1,6 @@
+#include <mutex>
+#include <unordered_set>
+
 #include "commands_animation.h"
 #include "GameData.h"
 #include "main.h"
@@ -35,6 +38,18 @@ void DebugPrint(const std::string& str)
 	_MESSAGE("%s", str.c_str());
 	if (g_errorLogLevel == 2)
 		Console_Print("kNVSE: %s", str.c_str());
+}
+
+void DebugPrintOnce(const std::string& str)
+{
+	static std::mutex s_mutex;
+	static std::unordered_set<std::string> s_printed;
+	{
+		std::scoped_lock lock(s_mutex);
+		if (!s_printed.insert(str).second)
+			return;
+	}
+	DebugPrint(str);
 }
 
 bool IsPlayersOtherAnimData(AnimData* animData)

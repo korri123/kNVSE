@@ -326,7 +326,7 @@ bool __fastcall IsCustomAnimKey(const char* key)
 		"allowFirstPerson"
 	};
 	// keys with arguments, matched as their features read them (TextKeys::GetArguments)
-	const static auto argumentKeys = { "aimPitch", "weaponSpace", "spawn", "despawn" };
+	const static auto argumentKeys = { "aimPitch", "weaponSpace", "spawn", "despawn", "blendCurve", "blendInCurve", "blendOutCurve" };
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)))
 		|| ra::any_of(argumentKeys, _L(const char* name, TextKeys::GetArguments(key, name).has_value()));
 }
@@ -892,7 +892,7 @@ void ApplyHooks()
 	conf.blendSmoothingRate = ini.GetOrCreate("Blend Fixes", "fBlendSmoothingRate", 0.075, "; how long (in seconds) a snap takes to fade out with bBlendSmoothing: about a third of it is left after this time. higher values mean smoother but slower.");
 	if (conf.blendSmoothingRate <= 0.0f)
 		conf.blendSmoothingRate = 0.075f;
-	conf.blendEaseCurve = ini.GetOrCreate("Blend Fixes", "fBlendEaseCurve", 0.7, "; how gradually blends between animations start and stop, from 0 (constant speed, as the game does it) to 1 (they speed up at their start and slow down towards their end). Blends take as long as before and are half way at the same moment.");
+	conf.blendEaseCurve = ini.GetOrCreate("Blend Fixes", "fBlendEaseCurve", 0.7, "; how gradually blends between animations start and stop, from 0 (constant speed, as the game does it) to 1 (they speed up at their start and slow down towards their end). Blends take as long as before and are half way at the same moment. Animations can pick another curve with the text keys \"blendCurve: <curve>\" (blends into and out of them), \"blendInCurve: <curve>\" and \"blendOutCurve: <curve>\", each from its time on: default, linear, smooth, inSine, outSine, inOutSine (also Quad, Cubic, Quart, Expo, Circ) or \"bezier x1 y1 x2 y2\" with each in 0..1. A blend takes the blendInCurve of the animation blending in, else the blendOutCurve of the one blending out; with bBlendSmoothing the curve is exactly how far the bone has blended.");
 	conf.blendEaseCurve = std::clamp(conf.blendEaseCurve, 0.0f, 1.0f);
 	conf.fixSpineBlendBug = ini.GetOrCreate("Blend Fixes", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down (requires bBlendSmoothing).");
 	conf.fixWeaponHandBlend = ini.GetOrCreate("Blend Fixes", "bFixWeaponHandBlend", 1, "; keep the weapon on the hand holding it when animations move it to the left hand (counter-animated against the right hand): during blends, and between keys of animations baked at low frame rates. Detected automatically; animators can set it with the text keys \"weaponSpace: left\", \"weaponSpace: right\", \"weaponSpace: body\" (follows neither hand, for hand-offs) and \"weaponSpace: auto\", each holding until the next, or opt an animation out with \"weaponSpace: off\" (its share of a blend is blended as without this fix).");
@@ -938,6 +938,7 @@ void ApplyHooks()
 		BlendFixes::ApplyAimBlendHooks();
 	BlendFixes::ApplyHooks();
 	AnimSwitch::WriteHooks();
+	Eases::WriteHooks();
 	if (conf.blendSmoothing && conf.fixBlendFromPose)
 		PoseBlendFixes::ApplyHooks();
 	if (conf.blendSmoothing)
