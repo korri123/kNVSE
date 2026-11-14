@@ -91,6 +91,7 @@ void kAnimationExtraData::Destroy(bool freeMem)
     this->sequenceData.~vector();
     this->hardCuts.~vector();
     this->addedNodes.~vector();
+    this->overrides.~ActorOverrides();
     ThisStdCall(0xA7B300, this); // ~NiExtraData
     if ((freeMem & 1) != 0)
         NiDelete(this);
@@ -126,6 +127,7 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
     extraData->aimPitch = 0.0f;
     extraData->namedCurveEaseEnd = -NI_INFINITY;
     new(&extraData->addedNodes) std::vector<SkeletonNodes::Node>();
+    new(&extraData->overrides) ActorOverrides();
     PopulateVtable(extraData);
     extraData->m_kName = ExtraDataName();
     obj->AddExtraData(extraData);

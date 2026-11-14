@@ -1,6 +1,5 @@
 #include "debug_tools.h"
 
-#if _DEBUG
 #include <cstdio>
 
 #include "SafeWrite.h"
@@ -111,8 +110,3 @@ void DebugTools::StartBackgroundMode()
     SafeWrite32(kSetWindowPosImport, reinterpret_cast<UInt32>(SetGameWindowPos));
     SafeWrite32(kGetActiveWindowImport, reinterpret_cast<UInt32>(GetGameWindow));
 }
-#else
-void DebugTools::StartBackgroundMode()
-{
-}
-#endif

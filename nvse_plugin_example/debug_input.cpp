@@ -1,6 +1,5 @@
 #include "debug_tools.h"
 
-#if _DEBUG
 #include "GameOSDepend.h"
 #include "SafeWrite.h"
 #include "utility.h"
@@ -121,4 +120,3 @@ void DebugTools::Input::MoveMouse(long dx, long dy, long wheel)
     g_mouseMovement.y += dy;
     g_mouseMovement.wheel += wheel;
 }
-#endif

@@ -4,6 +4,7 @@
 #include <optional>
 #include <vector>
 
+#include "actor_overrides.h"
 #include "additive_anims.h"
 #include "blend_curves.h"
 #include "ease.h"
@@ -92,6 +93,8 @@ public:
     float namedCurveEaseEnd = -NI_INFINITY;
     // The nodes kNVSE added to this skeleton (SkeletonNodes), added again when the model they were under comes back
     std::vector<SkeletonNodes::Node> addedNodes;
+    // The override animations of the Animation whose controller manager animates this node (ActorOverrides)
+    ActorOverrides overrides;
 
     NiNewRTTI(kAnimationExtraData, NiExtraData)
 

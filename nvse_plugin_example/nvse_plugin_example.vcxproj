@@ -430,6 +430,9 @@
       </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="file_animations.cpp" />
+    <ClCompile Include="anim_overrides.cpp" />
+    <ClCompile Include="actor_overrides.cpp" />
+    <ClCompile Include="kf_loader.cpp" />
     <ClCompile Include="gamebryo\NiStream.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="hooks.cpp" />
@@ -496,6 +499,9 @@
     <ClInclude Include="containers.h" />
     <ClInclude Include="decompiled\AnimDataHooks.h" />
     <ClInclude Include="file_animations.h" />
+    <ClInclude Include="anim_overrides.h" />
+    <ClInclude Include="actor_overrides.h" />
+    <ClInclude Include="kf_loader.h" />
     <ClInclude Include="gamebryo\NiStream.h" />
     <ClInclude Include="hooks.h" />
     <ClInclude Include="game_types.h" />

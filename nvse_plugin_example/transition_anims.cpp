@@ -67,18 +67,16 @@ bool TransitionAnims::HasGaitStops()
 
 bool TransitionAnims::HasPaths(const SavedAnims& set, TransitionKind kind)
 {
-	return std::ranges::any_of(set.anims, [&](const auto& path) { return GetKind(*path) == kind; });
+	return std::ranges::any_of(set.anims, [&](const AnimPath& path) { return GetKind(path) == kind; });
 }
 
 SavedAnims* TransitionAnims::FindSet(AnimData* animData, UInt16 groupId, TransitionKind kind)
 {
 	const auto find = [&](TransitionKind ofKind) -> SavedAnims*
 	{
-		if (const auto baseResult = GetActorAnimation(groupId & 0xFF, animData, ofKind); baseResult && baseResult->animBundle->matchBaseGroupId)
-			return baseResult->animBundle;
-		if (const auto result = GetActorAnimation(groupId, animData, ofKind))
-			return result->animBundle;
-		return nullptr;
+		if (auto* baseSet = Overrides::Find(groupId & 0xFF, animData, ofKind); baseSet && baseSet->matchBaseGroupId)
+			return baseSet;
+		return Overrides::Find(groupId, animData, ofKind);
 	};
 	auto* set = find(kind);
 	if (set && HasPaths(*set, TransitionKind::None) && set != find(TransitionKind::None))
@@ -93,8 +91,8 @@ std::vector<const AnimPath*> TransitionAnims::GetPaths(SavedAnims& set, Transiti
 		return paths;
 	for (const auto& path : set.anims)
 	{
-		if (GetKind(*path) == kind)
-			paths.push_back(path.get());
+		if (GetKind(path) == kind)
+			paths.push_back(&path);
 	}
 	return paths;
 }

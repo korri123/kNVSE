@@ -19,6 +19,8 @@
 #include "string_view_util.h"
 #include "utility.h"
 #include "bethesda/bethesda_types.h"
+#include "anim_overrides.h"
+#include "actor_overrides.h"
 
 extern std::span<AnimGroupInfo> g_animGroupInfos;
 using FormID = UInt32;
@@ -37,6 +39,8 @@ struct BurstFireData
 	std::vector<NiTextKey*> ejectKeys;
 	std::size_t ejectIdx = 0;
 	bool reloading = false;
+	// the Animation the sequence plays on: what the entry goes with (Animation::~Animation)
+	AnimData* animData = nullptr;
 };
 
 extern std::list<BurstFireData> g_burstFireQueue;
@@ -232,6 +236,8 @@ public:
 struct AnimTime
 {
 	UInt32 actorId = 0;
+	// the Animation the sequence plays on: what the entry goes with (Animation::~Animation)
+	AnimData* animData = nullptr;
 	NiPointer<BSAnimGroupSequence> anim = nullptr;
 	float lastNiTime = -FLT_MAX;
 	bool respectEndKey = false;
@@ -278,41 +284,12 @@ struct AnimTime
 		return actorId == g_thePlayer->refID;
 	}
 
-	explicit AnimTime(Actor* actor, BSAnimGroupSequence* anim)
-		: actorId(actor->refID), anim(anim)
+	explicit AnimTime(Actor* actor, AnimData* animData, BSAnimGroupSequence* anim)
+		: actorId(actor->refID), animData(animData), anim(anim)
 	{
 	}
 
 	~AnimTime();
-};
-
-struct SavedAnimsTime
-{
-	Script* conditionScript = nullptr;
-	UInt16 groupId = 0;
-	UInt32 actorId = 0;
-	AnimData* animData = nullptr;
-
-	friend auto operator<=>(const SavedAnimsTime& lhs, const SavedAnimsTime& rhs) = default;
-};
-
-// transition_anims.h: None (0), Start, Stop
-enum class TransitionKind : UInt8;
-
-struct AnimPath
-{
-	std::string_view path;
-	bool partialReload = false;
-	// _start / _stop: a start or stop animation of a walk or run (MovementTransitions) or of aiming down the sights
-	// (AimTransitions), never picked as the group's animation
-	bool isStartAnim = false;
-	bool isStopAnim = false;
-	bool isAmmoSwap = false;
-};
-
-enum class FolderConditionType
-{
-	None, Male, Female, Mod1, Mod2, Mod3, Hurt, Human, Max=Human
 };
 
 enum AnimKeyTypes
@@ -332,94 +309,9 @@ enum AnimKeyTypes
 };
 
 using GameAnimMap = NiTPointerMap<AnimSequenceBase*>;
-
-struct SavedAnims
-{
-	std::vector<std::unique_ptr<AnimPath>> anims; // inludes all random variants, or ordered variants, or in case reloads normal and partial reload animations
-	std::unordered_set<NiPointer<BSAnimGroupSequence>> linkedSequences;
-	bool hasOrder = false;
-	std::atomic<bool> loaded = false; // set by Load, which runs on any animation thread
-	std::function<bool(const Actor*)> folderCondition;
-	FolderConditionType folderConditionType = FolderConditionType::None;
-	LambdaVariableContext conditionScript = nullptr;
-	std::string_view conditionScriptText;
-	bool pollCondition = false;
-	bool matchBaseGroupId = false;
-	bool hasTransitionAnims = false;
-	bool hasPartialReload = false;
-	bool hasAmmoSwap = false;
-	bool disabled = false;
-	bool conditionFailed = false; // the condition text failed to compile: never play, whatever enables the set again
-	std::string_view additiveAnimPath;
-	
-	SavedAnims() = default;
-
-	bool ContainsAnim(const BSAnimGroupSequence* anim) const
-	{
-		return ra::find_if(anims, _L(auto& a, a->path.data() == anim->m_kName.CStr())) != anims.end();
-	}
-
-	bool MatchesConditions(const Actor* actor) const
-	{
-		if (!folderCondition)
-			return true;
-		return folderCondition(actor);
-	}
-
-	// Compiles the condition and sorts the variants on first use. A set whose condition fails to compile is disabled:
-	// without its condition it would play for every actor the set's identifier covers (global sets: all of them).
-	void Load();
-};
-
-struct AnimStacks
-{
-	std::vector<std::unique_ptr<SavedAnims>> anims;
-};
-
-// Per ref ID there is a stack of animation variants per group ID
-class AnimOverrideStruct
-{
-public:
-	std::unordered_map<FullAnimGroupID, AnimStacks> stacks;
-};
-
-using AnimOverrideMap = std::unordered_map<FormID, AnimOverrideStruct>;
-
-struct BurstState
-{
-	int index = 0;
-	BurstState() = default;
-};
-
-struct JSONAnimContext
-{
-	std::string condition;
-	bool pollCondition = false;
-	bool matchBaseGroupId = false;
-#if _DEBUG
-	std::string conditionScriptText;
-#endif
-	void Reset()
-	{
-		condition.clear();
-		pollCondition = false;
-		matchBaseGroupId = false;
-#if _DEBUG
-		conditionScriptText.clear();
-#endif
-	}
-
-	JSONAnimContext() { Reset(); }
-};
-
 using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::unique_ptr<AnimTime>>;
 extern TimeTrackedAnimsMap g_timeTrackedAnims;
 void EraseTimeTrackedAnim(BSAnimGroupSequence* anim);
-
-using TimeTrackedGroupsKey = std::pair<SavedAnims*, AnimData*>;
-using TimeTrackedGroupsPair = std::pair<const TimeTrackedGroupsKey, std::unique_ptr<SavedAnimsTime>>;
-using TimeTrackedGroupsMap = std::unordered_map<TimeTrackedGroupsKey, std::unique_ptr<SavedAnimsTime>, pair_hash, pair_equal>;
-extern TimeTrackedGroupsMap g_timeTrackedGroups;
 
 #define THISCALL(address, returnType, ...) reinterpret_cast<returnType(__thiscall*)(__VA_ARGS__)>(address)
 #define _CDECL(address, returnType, ...) reinterpret_cast<returnType(__cdecl*)(__VA_ARGS__)>(address)
@@ -476,38 +368,8 @@ namespace GameFuncs
 
 void HandleOnAnimDataDelete(AnimData* animData);
 
-
-class AnimationResult
-{
-public:
-	SavedAnims* animBundle;
-	AnimationResult(SavedAnims* animBundle): animBundle(animBundle)
-	{
-	}
-};
-
-struct BSAnimationContext
-{
-	NiPointer<BSAnimGroupSequence> anim;
-	AnimSequenceBase* base;
-
-	BSAnimationContext(BSAnimGroupSequence* anim, AnimSequenceBase* base): anim(anim), base(base)
-	{
-	}
-};
-
-std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData);
-std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UInt16 groupId, AnimData* animData);
-// One file of the set, linked to it
-std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, const AnimPath& animPath, AnimData* animData);
-BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId);
 float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimGroupSequence* sourceSequence);
 float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence);
-
-// The override set the group's animation comes from for the actor; with a transition, the topmost set that has such a
-// start or stop animation of the group (TransitionAnims). A set with only start and stop animations is passed over
-// for the group's own animation, so it does not hide the walk of a set below it
-std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData, TransitionKind transition = TransitionKind{});
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {
@@ -570,21 +432,6 @@ DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 
 #endif
 
-struct AnimOverrideData
-{
-	std::string_view path;
-	UInt32 identifier{};
-	bool enable{};
-	std::unordered_set<UInt16> groupIdFillSet;
-	std::string_view conditionScriptText;
-	Script* conditionScript{};
-	bool pollCondition{};
-	bool matchBaseGroupId{};
-};
-
-bool OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson);
-bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson);
-
 float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
@@ -597,7 +444,10 @@ bool IsAnimGroupMovement(UInt8 animGroupId);
 
 bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod);
 
+// The KF as a sequence of the Animation: one it has by that name, else loaded as an override animation (Overrides::Load)
 BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path);
+// The full ID of the anim group a KF is of, by its file name or else its contents. Overrides::kInvalidGroupId if neither tells
+UInt16 GetAnimGroupId(std::string_view path);
 
 int GetWeaponInfoClipSize(Actor* actor);
 
@@ -625,8 +475,6 @@ namespace OnReloadHandler
 	void Update();
 }
 
-AnimPath* GetAnimPath(SavedAnims& animResult, UInt16 groupId, AnimData* animData);
-
 void HandleGarbageCollection();
 
 void CreateCommands(NVSECommandBuilder& builder);
@@ -640,20 +488,8 @@ UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);
 float GetIniFloat(UInt32 addr);
 NiControllerSequence::InterpArrayItem* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);
 
+// Whether this thread keeps the results of condition scripts for the frame (CallFunction)
 extern thread_local bool g_isThreadCacheEnabled;
-
-template <typename Key, typename Value, typename Hash = pair_hash, typename Equal = pair_equal>
-using ResultCache = std::unordered_map<Key, Value, Hash, Equal>;
-
-using AnimationResultKey = std::pair<UInt32, AnimData*>;
-using AnimationResultValue = std::optional<AnimationResult>;
-using AnimationResultCache = ResultCache<const AnimationResultKey, AnimationResultValue>;
-extern thread_local AnimationResultCache g_animationResultCache;
-
-using AnimPathKey = std::pair<SavedAnims*, AnimData*>;
-using AnimPathCache = ResultCache<const AnimPathKey, AnimPath*>;
-
-extern thread_local AnimPathCache g_animPathFrameCache;
 
 std::string_view GetBaseAnimGroupName(std::string_view name);
 

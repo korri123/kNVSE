@@ -1,11 +1,12 @@
 #include "debug_tools.h"
 
-#if _DEBUG
 #include <chrono>
 #include <cstdio>
 #include <deque>
 #include <functional>
+#if _DEBUG
 #include <crtdbg.h>
+#endif
 #include <fstream>
 #include <future>
 #include <memory>
@@ -24,8 +25,12 @@
 namespace
 {
     constexpr auto kPipeName = R"(\\.\pipe\kNVSE-debug)";
+    constexpr auto kToolsFile = "kNVSE-debug-tools.txt";
     constexpr DWORD kBufferSize = 64 * 1024;
     constexpr auto kRequestTimeout = std::chrono::seconds(10);
+
+    // the pipe serves and the input is hooked
+    bool g_toolsOn = false;
 
     using RequestQueue = std::deque<std::function<void()>>;
 
@@ -159,6 +164,7 @@ namespace
         }
     }
 
+#if _DEBUG
     int __cdecl ReportHook(int reportType, char* message, int* returnValue)
     {
         if (reportType == _CRT_WARN)
@@ -167,6 +173,7 @@ namespace
         *returnValue = 1; // _CrtDbgReport returns 1, so the failing site executes _CrtDbgBreak
         return TRUE; // handled: no dialog
     }
+#endif
 
     constexpr auto kTestStartFile = "kNVSE-debug-start.txt";
     constexpr ULONGLONG kRequestMaxAgeSeconds = 120;
@@ -219,6 +226,8 @@ void DebugTools::StartTestGame()
 
 void DebugTools::HandleMessage(unsigned int type)
 {
+    if (!g_toolsOn)
+        return;
     if (type == NVSEMessagingInterface::kMessage_DeferredInit)
     {
         Input::Install();
@@ -233,27 +242,20 @@ void DebugTools::HandleMessage(unsigned int type)
 
 void DebugTools::StartCommandPipe()
 {
+#if _DEBUG
+    DebugPrint(FormatString("DebugTools: kNVSE Debug build, command pipe %s", kPipeName));
+#else
+    if (TakeRequest(kToolsFile).empty())
+        return;
+    DebugPrint(FormatString("DebugTools: kNVSE Release build, command pipe %s", kPipeName));
+#endif
+    g_toolsOn = true;
     std::thread(ServerLoop).detach();
 }
 
 void DebugTools::InstallAssertHook()
 {
+#if _DEBUG
     _CrtSetReportHook2(_CRT_RPTHOOK_INSTALL, ReportHook);
-}
-#else
-void DebugTools::StartCommandPipe()
-{
-}
-
-void DebugTools::InstallAssertHook()
-{
-}
-
-void DebugTools::StartTestGame()
-{
-}
-
-void DebugTools::HandleMessage(unsigned int)
-{
-}
 #endif
+}

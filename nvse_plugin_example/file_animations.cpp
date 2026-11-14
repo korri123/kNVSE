@@ -7,10 +7,13 @@
 #include "file_animations.h"
 #include "lib/json/json.h"
 #include <fstream>
+#include <mutex>
 #include <ranges>
+#include <thread>
+#include <unordered_map>
 #include <utility>
-#include <type_traits>
 
+#include "anim_overrides.h"
 #include "string_view_util.h"
 #include "bethesda/bethesda_types.h"
 
@@ -22,409 +25,426 @@ std::string_view AddStringToPool(const std::string_view str)
 	return { handle, str.size() };
 }
 
-struct JSONEntry
+namespace
 {
-	std::string folderName;
-	const TESForm* form;
-	std::string_view condition;
-	int loadPriority;
-	bool pollCondition;
-	bool matchBaseGroupId;
+	constexpr std::string_view kMeshes = R"(Data\Meshes\)";
 
-	JSONEntry(std::string folderName, const TESForm* form, std::string_view condition, bool pollCondition, int priority, bool matchBaseGroupId, std::string_view bsa)
-		: folderName(std::move(folderName)), form(form), condition(condition), loadPriority(priority), pollCondition(pollCondition),
-	matchBaseGroupId(matchBaseGroupId)
+	struct JSONEntry
 	{
-	}
-};
-
-void LoadPathsForType(const fs::path& dirPath, const UInt32 identifier, bool firstPerson, bool isModIndex, JSONEntry* jsonEntry = nullptr)
-{
-	AnimOverrideData animOverrideData = {
-		.identifier = identifier,
-		.enable = true,
-		.conditionScript = nullptr,
-		.pollCondition = false,
-		.matchBaseGroupId = false,
+		std::string folderName;
+		const TESForm* form;
+		std::string_view condition;
+		int loadPriority;
+		bool pollCondition;
+		bool matchBaseGroupId;
 	};
-	if (jsonEntry)
+
+	// One KF of an AnimGroupOverride folder
+	struct FolderFile
 	{
-		animOverrideData.conditionScriptText = jsonEntry->condition;
-		animOverrideData.pollCondition = jsonEntry->pollCondition;
-		animOverrideData.matchBaseGroupId = jsonEntry->matchBaseGroupId;
+		// relative to Data\Meshes
+		std::string path;
+		bool firstPerson;
+	};
+
+	// What a load has read of the folders: a JSON file names the same folder for several forms (one of the NVAO folders
+	// for 33), and each used to be read from the disk again
+	struct FolderCache
+	{
+		// by path as given
+		std::unordered_map<std::string, std::vector<FolderFile>> looseFiles;
+		// by folder name, lower case: the KFs archives have of the folder
+		std::unordered_map<std::string, std::vector<FolderFile>> archiveFiles;
+	};
+
+	// The game opens files by their ANSI path: a name the code page lacks would not load. path::string() throws for
+	// such a name, here it comes out with a default character and fails to load (logged) like any missing file
+	std::string ToAnsi(const fs::path& path)
+	{
+		const auto& wide = path.native();
+		if (wide.empty())
+			return {};
+		const auto size = WideCharToMultiByte(CP_ACP, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
+		std::string result(size, '\0');
+		WideCharToMultiByte(CP_ACP, 0, wide.data(), static_cast<int>(wide.size()), result.data(), size, nullptr, nullptr);
+		return result;
 	}
-	std::vector<fs::path> kfPaths;
-	for (const auto& iter : fs::recursive_directory_iterator(dirPath))
+
+	// A directory's entries in the order NTFS lists them (by upper case name), whatever the file system (a virtual one
+	// need not sort): which of two sets ends up on top of a stack depends on the order they are registered in
+	std::vector<fs::directory_entry> GetSortedEntries(const fs::path& directory)
 	{
-		if (sv::equals_ci(iter.path().extension().string(), ".kf"))
-			kfPaths.push_back(iter.path());
-	}
-	// Files directly in the folder first: a set registered later goes above them on its group's stack, so the conditional
-	// subfolder variants (mod1, hurt, male, ...) are checked before the base set. In directory order the base file came
-	// after a subfolder whose name sorts before it (_male\mod1\ before _male\sneak2hrreloadp.kf) and always won.
-	std::ranges::stable_partition(kfPaths, [&](const fs::path& kfPath) { return kfPath.parent_path() == dirPath; });
-	for (const auto& kfPath : kfPaths)
-	{
-		const auto& relPath = GetRelativePath(kfPath, "AnimGroupOverride");
-		const std::string_view path = AddStringToPool(ToLower(relPath.string()));
-		animOverrideData.path = path;
-		try
+		std::vector<fs::directory_entry> entries;
+		std::error_code error;
+		for (fs::directory_iterator iter(directory, error), end; !error && iter != end; iter.increment(error))
+			entries.push_back(*iter);
+		if (error)
+			ERROR_LOG(FormatString("Failed to read folder %s: %s", ToAnsi(directory).c_str(), error.message().c_str()));
+		const auto key = [](const fs::directory_entry& entry)
 		{
-			if (isModIndex)
-				OverrideModIndexAnimation(animOverrideData, firstPerson);
-			else
-				OverrideFormAnimation(animOverrideData, firstPerson);
+			auto name = entry.path().filename().native();
+			CharUpperBuffW(name.data(), static_cast<DWORD>(name.size()));
+			return name;
+		};
+		std::ranges::stable_sort(entries, {}, key);
+		return entries;
+	}
+
+	bool IsDirectory(const fs::directory_entry& entry)
+	{
+		std::error_code error;
+		return entry.is_directory(error);
+	}
+
+	bool HasExtension(const fs::path& path, std::wstring_view extension)
+	{
+		const auto pathExtension = path.extension().native();
+		return CompareStringOrdinal(pathExtension.data(), static_cast<int>(pathExtension.size()), extension.data(),
+			static_cast<int>(extension.size()), TRUE) == CSTR_EQUAL;
+	}
+
+	void CollectKFs(const fs::path& directory, std::vector<fs::path>& kfPaths)
+	{
+		for (const auto& entry : GetSortedEntries(directory))
+		{
+			if (IsDirectory(entry))
+				CollectKFs(entry.path(), kfPaths);
+			else if (HasExtension(entry.path(), L".kf"))
+				kfPaths.push_back(entry.path());
 		}
-		catch (std::exception& e)
+	}
+
+	// The KFs of the folder's _male and _1stperson subfolders. folder: starts with Data\Meshes
+	const std::vector<FolderFile>& GetLooseFiles(const fs::path& folder, FolderCache& cache)
+	{
+		const auto [iter, isNew] = cache.looseFiles.try_emplace(ToAnsi(folder));
+		auto& files = iter->second;
+		if (!isNew)
+			return files;
+		for (const auto& entry : GetSortedEntries(folder))
 		{
-			ERROR_LOG(FormatString("AnimGroupOverride Error: %s", e.what()));
+			if (!IsDirectory(entry))
+				continue;
+			const auto name = entry.path().filename().native();
+			const bool firstPerson = _wcsicmp(name.c_str(), L"_1stperson") == 0;
+			if (!firstPerson && _wcsicmp(name.c_str(), L"_male") != 0)
+				continue;
+			std::vector<fs::path> kfPaths;
+			CollectKFs(entry.path(), kfPaths);
+			// Files directly in the folder first: a set registered later goes above them on its group's stack, so the
+			// conditional subfolder variants (mod1, hurt, male, ...) are checked before the base set. In directory order
+			// the base file came after a subfolder whose name sorts before it (_male\mod1\ before
+			// _male\sneak2hrreloadp.kf) and always won.
+			std::ranges::stable_partition(kfPaths, [&](const fs::path& kfPath) { return kfPath.parent_path() == entry.path(); });
+			for (const auto& kfPath : kfPaths)
+			{
+				auto path = ToAnsi(kfPath);
+				if (path.size() <= kMeshes.size())
+					continue;
+				files.push_back({ path.substr(kMeshes.size()), firstPerson });
+			}
 		}
+		return files;
 	}
-}
 
-void LoadPathsForPOV(const fs::path& path, UInt32 identifier, bool isModIndex, JSONEntry* jsonEntry = nullptr)
-{
-	for (const auto& iter : fs::directory_iterator(path))
+	// The KFs that the loaded archives have of the folder's _male and _1stperson subfolders and the condition folders
+	// in them. Their paths are as the archives list them
+	const std::vector<FolderFile>& GetArchiveFiles(const std::string& folderName, FolderCache& cache)
 	{
-		if (!iter.is_directory()) continue;
-		const auto& str = iter.path().filename().string();
-		if (_stricmp(str.c_str(), "_male") == 0)
-			LoadPathsForType(iter.path(), identifier, false, isModIndex, jsonEntry);
-		else if (_stricmp(str.c_str(), "_1stperson") == 0)
-			LoadPathsForType(iter.path(), identifier, true, isModIndex, jsonEntry);
-	}
-}
-
-void LoadPathsForList(const fs::path& path, const BGSListForm* listForm, JSONEntry* jsonEntry = nullptr);
-
-bool LoadForForm(const fs::path& iterPath, const TESForm* form, JSONEntry* jsonEntry = nullptr)
-{
-	if (const auto* weapon = DYNAMIC_CAST(form, TESForm, TESObjectWEAP))
-		LoadPathsForPOV(iterPath, weapon->refID, false, jsonEntry);
-	else if (const auto* actor = DYNAMIC_CAST(form, TESForm, Actor))
-		LoadPathsForPOV(iterPath, actor->refID, false, jsonEntry);
-	else if (const auto* list = DYNAMIC_CAST(form, TESForm, BGSListForm))
-		LoadPathsForList(iterPath, list, jsonEntry);
-	else if (const auto* race = DYNAMIC_CAST(form, TESForm, TESRace))
-		LoadPathsForPOV(iterPath, race->refID, false, jsonEntry);
-	else
-		LoadPathsForPOV(iterPath, form->refID, false, jsonEntry);
-	return true;
-}
-
-void LoadPathsForList(const fs::path& path, const BGSListForm* listForm, JSONEntry* jsonEntry)
-{
-	for (auto iter = listForm->list.Begin(); !iter.End(); ++iter)
-	{
-		LoadForForm(path, *iter, jsonEntry);
-	}
-}
-
-void LoadModAnimPaths(const fs::path& path, const ModInfo* mod)
-{
-	LoadPathsForPOV(path, mod->modIndex, true);
-	for (fs::directory_iterator iter(path), end; iter != end; ++iter)
-	{
-		const auto& iterPath = iter->path();
-		if (iter->is_directory())
+		const auto [iter, isNew] = cache.archiveFiles.try_emplace(ToLower(folderName));
+		auto& files = iter->second;
+		if (!isNew)
+			return files;
+		const auto basePath = sv::stack_string<0x400>(R"(meshes\animgroupoverride\%s\)", iter->first.c_str());
+		const auto addList = [&](const char* subfolder, const char* childFolder, bool firstPerson)
 		{
-			const auto& folderName = iterPath.filename().string();
-			if (folderName[0] == '_') // _1stperson, _male
+			auto path = sv::stack_string<0x400>("%s%s%s", basePath.c_str(), subfolder, childFolder);
+			const auto list = ArchiveManager::GetDirectoryAnimPaths(path.str());
+			for (const char* archivePath : list)
+			{
+				if (sv::starts_with_ci(archivePath, path.str()))
+					files.push_back({ archivePath, firstPerson });
+			}
+		};
+		for (const auto& [subfolder, firstPerson] : { std::pair{ "_1stperson\\", true }, std::pair{ "_male\\", false } })
+		{
+			addList(subfolder, "", firstPerson);
+			for (const auto* childFolder : { "mod1\\", "mod2\\", "mod3\\", "hurt\\", "human\\", "male\\", "female\\" })
+				addList(subfolder, childFolder, firstPerson);
+		}
+		return files;
+	}
+
+	size_t Register(const Overrides::Source& source, const std::vector<FolderFile>& folderFiles)
+	{
+		if (folderFiles.empty())
+			return 0;
+		std::vector<Overrides::File> files;
+		files.reserve(folderFiles.size());
+		for (const auto& file : folderFiles)
+			files.push_back({ file.path, file.firstPerson });
+		return Overrides::Register(source, files);
+	}
+
+	Overrides::Source GetSource(UInt32 identifier, bool isModIndex, const JSONEntry* jsonEntry)
+	{
+		Overrides::Source source{ .identifier = identifier, .isModIndex = isModIndex, .keepCondition = true };
+		if (jsonEntry)
+		{
+			source.conditionText = jsonEntry->condition;
+			source.pollCondition = jsonEntry->pollCondition;
+			source.matchBaseGroupId = jsonEntry->matchBaseGroupId;
+		}
+		return source;
+	}
+
+	// Registers what register_ finds for the form, or for each form of a form list
+	template <typename F>
+	size_t ForEachForm(const TESForm* form, F&& register_)
+	{
+		const auto* list = DYNAMIC_CAST(form, TESForm, BGSListForm);
+		if (!list)
+			return register_(form->refID);
+		size_t numFiles = 0;
+		for (auto iter = list->list.Begin(); !iter.End(); ++iter)
+		{
+			if (*iter)
+				numFiles += ForEachForm(*iter, register_);
+		}
+		return numFiles;
+	}
+
+	void LoadModAnimPaths(const fs::path& path, const ModInfo* mod, FolderCache& cache)
+	{
+		Register(GetSource(mod->modIndex, true, nullptr), GetLooseFiles(path, cache));
+		for (const auto& entry : GetSortedEntries(path))
+		{
+			if (!IsDirectory(entry))
+				continue;
+			const auto folderName = ToAnsi(entry.path().filename());
+			if (folderName.empty() || folderName[0] == '_') // _1stperson, _male
 				continue;
 			const auto id = HexStringToInt(folderName);
-			if (id != -1) 
+			if (id == -1)
 			{
-				const auto formId = (id & 0x00FFFFFF) + (mod->modIndex << 24);
-				auto* form = LookupFormByID(formId);
-				if (form)
-					LoadForForm(iterPath, form);
-				else
-					ERROR_LOG(FormatString("Form %X not found!", formId));
-			}
-			else
 				ERROR_LOG("Failed to convert " + folderName + " to a form ID");
-		}
-		
-	}
-}
-
-struct ScopedTimer
-{
-	ScopedTimer(const char* name)
-	{
-		this->name = name;
-		this->timer = std::chrono::high_resolution_clock::now();
-	}
-	
-	~ScopedTimer()
-	{
-		const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - timer);
-		ERROR_LOG(FormatString("%s in %d ms", name, diff.count()));
-	}
-	std::chrono::high_resolution_clock::time_point timer;
-	const char* name;
-};
-
-void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
-{
-	LOG("\nReading from JSON file " + path.string());
-	const auto strToFormID = [](const std::string& formIdStr)
-	{
-		const auto formId = HexStringToInt(formIdStr);
-		if (formId == -1)
-		{
-			ERROR_LOG("Form field was incorrectly formatted, got " + formIdStr);
-		}
-		return formId;
-	};
-	try
-	{
-		std::ifstream i(path);
-		if (i.peek() == std::ifstream::traits_type::eof())
-			return;
-		nlohmann::json j;
-		i >> j;
-		if (j.is_array())
-		{
-			for (auto& elem : j)
+				continue;
+			}
+			const auto formId = (id & 0x00FFFFFF) + (mod->modIndex << 24);
+			const auto* form = LookupFormByID(formId);
+			if (!form)
 			{
-				if (!elem.is_object())
+				ERROR_LOG(FormatString("Form %X not found!", formId));
+				continue;
+			}
+			ForEachForm(form, [&](UInt32 identifier)
+			{
+				return Register(GetSource(identifier, false, nullptr), GetLooseFiles(entry.path(), cache));
+			});
+		}
+	}
+
+	struct ScopedTimer
+	{
+		ScopedTimer(const char* name)
+		{
+			this->name = name;
+			this->timer = std::chrono::high_resolution_clock::now();
+		}
+
+		~ScopedTimer()
+		{
+			const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - timer);
+			ERROR_LOG(FormatString("%s in %d ms", name, diff.count()));
+		}
+		std::chrono::high_resolution_clock::time_point timer;
+		const char* name;
+	};
+
+	void HandleJson(const fs::path& path, std::vector<JSONEntry>& jsonEntries)
+	{
+		const auto pathString = ToAnsi(path);
+		LOG("\nReading from JSON file " + pathString);
+		const auto strToFormID = [](const std::string& formIdStr)
+		{
+			const auto formId = HexStringToInt(formIdStr);
+			if (formId == -1)
+			{
+				ERROR_LOG("Form field was incorrectly formatted, got " + formIdStr);
+			}
+			return formId;
+		};
+		try
+		{
+			std::ifstream i(path);
+			if (i.peek() == std::ifstream::traits_type::eof())
+				return;
+			nlohmann::json j;
+			i >> j;
+			if (j.is_array())
+			{
+				for (auto& elem : j)
 				{
-					ERROR_LOG("JSON error: expected object with mod, form and folder fields");
-					continue;
-				}
-				int priority = 0;
-				if (elem.contains("priority"))
-					priority = elem["priority"].get<int>();
-				auto modName = elem.contains("mod") ? elem["mod"].get<std::string>() : "";
-				const auto* mod = !modName.empty() ? DataHandler::Get()->LookupModByName(modName.c_str()) : nullptr;
-				if (!mod && !modName.empty())
-				{
-					LOG(FormatString("JSON %s: mod %s is not loaded, skipping folder %s", path.string().c_str(), modName.c_str(),
-						elem.value("folder", std::string()).c_str()));
-					continue;
-				}
-				auto folder = elem["folder"].get<std::string>();
-				ra::replace(folder, '/', '\\');
-				std::vector<int> formIds;
-				auto* formElem = elem.contains("form") ? &elem["form"] : nullptr;
-				if (formElem)
-				{
-					if (formElem->is_array())
-						std::ranges::transform(*formElem, std::back_inserter(formIds), [&](auto& i) {return strToFormID(i.template get<std::string>()); });
-					else
-						formIds.push_back(strToFormID(formElem->get<std::string>()));
-					if (std::ranges::find(formIds, -1) != formIds.end())
-						continue;
-				}
-				std::string_view condition;
-				auto pollCondition = false;
-				if (elem.contains("condition"))
-				{
-					condition = AddStringToPool(elem["condition"].get<std::string_view>());
-					if (elem.contains("pollCondition"))
-						pollCondition = elem["pollCondition"].get<bool>();
-				}
-				
-				std::string_view bsa;
-				if (elem.contains("bsa"))
-				{
-					bsa = AddStringToPool(elem["bsa"].get<std::string_view>());
-				}
-				
-				auto matchBaseGroupId = false;
-				if (elem.contains("matchBaseAnimGroup"))
-				{
-					matchBaseGroupId = elem["matchBaseAnimGroup"].get<bool>();
-				}
-				if (mod && !formIds.empty())
-				{
-					for (auto formId : formIds)
+					if (!elem.is_object())
 					{
-						const auto localFormId = formId & 0x00FFFFFF;
-						formId = (mod->modIndex << 24) + localFormId;
-						auto* form = LookupFormByID(formId);
-						if (!form)
-						{
-							LOG(FormatString("JSON %s: form %06X of %s (%08X in the load order) was not found, skipping folder %s",
-								path.string().c_str(), localFormId, modName.c_str(), formId, folder.c_str()));
+						ERROR_LOG("JSON error: expected object with mod, form and folder fields");
+						continue;
+					}
+					int priority = 0;
+					if (elem.contains("priority"))
+						priority = elem["priority"].get<int>();
+					auto modName = elem.contains("mod") ? elem["mod"].get<std::string>() : "";
+					const auto* mod = !modName.empty() ? DataHandler::Get()->LookupModByName(modName.c_str()) : nullptr;
+					if (!mod && !modName.empty())
+					{
+						LOG(FormatString("JSON %s: mod %s is not loaded, skipping folder %s", pathString.c_str(), modName.c_str(),
+							elem.value("folder", std::string()).c_str()));
+						continue;
+					}
+					auto folder = elem["folder"].get<std::string>();
+					ra::replace(folder, '/', '\\');
+					// relative to AnimGroupOverride: a path joined with one that starts at the root would be the root's
+					folder.erase(0, folder.find_first_not_of('\\'));
+					std::vector<int> formIds;
+					auto* formElem = elem.contains("form") ? &elem["form"] : nullptr;
+					if (formElem)
+					{
+						if (formElem->is_array())
+							std::ranges::transform(*formElem, std::back_inserter(formIds), [&](auto& i) {return strToFormID(i.template get<std::string>()); });
+						else
+							formIds.push_back(strToFormID(formElem->get<std::string>()));
+						if (std::ranges::find(formIds, -1) != formIds.end())
 							continue;
+					}
+					std::string_view condition;
+					auto pollCondition = false;
+					if (elem.contains("condition"))
+					{
+						condition = AddStringToPool(elem["condition"].get<std::string_view>());
+						if (elem.contains("pollCondition"))
+							pollCondition = elem["pollCondition"].get<bool>();
+					}
+
+					auto matchBaseGroupId = false;
+					if (elem.contains("matchBaseAnimGroup"))
+					{
+						matchBaseGroupId = elem["matchBaseAnimGroup"].get<bool>();
+					}
+					if (mod && !formIds.empty())
+					{
+						for (auto formId : formIds)
+						{
+							const auto localFormId = formId & 0x00FFFFFF;
+							formId = (mod->modIndex << 24) + localFormId;
+							auto* form = LookupFormByID(formId);
+							if (!form)
+							{
+								LOG(FormatString("JSON %s: form %06X of %s (%08X in the load order) was not found, skipping folder %s",
+									pathString.c_str(), localFormId, modName.c_str(), formId, folder.c_str()));
+								continue;
+							}
+							jsonEntries.push_back({ folder, form, condition, priority, pollCondition, matchBaseGroupId });
 						}
-						//LOG(FormatString("Registered form %X for folder %s", formId, folder.c_str()));
-						jsonEntries.emplace_back(folder, form, condition, pollCondition, priority, matchBaseGroupId, bsa);
+					}
+					else
+					{
+						jsonEntries.push_back({ folder, nullptr, condition, priority, pollCondition, matchBaseGroupId });
 					}
 				}
-				else
-				{
-					jsonEntries.emplace_back(folder, nullptr, condition, pollCondition, priority, matchBaseGroupId, bsa);
-				}
+			}
+			else
+				ERROR_LOG(pathString + " does not start as a JSON array");
+		}
+		catch (const nlohmann::json::exception& e)
+		{
+			ERROR_LOG("The JSON is incorrectly formatted! It will not be applied. Path: " + pathString);
+			ERROR_LOG(FormatString("JSON error: %s\n", e.what()));
+		}
+	}
+
+	// The KFs under meshes\animgroupoverride of a BSA that lies in the AnimGroupOverride folder
+	void LoadAnimPathsFromBSA(const fs::path& path, std::vector<std::string>& animPaths)
+	{
+		const auto pathString = ToAnsi(path);
+		const auto* archive = ArchiveManager::OpenArchive(pathString.c_str(), ARCHIVE_TYPE_MESHES, false);
+		if (!archive)
+		{
+			ERROR_LOG("Failed to open archive " + pathString);
+			return;
+		}
+		const char* dirStrings = archive->pDirectoryStringArray;
+		const char* fileStrings = archive->pFileNameStringArray;
+		if (!dirStrings || !fileStrings)
+			return;
+
+		for (UInt32 i = 0; i < archive->kArchive.uiDirectories; ++i)
+		{
+			const size_t dirOffset = archive->pDirectoryStringOffsets[i];
+			const std::string_view directory(dirStrings + dirOffset);
+			if (!directory.starts_with("meshes\\animgroupoverride\\"))
+				continue;
+			for (UInt32 j = 0; j < archive->kArchive.pDirectories[i].uiFiles; ++j)
+			{
+				const size_t fileOffset = archive->pFileNameStringOffsets[i][j];
+				const std::string_view fileName(fileStrings + fileOffset);
+				if (sv::get_file_extension(fileName) != ".kf")
+					continue;
+				animPaths.push_back(std::string(directory) + '\\' + std::string(fileName));
 			}
 		}
-		else
-			ERROR_LOG(path.string() + " does not start as a JSON array");
-	}
-	catch (nlohmann::json::exception& e)
-	{
-		ERROR_LOG("The JSON is incorrectly formatted! It will not be applied. Path: " + path.string());
-		ERROR_LOG(FormatString("JSON error: %s\n", e.what()));
-	}
-}
-
-bool OverrideBSAPathAnim(AnimOverrideData& animOverrideData, const std::string_view path)
-{
-	const auto firstPerson = sv::contains_ci(path, "_1stperson");
-	const auto thirdPerson = sv::contains_ci(path, "_male");
-	if (!thirdPerson && !firstPerson)
-		return false;
-	animOverrideData.path = AddStringToPool(path);
-	if (animOverrideData.identifier == 0xFF)
-		return OverrideModIndexAnimation(animOverrideData, firstPerson);
-	return OverrideFormAnimation(animOverrideData, firstPerson);
-}
-
-int OverrideBSAPathAnimationsForRange(AnimOverrideData& animOverrideData, std::ranges::forward_range auto&& thisModsPaths)
-{
-	int numFound = 0;
-	for (auto path : thisModsPaths)
-	{
-		if (OverrideBSAPathAnim(animOverrideData, path))
-			++numFound;
-	}
-	return numFound;
-}
-
-int OverrideBSAPathAnimationsForList(AnimOverrideData& animOverrideData, std::string_view basePath)
-{
-	const auto list = ArchiveManager::GetDirectoryAnimPaths(basePath);
-	if (list.Empty())
-		return 0;
-	int numFound = 0;
-	for (const char* pPath : list)
-	{
-		const std::string_view path(pPath);
-		if (!sv::starts_with_ci(path, basePath))
-			continue;
-		if (OverrideBSAPathAnim(animOverrideData, path))
-			++numFound;
-	}
-	return numFound;
-}
-
-bool LoadDataFolderBSAPaths(JSONEntry& entry)
-{
-	auto basePath = sv::stack_string<0x400>(R"(meshes\animgroupoverride\%s\)", entry.folderName.c_str());
-	basePath.to_lower();
-	const auto subfolders = {"_1stperson\\", "_male\\"};
-	const auto childFolders = {"mod1\\", "mod2\\", "mod3\\", "hurt\\", "human\\", "male\\", "female\\"};
-	int numFound = 0;
-
-	AnimOverrideData animOverrideData = {
-		.identifier = entry.form ? entry.form->refID : 0xFF,
-		.enable = true,
-		.conditionScriptText = entry.condition,
-		.pollCondition = entry.pollCondition,
-		.matchBaseGroupId = entry.matchBaseGroupId,
-	};
-	
-#if _DEBUG
-	auto* archiveLists = ArchiveManager::GetArchiveList();
-	std::vector<std::string_view> archives;
-	for (auto* archive : *archiveLists)
-		archives.emplace_back(archive->cFileName);
-#endif
-
-	for (const auto* subfolder : subfolders)
-	{
-		auto path = sv::stack_string<0x400>("%s%s", basePath.c_str(), subfolder);
-		numFound += OverrideBSAPathAnimationsForList(animOverrideData, path.str());
-		for (const auto* childFolder : childFolders)
-		{
-			auto childPath = sv::stack_string<0x400>("%s%s%s", basePath.c_str(), subfolder, childFolder);
-			numFound += OverrideBSAPathAnimationsForList(animOverrideData, childPath.str());
-		}
 	}
 
-	return numFound != 0;
-}
-
-bool LoadJSONInBSAPaths(const std::vector<std::string_view>& bsaAnimPaths, JSONEntry& entry)
-{
-	sv::stack_string<0x400> jsonFolderPath("meshes\\animgroupoverride\\%s\\", entry.folderName.data());
-	auto thisModsPaths = bsaAnimPaths | ra::views::filter([&](const std::string_view& bsaPath)
-	{
-		return sv::starts_with_ci(bsaPath, jsonFolderPath);
-	});
-	if (ra::empty(thisModsPaths))
-		return false;
-	
-	AnimOverrideData animOverrideData = {
-		.identifier = entry.form ? entry.form->refID : 0xFF,
-		.enable = true,
-		.conditionScriptText = entry.condition,
-		.pollCondition = entry.pollCondition,
-		.matchBaseGroupId = entry.matchBaseGroupId,
-	};
-	
-	OverrideBSAPathAnimationsForRange(animOverrideData, std::move(thisModsPaths));
-	return true;
-}
-
-void LoadJsonEntries(std::vector<JSONEntry>& jsonEntries, const std::vector<std::string_view>& bsaAnimPaths)
-{
-	ra::sort(jsonEntries, [&](const JSONEntry& entry1, const JSONEntry& entry2)
-	{
-		return entry1.loadPriority < entry2.loadPriority;
-	});
-	for (auto& entry : jsonEntries)
+	// A JSON entry's animations: those of the BSAs in the AnimGroupOverride folder, of the loaded archives and the
+	// loose files, each as a batch of its own and in that order (loose files end up on top)
+	void LoadJsonEntry(const JSONEntry& entry, const std::vector<std::string>& bsaAnimPaths, FolderCache& cache)
 	{
 		if (entry.form)
 			LOG(FormatString("JSON: Loading animations for form %X in path %s", entry.form->refID, entry.folderName.c_str()));
 		else
 			LOG("JSON: Loading animations for global override in path " + entry.folderName);
-		auto path = sv::stack_string<0x400>(R"(data\meshes\animgroupoverride\%s)", entry.folderName.c_str());
-		LoadJSONInBSAPaths(bsaAnimPaths, entry);
-		LoadDataFolderBSAPaths(entry);
-		if (fs::exists(path.str()))
-		{
-			if (!entry.form) // global
-				LoadPathsForPOV(path.str(), 0xFF, true, &entry);
-			else if (LoadForForm(path.str(), entry.form, &entry))
-				LOG(FormatString("Loaded from JSON folder %s to form %X", path.c_str(), entry.form->refID));
-		}
-	}
-}
 
-void LoadAnimPathsFromBSA(const fs::path& path, std::vector<std::string_view>& animPaths)
-{
-	auto* archive = ArchiveManager::OpenArchive(path.string().c_str(), ARCHIVE_TYPE_MESHES, false);
-	
-	const char* dirStrings = archive->pDirectoryStringArray;
-	const char* fileStrings = archive->pFileNameStringArray;
-	
-	if (!dirStrings || !fileStrings)
-		return;
-        
-	for (UInt32 i = 0; i < archive->kArchive.uiDirectories; ++i)
-	{
-		const size_t dirOffset = archive->pDirectoryStringOffsets[i];
-		std::string_view directory(dirStrings + dirOffset);
-
-		if (!directory.starts_with("meshes\\animgroupoverride\\"))
+		sv::stack_string<0x400> archiveFolder(R"(meshes\animgroupoverride\%s\)", entry.folderName.c_str());
+		std::vector<FolderFile> bsaFiles;
+		for (const auto& bsaPath : bsaAnimPaths)
 		{
-			LOG("Skipping BSA directory entry " + std::string(directory) + " as it is not meshes\\animgroupoverride");
-			continue;
-		}
-
-		for (UInt32 j = 0; j < archive->kArchive.pDirectories[i].uiFiles; ++j)
-		{
-			const size_t fileOffset = archive->pFileNameStringOffsets[i][j];
-			std::string_view fileName(fileStrings + fileOffset);
-			if (sv::get_file_extension(fileName) != ".kf")
+			if (!sv::starts_with_ci(bsaPath, archiveFolder.str()))
 				continue;
-			auto buffer = sv::stack_string<0x400>("%s\\%s", directory.data(), fileName.data());
-			animPaths.emplace_back(AddStringToPool(buffer));
+			const auto firstPerson = sv::contains_ci(bsaPath, "_1stperson");
+			if (firstPerson || sv::contains_ci(bsaPath, "_male"))
+				bsaFiles.push_back({ bsaPath, firstPerson });
 		}
+		const auto folderPath = fs::path(R"(Data\Meshes\AnimGroupOverride)") / entry.folderName;
+		std::error_code error;
+		const bool hasLooseFiles = fs::exists(folderPath, error);
+		const auto registerFor = [&](UInt32 identifier, bool isModIndex)
+		{
+			const auto source = GetSource(identifier, isModIndex, &entry);
+			auto numFiles = Register(source, bsaFiles);
+			numFiles += Register(source, GetArchiveFiles(entry.folderName, cache));
+			if (hasLooseFiles)
+				numFiles += Register(source, GetLooseFiles(folderPath, cache));
+			return numFiles;
+		};
+		if (!entry.form)
+			registerFor(Overrides::kEveryone, true);
+		else
+			ForEachForm(entry.form, [&](UInt32 identifier) { return registerFor(identifier, false); });
 	}
+
+	std::mutex s_loadMutex;
+	std::thread s_loadThread;
+	std::atomic<bool> s_loadFinished = false;
+
+	// A thread that is still joinable when the DLL's statics are destroyed (the game closed before anything looked an
+	// animation up) would end the process through std::terminate
+	struct LoadThreadDetacher
+	{
+		~LoadThreadDetacher()
+		{
+			if (s_loadThread.joinable())
+				s_loadThread.detach();
+		}
+	} s_loadThreadDetacher;
 }
 
 void LoadFileAnimPaths()
@@ -433,36 +453,92 @@ void LoadFileAnimPaths()
 	LOG("Loading file anims");
 
 	const fs::path dir = R"(Data\Meshes\AnimGroupOverride)";
-	std::vector<std::string_view> bsaAnimPaths;
-	std::vector<JSONEntry> jsonEntries;
-	if (exists(dir))
+	std::error_code error;
+	if (!fs::exists(dir, error))
 	{
-		for (const auto& iter : fs::directory_iterator(dir))
+		LOG(ToAnsi(dir) + " does not exist.");
+		return;
+	}
+	FolderCache cache;
+	std::vector<std::string> bsaAnimPaths;
+	std::vector<JSONEntry> jsonEntries;
+	// one folder or file that fails does not take the others with it
+	const auto guarded = [](const std::string& what, auto&& f)
+	{
+		try
 		{
-			const auto& path = iter.path();
-			const auto ext = path.extension().string();
-			if (iter.is_directory())
+			f();
+		}
+		catch (const std::exception& e)
+		{
+			ERROR_LOG(FormatString("AnimGroupOverride Error: %s: %s", what.c_str(), e.what()));
+		}
+	};
+	for (const auto& entry : GetSortedEntries(dir))
+	{
+		const auto& path = entry.path();
+		guarded(ToAnsi(path), [&]
+		{
+			if (IsDirectory(entry))
 			{
-				if (sv::equals_ci(ext, ".esp") || sv::equals_ci(ext, ".esm"))
+				if (HasExtension(path, L".esp") || HasExtension(path, L".esm"))
 				{
-					const auto fileName = path.filename().string();
+					const auto fileName = ToAnsi(path.filename());
 					if (const auto* mod = DataHandler::Get()->LookupModByName(fileName.c_str()))
-						LoadModAnimPaths(path, mod);
+						LoadModAnimPaths(path, mod, cache);
 					else
 						ERROR_LOG(FormatString("Mod with name %s is not loaded!", fileName.c_str()));
 				}
 			}
-			else if (sv::equals_ci(ext, ".json"))
+			else if (HasExtension(path, L".json"))
 				HandleJson(path, jsonEntries);
-			else if (sv::equals_ci(ext, ".bsa"))
+			else if (HasExtension(path, L".bsa"))
 				LoadAnimPathsFromBSA(path, bsaAnimPaths);
-		}
+		});
 	}
-	else
-	{
-		LOG(dir.string() + " does not exist.");
-	}
-	LoadJsonEntries(jsonEntries, bsaAnimPaths);
+	// entries of the same priority stay in the order they were read in (a sort that is not stable left which of two
+	// such entries ends up on top to the implementation)
+	std::ranges::stable_sort(jsonEntries, {}, &JSONEntry::loadPriority);
+	for (const auto& entry : jsonEntries)
+		guarded(entry.folderName, [&] { LoadJsonEntry(entry, bsaAnimPaths, cache); });
 }
 
+std::atomic<bool> FileAnimations::g_loaded = false;
 
+void FileAnimations::StartLoading()
+{
+	s_loadThread = std::thread([]
+	{
+		try
+		{
+			LoadFileAnimPaths();
+		}
+		catch (const std::exception& e)
+		{
+			ERROR_LOG(FormatString("AnimGroupOverride Error: loading stopped: %s", e.what()));
+		}
+		catch (...)
+		{
+			ERROR_LOG("AnimGroupOverride Error: loading stopped");
+		}
+		s_loadFinished.store(true, std::memory_order_release);
+	});
+}
+
+void FileAnimations::WaitUntilLoaded()
+{
+	std::scoped_lock lock(s_loadMutex);
+	if (s_loadThread.joinable())
+		s_loadThread.join();
+	g_loaded.store(true, std::memory_order_release);
+}
+
+bool FileAnimations::CheckLoaded()
+{
+	if (IsLoaded())
+		return true;
+	if (!s_loadFinished.load(std::memory_order_acquire))
+		return false;
+	WaitUntilLoaded();
+	return true;
+}

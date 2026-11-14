@@ -68,6 +68,9 @@
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="file_animations.cpp" />
+    <ClCompile Include="anim_overrides.cpp" />
+    <ClCompile Include="actor_overrides.cpp" />
+    <ClCompile Include="kf_loader.cpp" />
     <ClCompile Include="utility_knvse.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="LambdaVariableContext.cpp" />
@@ -173,6 +176,9 @@
     </ClInclude>
     <ClInclude Include="utility.h" />
     <ClInclude Include="file_animations.h" />
+    <ClInclude Include="anim_overrides.h" />
+    <ClInclude Include="actor_overrides.h" />
+    <ClInclude Include="kf_loader.h" />
     <ClInclude Include="game_types.h" />
     <ClInclude Include="MemoizedMap.h" />
     <ClInclude Include="stack_allocator.h" />

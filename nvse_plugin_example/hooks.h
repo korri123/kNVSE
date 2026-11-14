@@ -59,7 +59,8 @@ extern thread_local PluginGlobalData g_globals;
 
 namespace LoopingReloadPauseFix
 {
-    extern std::unordered_set<std::string_view> g_reloadStartBlendFixes;
+    // A sequence with a blendToReloadLoop text key, by name
+    void Add(std::string_view sequenceName);
 }
 
 void WriteDelayedHooks();

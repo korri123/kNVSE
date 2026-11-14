@@ -1,6 +1,5 @@
 #include "debug_tools.h"
 
-#if _DEBUG
 #include <algorithm>
 #include <cmath>
 #include <d3d9.h>
@@ -57,4 +56,3 @@ std::string DebugTools::Capture::BackBuffer(float scale)
         return "error\ncan't write " + path + "\n";
     return FormatString("ok\n%s\n%u %u\n", path.c_str(), width, height);
 }
-#endif

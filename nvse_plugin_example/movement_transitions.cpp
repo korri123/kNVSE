@@ -47,8 +47,7 @@ namespace
 		while (!paths.empty())
 		{
 			const auto index = GetRandomUInt(paths.size());
-			const auto animCtx = LoadCustomAnimation(set, *paths[index], animData);
-			auto* sequence = animCtx ? animCtx->anim.data : nullptr;
+			auto* sequence = Overrides::Load(set, *paths[index], animData).sequence;
 			if (sequence && IsAllowed(animData, sequence))
 				return sequence;
 			paths.erase(paths.begin() + index);
@@ -198,8 +197,7 @@ namespace
 		std::vector<BSAnimGroupSequence*> unmatched;
 		for (const auto* path : paths)
 		{
-			const auto animCtx = LoadCustomAnimation(*set, *path, animData);
-			auto* sequence = animCtx ? animCtx->anim.data : nullptr;
+			auto* sequence = Overrides::Load(*set, *path, animData).sequence;
 			if (!sequence || !IsAllowed(animData, sequence))
 				continue;
 			const float fMismatch = MovementBlendFixes::GetStrideMismatch(animData, sequence, sequence->m_fBeginKeyTime);
@@ -409,8 +407,7 @@ namespace
 		std::vector<BSAnimGroupSequence*> sequences;
 		for (const auto* path : paths)
 		{
-			const auto animCtx = LoadCustomAnimation(*set, *path, animData);
-			auto* sequence = animCtx ? animCtx->anim.data : nullptr;
+			auto* sequence = Overrides::Load(*set, *path, animData).sequence;
 			auto* extraData = sequence ? SequenceExtraDatas::GetOrCreate(sequence) : nullptr;
 			if (!extraData)
 				continue;

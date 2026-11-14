@@ -36,14 +36,6 @@
 
 std::span<AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<AnimGroupInfo*>(0x11977D8), 245 };
 
-AnimOverrideMap g_animGroupThirdPersonMap;
-AnimOverrideMap g_animGroupFirstPersonMap;
-
-
-// mod index map
-AnimOverrideMap g_animGroupModIdxThirdPersonMap;
-AnimOverrideMap g_animGroupModIdxFirstPersonMap;
-
 AnimData* GetAnimDataForPov(UInt32 playerPov, Actor* actor)
 {
 	if (actor == g_thePlayer && playerPov)
@@ -98,13 +90,6 @@ bool Cmd_ForceStopIdle_Execute(COMMAND_ARGS)
 	return true;
 }
 
-GameAnimMap* CreateGameAnimMap(UInt32 bucketSize)
-{
-	// see 0x48F9F1
-	auto* alloc = static_cast<GameAnimMap*>(FormHeap_Allocate(0x10));
-	return GameFuncs::NiTPointerMap_Init(alloc, bucketSize);
-}
-
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID)
 {
 	auto* seqBase = animData->mapAnimSequenceBase->Lookup(groupID);
@@ -115,155 +100,26 @@ BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID)
 	return nullptr;
 }
 
+// The KF's own sequence, as loaded: what every Animation's clone of it is made from, and shares its text keys with.
+// For script commands that change it: the KF stays loaded for the session, or the changes would be gone once the last
+// Animation that has it is
 BSAnimGroupSequence* GetAnimationByPath(const char* path)
 {
-	const auto* kfModel = ModelLoader::LoadKFModel(path);
+	const auto* kfModel = KFLoader::Pin(AddStringToPool(ToLower(path)).data());
 	return kfModel ? kfModel->controllerSequence : nullptr;
 }
 
-// intentional const char*, anim paths are pooled and their pointers remain consistent throughout lifetime
-std::unordered_map<std::pair<const char*, AnimData*>, BSAnimationContext, pair_hash, pair_equal> g_cachedAnimMap;
-
-
-#if _DEBUG
-NiTPointerMap_t<const char*, NiAVObject*>::Entry entry;
-#endif
-
-/*
- * BSAnimGroupSequence ref count is 3 after LoadAnimation; it has the following references:
- * - The AnimSequenceBase
- * - The KFModel
- * - The NiControllerManager sequence list
- * After a call to DeleteAnimSequence it will be reduced to 1, only KFModel reference persists and is reused next time
- * when LoadAnimation is called.
- */
-std::shared_mutex g_loadCustomAnimationMutex;
-
+// Animation::~Animation: the text key tracking of its sequences goes. Not by the actor: the Animation of a deleted
+// reference is destroyed after its actor was freed (by the garbage collector on the main thread), and what
+// animData->actor then points at is not an actor
 void HandleOnAnimDataDelete(AnimData* animData)
 {
-	const auto actorId = animData->actor ? animData->actor->refID : 0;
-	if (actorId)
-	{
-		std::unique_lock lock(g_animTimeMutex);
-		std::erase_if(g_timeTrackedAnims, _L(auto& p, p.second->actorId == actorId));
-		std::erase_if(g_burstFireQueue, _L(auto& p, p.actorId == actorId));
-	}
-	
-	{
-		std::unique_lock lock(g_pollConditionMutex);
-		std::erase_if(g_timeTrackedGroups, _L(auto & iter, iter.second->animData == animData));
-	}
-	
-	{
-		std::unique_lock lock(g_loadCustomAnimationMutex);
-		std::erase_if(g_cachedAnimMap, _L(auto& p, p.first.second == animData));
-	}
-}
-
-thread_local GameAnimMap* s_customMap = nullptr;
-
-std::optional<BSAnimationContext> LoadCustomAnimation(std::string_view path, AnimData* animData)
-{
-	const auto key = std::make_pair(path.data(), animData);
-	std::optional<BSAnimationContext> cached;
-	{
-		std::shared_lock lock(g_loadCustomAnimationMutex);
-		if (const auto iter = g_cachedAnimMap.find(key); iter != g_cachedAnimMap.end())
-			cached = iter->second;
-	}
-	if (cached)
-	{
-		auto* manager = animData->controllerManager;
-		if (cached->anim->m_pkOwner == manager)
-			return cached;
-		// The engine removed the sequence from the manager: Animation::AnimIdleFree removes the sequence a special or
-		// dynamic idle played, which is this one when it replaced the idle's KF. Started without an owner it would never
-		// update, and the idle that plays it would never end. The cached base still holds a reference, so no other
-		// actor's Animation::AddAnimation takes this sequence (it clones unless the KFModel holds the only reference).
-		if (!cached->anim->m_pkOwner && manager && manager->AddSequence(cached->anim, NiFixedString(), true))
-			return cached;
-		ERROR_LOG(FormatString("Failed to add anim %s back to the controller manager of actor %X", path.data(),
-			animData->actor ? animData->actor->refID : 0));
-		return std::nullopt;
-	}
-
-	const auto tryCreateAnimation = [&]() -> std::optional<BSAnimationContext>
-	{
-		auto* kfModel = ModelLoader::LoadKFModel(path.data());
-		if (kfModel && kfModel->animGroup && animData)
-		{
-			const auto groupId = kfModel->animGroup->groupID;
-
-			if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
-			{
-				// fix memory leak, can't previous anim in map since it might be blending
-				auto* anim = base->GetSequenceByIndex(-1);
-				if (anim && _stricmp(anim->m_kName, path.data()) == 0)
-					return BSAnimationContext(anim, base);
-				GameFuncs::NiTPointerMap_RemoveKey(animData->mapAnimSequenceBase, groupId);
-			}
-			const auto oldMovementQueuedGroupId = animData->queuedGroupIDs[kSequence_Movement];
-			if (GameFuncs::LoadAnimation(animData, kfModel, false))
-			{
-				if (animData->queuedGroupIDs[kSequence_Movement] != oldMovementQueuedGroupId)
-					// hack fix for hack fix at 0x4946D2
-					animData->queuedGroupIDs[kSequence_Movement] = oldMovementQueuedGroupId;
-				if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
-				{
-					BSAnimGroupSequence* anim;
-					if (base && ((anim = base->GetSequenceByIndex(-1))))
-					{
-						auto iter = g_cachedAnimMap.emplace(key, BSAnimationContext(anim, base));
-						return iter.first->second;
-					}
-					ERROR_LOG("Map returned null anim " + std::string(path));
-				}
-				else
-					ERROR_LOG("Failed to lookup anim " + std::string(path));
-			}
-			else
-				ERROR_LOG(FormatString("Failed to load anim %s for anim data of actor %X", path.data(), animData->actor->refID));
-		}
-		else
-			ERROR_LOG("Failed to load KF Model " + std::string(path));
-		return std::nullopt;
-	};
-
-	std::unique_lock lock(g_loadCustomAnimationMutex);
-	auto* defaultMap = animData->mapAnimSequenceBase;
-
-	if (!s_customMap)
-		s_customMap = CreateGameAnimMap(1);
-	
-	animData->mapAnimSequenceBase = s_customMap;
-	const auto result = tryCreateAnimation();
-	animData->mapAnimSequenceBase = defaultMap;
-	s_customMap->Clear();
-	lock.unlock();
-
-	if (result && result->anim)
-		AnimFixes::FixWrongAKeyInRespectEndKey(animData, result->anim);
-	
-	return result;
-}
-
-
-std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, const AnimPath& animPath, AnimData* animData)
-{
-	const auto animCtx = LoadCustomAnimation(animPath.path, animData);
-	if (!animCtx)
-		return std::nullopt;
-	animBundle.linkedSequences.insert(animCtx->anim);
-	if (animCtx->anim && (animPath.isStartAnim || animPath.isStopAnim))
-		TransitionAnims::Prepare(animCtx->anim);
-	return animCtx;
-}
-
-std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, UInt16 groupId, AnimData* animData)
-{
-	if (const auto* animPath = GetAnimPath(animBundle, groupId, animData))
-		return LoadCustomAnimation(animBundle, *animPath, animData);
-	return std::nullopt;
+	// its sequences are still in its controller manager here, and go with it
+	if (g_lastLoopSequence && animData->controllerManager && g_lastLoopSequence->m_pkOwner == animData->controllerManager)
+		g_lastLoopSequence = nullptr;
+	std::unique_lock lock(g_animTimeMutex);
+	std::erase_if(g_timeTrackedAnims, _L(auto& p, p.second->animData == animData));
+	std::erase_if(g_burstFireQueue, _L(auto& p, p.animData == animData));
 }
 
 AnimTime::~AnimTime()
@@ -279,27 +135,9 @@ AnimTime::~AnimTime()
 	}
 }
 
-// Make sure that Aim, AimUp and AimDown all use the same index
-AnimPath* HandleAimUpDownRandomness(UInt32 animGroupId, std::vector<AnimPath*>& anims)
-{
-	UInt32 baseId;
-	if (const auto animGroupMinor = animGroupId & 0xFF; animGroupMinor >= kAnimGroup_Aim && animGroupMinor <= kAnimGroup_AimISDown && (baseId = kAnimGroup_Aim)
-		|| animGroupMinor >= kAnimGroup_AttackLeft && animGroupMinor <= kAnimGroup_AttackSpin2ISDown && (baseId = kAnimGroup_AttackLeft) 
-		|| animGroupMinor >= kAnimGroup_PlaceMine && animGroupMinor <= kAnimGroup_AttackThrow8ISDown && (baseId = kAnimGroup_PlaceMine))
-	{
-		static unsigned int s_lastRandomId = 0;
-		if ((animGroupMinor - baseId) % 3 == 0 || s_lastRandomId >= anims.size())
-			s_lastRandomId = GetRandomUInt(anims.size());
-
-		return anims.at(s_lastRandomId);
-	}
-	return nullptr;
-}
-
 std::list<BurstFireData> g_burstFireQueue;
 
 TimeTrackedAnimsMap g_timeTrackedAnims;
-TimeTrackedGroupsMap g_timeTrackedGroups;
 
 void EraseTimeTrackedAnim(BSAnimGroupSequence* anim)
 {
@@ -315,15 +153,16 @@ enum class KeyCheckType
 	KeyEquals, KeyStartsWith
 };
 
-/*
- * 	std::unique_ptr<TimedExecution<Script*>> scriptLineKeys = nullptr;
-	std::unique_ptr<TimedExecution<Script*>> scriptCallKeys = nullptr;
-	std::unique_ptr<TimedExecution<Sound>> soundPaths = nullptr;
- */
-
-std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptLineExecutions;
-std::unordered_map<BSAnimGroupSequence*, TimedExecution<Script*>> g_scriptCallExecutions;
-std::unordered_map<BSAnimGroupSequence*, TimedExecution<BSSoundHandle>> g_scriptSoundExecutions;
+// The Script: and scriptLine: keys of a KF, parsed once. By the KF's path, which every sequence made from it has as its
+// name (they were kept by the KF model's own sequence, looked up with a load that counted a use of the model on every
+// play and never gave one back)
+struct FixedStringHash
+{
+	size_t operator()(const NiFixedString& string) const { return std::hash<const char*>()(string.CStr()); }
+};
+using TimedScriptsMap = std::unordered_map<NiFixedString, TimedExecution<Script*>, FixedStringHash>;
+TimedScriptsMap g_scriptLineExecutions;
+TimedScriptsMap g_scriptCallExecutions;
 std::recursive_mutex g_animTimeMutex;
 
 AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, bool createIfNoKeys)
@@ -335,29 +174,18 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	const auto textKeys = anim->m_spTextKeys->GetKeys();
 	auto* actor = animData->actor;
 	AnimTime* animTimePtr = nullptr;
-	BSAnimGroupSequence* baseAnim = nullptr;
 	const auto getAnimTimeStruct = [&]() -> AnimTime&
 	{
 		if (!animTimePtr)
 		{
-			const auto iter = g_timeTrackedAnims.emplace(anim, std::make_unique<AnimTime>(actor, anim));
+			const auto iter = g_timeTrackedAnims.emplace(anim, std::make_unique<AnimTime>(actor, animData, anim));
 			animTimePtr = iter.first->second.get();
 		}
 		return *animTimePtr;
 	};
-	const auto createTimedExecution = [&]<typename T>(std::unordered_map<BSAnimGroupSequence*, T>& map)
+	const auto createTimedExecution = [&](TimedScriptsMap& map)
 	{
-		if (!baseAnim)
-		{
-			// idle anims are destroyed after they are done playing, so we can't rely on their pointers being the same in the map
-			auto* kfModel = ModelLoader::LoadKFModel(anim->m_kName.CStr());
-			if (kfModel)
-				baseAnim = kfModel->controllerSequence;
-			else
-				ERROR_LOG("Failed to load kf model in HandleExtraOperations for " + std::string(anim->m_kName.CStr()));
-		}
-		auto* key = baseAnim ? baseAnim : anim;
-		const auto iter = map.emplace(key, T());
+		const auto iter = map.try_emplace(anim->m_kName);
 		auto* timedExecution = &iter.first->second;
 		const bool uninitialized = iter.second;
 		return std::make_pair(timedExecution, uninitialized);
@@ -415,7 +243,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 		parseForKeys("eject", ejectKeys);
 		if (!hitKeys.empty() || !ejectKeys.empty())
 		{
-			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, anim, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false);
+			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, anim, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false, animData);
 		}
 	}
 	const auto hasRespectEndKey = hasKey({"respectEndKey", "respectTextKeys"});
@@ -428,7 +256,9 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	}
 	const auto baseGroupID = anim->animGroup ? anim->animGroup->GetBaseGroupID() : kAnimGroup_Invalid;
 
-	if (hasKey({"interruptLoop"}) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS))
+	// DecreaseAttackTimer reads it for the player only: another actor's would replace the player's
+	if (hasKey({"interruptLoop"}) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS)
+		&& animData->actor == g_thePlayer)
 	{
 		// IS allowed so that anims can finish after releasing LMB (handled in hook)
 		// *reinterpret_cast<UInt8*>(g_animationHookContext.groupID) = kAnimGroup_AttackLoopIS;
@@ -484,7 +314,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	}
 	if (hasKey({"blendToReloadLoop"}))
 	{
-		LoopingReloadPauseFix::g_reloadStartBlendFixes.insert(anim->m_kName.CStr());
+		LoopingReloadPauseFix::Add(anim->m_kName.Str());
 	}
 	if (hasKey({"scriptLine:" }, KeyCheckType::KeyStartsWith))
 	{
@@ -536,7 +366,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	}
 
 	const auto basePath = GetAnimBasePath(anim->m_kName.Str());
-	if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
+	if (Overrides::HasCustomGroupPaths(basePath))
 	{
 		auto& animTime = getAnimTimeStruct();
 		animTime.hasCustomAnimGroups = true;
@@ -564,337 +394,6 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	}
 	
 	return nullptr;
-}
-
-std::map<std::pair<FormID, SavedAnims*>, int> g_actorAnimOrderMap;
-
-void FilterPartialReloads(std::vector<AnimPath*>& candidates, Actor* actor)
-{
-	const auto didPartialReload = OnReloadHandler::GetLastReloadForActor(actor) == ReloadType::Partial;
-	
-	candidates = candidates | std::views::filter([=](const auto& animPath) {
-		return animPath->partialReload == didPartialReload;
-	}) | std::ranges::to<std::vector>();
-}
-
-void FilterAmmoSwaps(std::vector<AnimPath*>& candidates, Actor* actor)
-{
-	const auto didAmmoSwap = OnReloadHandler::GetLastReloadForActor(actor) == ReloadType::AmmoSwap;
-	
-	candidates = candidates | std::views::filter([=](const auto& animPath)
-	{
-		return animPath->isAmmoSwap == didAmmoSwap;
-	}) | std::ranges::to<std::vector<AnimPath*>>();
-}
-
-// Special and dynamic idles (TESIdleForm, hit reactions, Pip-Boy) all share one anim group: an override replaces only the
-// idle whose KF has its file name. Animation::SpecialIdlePlay adds the idle's sequence to the map before playing the group.
-std::optional<std::string_view> GetPlayingIdleFileStem(AnimData* animData, UInt16 groupId)
-{
-	if (groupId != kAnimGroup_DynamicIdle && groupId != kAnimGroup_SpecialIdle)
-		return std::nullopt;
-	auto* base = animData->mapAnimSequenceBase->Lookup(groupId);
-	auto* anim = base ? base->GetSequenceByIndex(-1) : nullptr;
-	if (!anim)
-		return std::nullopt;
-	return sv::get_file_stem(anim->m_kName.CStr());
-}
-
-bool IsIdleFileStem(const AnimPath& animPath, std::string_view idleFileStem)
-{
-	return sv::equals_ci(sv::get_file_stem(animPath.path), idleFileStem);
-}
-
-void SavedAnims::Load()
-{
-	if (loaded.load(std::memory_order_acquire))
-		return;
-	// sets are shared by every actor and loaded by whichever animation thread asks first
-	static std::mutex s_loadMutex;
-	std::scoped_lock lock(s_loadMutex);
-	if (loaded.load(std::memory_order_relaxed))
-		return;
-	if (!conditionScript && !conditionScriptText.empty())
-	{
-		conditionScript = CompileConditionScript(conditionScriptText);
-		if (!conditionScript)
-		{
-			const auto setPath = !anims.empty() ? anims[0]->path : additiveAnimPath;
-			ERROR_LOG(FormatString("Condition '%s' of %s failed to compile (see the console for the error), its animations are disabled",
-				conditionScriptText.data(), setPath.empty() ? "an animation set" : std::string(setPath).c_str()));
-			conditionFailed = true;
-		}
-	}
-	for (const auto& anim : anims)
-	{
-		const auto fileStem = sv::get_file_stem(anim->path);
-		if (!hasOrder && sv::contains_ci(fileStem, "_order_"))
-			hasOrder = true;
-		if (!anim->partialReload && sv::contains_ci(fileStem, "_partial"))
-		{
-			anim->partialReload = true;
-			hasPartialReload = true;
-		}
-		if (!anim->isAmmoSwap && sv::contains_ci(fileStem, "_ammo_swap"))
-		{
-			anim->isAmmoSwap = true;
-			hasAmmoSwap = true;
-		}
-	}
-	if (hasOrder)
-		std::ranges::sort(anims, [&](const auto& a, const auto& b) {return a->path < b->path; });
-	loaded.store(true, std::memory_order_release);
-}
-
-// transition: None for the group's animation, else its start or stop animations (TransitionAnims). Sets without a
-// file of the kind asked for are passed over: one with only start and stop animations must not hide the walk of the
-// sets below it
-std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, TransitionKind transition)
-{
-	if (const auto stacksIter = overrides.stacks.find(groupId); stacksIter != overrides.stacks.end())
-	{
-		auto& animStacks = stacksIter->second;
-		auto* actor = animData->actor;
-		const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
-		
-		auto& stack = animStacks.anims;
-		for (auto& ctx : ra::reverse_view(stack))
-		{
-			if (!ctx->MatchesConditions(actor) || ctx->disabled)
-				continue;
-			if ((ctx->hasTransitionAnims || transition != TransitionKind::None) && !TransitionAnims::HasPaths(*ctx, transition))
-				continue;
-			const auto initAnimTime = [&](SavedAnims* savedAnims)
-			{
-				std::unique_lock lock(g_pollConditionMutex);
-				auto& animTime = g_timeTrackedGroups[std::make_pair(savedAnims, animData)];
-				if (!animTime)
-					animTime = std::make_unique<SavedAnimsTime>();
-				animTime->conditionScript = *savedAnims->conditionScript;
-				animTime->groupId = groupId;
-				animTime->actorId = animData->actor->refID;
-				animTime->animData = animData;
-			};
-			ctx->Load();
-			if (ctx->conditionFailed)
-				continue;
-			if (idleFileStem && ra::none_of(ctx->anims, _L(const auto& animPath, IsIdleFileStem(*animPath, *idleFileStem))))
-				continue;
-			if (ctx->conditionScript)
-			{
-				// start and stop animations are looked up when one is due: the poll plays the set's group
-				if (ctx->pollCondition && transition == TransitionKind::None)
-					initAnimTime(ctx.get()); // init'd here so conditions can activate despite not being overridden
-				NVSEArrayVarInterface::Element result;
-				if (!CallFunction(*ctx->conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
-					continue;
-			}
-			if (!ctx->anims.empty())
-			{
-				return AnimationResult(ctx.get());
-			}
-		}
-	}
-	return std::nullopt;
-}
-
-std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, FullAnimGroupID animGroupId, AnimData* animData, TransitionKind transition)
-{
-	if (const auto mapIter = map.find(id); mapIter != map.end())
-	{
-		return PickAnimation(mapIter->second, animGroupId, animData, transition);
-	}
-	return std::nullopt;
-}
-
-AnimOverrideMap& GetMap(bool firstPerson)
-{
-	return firstPerson ? g_animGroupFirstPersonMap : g_animGroupThirdPersonMap;
-}
-
-AnimOverrideMap& GetModIndexMap(bool firstPerson)
-{
-	return firstPerson ? g_animGroupModIdxFirstPersonMap : g_animGroupModIdxThirdPersonMap;
-}
-
-// preserve randomization of variants
-thread_local AnimPathCache g_animPathFrameCache;
-
-AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
-{
-	const auto cacheKey = std::make_pair(&ctx, animData);
-	AnimPath** cachePtr = nullptr;
-	const auto useCache = g_isThreadCacheEnabled;
-	if (useCache)
-	{
-		const auto [result, isNew] = g_animPathFrameCache.emplace(cacheKey, nullptr);
-		if (!isNew)
-			return result->second;
-		cachePtr = &result->second;
-	}
-
-	ctx.Load();
-		
-	Actor* actor = animData->actor;
-	
-	const auto getAnimPath = [&]() -> AnimPath*
-	{
-		const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
-		if (ctx.anims.size() == 1 && !idleFileStem && !ctx.hasTransitionAnims) [[likely]]
-			return ctx.anims[0].get();
-		auto candidates = ctx.anims 
-            | std::views::transform([](const auto& anim) { return anim.get(); }) 
-            | std::ranges::to<std::vector<AnimPath*>>();
-
-		if (idleFileStem)
-		{
-			candidates = candidates | std::views::filter([&](const AnimPath* animPath)
-			{
-				return IsIdleFileStem(*animPath, *idleFileStem);
-			}) | std::ranges::to<std::vector<AnimPath*>>();
-		}
-		// start and stop animations only play through MovementTransitions and AimTransitions
-		if (ctx.hasTransitionAnims)
-		{
-			candidates = candidates | std::views::filter([](const AnimPath* animPath)
-			{
-				return !animPath->isStartAnim && !animPath->isStopAnim;
-			}) | std::ranges::to<std::vector<AnimPath*>>();
-		}
-		const auto baseGroupId = static_cast<AnimGroupID>(groupId);
-		if (IsAnimGroupReload(baseGroupId))
-		{
-			if (ctx.hasAmmoSwap)
-				FilterAmmoSwaps(candidates, actor);
-			if (ctx.hasPartialReload)
-				FilterPartialReloads(candidates, actor);
-		}
-
-		if (candidates.empty())
-			return nullptr;
-		
-		if (candidates.size() == 1)
-			return candidates.front();
-		
-		if (!ctx.hasOrder)
-		{
-			// Make sure that Aim, AimUp and AimDown all use the same index
-			if (auto* path = HandleAimUpDownRandomness(groupId, candidates))
-				return path;
-			// pick random variant
-			return candidates.at(GetRandomUInt(candidates.size()));
-		}
-		
-		// ordered
-		return candidates.at(g_actorAnimOrderMap[std::make_pair(actor->refID, &ctx)]++ % candidates.size());
-	};
-
-	const auto result = getAnimPath();
-	if (useCache)
-		*cachePtr = result;
-	return result;
-}
-
-BSAnimGroupSequence* LoadAnimationPath(const AnimationResult& result, AnimData* animData, UInt16 groupId)
-{
-	auto& animBundle = *result.animBundle;
-	if (const auto animCtx = LoadCustomAnimation(animBundle, groupId, animData))
-	{
-		BSAnimGroupSequence* anim = animCtx->anim;
-		if (!anim)
-			return nullptr;
-		HandleExtraOperations(animData, anim);
-		if (!animBundle.additiveAnimPath.empty())
-		{
-			if (auto* additiveAnim = FindOrLoadAnim(animData, animBundle.additiveAnimPath.data()))
-				AdditiveManager::PlayManagedAdditiveAnim(animData, anim, additiveAnim);
-		}
-		return anim;
-	}
-	return nullptr;
-}
-
-// clear this cache every frame
-thread_local AnimationResultCache g_animationResultCache;
-
-std::shared_mutex g_overrideMapMutex;
-
-std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData, TransitionKind transition)
-{
-	// wait for file loading to finish
-	if (g_animFileThread.joinable())
-		g_animFileThread.join();
-
-	if (!animData || !animData->actor || !animData->actor->baseProcess)
-		return std::nullopt;
-	const auto cacheKey = std::make_pair(animGroupId | static_cast<UInt32>(transition) << 16, animData);
-	std::optional<AnimationResult>* cachePtr = nullptr;
-	const auto useCache = g_isThreadCacheEnabled;
-	if (useCache)
-	{
-		const auto [result, isNew] = g_animationResultCache.emplace(cacheKey, std::nullopt);
-		if (!isNew)
-			return result->second;
-		cachePtr = &result->second;
-	}
-#if _DEBUG
-	int _debug = 0;
-#endif
-	
-	const auto getActorAnimation = [&](FullAnimGroupID animGroupId) -> std::optional<AnimationResult>
-	{
-		std::shared_lock lock(g_overrideMapMutex);
-		
-		std::optional<AnimationResult> result;
-		std::optional<AnimationResult> modIndexResult;
-		StackVector<UInt8, 8> visitedModIndices;
-
-		const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
-		auto& map = GetMap(firstPerson);
-		auto* actor = animData->actor;
-		auto& modIndexMap = GetModIndexMap(firstPerson);
-		const auto getFormAnimation = [&](TESForm* form) -> std::optional<AnimationResult>
-		{
-			if (auto lResult = GetAnimationFromMap(map, form->refID, animGroupId, animData, transition))
-				return lResult;
-			// mod index
-			if (!modIndexResult.has_value() && ra::find(*visitedModIndices, form->GetModIndex()) == visitedModIndices->end())
-			{
-				modIndexResult = GetAnimationFromMap(modIndexMap, form->GetModIndex(), animGroupId, animData, transition);
-				visitedModIndices->push_back(form->GetModIndex());
-			}
-			return std::nullopt;
-		};
-		// actor ref ID
-		if ((result = getFormAnimation(actor)))
-			return result;
-		// weapon form ID
-		if (auto* weaponInfo = actor->baseProcess->GetWeaponInfo(); weaponInfo && weaponInfo->weapon && (result = getFormAnimation(weaponInfo->weapon)))
-			return result;
-		// base form ID
-		if (auto* baseForm = actor->baseForm; baseForm && ((result = getFormAnimation(baseForm))))
-			return result;
-		// race form ID
-		auto* race = actor->GetRace();
-		if (race && ((result = getFormAnimation(race))))
-			return result;
-		// actor base
-		auto* actorBase = actor->GetActorBase();
-		if (actorBase && ((result = getFormAnimation(actorBase))))
-			return result;
-		
-		// mod index (set in getFormAnimation if exists)
-		if (modIndexResult)
-			return modIndexResult;
-		// non-form ID dependent animations (global replacers)
-		if ((result = PickAnimation(modIndexMap[0xFF], animGroupId, animData, transition)))
-			return result;
-		return std::nullopt;
-	};
-	const auto result = getActorAnimation(animGroupId);
-	if (useCache)
-		*cachePtr = result;
-	return result;
 }
 
 std::span<const char*> s_moveTypeNames{ reinterpret_cast<const char**>(0x1197798), 3 };
@@ -930,21 +429,19 @@ std::string_view GetBaseAnimGroupName(const std::string_view name)
 	return oName;
 }
 
-static std::unordered_map<std::string_view, AnimGroupID, CaseInsensitiveHash, CaseInsensitiveEqual> s_animGroupNameToIDMap;
-
-
 AnimGroupID GroupNameToId(std::string_view name)
 {
-	if (const auto iter = s_animGroupNameToIDMap.find(name); iter != s_animGroupNameToIDMap.end())
-		return iter->second;
-	const auto iter = ra::find_if(g_animGroupInfos, _L(AnimGroupInfo& i, sv::equals_ci(i.name, name)));
-	if (iter == g_animGroupInfos.end())
-		return kAnimGroup_Invalid;
-	const auto groupId = iter - g_animGroupInfos.begin();
-	assert(groupId < kAnimGroup_Max);
-	const auto result = static_cast<AnimGroupID>(groupId);
-	s_animGroupNameToIDMap[std::string_view(iter->name)] = result;
-	return result;
+	// Filled once and only read from then on: file names are resolved on the thread that registers the override files
+	// while KFs load on others (AnimFixes)
+	static const auto s_animGroupNameToIDMap = []
+	{
+		std::unordered_map<std::string_view, AnimGroupID, CaseInsensitiveHash, CaseInsensitiveEqual> map;
+		for (auto i = 0u; i < g_animGroupInfos.size(); ++i)
+			map.try_emplace(g_animGroupInfos[i].name, static_cast<AnimGroupID>(i));
+		return map;
+	}();
+	const auto iter = s_animGroupNameToIDMap.find(name);
+	return iter != s_animGroupNameToIDMap.end() ? iter->second : kAnimGroup_Invalid;
 }
 
 AnimGroupID SimpleGroupNameToId(std::string_view name)
@@ -981,8 +478,6 @@ bool TESAnimGroup::IsLoopingReload() const
 	return animGroupId >= kAnimGroup_ReloadW && animGroupId <= kAnimGroup_ReloadZ;
 }
 
-constexpr UInt16 INVALID_FULL_GROUP_ID = 0xFFFF;
-
 UInt16 GetAnimGroupId(std::string_view path)
 {
 	const auto toFullId = [&](UInt8 groupId)
@@ -999,14 +494,16 @@ UInt16 GetAnimGroupId(std::string_view path)
 	if (const auto id = SimpleGroupNameToId(baseName); id != kAnimGroup_Invalid)
 		return toFullId(id);
 	
-	// try to load kf model which is slower but if file name is wrong then we have to fall back
-	if (const auto* kfModel = ModelLoader::LoadKFModel(path.data()))
+	// The file name does not tell: the KF does, which is slower. Loaded for that alone, so it is given back
+	auto groupId = Overrides::kInvalidGroupId;
+	if (const auto* kfModel = KFLoader::Acquire(path.data()))
+	{
 		if (kfModel->animGroup)
-			return kfModel->animGroup->groupID;
-	return INVALID_FULL_GROUP_ID;
+			groupId = kfModel->animGroup->groupID;
+		KFLoader::Release(path.data());
+	}
+	return groupId;
 }
-
-AnimGroupPathsMap g_customAnimGroupPaths;
 
 std::string_view GetAnimBasePath(std::string_view path)
 {
@@ -1029,175 +526,21 @@ std::string_view ExtractCustomAnimGroupName(std::string_view path)
 	return "";
 }
 
-bool RegisterCustomAnimGroupAnim(std::string_view path)
-{
-	if (!ExtractCustomAnimGroupName(path).empty())
-	{
-		const auto basePath = GetAnimBasePath(path);
-		if (!basePath.empty())
-		{
-			g_customAnimGroupPaths[std::string(basePath)].insert(std::string(path));
-			return true;
-		}
-	}
-	return false;
-}
-
-bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
-{
-	std::unique_lock lock(g_overrideMapMutex);
-	const auto path = data.path;
-	const auto groupId = GetAnimGroupId(path);
-	if (groupId == INVALID_FULL_GROUP_ID)
-	{
-		ERROR_LOG(FormatString("Failed to resolve file '%s'", path.data()));
-		return false;
-	}
-	auto& animGroupMap = map[data.identifier];
-	auto& stacks = animGroupMap.stacks[groupId];
-
-	auto& stack = stacks.anims;
-	const auto findFn = [&](const std::unique_ptr<SavedAnims>& a)
-	{
-		return ra::any_of(a->anims, _L(const auto& s, sv::equals_ci(path, s->path)));
-	};
-	
-	if (!data.enable)
-	{
-		// remove from stack
-		if (const auto it = ra::find_if(stack, findFn); it != stack.end())
-		{
-			(*it)->disabled = true;
-			return true;
-		}
-		return false;
-	}
-	// check if stack already contains path
-	if (const auto iter = std::ranges::find_if(stack, findFn); iter != stack.end())
-	{
-		auto& existingEntry = **iter;
-		existingEntry.disabled = false;
-		if (data.conditionScript != existingEntry.conditionScript) // hot reload
-		{
-			existingEntry.conditionScript = data.conditionScript;
-			existingEntry.conditionScriptText = data.conditionScriptText;
-		}
-		// move iter to the top of stack
-		std::rotate(iter, std::next(iter), stack.end());
-		return true;
-	}
-
-	if (RegisterCustomAnimGroupAnim(path))
-	{
-		// we do not want to add custom anim group anims to the stack or otherwise they'll play
-		return true;
-	}
-
-	auto folderConditionType = FolderConditionType::None;
-	std::function<bool(const Actor*)> folderCondition;
-	if (sv::contains_ci(path, R"(\mod1\)"))
-	{
-		folderConditionType = FolderConditionType::Mod1;
-		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(kWeaponMod_Flag1); };
-	}
-	else if (sv::contains_ci(path, R"(\mod2\)"))
-	{
-		folderConditionType = FolderConditionType::Mod2;
-		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(kWeaponMod_Flag2); };
-	}
-	else if (sv::contains_ci(path, R"(\mod3\)"))
-	{
-		folderConditionType = FolderConditionType::Mod3;
-		folderCondition = [&](const Actor* actor) { return actor->HasWeaponWithMod(kWeaponMod_Flag3); };
-	}
-	else if (sv::contains_ci(path, R"(\hurt\)"))
-	{
-		folderConditionType = FolderConditionType::Hurt;
-		folderCondition = [&](const Actor* actor) { return actor->HasCrippledLegs(); };
-	}
-	else if (sv::contains_ci(path, R"(\human\)"))
-	{
-		folderConditionType = FolderConditionType::Human;
-		folderCondition = [&](const Actor* actor) { return actor == g_thePlayer || IS_ID(actor->baseForm, TESNPC); };
-	}
-	else if (sv::contains_ci(path, R"(\male\)"))
-	{
-		folderConditionType = FolderConditionType::Male;
-		folderCondition = [&](const Actor* actor) { return !actor->IsFemale(); };
-	}
-	else if (sv::contains_ci(path, R"(\female\)"))
-	{
-		folderConditionType = FolderConditionType::Female;
-		folderCondition = [&](const Actor* actor) { return actor->IsFemale(); };
-	}
-	
-	// if not inserted before, treat as variant; else add to stack as separate set
-	auto [_, newItem] = data.groupIdFillSet.emplace(groupId);
-	if (newItem || stack.empty() || folderConditionType != stack.back()->folderConditionType)
-		stack.emplace_back(std::make_unique<SavedAnims>());
-	
-	auto& anims = *stack.back();
-
-	if (const auto stem = sv::get_file_stem(path); sv::ends_with_ci(stem, "_additive"))
-	{
-		anims.additiveAnimPath = path;
-		return true;
-	}
-	
-	TransitionAnims::TagPath(anims, *anims.anims.emplace_back(std::make_unique<AnimPath>(path)), groupId);
-	anims.matchBaseGroupId = data.matchBaseGroupId;
-	anims.conditionScript = data.conditionScript;
-	anims.pollCondition = data.pollCondition;
-	anims.conditionScriptText = data.conditionScriptText;
-	anims.folderConditionType = folderConditionType;
-	anims.folderCondition = std::move(folderCondition);
-	
-	return true;
-}
-
-bool OverrideFormAnimation(AnimOverrideData& data, bool firstPerson)
-{
-	auto& map = GetMap(firstPerson);
-	return SetOverrideAnimation(data, map);
-}
-
-bool OverrideModIndexAnimation(AnimOverrideData& data, bool firstPerson)
-{
-	auto& map = GetModIndexMap(firstPerson);
-	return SetOverrideAnimation(data, map);
-}
-
 void PluginOverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition)
 {
-	AnimOverrideData animOverrideData = {
-		.path = AddStringToPool(path),
+	const Overrides::Source source{
 		.identifier = form->refID,
-		.enable = enable,
+		.isModIndex = false,
 		.conditionScript = conditionScript,
 		.pollCondition = pollCondition,
-		.matchBaseGroupId = false
 	};
-	OverrideFormAnimation(animOverrideData, firstPerson);
+	const Overrides::File file{ path, firstPerson };
+	Overrides::Register(source, { &file, 1 }, enable);
 }
 
 bool ClearFormAnimations(TESForm* form)
 {
-	std::unique_lock lock(g_overrideMapMutex);
-	bool result = false;
-	for (auto* map : { &g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap })
-	{
-		if (auto iter = map->find(form->refID); iter != map->end())
-		{
-			for (auto& stack : iter->second.stacks | std::views::values)
-			{
-				for (auto& anim : stack.anims)
-				{
-					anim->disabled = true;
-				}
-			}
-		}
-	}
-	return result;
+	return Overrides::DisableForm(form->refID);
 }
 
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID)
@@ -1401,25 +744,20 @@ ScopedList<char> GetDirectoryAnimPaths(std::string_view path)
 	return FileFinder::FindFiles(searchPath.c_str(), renamePath.c_str(), ARCHIVE_TYPE_MESHES);
 }
 
-template <typename F>
-bool OverrideAnimsFromScript(char* path, const F& overrideAnim)
+// A file, or the KFs of a folder as one batch: those of the same group are the variants of one set
+bool OverrideAnimsFromScript(const char* path, const Overrides::Source& source, bool firstPerson, bool enable)
 {
 	const std::string_view pathStr(path);
 	if (!sv::get_file_extension(pathStr).empty()) // single file
-		return overrideAnim(pathStr.data());
-	
-	// directory
-	const auto animPaths = GetDirectoryAnimPaths(pathStr.data());
-
-	if (animPaths.Empty())
-		return false;
-
-	size_t numAnims = 0;
-	for (const auto* animPath : animPaths)
 	{
-		numAnims += overrideAnim(animPath);
+		const Overrides::File file{ pathStr, firstPerson };
+		return Overrides::Register(source, { &file, 1 }, enable) != 0;
 	}
-	return numAnims != 0;
+	const auto animPaths = GetDirectoryAnimPaths(pathStr.data());
+	std::vector<Overrides::File> files;
+	for (const auto* animPath : animPaths)
+		files.push_back({ animPath, firstPerson });
+	return Overrides::Register(source, files, enable) != 0;
 }
 
 bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
@@ -1439,20 +777,8 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 	try
 	{
 		LogScript(scriptObj, weapon, "SetWeaponAnimationPath");
-		const auto overrideAnim = [&](const char* animPath)
-		{
-			const auto pooledPath = AddStringToPool(ToLower(animPath));
-			AnimOverrideData animOverrideData = {
-				.path = pooledPath,
-				.identifier = weapon->refID,
-				.enable = static_cast<bool>(enable),
-				.conditionScript = nullptr,
-				.pollCondition = false,
-				.matchBaseGroupId = false
-			};
-			return OverrideFormAnimation(animOverrideData, firstPerson);
-		};
-		*result = OverrideAnimsFromScript(path, overrideAnim);
+		const Overrides::Source source{ .identifier = weapon->refID, .isModIndex = false };
+		*result = OverrideAnimsFromScript(path, source, firstPerson, enable);
 	}
 	catch (std::exception& e)
 	{
@@ -1494,19 +820,14 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 	}
 	try
 	{
-		AnimOverrideData animOverrideData = {
-			.identifier = actor ? actor->refID : 0xFF,
-			.enable = static_cast<bool>(enable),
+		const Overrides::Source source{
+			.identifier = actor ? actor->refID : Overrides::kEveryone,
+			.isModIndex = !actor,
 			.conditionScript = conditionScript,
 			.pollCondition = static_cast<bool>(pollCondition),
 			.matchBaseGroupId = static_cast<bool>(matchBaseGroupId)
 		};
-		*result = OverrideAnimsFromScript(path, [&](const char* animPath)
-		{
-			const auto pooledPath = AddStringToPool(ToLower(animPath));
-			animOverrideData.path = pooledPath;
-			return actor ? OverrideFormAnimation(animOverrideData, static_cast<bool>(firstPerson)) : OverrideModIndexAnimation(animOverrideData, static_cast<bool>(firstPerson));
-		});
+		*result = OverrideAnimsFromScript(path, source, firstPerson, enable);
 	}
 	catch (std::exception& e)
 	{
@@ -1611,59 +932,35 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 	return true;
 }
 
+// Registers the override files anew, and reads every KF from the disk again when it next plays (for animators: files
+// changed while the game runs). Main thread, from the console: the other threads must not be picking animations
 bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 {
+	// the player's animations start over if one of them was an override
 	bool refresh = false;
-	for (auto& [nameAndAnimData, context] : g_cachedAnimMap)
+	for (auto* animData : { g_thePlayer->firstPersonAnimData, g_thePlayer->baseProcess->GetAnimData() })
 	{
-		auto name = NiFixedString(nameAndAnimData.first);
-		auto* animData = nameAndAnimData.second;
-		BSAnimGroupSequence* anim = context.anim;
-
-		auto* manager = animData->controllerManager;
-		bool wasActive = false;
-		if (anim->m_eState != NiControllerSequence::INACTIVE)
+		if (const auto* state = animData ? ActorOverrides::Peek(animData) : nullptr)
 		{
-			wasActive = true;
-			if (anim->animGroup)
-				animData->ClearGroup(anim->animGroup->GetSequenceType(), 0.0);
-			manager->DeactivateSequence(anim, 0.0f);
-			NiUpdateData updateData{};
-			manager->Update(&updateData);
+			refresh |= std::ranges::any_of(state->loaded, [](const ActorOverrides::Loaded& entry)
+			{
+				return entry.sequence->m_eState != NiControllerSequence::INACTIVE;
+			});
 		}
-		anim->ReleaseFollowers(animData->timePassed);
-		SequenceExtraDatas::Delete(anim); // removed from the manager below without RemoveSequence
-		const auto seqCount = manager->sequences.EffectiveSize();
-		manager->sequences.Remove(anim);
-		const auto newSeqCount = manager->sequences.EffectiveSize();
-		DebugAssert(newSeqCount == seqCount - 1);
-
-		const auto seqMapCount = manager->m_kSequenceMap.m_uiCount;
-		manager->m_kSequenceMap.RemoveAt(name);
-		DebugAssert(manager->m_kSequenceMap.m_uiCount == seqMapCount - 1);
-		
-		auto* kfMap = ModelLoader::GetSingleton()->kfMap;
-		const auto kfCount = kfMap->GetCount();
-		kfMap->RemoveAt(name);
-		const auto newKfCount = kfMap->GetCount();
-		DebugAssert(newKfCount == kfCount - 1);
-
-		if (wasActive && animData->actor == g_thePlayer)
-			refresh = true;
 	}
-	
-	g_animGroupFirstPersonMap.clear();
-	g_animGroupThirdPersonMap.clear();
-	g_animGroupModIdxFirstPersonMap.clear();
-	g_animGroupModIdxThirdPersonMap.clear();
-	g_scriptSoundExecutions.clear();
-	g_scriptCallExecutions.clear();
-	g_scriptLineExecutions.clear();
-	g_cachedAnimMap.clear();
-	g_timeTrackedAnims.clear();
-	g_timeTrackedGroups.clear();
-	// HandleGarbageCollection();
+	{
+		std::unique_lock lock(g_animTimeMutex);
+		g_timeTrackedAnims.clear();
+		g_burstFireQueue.clear();
+		g_scriptCallExecutions.clear();
+		g_scriptLineExecutions.clear();
+	}
+	// every Animation gives up its override sequences and what it knew of the sets, the KFs their last uses
+	Overrides::UnloadAll();
+	KFLoader::ReleaseAll();
+	Overrides::Clear();
 	LoadFileAnimPaths();
+	Overrides::CompileConditions();
 
 	if (refresh)
 		g_thePlayer->RestartAnims();
@@ -1798,15 +1095,10 @@ NVSEArrayVarInterface::Array* CreateAnimationObjectArray(BSAnimGroupSequence* an
 std::vector<std::string_view> FindCustomAnimations(AnimData* animData, const UInt16 nearestGroupId)
 {
 	std::vector<std::string_view> result;
-	const auto animationResult = GetActorAnimation(nearestGroupId, animData);
-	if (animationResult && animationResult->animBundle && !animationResult->animBundle->anims.empty())
+	if (const auto* set = Overrides::Find(nearestGroupId, animData))
 	{
-		const auto& animPaths = animationResult->animBundle->anims;
-		for (const auto& animPath : animPaths)
-		{
-			result.push_back(animPath->path);
-		}
-
+		for (const auto& animPath : set->anims)
+			result.push_back(animPath.path);
 	}
 	return result;
 }
@@ -1870,10 +1162,7 @@ BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path)
 	if (auto* anim = animData->controllerManager->m_kSequenceMap.Lookup(path))
 		return static_cast<BSAnimGroupSequence*>(anim);
 	const std::string_view pooledPath = AddStringToPool(ToLower(path));
-	const auto& ctx = LoadCustomAnimation(pooledPath, animData);
-	if (ctx)
-		return ctx->anim;
-	return nullptr;
+	return Overrides::Load(pooledPath, animData).sequence;
 }
 
 BSAnimGroupSequence* FindOrLoadAnim(TESObjectREFR* thisObj, const char* path)
@@ -1995,37 +1284,7 @@ NiControllerSequence::InterpArrayItem* FindAnimInterp(TESObjectREFR* thisObj, co
 
 bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm)
 {
-	bool applied = false;
-	for (auto* map : {&g_animGroupFirstPersonMap, &g_animGroupThirdPersonMap})
-	{
-		if (const auto iter = map->find(fromForm->refID); iter != map->end())
-		{
-			AnimOverrideData animOverrideData = {
-				.identifier = toForm->refID,
-				.enable = true,
-			};
-			auto& entry = iter->second;
-			for (auto& stacks : entry.stacks | std::views::values)
-			{
-				auto& stack = stacks.anims;
-				for (auto& anims : stack)
-				{
-					for (const auto& anim : anims->anims)
-					{
-						animOverrideData.path = anim->path;
-						animOverrideData.conditionScript = *anims->conditionScript;
-						animOverrideData.conditionScriptText = anims->conditionScriptText;
-						animOverrideData.pollCondition = anims->pollCondition;
-						animOverrideData.matchBaseGroupId = anims->matchBaseGroupId;
-						SetOverrideAnimation(animOverrideData, *map);
-					}
-				}
-			}
-		}
-		
-	}
-	
-	return applied;
+	return Overrides::CopyForm(fromForm->refID, toForm->refID);
 }
 
 void CreateCommands(NVSECommandBuilder& builder)
@@ -2786,15 +2045,22 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		if (firstPerson == -1)
 			firstPerson = IsPlayerInFirstPerson(actor);
-		auto* animData = GetAnimData(actor, firstPerson);
-		if (!animData)
+		const auto actorId = actor->refID;
+		const auto sAnimPath = std::string(animPath);
+		// on the thread that picks the actor's animations: the queue is part of its Animation's state
+		QueueScriptAnimOperation(actor, result, [actorId, firstPerson, sAnimPath]
+		{
+			auto* actor = static_cast<Actor*>(LookupFormByID(actorId));
+			if (!actor || !actor->IsActor())
+				return false;
+			auto* animData = GetAnimData(actor, firstPerson);
+			auto* anim = animData ? FindOrLoadAnim(animData, sAnimPath.c_str()) : nullptr;
+			auto* state = anim && anim->animGroup ? ActorOverrides::Get(animData) : nullptr;
+			if (!state)
+				return false;
+			state->queued.push_back({ anim->animGroup->groupID, anim });
 			return true;
-		auto* anim = FindOrLoadAnim(animData, animPath);
-		if (!anim || !anim->animGroup)
-			return true;
-		auto& queue = g_queuedReplaceAnims[std::make_pair(anim->animGroup->groupID, animData)];
-		queue.push_back(anim);
-		*result = 1;
+		});
 		return true;
 	});
 
@@ -2820,11 +2086,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 				return true;
 			animData = g_thePlayer->firstPersonAnimData;
 		}
-		if (const auto iter = g_queuedReplaceAnims.find(std::make_pair(anim->animGroup->groupID, animData)); iter != g_queuedReplaceAnims.end())
-		{
-			const auto& queue = iter->second;
-			*result = ra::find(queue, anim) != queue.end();
-		}
+		if (const auto* state = ActorOverrides::Peek(animData))
+			*result = ra::find(state->queued, anim, [](const ActorOverrides::Queued& queued) { return queued.sequence.data; }) != state->queued.end();
 		return true;
 	});
 

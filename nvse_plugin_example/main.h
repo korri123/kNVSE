@@ -33,12 +33,7 @@ extern ICriticalSection g_executionQueueCS;
 extern NVSEArrayVarInterface* g_arrayVarInterface;
 extern NVSEStringVarInterface* g_stringVarInterface;
 extern std::unordered_map<std::string, std::vector<CustomAnimGroupScript>> g_customAnimGroups;
-using AnimGroupPathsMap = std::unordered_map<std::string, std::unordered_set<std::string>, transparent_string_hash, std::equal_to<>>;
-extern AnimGroupPathsMap g_customAnimGroupPaths;
-extern std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
 extern std::vector<std::string> g_eachFrameScriptLines;
-extern std::thread g_animFileThread;
-extern std::recursive_mutex g_pollConditionMutex;
 
 void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);
 void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);
@@ -50,46 +45,14 @@ bool IsDemigodMode();
 float GetAnimTime(const NiControllerSequence* anim);
 void HandleCustomTextKeys();
 
+// Calls a condition script for the reference. On the threads that pick animations every frame (the main thread, AI
+// linear task thread 1) the result is kept until the frame's caches are cleared: the same condition is asked for
+// every group looked up
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 		NVSEArrayVarInterface::Element* result);
 
-
-struct ScriptPairHash {
-	std::size_t operator()(const std::pair<TESObjectREFR*, Script*>& pair) const {
-		std::size_t h1 = std::hash<TESObjectREFR*>{}(pair.first);
-		std::size_t h2 = 0;
-
-		if (pair.second && pair.second->data) {
-			// Hash for Script* part
-			h2 = std::hash<void*>{}(pair.second->data);
-			h2 ^= std::hash<UInt32>{}(pair.second->info.dataLength) + 0x9e3779b9 + (h2 << 6) + (h2 >> 2);
-		}
-
-		// Combine hashes
-		return h1 ^ (h2 << 1);
-	}
-};
-
-struct ScriptPairEqual {
-	bool operator()(const std::pair<TESObjectREFR*, Script*>& lhs, 
-					const std::pair<TESObjectREFR*, Script*>& rhs) const {
-		// Check TESObjectREFR* equality
-		if (lhs.first != rhs.first) return false;
-
-		// Check Script* equality
-		if (lhs.second == rhs.second) return true;
-		if (!lhs.second || !rhs.second) return false;
-		if (lhs.second->info.dataLength != rhs.second->info.dataLength) return false;
-		if (!lhs.second->data || !rhs.second->data) return false;
-		
-		// Compare the actual data content of Script
-		return std::memcmp(lhs.second->data, rhs.second->data, lhs.second->info.dataLength) == 0;
-	}
-};
-
-using ScriptCacheKey = std::pair<TESObjectREFR*, Script*>;
-using ScriptCacheValue = NVSEArrayVarInterface::Element;
-using ScriptCache = ResultCache<const ScriptCacheKey, ScriptCacheValue, ScriptPairHash, ScriptPairEqual>;
+// dead, deleted, or without a process or 3D
+bool IsActorInvalid(Actor* actor);
 
 struct MapHitCounter
 {

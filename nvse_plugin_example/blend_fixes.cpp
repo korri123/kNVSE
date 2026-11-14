@@ -228,6 +228,7 @@ namespace
 		targetSeq->m_fOffset = destFrame / targetSeq->m_fFrequency - fTime;
 		targetSeq->Update(fTime, true);
 
+		Overrides::Played(animData, targetSeq);
 		HandleExtraOperations(animData, targetSeq);
 		HandleSoundPathMismatch(animData, sourceSeq, targetSeq);
 
@@ -239,15 +240,19 @@ namespace
 		return true;
 	}
 
-	void TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID targetGroupId,
+	// Returns the third person sequence switched to
+	BSAnimGroupSequence* TransitionAttackWithVariants(AnimData* animData3rd, AnimData* animData1st, AnimGroupID targetGroupId,
 		bool toIronSights)
 	{
 		const auto blend3rd = GetAimBlendTime(animData3rd, toIronSights);
-		TransitionToVariant(animData3rd, GetAnimByGroupID(animData3rd, targetGroupId), kSequence_Weapon, blend3rd);
+		// looked up once: started, an override's variant counts as played and the next lookup picks another
+		auto* target3rd = GetAnimByGroupID(animData3rd, targetGroupId);
+		TransitionToVariant(animData3rd, target3rd, kSequence_Weapon, blend3rd);
 		TransitionToVariant(animData3rd, GetAnimByGroupID(animData3rd, static_cast<AnimGroupID>(targetGroupId + 1)), kSequence_WeaponUp, blend3rd); // up
 		TransitionToVariant(animData3rd, GetAnimByGroupID(animData3rd, static_cast<AnimGroupID>(targetGroupId + 2)), kSequence_WeaponDown, blend3rd); // down
 
 		TransitionToVariant(animData1st, GetAnimByGroupID(animData1st, targetGroupId), kSequence_Weapon, GetAimBlendTime(animData1st, toIronSights));
+		return target3rd;
 	}
 
 	void ApplyAttackTransitionFix(bool toIronSights)
@@ -275,9 +280,7 @@ namespace
 		const auto curGroupId = curWeaponAnim->animGroup->groupID;
 		const auto targetGroupId = static_cast<AnimGroupID>(toIronSights ? curGroupId + 3 : curGroupId - 3);
 
-		TransitionAttackWithVariants(animData3rd, animData1st, targetGroupId, toIronSights);
-
-		auto* finalSequence = GetAnimByGroupID(animData3rd, targetGroupId);
+		auto* finalSequence = TransitionAttackWithVariants(animData3rd, animData1st, targetGroupId, toIronSights);
 		const auto animAction = static_cast<Decoding::AnimAction>(highProcess->GetCurrentAnimAction());
 		GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, animAction, finalSequence);
 	}

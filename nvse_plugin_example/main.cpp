@@ -66,7 +66,6 @@ _UncaptureLambdaVars UncaptureLambdaVars;
 std::vector<std::string> g_eachFrameScriptLines;
 MapHitCounters g_mapHitCounters;
 AverageTimers g_averageTimers;
-std::recursive_mutex g_pollConditionMutex;
 
 bool isEditor = false;
 
@@ -93,24 +92,41 @@ float GetAnimTimeLegacy(const AnimData* animData, const NiControllerSequence* an
 	return time;
 }
 
-thread_local ScriptCache g_scriptCache;
+namespace
+{
+	struct ScriptResult
+	{
+		TESObjectREFR* callingObj;
+		Script* script;
+		NVSEArrayVarInterface::Element value;
+	};
+	// A handful per frame: searched in order, kept allocated across frames. By the script itself, not its compiled code:
+	// code refers to forms by an index into the script's own list, so conditions naming different forms compile alike
+	// (CompileConditionScript already gives every condition text one script)
+	thread_local std::vector<ScriptResult> t_scriptResults;
+}
 
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 	NVSEArrayVarInterface::Element* result)
 {
-	const auto cacheKey = std::make_pair(callingObj, funcScript);
-	ScriptCacheValue* cachePtr = nullptr;
 	const auto useCache = g_isThreadCacheEnabled;
+	size_t cacheIndex = 0;
 	if (useCache)
 	{
-		const auto [mapIter, isNew] = g_scriptCache.emplace(cacheKey, NVSEArrayVarInterface::Element{});
-		if (!isNew)
+		for (const auto& cached : t_scriptResults)
 		{
-			*result = mapIter->second;
-			return true;
+			if (cached.callingObj == callingObj && cached.script == funcScript)
+			{
+				*result = cached.value;
+				return true;
+			}
 		}
-		cachePtr = &mapIter->second;
+		// Before the call: a condition that asks about the actor's animations can look its own set up again, which
+		// answers false here instead of calling the script without end
+		cacheIndex = t_scriptResults.size();
+		t_scriptResults.push_back({ callingObj, funcScript, NVSEArrayVarInterface::Element{} });
 	}
+	const auto wasInConditionFunction = g_globals.isInConditionFunction;
 	g_globals.isInConditionFunction = true;
 	const auto success = g_script->CallFunction(
 		funcScript,
@@ -119,9 +135,10 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 		result,
 		0
 	);
-	g_globals.isInConditionFunction = false;
-	if (useCache)
-		*cachePtr = *result;
+	g_globals.isInConditionFunction = wasInConditionFunction;
+	// by index: calls made by the script may have added results
+	if (useCache && cacheIndex < t_scriptResults.size())
+		t_scriptResults[cacheIndex].value = *result;
 	return success;
 }
 
@@ -189,155 +206,9 @@ void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence*
 		SetFixHolster(anim3rd);
 }
 
-bool IsSequenceInAnimBundle(AnimData* animData, UInt16 nearestGroupId, const std::optional<AnimationResult>& animResult, BSAnimGroupSequence* anim)
-{
-	if (!animResult)
-	{
-		auto* animBase = animData->mapAnimSequenceBase->Lookup(nearestGroupId);
-		if (!animBase)
-			return false;
-		return animBase->Contains(anim);
-	}
-	return animResult->animBundle->linkedSequences.contains(anim);
-}
-
-bool IsAnimBundleEqual(const std::optional<AnimationResult>& animResult, const SavedAnims& savedAnims)
-{
-	if (!animResult)
-		return false;
-	return animResult->animBundle == &savedAnims;
-}
-
 bool IsActorInvalid(Actor* actor)
 {
 	return !actor || actor->IsDead(true) || actor->IsDeleted() || !actor->baseProcess || !actor->Get3D();
-}
-
-void HandlePollConditionAnims()
-{
-	// std::unique_lock lock(g_pollConditionMutex);
-	// Not needed, runs on MainGameLoop event
-	DebugAssert(!AILinearTaskManager::ShouldQueue3DTask());
-	if (g_timeTrackedGroups.empty())
-		return;
-#if _DEBUG && 0
-	struct DebugInfo
-	{
-		std::string_view anim;
-		FullAnimGroupID groupId;
-		std::string_view conditionScript;
-		std::string_view actorName;
-	};
-	std::vector<DebugInfo> anims;
-	for (const auto& [pair, animTimePtr] : g_timeTrackedGroups)
-	{
-		const auto& ctx = *pair.first;
-		if (pair.first->conditionScriptText.empty())
-		{
-			pair.first->conditionScriptText = AddStringToPool(DecompileScript(*pair.first->conditionScript));
-		}
-		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTimePtr->actorId), TESForm, Actor);
-		std::string_view actorName = actor ? actor->GetFullName()->name.CStr() : "NULL";
-		anims.emplace_back(ctx.anims.front()->path, animTimePtr->groupId, pair.first->conditionScriptText, actorName);
-	}
-#endif
-
-	std::vector<std::pair<TimeTrackedGroupsKey, SavedAnimsTime*>> trackedGroups;
-	trackedGroups.reserve(g_timeTrackedGroups.size());
-	
-	for (auto& [pair, animTimePtr] : g_timeTrackedGroups)
-	{
-		trackedGroups.emplace_back(pair, animTimePtr.get());
-	}
-
-	const auto playAnimGroup = [](AnimData* animData, const UInt16 groupId)
-	{
-		GameFuncs::PlayAnimGroup(animData, groupId, 1, -1, -1);
-	};
-
-	for (auto& [key, animTimePtr] : trackedGroups)
-	{
-		const auto erase = [&]
-		{
-			g_timeTrackedGroups.erase(key);
-		};
-		auto animTime = *animTimePtr;
-		auto [conditionScript, groupId, actorId, animData] = animTime;
-		const auto& ctx = *key.first;
-		auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
-		
-		if (IsActorInvalid(actor) || !animData || !conditionScript || ctx.disabled)
-		{
-			erase();
-			continue;
-		}
-
-		const auto* animInfo = GetGroupInfo(static_cast<AnimGroupID>(groupId));
-		auto* curAnim = animData->animSequence[animInfo->sequenceType];
-		if (!curAnim || !curAnim->animGroup)
-		{
-			erase();
-			continue;
-		}
-
-		const UInt16 currentGroupId = curAnim->animGroup->groupID;
-		
-		// check if current anim is running at sequence type
-		if ((currentGroupId & 0xFF) != (groupId & 0xFF))
-		{
-			erase();
-			continue;
-		}
-		
-		if (!AnimGroup::FallbacksTo(animData, groupId, currentGroupId))
-		{
-			erase();
-			continue;
-		}
-
-		// a start or stop animation of the group plays (TransitionAnims), which can come from another set than the
-		// group's animation (one with only those): playing the group for this set would start it over on every frame
-		// (a walk easing out and the player moving on for as long, an aim transition asked to turn around). The
-		// condition picks the animation it goes on to
-		if (TransitionAnims::Of(curAnim) != TransitionKind::None)
-			continue;
-		
-		if (conditionScript)
-		{
-			NVSEArrayVarInterface::Element arrResult;
-			if (CallFunction(conditionScript, actor, nullptr, &arrResult))
-			{
-				const auto result = static_cast<bool>(arrResult.GetNumber());
-				const auto animGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
-				const auto nextGroupId = GetNearestGroupID(animData, animGroupId);
-
-				if (ctx.ContainsAnim(curAnim))
-				{
-					if (result)
-					{
-						// result is true and an anim in the group is being played so we don't need to do anything
-						continue;
-					}
-					// if the current anim is the tracked anim, and the condition is now false, it's not going to be selected again
-					// so let's stop it
-					erase(); // erase must be called first so that playAnimGroup can add back to g_timeTrackedGroups
-					playAnimGroup(animData, nextGroupId);
-					continue;
-				}
-				
-				// this group does not contain the current anim, so now we need to check if we should play it
-				if (!result)
-				{
-					// result is false so we don't need to do anything
-					// it might be true in the future so let's keep storing it and evaluating it
-					continue;
-				}
-
-				// result is true, group is not the one being played, so let's play it
-				playAnimGroup(animData, nextGroupId);
-			}
-		}
-	}
 }
 
 struct SetThisAnimScriptPath
@@ -503,10 +374,9 @@ void HandleCustomTextKeys()
 		if (animTime.hasCustomAnimGroups)
 		{
 			const auto basePath = GetAnimBasePath(animTime.anim->m_kName.Str());
-			if (auto iter = g_customAnimGroupPaths.find(basePath); iter != g_customAnimGroupPaths.end())
 			{
-				const auto& animPaths = iter->second;
-				for (const auto& animPath : animPaths)
+				// pooled paths
+				for (const std::string_view animPath : Overrides::GetCustomGroupPaths(basePath))
 				{
 					const auto name = ExtractCustomAnimGroupName(animPath);
 					if (name.empty())
@@ -516,10 +386,10 @@ void HandleCustomTextKeys()
 						auto& scripts = scriptsIter->second;
 						for (auto& script : scripts)
 						{
-							g_script->CallFunctionAlt(*script.script, actor, 2, animPath.c_str(), animTime.firstPerson);
+							g_script->CallFunctionAlt(*script.script, actor, 2, animPath.data(), animTime.firstPerson);
 							if (*script.cleanUpScript)
 							{
-								animTime.cleanUpScripts.emplace(std::make_pair(*script.cleanUpScript, animPath));
+								animTime.cleanUpScripts.emplace(std::make_pair(*script.cleanUpScript, std::string(animPath)));
 							}
 						}
 					}
@@ -582,7 +452,7 @@ void HandleCustomTextKeys()
 void HandleAnimTimes()
 {
 	HandleCustomTextKeys();
-	HandlePollConditionAnims();
+	Overrides::UpdatePolled();
 }
 
 bool IsGodMode()
@@ -602,7 +472,7 @@ void HandleBurstFire()
 	auto iter = g_burstFireQueue.begin();
 	while (iter != g_burstFireQueue.end())
 	{
-		auto& [firstPerson, anim, index, hitKeys, _, shouldEject, lastNiTime, actorId, ejectKeys, ejectIdx, reloading] = *iter;
+		auto& [firstPerson, anim, index, hitKeys, _, shouldEject, lastNiTime, actorId, ejectKeys, ejectIdx, reloading, burstAnimData] = *iter;
 		const auto erase = [&]()
 		{
 			iter = g_burstFireQueue.erase(iter);
@@ -722,9 +592,7 @@ void ApplyHolsterFix()
 
 void ClearResultCaches()
 {
-	g_animationResultCache.clear();
-	g_animPathFrameCache.clear();
-	g_scriptCache.clear();
+	t_scriptResults.clear();
 }
 
 void SynchronizedQueue::Add(std::function<void()>&& func)
@@ -749,10 +617,7 @@ void HandleMisc()
 {
 	ApplyHolsterFix();
 	OnReloadHandler::Update();
-	ClearResultCaches();
 }
-
-std::thread g_animFileThread;
 
 static void CheckAndWarnForFixPack()
 {
@@ -778,11 +643,19 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		Console_Print("kNVSE version %d", VERSION_MAJOR);
 		WriteDelayedHooks();
 		g_thePlayer = *reinterpret_cast<PlayerCharacter**>(0x011DEA3C);
-		g_animFileThread = std::thread(LoadFileAnimPaths);
+		FileAnimations::StartLoading();
 		CheckAndWarnForFixPack();
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{
+		// condition results are kept for a frame, in menus too
+		ClearResultCaches();
+		// text conditions are compiled here, on the main thread, as soon as the files are registered
+		if (FileAnimations::CheckLoaded())
+		{
+			Overrides::CompileConditions();
+			Overrides::UpdatePlayerPreload();
+		}
 		if (!Interface::IsInMenuMode())
 		{
 			HandleBurstFire();

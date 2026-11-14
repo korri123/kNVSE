@@ -1,6 +1,7 @@
 #include "hooks.h"
 
 #include <GameUI.h>
+#include <shared_mutex>
 #include <span>
 #include <unordered_set>
 
@@ -9,6 +10,7 @@
 #include "aim_pitch.h"
 #include "aim_transitions.h"
 #include "anim_fixes.h"
+#include "file_animations.h"
 #include "anim_switch.h"
 #include "GameProcess.h"
 #include "GameObjects.h"
@@ -36,24 +38,19 @@ bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 extern bool g_fixHolster;
 
-std::map<std::pair<FullAnimGroupID, AnimData*>, std::deque<BSAnimGroupSequence*>> g_queuedReplaceAnims;
-
-
+// QueueNextAnim: the sequence that plays in place of the group's next animation
 BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroupId)
 {
-	const auto key = std::make_pair(animGroupId, animData);
-	const auto it = g_queuedReplaceAnims.find(key);
-	if (it != g_queuedReplaceAnims.end())
-	{
-		auto& queue = it->second;
-		if (!queue.empty())
-		{
-			auto* anim = queue.front();
-			queue.pop_front();
-			return anim;
-		}
-	}
-	return nullptr;
+	auto* state = ActorOverrides::Peek(animData);
+	if (!state || state->queued.empty())
+		return nullptr;
+	const auto iter = ra::find(state->queued, animGroupId, &ActorOverrides::Queued::groupId);
+	if (iter == state->queued.end())
+		return nullptr;
+	// still referenced by its controller manager
+	BSAnimGroupSequence* anim = iter->sequence;
+	state->queued.erase(iter);
+	return anim;
 }
 
 void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequence* anim3rd);
@@ -81,15 +78,14 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		destAnim = queuedAnim;
 		HandleExtraOperations(animData, queuedAnim);
 	}
-	else if (const auto baseResult = GetActorAnimation(animGroupId & 0xFF, animData);
-	         baseResult && baseResult->animBundle->matchBaseGroupId)
+	else if (auto* baseSet = Overrides::Find(animGroupId & 0xFF, animData); baseSet && baseSet->matchBaseGroupId)
 	{
-		if (auto* newAnim = LoadAnimationPath(*baseResult, animData, animGroupId))
+		if (auto* newAnim = Overrides::Play(*baseSet, animGroupId, animData))
 			destAnim = newAnim;
 	}
-	else if (const auto animResult = GetActorAnimation(animGroupId, animData))
+	else if (auto* set = Overrides::Find(animGroupId, animData))
 	{
-		if (auto* newAnim = LoadAnimationPath(*animResult, animData, animGroupId))
+		if (auto* newAnim = Overrides::Play(*set, animGroupId, animData))
 			destAnim = newAnim;
 	}
 	else if (destAnim)
@@ -374,33 +370,31 @@ void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool
 	ThisStdCall(0xA328B0, anim, fTime, bUpdateInterpolators);
 }
 
+// The override animation the actor plays next for the group, loaded: what the engine's lookups of a group in the
+// Animation's map are answered with
 bool LookupCustomAnim(FullAnimGroupID groupId, AnimSequenceBase** base, AnimData* animData)
 {
-	// we do not want non existing 3rd anim data to try to get played as nothing gets played if it can't find it
-	//if (animData == g_thePlayer->firstPersonAnimData)
-	//	animData = g_thePlayer->baseProcess->GetAnimData();
-
-	if (const auto animResult = GetActorAnimation(groupId, animData))
+	if (auto* set = Overrides::Find(groupId, animData))
 	{
-		if (const auto animCtx = LoadCustomAnimation(*animResult->animBundle, groupId, animData))
+		if (const auto loaded = Overrides::LoadNext(*set, groupId, animData))
 		{
-			*base = animCtx->base;
+			*base = loaded.base;
 			return true;
 		}
 	}
 	if (animData->actor == g_thePlayer && animData != g_thePlayer->firstPersonAnimData && groupId != GetActorRealAnimGroup(g_thePlayer, groupId))
 	{
 		// hack to allow pollCondition to work correctly in first person when groupid is decayed
-		GetActorAnimation(groupId, g_thePlayer->firstPersonAnimData);
+		Overrides::Find(groupId, g_thePlayer->firstPersonAnimData);
 	}
 	return false;
 }
 
 BSAnimGroupSequence* GetAnimByFullGroupID(AnimData* animData, UInt16 groupId)
 {
-	if (const auto result = GetActorAnimation(groupId, animData))
-		if (const auto ctx = LoadCustomAnimation(*result->animBundle, groupId, animData))
-			return ctx->anim;
+	if (auto* set = Overrides::Find(groupId, animData))
+		if (const auto loaded = Overrides::LoadNext(*set, groupId, animData))
+			return loaded.sequence;
 	if (auto* base = animData->mapAnimSequenceBase->Lookup(groupId))
 		return base->GetSequenceByIndex(-1);
 	return nullptr;
@@ -453,6 +447,21 @@ bool __fastcall OverrideWithCustomAnimHook(NiTPointerMap<AnimSequenceBase*>* ani
 	return false;
 }
 
+// Animation::GroupLoaded: whether the Animation has the group, as one of its own or as an override. Asked every frame
+// for every actor (Actor::UpdateAnimation, PickAnimations, ...), and only a yes or no: the Animation's own map first,
+// and an override is not loaded for the answer
+template <int AnimDataOffset>
+bool __fastcall GroupLoadedHook(NiTPointerMap<AnimSequenceBase*>* animMap, void*, UInt16 groupId, AnimSequenceBase** base)
+{
+	auto* parentBasePtr = GetParentBasePtr(_AddressOfReturnAddress());
+	auto* animData = *reinterpret_cast<AnimData**>(parentBasePtr + AnimDataOffset);
+
+	if ((*base = animMap->Lookup(groupId)))
+		return true;
+	auto* set = Overrides::Find(groupId, animData);
+	return set && Overrides::GetNextPath(*set, groupId, animData);
+}
+
 [[msvc::noinline]]
 bool HasAnimBaseDuplicate(AnimSequenceBase* base, const BSAnimGroupSequence* anim)
 {
@@ -483,7 +492,27 @@ void RemoveDuplicateAnimsHook() {
 
 namespace LoopingReloadPauseFix
 {
+	// names of the sequences with a blendToReloadLoop text key, pooled. Added where animations start (any thread that
+	// picks them), asked in Animation::Update
 	std::unordered_set<std::string_view> g_reloadStartBlendFixes;
+	std::shared_mutex g_reloadStartBlendFixesMutex;
+
+	void Add(std::string_view sequenceName)
+	{
+		{
+			std::shared_lock lock(g_reloadStartBlendFixesMutex);
+			if (g_reloadStartBlendFixes.contains(sequenceName))
+				return;
+		}
+		std::unique_lock lock(g_reloadStartBlendFixesMutex);
+		g_reloadStartBlendFixes.insert(AddStringToPool(sequenceName));
+	}
+
+	bool Has(std::string_view sequenceName)
+	{
+		std::shared_lock lock(g_reloadStartBlendFixesMutex);
+		return g_reloadStartBlendFixes.contains(sequenceName);
+	}
 
 	bool __fastcall ShouldPlayAimAnim(UInt8* basePointer)
 	{
@@ -496,13 +525,13 @@ namespace LoopingReloadPauseFix
 		const auto defaultCondition = _L(, queuedId == 0xFF);
 		if (!anim || !anim->animGroup)
 			return defaultCondition();
-		if (!g_reloadStartBlendFixes.contains(anim->m_kName.Str()))
+		if (!Has(anim->m_kName.Str()))
 		{
 			if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
 			{
 				const auto seqType = GetSequenceType(anim->animGroup->GetBaseGroupID());
 				auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
-				if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->m_kName.Str()))
+				if (cur1stPersonAnim && Has(cur1stPersonAnim->m_kName.Str()))
 					return newCondition();
 			}
 			return defaultCondition();
@@ -523,7 +552,7 @@ namespace LoopingReloadPauseFix
 			endSequence();
 			return;
 		}
-		if (g_reloadStartBlendFixes.contains(anim->m_kName.Str()))
+		if (Has(anim->m_kName.Str()))
 		{
 			dontEndSequence();
 			return;
@@ -532,7 +561,7 @@ namespace LoopingReloadPauseFix
 		{
 			const auto seqType = anim->animGroup->GetSequenceType();
 			auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
-			if (cur1stPersonAnim && g_reloadStartBlendFixes.contains(cur1stPersonAnim->m_kName.Str()))
+			if (cur1stPersonAnim && Has(cur1stPersonAnim->m_kName.Str()))
 			{
 				dontEndSequence();
 				return;
@@ -1015,18 +1044,19 @@ void ApplyHooks()
 	// WriteRelCall(0x97F36D, NonExistingAnimHook<-0xC>);
 	// WriteRelCall(0x8B7985, NonExistingAnimHook<-0x14>);
 	// WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
-	// WriteRelCall(0x493DC0, NonExistingAnimHook<-0x98>); no go - causes stack overflow in PickAnimations since it calls LoadCustomAnimation that calls this
+	// 0x493DC0 (Animation::InitGroupSpeed) is hooked by Overrides::WriteHooks
 	// WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
 	// WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
 	// WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
 	// WriteRelCall(0x490066, NonExistingAnimHook<-0x54>);
 	/* experimental end */
 
-	// AnimData::GetSequenceBaseFromMap
-	WriteRelCall(0x49472B, OverrideWithCustomAnimHook<-0x8>);
+	// Animation::GroupLoaded
+	WriteRelCall(0x49472B, GroupLoadedHook<-0x8>);
 	//  AnimData::GetAnimGroupForID
 	WriteRelCall(0x49651B, OverrideWithCustomAnimHook<-0x8>);
 #endif
+	Overrides::WriteHooks();
 	
 	// AnimData destructor
 	WriteRelCall(0x48FB82, INLINE_HOOK(void, __fastcall, AnimData* animData)
@@ -1035,6 +1065,9 @@ void ApplyHooks()
 
 		// hooked call
 		ThisStdCall(0x48FF50, animData);
+		// after the idles are freed (anything that still looks an animation up has its state), before the sequences
+		// leave the controller manager
+		Overrides::OnAnimDataDelete(animData);
 	}));
 
 	// BSTasklet::SetData

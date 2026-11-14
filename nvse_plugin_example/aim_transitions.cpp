@@ -114,8 +114,7 @@ namespace
 		while (!paths.empty())
 		{
 			const auto index = GetRandomUInt(paths.size());
-			const auto animCtx = LoadCustomAnimation(*set, *paths[index], animData);
-			if (auto* sequence = animCtx ? animCtx->anim.data : nullptr; sequence && sequence->animGroup)
+			if (auto* sequence = Overrides::Load(*set, *paths[index], animData).sequence; sequence && sequence->animGroup)
 				return sequence;
 			paths.erase(paths.begin() + index);
 		}

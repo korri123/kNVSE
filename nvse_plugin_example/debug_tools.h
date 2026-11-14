@@ -1,7 +1,10 @@
 #pragma once
 #include <string>
 
-// Tooling for Debug builds; the functions outside the #if do nothing in Release.
+// Tooling for driving the game from outside (.omp/tools/fnv.py). Debug builds: the command pipe and the input hooks
+// are always on. Release builds: only when the temp directory holds kNVSE-debug-tools.txt, written at most two minutes
+// before (the file is deleted), so a player's game has none of it. Background mode and the test start are asked for
+// with their own files in either build.
 namespace DebugTools
 {
     // Named pipe \\.\pipe\kNVSE-debug. A message is either console script lines, run on the main thread in console
@@ -10,11 +13,13 @@ namespace DebugTools
     //                                      in a temp file; replies the file's path and "<width> <height>"
     //   !mouse <dx> <dy> [wheel]           mouse movement for the next input poll (see Input)
     // The reply is "ok" or "timeout"/"error" on the first line, followed by the console output or the command's result.
+    // The first line of kNVSE.log it writes has "kNVSE Debug build" or "kNVSE Release build": fnv.py finds the
+    // configuration of an installed DLL by that text.
     void StartCommandPipe();
 
-    // CRT/STL assertion failures (e.g. span index checks) are logged to kNVSE.log and raise a breakpoint instead of
-    // showing a modal dialog, so an attached debugger stops at the failing frame and an unattended run crashes
-    // into CrashLogger with a stack.
+    // Debug builds: CRT/STL assertion failures (e.g. span index checks) are logged to kNVSE.log and raise a breakpoint
+    // instead of showing a modal dialog, so an attached debugger stops at the failing frame and an unattended run
+    // crashes into CrashLogger with a stack.
     void InstallAssertHook();
 
     // Background mode, for driving the game while the PC is in use. On when the temp directory holds
@@ -34,7 +39,6 @@ namespace DebugTools
     // Every NVSE message (NVSEMessagingInterface::Message::type) passes through here.
     void HandleMessage(unsigned int type);
 
-#if _DEBUG
     std::string TempFilePath(const char* name);
 
     // The first line of the request file `name` in the temp directory, which is deleted; empty when there is none or
@@ -55,5 +59,4 @@ namespace DebugTools
         // The pipe's reply to !screenshot; call on the thread that presents, before the frame is presented.
         std::string BackBuffer(float scale);
     }
-#endif
 }

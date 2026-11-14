@@ -46,7 +46,7 @@ namespace TransitionAnims
     SavedAnims* FindSet(AnimData* animData, UInt16 groupId, TransitionKind kind);
     std::vector<const AnimPath*> GetPaths(SavedAnims& set, TransitionKind kind);
 
-    // A start or stop animation as loaded (LoadCustomAnimation).
+    // A start or stop animation as loaded (Overrides::Load).
     // - The engine goes on from one at its End key (Animation::Update). BSAnimGroupSequence::InitAnimGroup leaves End as
     //   it is when the KF has none or it is not after Start (it only warns), which would be at once: then it is the
     //   animation's end.
