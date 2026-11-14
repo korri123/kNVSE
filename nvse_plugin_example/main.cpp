@@ -22,6 +22,7 @@
 #include "nihooks.h"
 #include "NiObjects.h"
 #include "SimpleINILibrary.h"
+#include "aim_transitions.h"
 #include "anim_switch.h"
 #include "blend_fixes.h"
 #include "movement_transitions.h"
@@ -294,10 +295,11 @@ void HandlePollConditionAnims()
 			continue;
 		}
 
-		// a start or stop animation of the group plays (MovementTransitions), which can come from another set than the
-		// walk's (one with only those): playing the group for this set would start it over on every frame, the walk
-		// easing out and the player moving on for as long. The condition picks the animation it goes on to
-		if (MovementTransitions::Of(curAnim) != MovementTransition::None)
+		// a start or stop animation of the group plays (TransitionAnims), which can come from another set than the
+		// group's animation (one with only those): playing the group for this set would start it over on every frame
+		// (a walk easing out and the player moving on for as long, an aim transition asked to turn around). The
+		// condition picks the animation it goes on to
+		if (TransitionAnims::Of(curAnim) != TransitionKind::None)
 			continue;
 		
 		if (conditionScript)
@@ -461,18 +463,21 @@ void HandleCustomTextKeys()
 			++it;
 			continue; // we don't want text keys to apply on the pollCondition anim here but we need to track it until 3rd person has changed anim
 		}
-		if (animTime.callbacks.Exists())
+		// An aim transition played back (AimTransitions): its time runs backwards, which the keys below would take for
+		// the animation starting over on every frame, each of them acting again
+		const bool bTimedKeys = !AimTransitions::IsPlayedBack(anim);
+		if (bTimedKeys && animTime.callbacks.Exists())
 		{
 			animTime.callbacks.Update(time, animData, [](const std::function<void()>& callback)
 			{
 				callback();
 			});
 		}
-		if (animTime.scriptCalls.Exists())
+		if (bTimedKeys && animTime.scriptCalls.Exists())
 		{
 			animTime.scriptCalls.Update(time, animData, _L(Script* script, g_script->CallFunction(script, actor, nullptr, nullptr, 0)));
 		}
-		if (animTime.soundPaths.Exists())
+		if (bTimedKeys && animTime.soundPaths.Exists())
 		{
 			animTime.soundPaths.Update(time, animData, [&](Sounds& sound)
 			{
@@ -483,7 +488,7 @@ void HandleCustomTextKeys()
 				}
 			});
 		}
-		if (animTime.scriptLines.Exists())
+		if (bTimedKeys && animTime.scriptLines.Exists())
 		{
 			const auto callback = [&](Script* script)
 			{
@@ -792,6 +797,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 #endif
 			if (g_pluginSettings.fixReloadStance)
 				BlendFixes::ApplyReloadStanceFix();
+			AimTransitions::Update();
 		}
 		HandleSynchronizedExecutionQueue();
 		g_mainThreadQueue.RunAllAndClear(); // kMessage_MainGameLoop runs before AILinearTaskThreads start

@@ -20,11 +20,13 @@ struct kBlendInterpItem;
 // arguments the pitch is split evenly over Bip01 Spine, Spine1 and Spine2; "aimPitch: <bone> <share>, <bone> <share>, ..."
 // names the bones and their share instead (shares below a total of 1 turn the upper body less than the pitch).
 // The turn is part of the animation's own pose, so it blends in and out with the animation's weight on each bone. While
-// the current weapon sequence (aim, aimIS, attack, ...) has the key, the game's up/down variants of it are kept at
-// weight 0. Third person skeletons only (first person turns the camera); needs bBlendSmoothing.
+// weight 0. Third person skeletons only (first person turns the camera); needs bBlendSmoothing. Aim transitions
+// (AimTransitions) turn as with the key without arguments unless they have one.
 namespace AimPitch
 {
     bool HasKey(const NiControllerSequence& sequence);
+    // Whether the sequence turns by the pitch: it has the key or is an aim transition
+    bool Applies(const NiControllerSequence& sequence);
 
     // The shares an aimPitch key gives the bones of a sequence, parsed once per AttachInterpolators. Views into the
     // sequence's text key: valid while the sequence is.

@@ -7,6 +7,7 @@
 #include "accum_blend_fix.h"
 #include "additive_anims.h"
 #include "aim_pitch.h"
+#include "aim_transitions.h"
 #include "anim_fixes.h"
 #include "anim_switch.h"
 #include "GameProcess.h"
@@ -114,13 +115,16 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug)
 	{
-		if (BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
+		auto* aimTransition = AimTransitions::Switch(animData, destAnim);
+		if (aimTransition || BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		{
+			// an aim transition plays instead of the aim the engine asked for, under that aim's group
+			auto* played = aimTransition ? aimTransition : destAnim;
+			const UInt16 playedGroupId = aimTransition ? animGroupId : destAnim->animGroup->groupID;
 			if (auto* idle = animData->animSequence[kSequence_Idle]; idle && idle->m_eState == NiControllerSequence::ANIMATING)
-				BlendFixes::FixConflictingPriorities(currentAnim, destAnim, idle);
-			if (destAnim->animGroup)
-				JIPFixes::CallSetAnimGroupEvent(animData, static_cast<AnimGroupID>(destAnim->animGroup->groupID));
-			return destAnim;
+				BlendFixes::FixConflictingPriorities(currentAnim, played, idle);
+			JIPFixes::CallSetAnimGroupEvent(animData, static_cast<AnimGroupID>(playedGroupId));
+			return played;
 		}
 		if (!destAnim && (sequenceType == kSequence_WeaponUp || sequenceType == kSequence_WeaponDown))
 		{
@@ -736,7 +740,8 @@ namespace AllowAttackKey
 		auto* group = sequence->animGroup.data;
 		if (group->IsAim() && !(isPlayer && FireWhileAimingTweakApplies(weapon)))
 		{
-			if (sequence->m_eState != NiControllerSequence::ANIMATING)
+			// an aim transition (AimTransitions) counts as still easing in
+			if (sequence->m_eState != NiControllerSequence::ANIMATING || AimTransitions::HoldsFire(sequence))
 				return false;
 			for (const auto sequenceId : { kSequence_WeaponUp, kSequence_WeaponDown })
 			{
@@ -905,6 +910,7 @@ void ApplyHooks()
 	conf.fixMovementMorphKeys = ini.GetOrCreate("Blend Fixes", "bFixMovementMorphKeys", 1, "; make m: text keys (m:L, m:R, ...) keep movement animations in step, as they do in the game without bBlendSmoothing: switching between two movement animations with the same set of m: keys starts the new one at the point between its keys that matches where the old one is, and the old one follows the new one's cycle while it fades out. Unlike the game, the two need not animate the same number of bones or start with the same m: key. Used instead of bFixGaitSwitch where both animations have them. Requires bBlendSmoothing.");
 	conf.fixOverlappingBlends = ini.GetOrCreate("Blend Fixes", "bFixOverlappingBlends", 1, "; blend animation switches that overlap on the same bones (holstering while the run switches to the unarmed one, aiming while the strafe changes, ...) as a mix of what each switch goes from and to: the game only blends the two highest priorities on a bone, so the hand lingered at the holster for a moment when holstering a weapon while running in third person. Bones with one switch at a time blend as before. Requires bBlendSmoothing.");
 	conf.movementTransitions = ini.GetOrCreate("Blend Fixes", "bMovementTransitions", 1, "; play start and stop animations of walks and runs: files in an AnimGroupOverride folder named like the walk or run they belong to with _start or _stop in the name (mtforward_start.kf, 2hafastforward_stop_a.kf; the KF's cycle type may be Clamp). A start animation plays when an actor starts walking or running from standing and goes on to the walk at its End text key, a stop animation (of several, the one whose first frame has the feet closest to where they are: stops on the left and right foot) plays when the player stops and blends to the idle at its End key. NPCs walking to the end of a path start theirs before they get there, where its root motion ends at the point they stop, so they stop where they would have; NPCs stopped by anything else (dialogue, waiting for another actor) stop as before. Both move the actor by their root motion. In first person the player plays those of _1stperson folders; a third person one plays there only with an allowFirstPerson text key (else the camera would move by a start or stop the arms do not show). Requires bBlendSmoothing.");
+	conf.aimTransitions = ini.GetOrCreate("Blend Fixes", "bAimTransitions", 1, "; play animations of raising the weapon to the sights and lowering it, for the player: files in an AnimGroupOverride folder named like the aiming down the sights animation they belong to with _start (hip to sights) or _stop (sights to hip) in the name (2haaimis_start.kf, 1hpaimis_stop_a.kf; _1stperson folders for the first person arms). One plays in place of the blend between the aim and aimIS animations and goes on to the animation it leads to at its End text key, with its own blend out. Aim released or pressed again partway plays the animation of the other way from where the weapon is, or the same one backwards when there is none (its sound and script text keys are skipped while it plays backwards). The weapon fires once the animation has ended. In third person they follow the pitch like an animation with an aimPitch text key. Requires bBlendSmoothing and bFixSpineBlendBug.");
 	conf.fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim button. kNVSE will trigger a blend to the hipfire attack animation when the attack key is released.");
 
 	conf.fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
@@ -944,6 +950,8 @@ void ApplyHooks()
 	if (conf.blendSmoothing)
 	{
 		MovementTransitions::WriteHooks();
+		if (conf.fixSpineBlendBug)
+			AimTransitions::WriteHooks();
 		AimPitch::WriteHooks();
 	}
 	
@@ -1525,6 +1533,24 @@ void ApplyHooks()
 	
 }
 
+namespace
+{
+	// NiControllerSequence::GetState of a section's current sequence in Animation::Update (Animation at [ebp-0x18C], the
+	// update's time step at [ebp-0x5C]), deciding whether its clock runs at the group's speed. The engine asks once per
+	// update for each section that has a group and a sequence and that it does not hold (Animation::cSkipUpdate), after
+	// adding the step to the Animation's time: where the features that run clocks of their own do. Otherwise the
+	// answer of BlendFixes, whose hook on this call it replaces
+	NiControllerSequence::AnimState __fastcall SectionClockHook(NiControllerSequence* sequence)
+	{
+		auto* animData = GET_CALLER_VAR(AnimData*, -0x18C);
+		const float fStep = GET_CALLER_VAR(float, -0x5C);
+		if (MovementTransitions::RunClock(animData, sequence, fStep))
+			return NiControllerSequence::ANIMATING;
+		AimTransitions::RunClock(animData, sequence, fStep);
+		return BlendFixes::ContinuedVariantStateHook(sequence);
+	}
+}
+
 void WriteDelayedHooks()
 {
 #if _DEBUG
@@ -1536,7 +1562,13 @@ void WriteDelayedHooks()
 	NPCLoopingReloadFix::WriteDelayedHooks();
 	BlendFixes::WriteDelayedHooks();
 	if (g_pluginSettings.blendSmoothing)
+	{
 		MovementTransitions::WriteDelayedHooks();
+		if (g_pluginSettings.fixSpineBlendBug)
+			AimTransitions::WriteDelayedHooks();
+		// Animation::Update, over the hook BlendFixes::WriteDelayedHooks wrote there
+		WriteRelCall(0x491B1B, SectionClockHook);
+	}
 
 	// The two below: NVAC replaces these calls with the getter's body once the plugins have loaded (its lists of calls to
 	// BSAnimGroupSequence::GetCycleType and GetState, every one that still has a call opcode), so written at load they
@@ -1549,7 +1581,7 @@ void WriteDelayedHooks()
 	{
 		const static NiFixedString key = "allowClampInLocomotion";
 		if (anim->m_spTextKeys->FindFirstByName(key) ||
-			(anim->animGroup && MovementTransitions::GetPathTransition(anim->m_kName.Str(), anim->animGroup->groupID) != MovementTransition::None))
+			(anim->animGroup && TransitionAnims::GetPathKind(anim->m_kName.Str(), anim->animGroup->groupID) != TransitionKind::None))
 			return NiControllerSequence::kCycle_Loop;
 		return anim->m_eCycleType;
 	}));
@@ -1569,7 +1601,7 @@ void WriteDelayedHooks()
 		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
 			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
 		// a stop animation plays to its End key, where Animation::Update blends the section out
-		if (MovementTransitions::Of(anim) == MovementTransition::Stop) [[msvc::noinline_calls]]
+		if (MovementTransitions::Of(anim) == TransitionKind::Stop) [[msvc::noinline_calls]]
 			return NiControllerSequence::INACTIVE;
 		// stop game from not ending move anims immediately
 		return NiControllerSequence::ANIMATING;

@@ -11,6 +11,7 @@
 #include "anim_switch.h"
 #include "anim_fixes.h"
 #include "sequence_extradata.h"
+#include "aim_transitions.h"
 
 
 bool IsAnimGroupAim(AnimGroupID groupId)
@@ -138,7 +139,8 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 
 	animData->SetCurrentSequence(destAnim, true);
 
-	const auto blendTime = destAnim->GetEaseInTime();
+	// an aim transition at its end is in the pose of this aim: on with its own blend out
+	const auto blendTime = AimTransitions::Of(srcAnim) != TransitionKind::None ? srcAnim->GetEaseOutTime() : destAnim->GetEaseInTime();
 
 	// aim, aim up and aim down are switched one by one: they share the switch of this update
 	const auto animSwitch = AnimSwitch::Current(animData);

@@ -296,14 +296,15 @@ struct SavedAnimsTime
 	friend auto operator<=>(const SavedAnimsTime& lhs, const SavedAnimsTime& rhs) = default;
 };
 
-// sequence_extradata.h: None (0), Start, Stop
-enum class MovementTransition : UInt8;
+// transition_anims.h: None (0), Start, Stop
+enum class TransitionKind : UInt8;
 
 struct AnimPath
 {
 	std::string_view path;
 	bool partialReload = false;
-	// _start / _stop: a start or stop animation of a walk or run (MovementTransitions), never picked as the group's animation
+	// _start / _stop: a start or stop animation of a walk or run (MovementTransitions) or of aiming down the sights
+	// (AimTransitions), never picked as the group's animation
 	bool isStartAnim = false;
 	bool isStopAnim = false;
 	bool isAmmoSwap = false;
@@ -344,7 +345,7 @@ struct SavedAnims
 	std::string_view conditionScriptText;
 	bool pollCondition = false;
 	bool matchBaseGroupId = false;
-	bool hasMovementTransitions = false;
+	bool hasTransitionAnims = false;
 	bool hasPartialReload = false;
 	bool hasAmmoSwap = false;
 	bool disabled = false;
@@ -504,9 +505,9 @@ float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimG
 float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence);
 
 // The override set the group's animation comes from for the actor; with a transition, the topmost set that has such a
-// start or stop animation of the group (MovementTransitions). A set with only start and stop animations is passed over
+// start or stop animation of the group (TransitionAnims). A set with only start and stop animations is passed over
 // for the group's own animation, so it does not hide the walk of a set below it
-std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData, MovementTransition transition = MovementTransition{});
+std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData, TransitionKind transition = TransitionKind{});
 
 static ParamInfo kParams_SetWeaponAnimationPath[] =
 {

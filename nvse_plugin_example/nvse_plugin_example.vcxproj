@@ -392,6 +392,8 @@
     <ClCompile Include="accum_blend_fix.cpp" />
     <ClCompile Include="additive_anims.cpp" />
     <ClCompile Include="aim_pitch.cpp" />
+    <ClCompile Include="aim_transitions.cpp" />
+    <ClCompile Include="transition_anims.cpp" />
     <ClCompile Include="spawn_keys.cpp" />
     <ClCompile Include="text_key_arguments.cpp" />
     <ClCompile Include="blend_curves.cpp" />
@@ -474,6 +476,8 @@
     <ClInclude Include="accum_blend_fix.h" />
     <ClInclude Include="additive_anims.h" />
     <ClInclude Include="aim_pitch.h" />
+    <ClInclude Include="aim_transitions.h" />
+    <ClInclude Include="transition_anims.h" />
     <ClInclude Include="spawn_keys.h" />
     <ClInclude Include="text_key_arguments.h" />
     <ClInclude Include="blend_curves.h" />

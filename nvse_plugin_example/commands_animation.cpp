@@ -25,7 +25,7 @@
 #include "anim_fixes.h"
 #include "anim_switch.h"
 #include "blend_fixes.h"
-#include "movement_transitions.h"
+#include "transition_anims.h"
 #include "nihooks.h"
 #include "NiNodes.h"
 #include "NiObjects.h"
@@ -255,7 +255,7 @@ std::optional<BSAnimationContext> LoadCustomAnimation(SavedAnims& animBundle, co
 		return std::nullopt;
 	animBundle.linkedSequences.insert(animCtx->anim);
 	if (animCtx->anim && (animPath.isStartAnim || animPath.isStopAnim))
-		MovementTransitions::FixEndKey(animCtx->anim);
+		TransitionAnims::Prepare(animCtx->anim);
 	return animCtx;
 }
 
@@ -646,10 +646,10 @@ void SavedAnims::Load()
 	loaded.store(true, std::memory_order_release);
 }
 
-// transition: None for the group's animation, else its start or stop animations (MovementTransitions). Sets without a
+// transition: None for the group's animation, else its start or stop animations (TransitionAnims). Sets without a
 // file of the kind asked for are passed over: one with only start and stop animations must not hide the walk of the
 // sets below it
-std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, MovementTransition transition)
+std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt16 groupId, AnimData* animData, TransitionKind transition)
 {
 	if (const auto stacksIter = overrides.stacks.find(groupId); stacksIter != overrides.stacks.end())
 	{
@@ -662,7 +662,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 		{
 			if (!ctx->MatchesConditions(actor) || ctx->disabled)
 				continue;
-			if ((ctx->hasMovementTransitions || transition != MovementTransition::None) && !MovementTransitions::HasPaths(*ctx, transition))
+			if ((ctx->hasTransitionAnims || transition != TransitionKind::None) && !TransitionAnims::HasPaths(*ctx, transition))
 				continue;
 			const auto initAnimTime = [&](SavedAnims* savedAnims)
 			{
@@ -683,7 +683,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 			if (ctx->conditionScript)
 			{
 				// start and stop animations are looked up when one is due: the poll plays the set's group
-				if (ctx->pollCondition && transition == MovementTransition::None)
+				if (ctx->pollCondition && transition == TransitionKind::None)
 					initAnimTime(ctx.get()); // init'd here so conditions can activate despite not being overridden
 				NVSEArrayVarInterface::Element result;
 				if (!CallFunction(*ctx->conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
@@ -698,7 +698,7 @@ std::optional<AnimationResult> PickAnimation(AnimOverrideStruct& overrides, UInt
 	return std::nullopt;
 }
 
-std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, FullAnimGroupID animGroupId, AnimData* animData, MovementTransition transition)
+std::optional<AnimationResult> GetAnimationFromMap(AnimOverrideMap& map, UInt32 id, FullAnimGroupID animGroupId, AnimData* animData, TransitionKind transition)
 {
 	if (const auto mapIter = map.find(id); mapIter != map.end())
 	{
@@ -740,7 +740,7 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 	const auto getAnimPath = [&]() -> AnimPath*
 	{
 		const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
-		if (ctx.anims.size() == 1 && !idleFileStem && !ctx.hasMovementTransitions) [[likely]]
+		if (ctx.anims.size() == 1 && !idleFileStem && !ctx.hasTransitionAnims) [[likely]]
 			return ctx.anims[0].get();
 		auto candidates = ctx.anims 
             | std::views::transform([](const auto& anim) { return anim.get(); }) 
@@ -753,8 +753,8 @@ AnimPath* GetAnimPath(SavedAnims& ctx, UInt16 groupId, AnimData* animData)
 				return IsIdleFileStem(*animPath, *idleFileStem);
 			}) | std::ranges::to<std::vector<AnimPath*>>();
 		}
-		// start and stop animations only play through MovementTransitions
-		if (ctx.hasMovementTransitions)
+		// start and stop animations only play through MovementTransitions and AimTransitions
+		if (ctx.hasTransitionAnims)
 		{
 			candidates = candidates | std::views::filter([](const AnimPath* animPath)
 			{
@@ -819,7 +819,7 @@ thread_local AnimationResultCache g_animationResultCache;
 
 std::shared_mutex g_overrideMapMutex;
 
-std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData, MovementTransition transition)
+std::optional<AnimationResult> GetActorAnimation(FullAnimGroupID animGroupId, AnimData* animData, TransitionKind transition)
 {
 	// wait for file loading to finish
 	if (g_animFileThread.joinable())
@@ -1144,7 +1144,7 @@ bool SetOverrideAnimation(AnimOverrideData& data, AnimOverrideMap& map)
 		return true;
 	}
 	
-	MovementTransitions::TagPath(anims, *anims.anims.emplace_back(std::make_unique<AnimPath>(path)), groupId);
+	TransitionAnims::TagPath(anims, *anims.anims.emplace_back(std::make_unique<AnimPath>(path)), groupId);
 	anims.matchBaseGroupId = data.matchBaseGroupId;
 	anims.conditionScript = data.conditionScript;
 	anims.pollCondition = data.pollCondition;
@@ -3445,6 +3445,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 		{
 			g_pluginSettings.movementTransitions = !g_pluginSettings.movementTransitions;
 			*result = g_pluginSettings.movementTransitions;
+		}
+		else if (featureName.str() == "aimTransitions")
+		{
+			g_pluginSettings.aimTransitions = !g_pluginSettings.aimTransitions;
+			*result = g_pluginSettings.aimTransitions;
 		}
 		
 		return true;

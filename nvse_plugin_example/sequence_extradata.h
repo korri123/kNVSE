@@ -9,24 +9,20 @@
 #include "ease.h"
 #include "skeleton_nodes.h"
 #include "spawn_keys.h"
-
-// A start or stop animation of a walk or run (an AnimGroupOverride file tagged _start or _stop), as MovementTransitions
-// plays it in the movement section
-enum class MovementTransition : UInt8
-{
-    None,
-    Start,
-    Stop,
-};
+#include "transition_anims.h"
 
 class SequenceExtraData
 {
 public:
     bool startInReloadTargets = false;
     bool needsStoreTargets = false;
-    // Set by MovementTransitions on the sequences it plays as start or stop animations. Those are only ever played as such
+    // Set by the feature that plays the sequence as a start or stop animation (TransitionAnims): MovementTransitions
+    // for a walk's or run's, AimTransitions for one of aiming (bAimTransition). Those are only ever played as such
     // (normal picks leave the tagged files out), so it holds for as long as the sequence belongs to the manager
-    MovementTransition movementTransition = MovementTransition::None;
+    TransitionKind transition = TransitionKind::None;
+    bool bAimTransition : 1 = false;
+    // An aim transition played back (AimTransitions): its time runs backwards while it plays
+    bool bAimReversed : 1 = false;
     // An NPC's stop animation (MovementTransitions' arrivals): the goal of the path it was started for (once per approach),
     // and the distance to the stop point as of the last update
     NiPoint3 arrivalGoal{ NAN, NAN, NAN };

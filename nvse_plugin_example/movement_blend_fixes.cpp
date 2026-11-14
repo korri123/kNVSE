@@ -240,7 +240,7 @@ namespace
 	bool IsMovementTransition(const NiControllerSequence* sequence)
 	{
 		const auto* extraData = SequenceExtraDatas::Get(sequence);
-		return extraData && extraData->movementTransition != MovementTransition::None;
+		return extraData && !extraData->bAimTransition && extraData->transition != TransitionKind::None;
 	}
 
 	// m: text keys (the engine's morph tag, NiControllerSequence::pMorphTag): whole keys starting with "m:" in any case,

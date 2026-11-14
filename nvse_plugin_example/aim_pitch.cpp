@@ -3,6 +3,7 @@
 #include <charconv>
 #include <cmath>
 
+#include "aim_transitions.h"
 #include "blend_smoothing.h"
 #include "game_types.h"
 #include "hooks.h"
@@ -25,7 +26,7 @@ namespace
     {
         ThisStdCall(0x9295C0, process, actor);
         auto* sequence = process->weaponSequence[0];
-        if (!sequence || !AimPitch::HasKey(*sequence))
+        if (!sequence || !AimPitch::Applies(*sequence))
             return;
         // the pose looking straight ahead, as the game weights them at a pitch of 0
         sequence->m_fSeqWeight = 1.0f;
@@ -50,11 +51,20 @@ bool AimPitch::HasKey(const NiControllerSequence& sequence)
     return TextKeys::FindArguments(sequence, kKeyName).has_value();
 }
 
+bool AimPitch::Applies(const NiControllerSequence& sequence)
+{
+    return HasKey(sequence) || AimTransitions::Of(&sequence) != TransitionKind::None;
+}
+
 AimPitch::Shares::Shares(const NiControllerSequence& sequence)
 {
     const auto arguments = TextKeys::FindArguments(sequence, kKeyName);
     if (!arguments)
+    {
+        // an aim transition turns as with the key without arguments
+        m_default = AimTransitions::Of(&sequence) != TransitionKind::None;
         return;
+    }
     if (arguments->empty())
     {
         m_default = true;

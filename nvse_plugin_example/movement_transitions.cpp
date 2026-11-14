@@ -1,17 +1,14 @@
 #include "movement_transitions.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <vector>
 
-#include "blend_fixes.h"
 #include "class_vtbls.h"
 #include "commands_animation.h"
 #include "hooks.h"
 #include "movement_blend_fixes.h"
 #include "SafeWrite.h"
-#include "string_view_util.h"
 
 namespace
 {
@@ -24,53 +21,11 @@ namespace
 		return g_pluginSettings.blendSmoothing && g_pluginSettings.movementTransitions;
 	}
 
-	// Forward ... FastRight: the groups Actor::PickAnimations plays while the actor walks or runs
-	bool IsGait(UInt16 groupId)
-	{
-		const auto baseGroupId = groupId & 0xFF;
-		return baseGroupId >= kAnimGroup_Forward && baseGroupId <= kAnimGroup_FastRight;
-	}
+	using TransitionAnims::IsGait;
 
 	bool IsGait(const BSAnimGroupSequence* sequence)
 	{
 		return sequence && sequence->animGroup && IsGait(sequence->animGroup->groupID);
-	}
-
-	MovementTransition GetTransition(const AnimPath& path)
-	{
-		return path.isStartAnim ? MovementTransition::Start : path.isStopAnim ? MovementTransition::Stop : MovementTransition::None;
-	}
-
-	// The override set a walk or run group's start or stop animations come from: the one HandleAnimationChange takes the
-	// group's animation from, or one without an animation of the group (start and stop animations for whatever walk
-	// plays). Those of a set whose walk another set overrides stay with that walk
-	SavedAnims* FindOverrideSet(AnimData* animData, UInt16 groupId, MovementTransition transition)
-	{
-		const auto find = [&](MovementTransition kind) -> SavedAnims*
-		{
-			if (const auto baseResult = GetActorAnimation(groupId & 0xFF, animData, kind); baseResult && baseResult->animBundle->matchBaseGroupId)
-				return baseResult->animBundle;
-			if (const auto result = GetActorAnimation(groupId, animData, kind))
-				return result->animBundle;
-			return nullptr;
-		};
-		auto* set = find(transition);
-		if (set && MovementTransitions::HasPaths(*set, MovementTransition::None) && set != find(MovementTransition::None))
-			return nullptr;
-		return set;
-	}
-
-	std::vector<const AnimPath*> GetTransitionPaths(SavedAnims& set, MovementTransition transition)
-	{
-		std::vector<const AnimPath*> paths;
-		if (!set.hasMovementTransitions)
-			return paths;
-		for (const auto& path : set.anims)
-		{
-			if (GetTransition(*path) == transition)
-				paths.push_back(path.get());
-		}
-		return paths;
 	}
 
 	// Whether the start or stop animation may play on the skeleton. The player's 3rd person skeleton in 1st person: only
@@ -88,7 +43,7 @@ namespace
 	// One of the set's start animations at random that may play on the skeleton (IsAllowed)
 	BSAnimGroupSequence* PickStart(AnimData* animData, SavedAnims& set)
 	{
-		auto paths = GetTransitionPaths(set, MovementTransition::Start);
+		auto paths = TransitionAnims::GetPaths(set, TransitionKind::Start);
 		while (!paths.empty())
 		{
 			const auto index = GetRandomUInt(paths.size());
@@ -101,7 +56,7 @@ namespace
 		return nullptr;
 	}
 
-	// Start and stop animations and what blends with them in the movement section play at fMoveSpeed (ClockStateHook), so
+	// Start and stop animations and what blends with them in the movement section play at fMoveSpeed (RunClock), so
 	// blends into and out of them take their ease time in the animations' time
 	float ToRealTime(const AnimData* animData, float fAnimTime)
 	{
@@ -111,12 +66,13 @@ namespace
 
 	// Marks the sequence and plays it in the movement section under groupId (the group the engine picked, which it keeps
 	// testing the section against), cross fading from what plays there. False if it could not start
-	bool Play(AnimData* animData, BSAnimGroupSequence* sequence, UInt16 groupId, MovementTransition transition)
+	bool Play(AnimData* animData, BSAnimGroupSequence* sequence, UInt16 groupId, TransitionKind kind)
 	{
 		auto* extraData = SequenceExtraDatas::GetOrCreate(sequence);
 		if (!extraData)
 			return false;
-		extraData->movementTransition = transition;
+		extraData->transition = kind;
+		extraData->bAimTransition = false;
 		HandleExtraOperations(animData, sequence);
 		MovementBlendFixes::PlayMovementAnim(animData, sequence, ToRealTime(animData, sequence->GetEaseInTime()));
 		if (sequence->m_eState == NiControllerSequence::INACTIVE)
@@ -151,7 +107,7 @@ namespace
 
 	bool IsStopNearlyDone(const NiControllerSequence* sequence)
 	{
-		return MovementTransitions::Of(sequence) == MovementTransition::Stop && GetProgress(sequence) >= kStandingProgress;
+		return MovementTransitions::Of(sequence) == TransitionKind::Stop && GetProgress(sequence) >= kStandingProgress;
 	}
 
 	// Whether walking or running would start from standing: the movement section is empty, turning in place or most of
@@ -182,7 +138,7 @@ namespace
 			return false;
 		for (const auto* sequence : manager->m_kActiveSequences)
 		{
-			if (sequence && MovementTransitions::Of(sequence) != MovementTransition::None)
+			if (sequence && MovementTransitions::Of(sequence) != TransitionKind::None)
 				return true;
 		}
 		return false;
@@ -221,7 +177,7 @@ namespace
 			return false;
 		const auto currentTransition = MovementTransitions::Of(current);
 		// already stopping (the GetState hook keeps it), or released while the start animation was still blending in
-		if (currentTransition == MovementTransition::Stop || (currentTransition == MovementTransition::Start && current->m_eState == NiControllerSequence::EASEIN))
+		if (currentTransition == TransitionKind::Stop || (currentTransition == TransitionKind::Start && current->m_eState == NiControllerSequence::EASEIN))
 			return false;
 		auto* gait = GetMainGait(animData);
 		if (!gait)
@@ -229,10 +185,10 @@ namespace
 		const UInt16 groupId = gait == current ? animData->groupIDs[kSequence_Movement] : gait->animGroup->groupID;
 		if (!IsGait(groupId))
 			return false;
-		auto* set = FindOverrideSet(animData, groupId, MovementTransition::Stop);
+		auto* set = TransitionAnims::FindSet(animData, groupId, TransitionKind::Stop);
 		if (!set)
 			return false;
-		const auto paths = GetTransitionPaths(*set, MovementTransition::Stop);
+		const auto paths = TransitionAnims::GetPaths(*set, TransitionKind::Stop);
 		if (paths.empty())
 			return false;
 
@@ -257,7 +213,7 @@ namespace
 		}
 		if (!stop && !unmatched.empty())
 			stop = unmatched[GetRandomUInt(unmatched.size())];
-		if (!stop || !Play(animData, stop, groupId, MovementTransition::Stop))
+		if (!stop || !Play(animData, stop, groupId, TransitionKind::Stop))
 			return false;
 		animData->queuedGroupIDs[kSequence_Movement] = 0xFF;
 		return true;
@@ -289,8 +245,6 @@ namespace
 	// how much farther the stop point may get from one update to the next before the stop counts as cancelled (the goal
 	// moved on: following, a new path)
 	constexpr float kGoalMovedDistance = 2.0f;
-	// Whether any override set has a stop animation (TagPath): without one, StartArrival has nothing to start
-	std::atomic<bool> s_hasStopAnims = false;
 
 	struct Arrival
 	{
@@ -434,7 +388,7 @@ namespace
 		const UInt16 groupId = animData->groupIDs[kSequence_Movement];
 		// nothing to start: keeps the arrivals (the path handler's state, the lookup of the override set) out of every
 		// NPC's update while no stop animation is installed
-		if (!s_hasStopAnims.load(std::memory_order_relaxed))
+		if (!TransitionAnims::HasGaitStops())
 			return false;
 		// from a walk or start animation playing on its own: one still blending moves the NPC by less than the stop's
 		// motion counts on
@@ -444,10 +398,10 @@ namespace
 		const auto arrival = GetArrival(animData->actor);
 		if (arrival.state != Arrival::State::Moving)
 			return false;
-		auto* set = FindOverrideSet(animData, groupId, MovementTransition::Stop);
+		auto* set = TransitionAnims::FindSet(animData, groupId, TransitionKind::Stop);
 		if (!set)
 			return false;
-		const auto paths = GetTransitionPaths(*set, MovementTransition::Stop);
+		const auto paths = TransitionAnims::GetPaths(*set, TransitionKind::Stop);
 		if (paths.empty())
 			return false;
 
@@ -509,7 +463,7 @@ namespace
 		}
 		const auto& stop = *std::ranges::min_element(candidates, {}, &Candidate::fMismatch);
 		auto* sequence = stop.sequence;
-		if (!Play(animData, sequence, groupId, MovementTransition::Stop))
+		if (!Play(animData, sequence, groupId, TransitionKind::Stop))
 			return false;
 		if (stop.bStartOver && stop.fTime > sequence->m_fBeginKeyTime)
 		{
@@ -555,7 +509,7 @@ namespace
 		auto* animData = GET_CALLER_VAR(AnimData*, -0x4);
 		const bool bArrivals = IsEnabled() && animData->actor != g_thePlayer && GET_CALLER_VAR(UInt32, -0x1C) == kSequence_Movement &&
 			sequence == animData->animSequence[kSequence_Movement];
-		if (MovementTransitions::Of(sequence) == MovementTransition::Stop)
+		if (MovementTransitions::Of(sequence) == TransitionKind::Stop)
 			return bArrivals && KeepArrival(animData, sequence) ? sequence->m_eState : NiControllerSequence::INACTIVE;
 		if (bArrivals && StartArrival(animData))
 			return animData->animSequence[kSequence_Movement]->m_eState;
@@ -570,7 +524,7 @@ namespace
 		if (!bResult || !IsEnabled() || actor == g_thePlayer)
 			return bResult;
 		const auto* stop = animData->animSequence[kSequence_Movement];
-		if (MovementTransitions::Of(stop) != MovementTransition::Stop)
+		if (MovementTransitions::Of(stop) != TransitionKind::Stop)
 			return bResult;
 		const auto arrival = GetArrival(actor);
 		const RootTrack track(animData, stop);
@@ -594,7 +548,7 @@ namespace
 	// (kArrivalOvershoot) instead of stepping in place
 	bool __fastcall ArrivedShouldBeMovingHook(AnimData* animData)
 	{
-		if (IsEnabled() && MovementTransitions::Of(animData->animSequence[kSequence_Movement]) == MovementTransition::Stop)
+		if (IsEnabled() && MovementTransitions::Of(animData->animSequence[kSequence_Movement]) == TransitionKind::Stop)
 			return false;
 		return animData->ShouldBeMoving();
 	}
@@ -610,32 +564,6 @@ namespace
 		return eState;
 	}
 
-	// NiControllerSequence::GetState of a section's current sequence in Animation::Update (Animation at [ebp-0x18C], the
-	// update's time step at [ebp-0x5C]), deciding whether its clock runs at the group's speed: fMoveSpeed for movement
-	// groups, only for the current sequence and only while ANIMATING. With root motion moving the actor through the
-	// blends of start and stop animations (RootMotionStateHook), everything blending in the movement section runs at
-	// fMoveSpeed while one plays or fades, or the actor would slow to the animations' authored speed for every blend.
-	// Otherwise as BlendFixes' hook
-	NiControllerSequence::AnimState __fastcall ClockStateHook(NiControllerSequence* sequence)
-	{
-		auto* animData = GET_CALLER_VAR(AnimData*, -0x18C);
-		if (IsEnabled() && sequence == animData->animSequence[kSequence_Movement] && HasActiveTransition(sequence->m_pkOwner))
-		{
-			const float fExtraTime = GET_CALLER_VAR(float, -0x5C) * (animData->movementSpeedMult - 1.0f);
-			for (auto* other : sequence->m_pkOwner->m_kActiveSequences)
-			{
-				auto* bsSequence = static_cast<BSAnimGroupSequence*>(other);
-				if (!bsSequence || bsSequence == sequence || NOT_TYPE(bsSequence, BSAnimGroupSequence) || !IsGait(bsSequence))
-					continue;
-				if (bsSequence->m_eState == NiControllerSequence::EASEOUT && !bsSequence->m_pkPartnerSequence && bsSequence->m_fOffset != -NI_INFINITY)
-					bsSequence->m_fOffset += fExtraTime;
-			}
-			if (sequence->m_eState == NiControllerSequence::EASEIN)
-				return NiControllerSequence::ANIMATING;
-		}
-		return BlendFixes::ContinuedVariantStateHook(sequence);
-	}
-
 	// Animation::GetGroup of the movement section of the 1st person skeleton in PlayerMover::Update: in 1st person the
 	// player moves by the 1st person skeleton's movement when it plays the same group as the 3rd person one, else by the
 	// 3rd person one's. A start or stop animation only plays on the skeletons that have one, and the other's movement
@@ -649,74 +577,30 @@ namespace
 		const auto* thirdPerson = g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr;
 		if (!thirdPerson || thirdPerson == animData)
 			return groupId;
-		if (MovementTransitions::Of(animData->animSequence[kSequence_Movement]) != MovementTransition::None)
+		if (MovementTransitions::Of(animData->animSequence[kSequence_Movement]) != TransitionKind::None)
 			return thirdPerson->groupIDs[kSequence_Movement];
-		if (MovementTransitions::Of(thirdPerson->animSequence[kSequence_Movement]) != MovementTransition::None)
+		if (MovementTransitions::Of(thirdPerson->animSequence[kSequence_Movement]) != TransitionKind::None)
 			return 0xFFFF;
 		return groupId;
 	}
 }
 
-void MovementTransitions::FixEndKey(BSAnimGroupSequence* sequence)
-{
-	if (!sequence->animGroup)
-		return;
-	auto& keyTimes = sequence->animGroup->keyTimes;
-	if (keyTimes.Size() >= 2 && !(keyTimes[1] > keyTimes[0]))
-		keyTimes[1] = sequence->m_fEndKeyTime;
-}
-
-MovementTransition MovementTransitions::GetPathTransition(std::string_view path, UInt16 groupId)
-{
-	if (!IsGait(groupId))
-		return MovementTransition::None;
-	const auto stem = sv::get_file_stem(path);
-	if (sv::contains_ci(stem, "_start"))
-		return MovementTransition::Start;
-	if (sv::contains_ci(stem, "_stop"))
-		return MovementTransition::Stop;
-	return MovementTransition::None;
-}
-
-void MovementTransitions::TagPath(SavedAnims& set, AnimPath& animPath, UInt16 groupId)
-{
-	switch (GetPathTransition(animPath.path, groupId))
-	{
-	case MovementTransition::Start:
-		animPath.isStartAnim = true;
-		set.hasMovementTransitions = true;
-		break;
-	case MovementTransition::Stop:
-		animPath.isStopAnim = true;
-		set.hasMovementTransitions = true;
-		s_hasStopAnims.store(true, std::memory_order_relaxed);
-		break;
-	default:
-		break;
-	}
-}
-
-bool MovementTransitions::HasPaths(const SavedAnims& set, MovementTransition transition)
-{
-	return std::ranges::any_of(set.anims, [&](const auto& path) { return GetTransition(*path) == transition; });
-}
-
-MovementTransition MovementTransitions::Of(const NiControllerSequence* sequence)
+TransitionKind MovementTransitions::Of(const NiControllerSequence* sequence)
 {
 	if (!sequence)
-		return MovementTransition::None;
+		return TransitionKind::None;
 	const auto* extraData = SequenceExtraDatas::Get(sequence);
-	return extraData ? extraData->movementTransition : MovementTransition::None;
+	return extraData && !extraData->bAimTransition ? extraData->transition : TransitionKind::None;
 }
 
 BSAnimGroupSequence* MovementTransitions::PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* destAnim, UInt16 groupId)
 {
 	if (IsEnabled() && IsGait(groupId) && IsStanding(animData))
 	{
-		if (auto* set = FindOverrideSet(animData, groupId, MovementTransition::Start))
+		if (auto* set = TransitionAnims::FindSet(animData, groupId, TransitionKind::Start))
 		{
 			auto* start = PickStart(animData, *set);
-			if (start && Play(animData, start, groupId, MovementTransition::Start))
+			if (start && Play(animData, start, groupId, TransitionKind::Start))
 			{
 				// at its End key Animation::Update starts the queued group, the walk or run (or blends out the section
 				// when the actor no longer moves)
@@ -727,9 +611,29 @@ BSAnimGroupSequence* MovementTransitions::PlayMovementAnim(AnimData* animData, B
 		}
 	}
 	// the walk or run a start or stop animation goes on to
-	if (IsEnabled() && Of(animData->animSequence[kSequence_Movement]) != MovementTransition::None)
+	if (IsEnabled() && Of(animData->animSequence[kSequence_Movement]) != TransitionKind::None)
 		return MovementBlendFixes::PlayMovementAnim(animData, destAnim, ToRealTime(animData, destAnim->GetEaseInTime()));
 	return MovementBlendFixes::PlayMovementAnim(animData, destAnim);
+}
+
+// Animation::Update runs a section's clock at the group's speed (fMoveSpeed for movement groups) only for the current
+// sequence and only while it is ANIMATING. With root motion moving the actor through the blends of start and stop
+// animations (RootMotionStateHook), everything blending in the movement section runs at fMoveSpeed while one plays or
+// fades, or the actor would slow to the animations' authored speed for every blend
+bool MovementTransitions::RunClock(AnimData* animData, NiControllerSequence* sequence, float fStep)
+{
+	if (!IsEnabled() || sequence != animData->animSequence[kSequence_Movement] || !HasActiveTransition(sequence->m_pkOwner))
+		return false;
+	const float fExtraTime = fStep * (animData->movementSpeedMult - 1.0f);
+	for (auto* other : sequence->m_pkOwner->m_kActiveSequences)
+	{
+		auto* bsSequence = static_cast<BSAnimGroupSequence*>(other);
+		if (!bsSequence || bsSequence == sequence || NOT_TYPE(bsSequence, BSAnimGroupSequence) || !IsGait(bsSequence))
+			continue;
+		if (bsSequence->m_eState == NiControllerSequence::EASEOUT && !bsSequence->m_pkPartnerSequence && bsSequence->m_fOffset != -NI_INFINITY)
+			bsSequence->m_fOffset += fExtraTime;
+	}
+	return sequence->m_eState == NiControllerSequence::EASEIN;
 }
 
 void MovementTransitions::WriteHooks()
@@ -753,6 +657,4 @@ void MovementTransitions::WriteDelayedHooks()
 	WriteRelCall(0x897265, PickedGroupStateHook);
 	// Animation::Update
 	WriteRelCall(0x492E13, RootMotionStateHook);
-	// Animation::Update, after BlendFixes::WriteDelayedHooks: ClockStateHook calls BlendFixes::ContinuedVariantStateHook
-	WriteRelCall(0x491B1B, ClockStateHook);
 }
