@@ -658,6 +658,8 @@ extern thread_local AnimPathCache g_animPathFrameCache;
 std::string_view GetBaseAnimGroupName(std::string_view name);
 
 AnimGroupID GroupNameToId(std::string_view name);
+// The group of a name cut at its first '_' (as KFModel::InitSequence names a sequence)
+AnimGroupID SimpleGroupNameToId(std::string_view name);
 
 extern std::recursive_mutex g_animTimeMutex;
 

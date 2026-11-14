@@ -921,6 +921,7 @@ void ApplyHooks()
 	conf.fixMissingPrnKey = ini.GetOrCreate("Anim Fixes", "bFixMissingPrnKey", 1, "; try to fix animations where the prn key is missing in the first person animation.");
 	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest.");
 	conf.fixReloadStance = ini.GetOrCreate("Anim Fixes", "bFixReloadStance", 1, "; fix the body staying in the old stance when sneaking or standing up during a reload in third person: the game only switches the reload to the new stance's animation when it starts the next reload (or round of a looping reload, e.g. the Cowboy Repeater, whose legs sink into the ground or float above it until then), while the camera moves at once. kNVSE blends to it at once.");
+	conf.fixShortGaitBlend = ini.GetOrCreate("Anim Fixes", "bFixShortGaitBlend", 1, "; fix walk and run animations that blend in or out much faster than the others, e.g. the vanilla third person 1hpfastforward.kf and 2hlfastforward.kf (Blend: 3, a tenth of a second, where the other walks and runs take 6 or 9 frames): Blend, BlendIn and BlendOut text keys of a walk or run below 6 frames (0.2 seconds, the game's default blend) are changed to 6 when the animation loads. Start and stop animations and KFs with a noFix text key keep theirs.");
 
 	const std::string legacyAnimTimePaths = ini.GetOrCreate("Anim Fixes", "sLegacyAnimTimePaths", "B42Inject,B42Interact,B42Loot", "; use legacy anim time algorithm for these paths (these mods rely on bugged behavior from previous versions of kNVSE).");
 	if (!legacyAnimTimePaths.empty())
@@ -1171,6 +1172,7 @@ void ApplyHooks()
 			// AnimFixes::EraseNegativeAnimKeys(anim);
 			AnimFixes::FixWrongKFName(anim, fileName);
 			AnimFixes::FixMissingPrnKey(anim, fileName);
+			AnimFixes::FixShortGaitBlend(anim, fileName);
 		}
 		return &anim->m_kName;
 	}));

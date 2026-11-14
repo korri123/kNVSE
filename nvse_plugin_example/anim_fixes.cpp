@@ -7,6 +7,7 @@
 #include "hooks.h"
 #include "SafeWrite.h"
 #include "utility.h"
+#include "transition_anims.h"
 
 void LogAnimError(const BSAnimGroupSequence* anim, const std::string& msg)
 {
@@ -359,6 +360,65 @@ void AnimFixes::AddNoBlendSmoothingKeys(BSAnimGroupSequence* anim)
 			anim->m_spTextKeys->SetOrAddKey(key, 0.0f);
 			return;
 		}
+	}
+}
+
+void AnimFixes::FixShortGaitBlend(BSAnimGroupSequence* anim, const char* filePath)
+{
+	if (!g_pluginSettings.fixShortGaitBlend || HasNoFixTextKey(anim))
+		return;
+	// the anim group is not loaded yet; KFModel::InitSequence cuts the name at its first '_' before loading it
+	const auto groupId = SimpleGroupNameToId(anim->m_kName.CStr());
+	// start and stop animations set their own blends into and out of the walk
+	if (groupId == kAnimGroup_Invalid || !TransitionAnims::IsGait(groupId) ||
+		TransitionAnims::GetPathKind(filePath, groupId) != TransitionKind::None)
+		return;
+	// the game's default blend (fAnimationDefaultBlend 0.2 s), which the vanilla walks and runs keep to or exceed but
+	// for 1hpfastforward and 2hlfastforward in third person: Blend: 3, a weapon snapping into the run in a tenth of a
+	// second (half of that through the middle of the blend once priorities share it)
+	constexpr int kMinFrames = 6;
+	// BSAnimGroupSequence::InitAnimGroup (0x5F3A20) reads each line of a text key: the prefix in any case, then atoi
+	// past at most one space. 0 is no blend key (the default blend)
+	constexpr std::array<std::string_view, 3> blendPrefixes = { "BlendIn:", "BlendOut:", "Blend:" };
+	for (auto& key : anim->m_spTextKeys->GetKeys())
+	{
+		const std::string_view text(key.m_kText.CStr());
+		std::string fixed;
+		bool changed = false;
+		for (size_t lineStart = 0; lineStart < text.size();)
+		{
+			size_t lineEnd = text.find('\n', lineStart);
+			lineEnd = lineEnd == std::string_view::npos ? text.size() : lineEnd + 1;
+			const auto line = text.substr(lineStart, lineEnd - lineStart);
+			lineStart = lineEnd;
+			const auto prefix = ra::find_if(blendPrefixes, [&](std::string_view p) { return sv::starts_with_ci(line, p); });
+			if (prefix == blendPrefixes.end())
+			{
+				fixed += line;
+				continue;
+			}
+			size_t numberStart = prefix->size();
+			if (numberStart < line.size() && line[numberStart] == ' ')
+				++numberStart;
+			const size_t numberEnd = (std::min)(line.find_first_not_of("0123456789", numberStart), line.size());
+			int frames = 0;
+			for (const char c : line.substr(numberStart, numberEnd - numberStart))
+				frames = (std::min)(frames * 10 + (c - '0'), kMinFrames);
+			if (frames == 0 || frames >= kMinFrames)
+			{
+				fixed += line;
+				continue;
+			}
+			const auto oldBlend = line.substr(0, numberEnd);
+			const auto newBlend = std::string(line.substr(0, numberStart)) + std::to_string(kMinFrames);
+			LogAnimError(filePath, FormatString("Walk or run blends over too few frames, text key %.*s changed to %s",
+				static_cast<int>(oldBlend.size()), oldBlend.data(), newBlend.c_str()));
+			fixed += newBlend;
+			fixed += line.substr(numberEnd);
+			changed = true;
+		}
+		if (changed)
+			key.m_kText = fixed.c_str();
 	}
 }
 
