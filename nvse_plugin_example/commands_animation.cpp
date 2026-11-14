@@ -1920,7 +1920,8 @@ float AnimData::GetBlendTime() const
 {
 	if (noBlend120)
 		return 0.0f;
-	return GetDefaultBlendTime() / 30.0f / GetDefaultAnimMult();
+	// fAnimationDefaultBlend is in seconds (Animation::StartGroup uses it as is; only Blend text keys are in frames)
+	return GetDefaultBlendTime() / GetDefaultAnimMult();
 }
 
 float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence)
