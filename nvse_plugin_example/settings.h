@@ -83,7 +83,9 @@ namespace Settings
         Apply apply;
         // keys of bool settings it does nothing without
         std::array<const char*, 2> requirements;
-        // the INI comment, also the menu's description
+        // one line for the menu
+        const char* summary;
+        // the INI comment
         const char* description;
 
         bool IsBool() const { return std::holds_alternative<bool*>(value); }

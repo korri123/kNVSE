@@ -21,7 +21,7 @@ namespace KnvseMenu
 			if (identifier == Overrides::kEveryone)
 				return "everyone";
 			const char* modName = DataHandler::Get()->GetNthModName(identifier);
-			return std::format("{}{}", brief ? "" : "everyone of ", modName ? modName : "?");
+			return std::format("{}{}", modName ? modName : "?", brief ? "" : " (all actors)");
 		}
 		auto* form = LookupFormByID(identifier);
 		if (!form)
@@ -49,13 +49,13 @@ namespace KnvseMenu
 		switch (origin.kind)
 		{
 		case OverrideOrigin::Kind::ModFolder:
-			return std::format(R"(the folder AnimGroupOverride\{})", origin.name);
+			return std::format(R"(AnimGroupOverride\{})", origin.name);
 		case OverrideOrigin::Kind::Json:
-			return std::format(R"(the folder AnimGroupOverride\{}, listed by {} (priority {}))", origin.name, origin.jsonFile, origin.jsonPriority);
+			return std::format(R"(AnimGroupOverride\{} ({}, priority {}))", origin.name, origin.jsonFile, origin.jsonPriority);
 		case OverrideOrigin::Kind::Script:
-			return std::format("scripts of {}", std::string_view(origin.name).substr(std::string_view("script: ").size()));
+			return std::format("Script of {}", std::string_view(origin.name).substr(std::string_view("script: ").size()));
 		case OverrideOrigin::Kind::Plugin:
-			return "another plugin";
+			return "Plugin";
 		}
 		return {};
 	}
@@ -79,11 +79,7 @@ namespace KnvseMenu
 
 			std::string GetHeading(Side side) const override
 			{
-				if (side == Side::Right)
-					return "Sets and files";
-				// without an order of the user's, each set's stack is in the order of registration (JSON priority, then
-				// scripts), which the list only follows roughly
-				return OverridePrefs::Get().order.empty() ? "Installed, newest first" : "Installed, tried first at the top";
+				return side == Side::Left ? "Sources" : "Animations";
 			}
 
 			void Build(const Context& context, std::vector<Row>& left, std::vector<Row>& right) override
@@ -103,7 +99,7 @@ namespace KnvseMenu
 						.check = disabled ? Row::Check::Off : Row::Check::On, .dim = disabled });
 				}
 				if (shownOrigins.empty())
-					left.push_back({ .text = context.filter.empty() ? "None installed" : "None matches", .dim = true });
+					left.push_back({ .text = context.filter.empty() ? "None installed" : "No matches", .dim = true });
 
 				rightRows.clear();
 				selectedOrigin = context.leftRow < static_cast<int>(shownOrigins.size()) ? &origins[shownOrigins[context.leftRow]] : nullptr;
@@ -120,7 +116,7 @@ namespace KnvseMenu
 					const auto enabledFiles = std::ranges::count_if(set.anims, [&](const AnimPath& anim) { return set.IsFileEnabled(anim); });
 					const auto check = enabledFiles == static_cast<long>(set.anims.size()) ? Row::Check::On : enabledFiles ? Row::Check::Partly : Row::Check::Off;
 					const bool playable = !originDisabled && set.IsEnabled();
-					right.push_back({ .text = DescribeSet(view), .value = view.stackSize > 1 ? std::format("#{} of {}", view.stackPosition + 1, view.stackSize) : "",
+					right.push_back({ .text = DescribeSet(view), .value = view.stackSize > 1 ? std::format("{} of {}", view.stackPosition + 1, view.stackSize) : "",
 						.check = set.anims.empty() ? Row::Check::None : check, .dim = !playable });
 					rightRows.push_back({ setIndex, -1 });
 					for (size_t fileIndex = 0; fileIndex < set.anims.size(); ++fileIndex)
@@ -144,29 +140,26 @@ namespace KnvseMenu
 				if (side == Side::Left)
 				{
 					if (row >= static_cast<int>(shownOrigins.size()))
-						return R"(Nothing in Data\Meshes\AnimGroupOverride (or nothing the filter matches), and no animations registered by scripts.)";
+						return {};
 					const auto& entry = origins[shownOrigins[row]];
 					size_t numFiles = 0;
 					for (const auto& view : entry.sets)
 						numFiles += view.set->anims.size();
-					auto text = std::format("{}\nFrom {}.\n{} sets, {} files.", entry.origin->name, DescribeOrigin(*entry.origin), entry.sets.size(), numFiles);
-					if (entry.origin->userDisabled.load(std::memory_order_relaxed))
-						text += "\nDisabled: none of its animations play.";
-					return text;
+					return std::format("{}\n{} sets, {} files", DescribeOrigin(*entry.origin), entry.sets.size(), numFiles);
 				}
 				const auto [setIndex, fileIndex] = rightRows[row];
 				const auto& view = selectedOrigin->sets[setIndex];
 				const auto& set = *view.set;
 				if (fileIndex >= 0)
-					return std::format("{}\n{}", set.anims[fileIndex].path, DescribeFileUse(set, set.anims[fileIndex]));
+					return std::format("{}\n{}", set.anims[fileIndex].path, DescribeFileUse(set));
 				if (fileIndex == -2)
-					return std::format("{}\nPlays with the set's animations, added on top of them.", set.additiveAnimPath);
+					return std::format("{}\nAdditive", set.additiveAnimPath);
 				return DescribeSetDetails(view);
 			}
 
 			std::string GetHelp() const override
 			{
-				return "Enter: on / off   Home, End: move up / down   Tab: next page   type: filter   Esc: close";
+				return "Enter: toggle   Home/End: move";
 			}
 
 			std::string GetButton(int button) const override
@@ -175,7 +168,7 @@ namespace KnvseMenu
 				{
 				case 0: return "Move up";
 				case 1: return "Move down";
-				case 2: return "Default order";
+				case 2: return "Reset order";
 				case 3: return "Reload files";
 				default: return {};
 				}
@@ -376,40 +369,31 @@ namespace KnvseMenu
 				return tags;
 			}
 
-			std::string DescribeFileUse(const SavedAnims& set, const AnimPath& anim) const
+			static std::string DescribeFileUse(const SavedAnims& set)
 			{
-				if (!set.IsFileEnabled(anim))
-					return "Disabled.";
 				if (set.anims.size() == 1)
-					return "The set's only file.";
-				return std::format("One of {} files of the set: {}.", set.anims.size(), set.hasOrder ? "they play in turn (_order_)" : "one is picked at random");
+					return {};
+				return std::format("{} variants, {}", set.anims.size(), set.hasOrder ? "in order" : "random");
 			}
 
 			std::string DescribeSetDetails(const Overrides::SetView& view) const
 			{
 				const auto& set = *view.set;
-				auto text = std::format("{}\nPlays for {} in {} person", DescribeSet(view), DescribeIdentifier(view.identifier, view.isModIndex),
-					view.firstPerson ? "1st" : "3rd");
+				auto text = std::format("{}, {} person", DescribeIdentifier(view.identifier, view.isModIndex), view.firstPerson ? "1st" : "3rd");
 				if (!set.conditionScriptText.empty())
-					text += std::format(" if {}", set.conditionScriptText);
+					text += std::format("\nCondition: {}", set.conditionScriptText);
 				else if (set.conditionScript.load(std::memory_order_relaxed))
-					text += " if its script condition holds";
-				text += ".";
-				if (set.pollCondition)
-					text += " The condition is checked every frame.";
+					text += "\nScript condition";
 				if (set.conditionFailed.load(std::memory_order_relaxed))
-					text += "\nIts condition does not compile: it never plays.";
+					text += "\nCondition doesn't compile";
 				if (set.disabled.load(std::memory_order_relaxed))
-					text += "\nDisabled by a script.";
+					text += "\nDisabled by a script";
 				const auto iter = stacks.find({ view.identifier, view.isModIndex, view.firstPerson, view.groupId });
 				if (iter != stacks.end() && iter->second.size() > 1)
 				{
-					text += "\nTried in this order:";
+					text += "\nPriority:";
 					for (const auto& other : iter->second)
-					{
-						text += std::format("\n  {}{} ({})", other.set == view.set ? "> " : "", other.set->origin ? other.set->origin->name : "?",
-							!other.set->anims.empty() ? other.set->anims[0].path : other.set->additiveAnimPath);
-					}
+						text += std::format("\n{}{}", other.set == view.set ? "> " : "  ", other.set->origin ? other.set->origin->name : "?");
 				}
 				return text;
 			}

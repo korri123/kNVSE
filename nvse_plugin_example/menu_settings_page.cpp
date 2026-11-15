@@ -67,32 +67,32 @@ namespace KnvseMenu
 				if (side == Side::Left)
 					return {};
 				const auto& setting = *shown[row];
-				auto text = std::format("{}\n{}", setting.description, KeyLine(setting));
+				std::string text = setting.summary;
 				const auto missing = MissingRequirements(setting);
 				if (!missing.empty())
-					text += std::format("\nDoes nothing while {} is off.", missing);
+					text += std::format("\nRequires {}.", missing);
 				switch (setting.apply)
 				{
 				case Settings::Apply::Live:
 					break;
 				case Settings::Apply::NewAnimations:
-					text += "\nApplies to animations loaded from now on: restart the game for those loaded already.";
+					text += "\nApplies to animations loaded after the change.";
 					break;
 				case Settings::Apply::RestartToEnable:
-					text += "\nSwitching it on takes effect after restarting the game.";
+					text += "\nTurning it on needs a restart.";
 					break;
 				case Settings::Apply::Restart:
-					text += "\nTakes effect after restarting the game.";
+					text += "\nNeeds a restart.";
 					break;
 				}
 				if (setting.IsString())
-					text += "\nEdit it in kNVSE.ini.";
+					text += "\nEdit in kNVSE.ini.";
 				return text;
 			}
 
 			std::string GetHelp() const override
 			{
-				return "Enter: on / off   Left, Right: change   Del: default   Tab: next page   type: filter   Esc: close";
+				return "Enter: toggle   Left/Right: change   Del: default";
 			}
 
 			std::string GetButton(int button) const override
@@ -161,27 +161,14 @@ namespace KnvseMenu
 						restart += restart.empty() ? setting.label : std::format(", {}", setting.label);
 				}
 				if (!restart.empty())
-					QueueUIMessage(std::format("kNVSE: restart the game for {}", restart).c_str(), 0, nullptr, nullptr, 4.0f, false);
+					QueueUIMessage(std::format("kNVSE: restart to apply {}", restart).c_str(), 0, nullptr, nullptr, 4.0f, false);
 			}
 
 		private:
 			static bool Matches(const Settings::Setting& setting, std::string_view filter)
 			{
 				return filter.empty() || sv::contains_ci(setting.label, filter) || sv::contains_ci(setting.key, filter)
-					|| sv::contains_ci(setting.description, filter);
-			}
-
-			static std::string KeyLine(const Settings::Setting& setting)
-			{
-				auto line = std::format("[{}] {}", setting.section, setting.key);
-				if (setting.IsString())
-					return line + std::format(", default {}", setting.defaultText);
-				if (setting.IsBool())
-					return line + std::format(", default {}", setting.defaultValue != 0.0 ? "on" : "off");
-				line += std::format(", default {}", setting.defaultValue);
-				if (setting.min < setting.max)
-					line += std::format(", {} to {}", setting.min, setting.max);
-				return line;
+					|| sv::contains_ci(setting.summary, filter);
 			}
 
 			static std::string MissingRequirements(const Settings::Setting& setting)
@@ -191,7 +178,7 @@ namespace KnvseMenu
 				{
 					const auto* required = key ? Settings::Find(key) : nullptr;
 					if (required && Settings::GetNumber(*required) == 0.0)
-						missing += missing.empty() ? required->label : std::format(" or {}", required->label);
+						missing += missing.empty() ? required->label : std::format(" and {}", required->label);
 				}
 				return missing;
 			}

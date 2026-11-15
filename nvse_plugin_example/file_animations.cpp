@@ -365,14 +365,14 @@ namespace
 			else
 			{
 				ERROR_LOG(pathString + " does not start as a JSON array");
-				Overrides::ReportProblem(Overrides::Problem::Kind::Files, pathString + " does not start as a JSON array");
+				Overrides::ReportProblem(Overrides::Problem::Kind::Files, pathString + ": not a JSON array");
 			}
 		}
 		catch (const nlohmann::json::exception& e)
 		{
 			ERROR_LOG("The JSON is incorrectly formatted! It will not be applied. Path: " + pathString);
 			ERROR_LOG(FormatString("JSON error: %s\n", e.what()));
-			Overrides::ReportProblem(Overrides::Problem::Kind::Files, FormatString("%s is not valid JSON and was not applied: %s", pathString.c_str(), e.what()));
+			Overrides::ReportProblem(Overrides::Problem::Kind::Files, FormatString("%s: %s", pathString.c_str(), e.what()));
 		}
 	}
 
@@ -490,7 +490,7 @@ void LoadFileAnimPaths()
 		{
 			const auto problem = FormatString("AnimGroupOverride Error: %s: %s", what.c_str(), e.what());
 			ERROR_LOG(problem);
-			Overrides::ReportProblem(Overrides::Problem::Kind::Files, problem);
+			Overrides::ReportProblem(Overrides::Problem::Kind::Files, FormatString("%s: %s", what.c_str(), e.what()));
 		}
 	};
 	for (const auto& entry : GetSortedEntries(dir))

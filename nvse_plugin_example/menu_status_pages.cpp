@@ -19,31 +19,27 @@ namespace KnvseMenu
 			case Overrides::Verdict::Plays: return "plays";
 			case Overrides::Verdict::Disabled: return "disabled";
 			case Overrides::Verdict::FolderCondition: return "not for this actor";
-			case Overrides::Verdict::NoTransition: return "no such start / stop";
+			case Overrides::Verdict::NoTransition: return "start/stop only";
 			case Overrides::Verdict::OtherIdle: return "other idle";
 			case Overrides::Verdict::LoaderThread: return "loader thread";
-			case Overrides::Verdict::ConditionFailed: return "condition broken";
+			case Overrides::Verdict::ConditionFailed: return "bad condition";
 			case Overrides::Verdict::ConditionFalse: return "condition false";
 			case Overrides::Verdict::NoFiles: return "additive only";
 			}
 			return "";
 		}
 
+		// Only where the short verdict needs it
 		const char* DescribeVerdictLong(Overrides::Verdict verdict)
 		{
 			switch (verdict)
 			{
-			case Overrides::Verdict::Plays: return "Its conditions hold: the first such set is the one that plays.";
-			case Overrides::Verdict::Disabled: return "Disabled (in this menu, or by a script).";
-			case Overrides::Verdict::FolderCondition: return "Its subfolder (male, female, mod1-3, hurt, human) does not match the actor.";
-			case Overrides::Verdict::NoTransition: return "It has only start / stop animations, or not the kind asked for.";
-			case Overrides::Verdict::OtherIdle: return "It has no file of the idle that plays.";
-			case Overrides::Verdict::LoaderThread: return "Its script condition is not run on the thread that loads the actor.";
-			case Overrides::Verdict::ConditionFailed: return "Its condition does not compile (see Problems).";
-			case Overrides::Verdict::ConditionFalse: return "Its condition does not hold now.";
-			case Overrides::Verdict::NoFiles: return "It has only an additive animation.";
+			case Overrides::Verdict::FolderCondition: return "Its subfolder (male, female, mod1-3, hurt, human) doesn't match.";
+			case Overrides::Verdict::OtherIdle: return "No file for the playing idle.";
+			case Overrides::Verdict::LoaderThread: return "Script conditions aren't checked while the actor loads.";
+			case Overrides::Verdict::ConditionFailed: return "Condition doesn't compile.";
+			default: return "";
 			}
-			return "";
 		}
 
 		// What the player plays now in each section of both skeletons, and for the one selected every set that could
@@ -55,7 +51,7 @@ namespace KnvseMenu
 
 			std::string GetHeading(Side side) const override
 			{
-				return side == Side::Left ? "The player's animations" : "Sets for it, in the order they are tried";
+				return side == Side::Left ? "Player" : "Overrides, by priority";
 			}
 
 			void Build(const Context& context, std::vector<Row>& left, std::vector<Row>& right) override
@@ -101,9 +97,12 @@ namespace KnvseMenu
 					const bool plays = verdict == Overrides::Verdict::Plays && !played;
 					played |= plays;
 					const auto view = views.find(set);
-					right.push_back({ .text = std::format("{}: {}", set->origin ? set->origin->name : "?",
-						view != views.end() ? DescribeSet(view->second) : std::string()),
-						.value = plays ? "plays" : verdict == Overrides::Verdict::Plays ? "not reached" : DescribeVerdict(verdict),
+					// group and person are the selected animation's: only who it is for tells sets apart
+					auto text = std::string(set->origin ? set->origin->name : "?");
+					if (view != views.end() && !(view->second.isModIndex && view->second.identifier == Overrides::kEveryone))
+						text += std::format(" ({})", DescribeIdentifier(view->second.identifier, view->second.isModIndex, true));
+					right.push_back({ .text = std::move(text),
+						.value = plays ? "plays" : verdict == Overrides::Verdict::Plays ? "overridden" : DescribeVerdict(verdict),
 						.dim = !plays });
 				}
 			}
@@ -113,25 +112,23 @@ namespace KnvseMenu
 				if (side == Side::Left)
 				{
 					if (row >= static_cast<int>(sections.size()))
-						return "The player's animations are listed once a game is loaded.";
+						return {};
 					const auto& [animData, sequence] = sections[row];
 					const auto* set = FindPlayingSet(animData, sequence);
-					return std::format("{}\n{}", sequence->m_kName.CStr(),
-						set && set->origin ? std::format("From {}.", DescribeOrigin(*set->origin)) : std::string("The game's own animation: no set of an origin plays."));
+					return set && set->origin ? std::format("{}\n{}", sequence->m_kName.CStr(), DescribeOrigin(*set->origin)) : sequence->m_kName.CStr();
 				}
 				const auto& [set, verdict] = candidates[row];
-				const auto view = views.find(set);
-				auto text = std::format("{}\n{}", view != views.end() ? DescribeSet(view->second) : std::string(), DescribeVerdictLong(verdict));
-				if (set->origin)
-					text += std::format("\nFrom {}.", DescribeOrigin(*set->origin));
+				auto text = set->origin ? DescribeOrigin(*set->origin) : std::string();
 				if (!set->conditionScriptText.empty())
 					text += std::format("\nCondition: {}", set->conditionScriptText);
+				if (const char* reason = DescribeVerdictLong(verdict); *reason)
+					text += std::format("\n{}", reason);
 				return text;
 			}
 
 			std::string GetHelp() const override
 			{
-				return "Up, Down: pick an animation   Right: the sets for it   Tab: next page   type: filter   Esc: close";
+				return {};
 			}
 
 		private:
@@ -164,7 +161,7 @@ namespace KnvseMenu
 
 			std::string GetHeading(Side side) const override
 			{
-				return side == Side::Left ? "Problems with the override files" : "Problems";
+				return side == Side::Left ? "Problems" : "Details";
 			}
 
 			void Build(const Context& context, std::vector<Row>& left, std::vector<Row>& right) override
@@ -199,18 +196,18 @@ namespace KnvseMenu
 				{
 					switch (static_cast<Overrides::Problem::Kind>(row))
 					{
-					case Files: return "JSON files that could not be read, and folders or forms they name that are not there.";
-					case Condition: return "Conditions of JSON entries or scripts that do not compile (the console has the error): the sets that have one never play.";
-					case Load: return "Override KFs that failed to load (kNVSE.log has why): they are passed over when a variant is picked.";
+					case Files: return "JSON files that can't be read, missing folders and forms.";
+					case Condition: return "Conditions that don't compile. Their sets never play. The console has the errors.";
+					case Load: return "KFs that failed to load. kNVSE.log has why.";
 					}
 					return {};
 				}
-				return std::format("{}\n{}", shown[row]->text, Describe(Side::Left, static_cast<int>(shown[row]->kind)));
+				return shown[row]->text;
 			}
 
 			std::string GetHelp() const override
 			{
-				return "Up, Down: pick   Right: the problems of a kind   Tab: next page   type: filter   Esc: close";
+				return {};
 			}
 
 			std::string GetButton(int button) const override
@@ -231,9 +228,9 @@ namespace KnvseMenu
 			{
 				switch (kind)
 				{
-				case Overrides::Problem::Kind::Files: return "JSON files and folders";
+				case Overrides::Problem::Kind::Files: return "Files";
 				case Overrides::Problem::Kind::Condition: return "Conditions";
-				case Overrides::Problem::Kind::Load: return "KFs that do not load";
+				case Overrides::Problem::Kind::Load: return "KF loading";
 				}
 				return "";
 			}

@@ -644,7 +644,7 @@ Overrides::LoadedAnim Overrides::Load(std::string_view path, AnimData* animData)
 	if (!created)
 	{
 		state->failed.push_back(path.data());
-		Overrides::ReportProblem(Overrides::Problem::Kind::Load, FormatString("%s (see kNVSE.log)", path.data()));
+		Overrides::ReportProblem(Overrides::Problem::Kind::Load, std::string(path));
 		return {};
 	}
 	state->loaded.push_back({ path.data(), created.sequence, created.base });

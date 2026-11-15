@@ -81,9 +81,9 @@ namespace KnvseMenu
 	std::unique_ptr<Page> MakePlayingPage();
 	std::unique_ptr<Page> MakeProblemsPage();
 
-	// For the text of rows: "weapon Service Rifle 0001EC17", "everyone", "everyone of <mod>"; brief: the name only
+	// For the text of rows: "weapon Service Rifle 0001EC17", "everyone", "<mod> (all actors)"; brief: the name only
 	std::string DescribeIdentifier(UInt32 identifier, bool isModIndex, bool brief = false);
-	// "the folder AnimGroupOverride\..., listed by x.json (priority 0)", "scripts of <mod>"
+	// "AnimGroupOverride\... (x.json, priority 0)", "Script of <mod>"
 	std::string DescribeOrigin(const OverrideOrigin& origin);
 	// "2haaim (1st, Service Rifle)"
 	std::string DescribeSet(const Overrides::SetView& view);
