@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -12,8 +13,15 @@
 
 namespace
 {
-    // the text key and the Weapon track's first key relative to the new parent are both at the switch
+    // a key at the text key
     constexpr float kSameKeyTime = 1e-3f;
+    // how late a track may switch parent space: one key of a 30 fps KF (sneak1hpunequip.kf: 0.0334)
+    constexpr float kMaxLateSwitch = 1.0f / 30.0f + 2e-3f;
+    // a later key is the switch only if the track jumps there this many times as far as at the text key: the change of
+    // space is a jump of 10-30 units / 100-160 degrees in a track that moves by a few per key
+    constexpr float kLateSwitchRatio = 4.0f;
+    // animation time the weapon takes from where the hand let it go to its holster pose
+    constexpr float kHolsterEaseTime = 0.15f;
 
     const NiFixedString& RightHandName()
     {
@@ -21,19 +29,46 @@ namespace
         return name;
     }
 
-    // A track switching parent space at fSwitchKey has a key there: the key before it is its last one relative to the old
-    // parent. Tracks without a key at the switch are left alone
-    template <typename GetTime>
-    void AddTrack(unsigned int numKeys, GetTime&& getTime, float fSwitchKey, float& fLastOldKey)
+    struct TrackSwitch
     {
+        float fLastOldKey = INFINITY;
+        float fSwitchKey = -INFINITY;
+    };
+
+    // A track switching parent space jumps there: at its key at the text key, or at a later key within kMaxLateSwitch
+    // that jumps much further. Tracks without a key at the text key are left alone. getStep(i): how far the track moves
+    // from key i - 1 to key i, in any unit of its own
+    template <typename GetTime, typename GetStep>
+    void AddTrack(unsigned int numKeys, GetTime&& getTime, GetStep&& getStep, float fTextKey, TrackSwitch& result)
+    {
+        unsigned int atTextKey = 0;
+        unsigned int largest = 0;
+        float fLargestStep = -1.0f;
         for (unsigned int i = 1; i < numKeys; ++i)
         {
-            if (std::abs(getTime(i) - fSwitchKey) <= kSameKeyTime)
+            const float fKeyTime = getTime(i);
+            if (fKeyTime < fTextKey - kSameKeyTime)
+                continue;
+            if (fKeyTime > fTextKey + kMaxLateSwitch)
+                break;
+            if (!atTextKey && fKeyTime <= fTextKey + kSameKeyTime)
+                atTextKey = i;
+            if (const float fStep = getStep(i); fStep > fLargestStep)
             {
-                fLastOldKey = (std::min)(fLastOldKey, getTime(i - 1));
-                return;
+                largest = i;
+                fLargestStep = fStep;
             }
         }
+        if (!atTextKey)
+            return;
+        const unsigned int switchKey = largest != atTextKey && fLargestStep > kLateSwitchRatio * getStep(atTextKey) ? largest : atTextKey;
+        result.fLastOldKey = (std::min)(result.fLastOldKey, getTime(switchKey - 1));
+        result.fSwitchKey = (std::max)(result.fSwitchKey, getTime(switchKey));
+    }
+
+    float RotationStep(const NiQuaternion& a, const NiQuaternion& b)
+    {
+        return 2.0f * std::acos((std::min)(1.0f, std::abs(NiQuaternion::Dot(a, b))));
     }
 
     // BSAnimGroupSequence::InitAnimGroup (0x5F3A20) reads a text key line by line and takes a line starting with the
@@ -68,6 +103,23 @@ namespace
         const auto groupId = animGroup->GetBaseGroupID();
         return groupId == kAnimGroup_Equip || groupId == kAnimGroup_Unequip;
     }
+
+    // an unequip animation is attached to the node: the engine moved it at its Detach key, not a script or a menu
+    bool HasDetachItem(const kBlendInterpolatorExtraData& extraData)
+    {
+        return std::ranges::any_of(extraData.items, [](const kBlendInterpItem& item)
+        {
+            return item.sequence && !item.detached && item.hasParentSwitch && !item.parentSwitch.bToRightHand;
+        });
+    }
+
+    NiQuaternion UnitRotation(const NiMatrix33& rotation)
+    {
+        NiQuaternion result;
+        result.FromRotation(rotation);
+        result.Normalize();
+        return result;
+    }
 }
 
 void WeaponParentSwitch::Init(kBlendInterpItem& item, const NiControllerSequence& sequence)
@@ -80,25 +132,29 @@ void WeaponParentSwitch::Init(kBlendInterpItem& item, const NiControllerSequence
         return;
 
     std::optional<bool> bToRightHand;
-    float fSwitchKey = 0.0f;
+    float fTextKey = 0.0f;
     for (const NiTextKey& key : sequence.m_spTextKeys->GetKeys())
     {
         const char* text = key.m_kText.CStr();
         if (text && (bToRightHand = ParseSwitchKey(text)))
         {
-            fSwitchKey = key.m_fTime;
+            fTextKey = key.m_fTime;
             break;
         }
     }
     if (!bToRightHand)
         return;
 
-    float fLastOldKey = INFINITY;
+    TrackSwitch trackSwitch;
     unsigned int numKeys;
     NiAnimationKey::KeyType keyType;
     unsigned char keySize;
     if (auto* posData = transform->GetPosData(numKeys, keyType, keySize))
-        AddTrack(numKeys, [&](unsigned int i) { return posData->GetKeyAt(i, keySize)->m_fTime; }, fSwitchKey, fLastOldKey);
+    {
+        AddTrack(numKeys, [&](unsigned int i) { return posData->GetKeyAt(i, keySize)->m_fTime; },
+            [&](unsigned int i) { return (posData->GetKeyAt(i, keySize)->GetPos() - posData->GetKeyAt(i - 1, keySize)->GetPos()).Length(); },
+            fTextKey, trackSwitch);
+    }
     if (auto* rotData = transform->GetRotData(numKeys, keyType, keySize); rotData && numKeys)
     {
         if (keyType == NiAnimationKey::EULERKEY)
@@ -106,17 +162,23 @@ void WeaponParentSwitch::Init(kBlendInterpItem& item, const NiControllerSequence
             // an Euler key's own time is never set; its three float tracks hold the timing
             auto* euler = static_cast<NiEulerRotKey*>(rotData->GetKeyAt(0, keySize));
             for (unsigned int axis = 0; axis < 3; ++axis)
-                AddTrack(euler->m_uiNumKeys[axis], [&](unsigned int i) { return euler->m_apkKeys[axis]->GetKeyAt(i, euler->m_ucSizes[axis])->m_fTime; },
-                    fSwitchKey, fLastOldKey);
+            {
+                auto getKey = [&](unsigned int i) { return euler->m_apkKeys[axis]->GetKeyAt(i, euler->m_ucSizes[axis]); };
+                AddTrack(euler->m_uiNumKeys[axis], [&](unsigned int i) { return getKey(i)->m_fTime; },
+                    [&](unsigned int i) { return std::abs(getKey(i)->GetValue() - getKey(i - 1)->GetValue()); },
+                    fTextKey, trackSwitch);
+            }
         }
         else
         {
-            AddTrack(numKeys, [&](unsigned int i) { return rotData->GetKeyAt(i, keySize)->m_fTime; }, fSwitchKey, fLastOldKey);
+            AddTrack(numKeys, [&](unsigned int i) { return rotData->GetKeyAt(i, keySize)->m_fTime; },
+                [&](unsigned int i) { return RotationStep(rotData->GetKeyAt(i, keySize)->GetQuaternion(), rotData->GetKeyAt(i - 1, keySize)->GetQuaternion()); },
+                fTextKey, trackSwitch);
         }
     }
-    if (fLastOldKey == INFINITY)
+    if (trackSwitch.fLastOldKey == INFINITY)
         return;
-    item.parentSwitch = Window{ fLastOldKey, fSwitchKey, *bToRightHand };
+    item.parentSwitch = Window{ trackSwitch.fLastOldKey, trackSwitch.fSwitchKey, *bToRightHand };
     item.hasParentSwitch = true;
 }
 
@@ -132,4 +194,78 @@ float WeaponParentSwitch::GetUpdateTime(const kBlendInterpItem* item, const NiOb
     if (bOnRightHand != window.bToRightHand)
         return (std::min)(fTime, window.fLastOldKey); // still on the old parent
     return (std::max)(fTime, window.fSwitchKey);
+}
+
+void WeaponParentSwitch::EaseHolster(kBlendInterpolatorExtraData& extraData, NiObjectNET* target, float fDeltaTime, NiQuatTransform& kValue)
+{
+    if (!g_pluginSettings.easeWeaponHolster || !WeaponHandBlend::IsWeaponNode(target))
+        return;
+    auto* weapon = static_cast<NiAVObject*>(target);
+    auto& state = extraData.parentSwitch;
+    if (!state)
+        state = std::make_unique<NodeState>();
+
+    const NiNode* parent = weapon->m_pkParent;
+    const bool bWasOnRightHand = state->bOnRightHand;
+    const bool bMoved = parent != state->lastParent;
+    state->lastParent = parent;
+    state->bOnRightHand = parent && parent->m_pcName.data == RightHandName().data;
+
+    const bool bValid = kValue.IsTranslateValid() && kValue.IsRotateValid();
+    // the engine's snap of bones bone LOD skipped (UpdateLODBonesHook): the world transforms are from before they were
+    // skipped, and the unequip is over
+    if (!bValid || extraData.unsmoothedUpdate)
+    {
+        state->bEasing = false;
+        return;
+    }
+    if (bMoved)
+    {
+        state->bEasing = false;
+        // the world transforms are those of the last evaluation, the weapon's still on the hand: not if that was long
+        // ago (bone LOD, the actor not updated)
+        if (!bWasOnRightHand || !parent || state->bOnRightHand || fDeltaTime >= kHolsterEaseTime || !HasDetachItem(extraData))
+            return;
+        const NiTransform& parentWorld = parent->m_kWorld;
+        const NiTransform& weaponWorld = weapon->m_kWorld;
+        const NiQuaternion parentRotate = UnitRotation(parentWorld.m_Rotate);
+        const NiQuaternion inParentRotate = parentRotate.Inverse() * UnitRotation(weaponWorld.m_Rotate);
+        NiPoint3 inParentTranslate;
+        const NiPoint3 offset = weaponWorld.m_Translate - parentWorld.m_Translate;
+        // the transpose of the parent's rotation applied to the offset
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            const float fComponent = parentWorld.m_Rotate.m_pEntry[0][axis] * offset.x + parentWorld.m_Rotate.m_pEntry[1][axis] * offset.y +
+                parentWorld.m_Rotate.m_pEntry[2][axis] * offset.z;
+            (&inParentTranslate.x)[axis] = fComponent / parentWorld.m_fScale;
+        }
+        NiQuaternion blendRotate = kValue.GetRotate();
+        blendRotate.Normalize();
+        NiQuaternion rotateOffset = inParentRotate * blendRotate.Inverse();
+        // the short way round (NiQuaternion::Slerp expects a non-negative dot product with the identity)
+        if (rotateOffset.m_fW < 0.0f)
+            rotateOffset = -rotateOffset;
+        state->translateOffset = inParentTranslate - kValue.GetTranslate();
+        state->rotateOffset = rotateOffset;
+        state->fElapsed = 0.0f;
+        state->bEasing = true;
+    }
+    else if (state->bEasing)
+    {
+        state->fElapsed += fDeltaTime;
+    }
+    if (!state->bEasing)
+        return;
+    const float fProgress = state->fElapsed / kHolsterEaseTime;
+    if (fProgress >= 1.0f)
+    {
+        state->bEasing = false;
+        return;
+    }
+    // ease-out: the weapon leaves where the hand let it go at speed and settles into its holster
+    const float fRemaining = (1.0f - fProgress) * (1.0f - fProgress) * (1.0f - fProgress);
+    kValue.SetTranslate(kValue.GetTranslate() + state->translateOffset * fRemaining);
+    NiQuaternion rotate = NiQuaternion::Slerp(fRemaining, NiQuaternion::IDENTITY, state->rotateOffset) * kValue.GetRotate();
+    rotate.Normalize();
+    kValue.SetRotate(rotate);
 }

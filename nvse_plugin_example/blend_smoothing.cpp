@@ -39,6 +39,7 @@ void kBlendInterpolatorExtraData::Destroy(bool freeMem)
 {
     this->items.~vector();
     this->weaponHandBlend.~unique_ptr();
+    this->parentSwitch.~unique_ptr();
     ThisStdCall(0xA7B300, this);
     if ((freeMem & 1) != 0)
         NiDelete(this);
@@ -55,6 +56,7 @@ kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::Create()
     ThisStdCall(0xA7B2E0, extraData); // ctor
     new(&extraData->items) std::vector<kBlendInterpItem>();
     new(&extraData->weaponHandBlend) std::unique_ptr<WeaponHandBlend::NodeData>();
+    new(&extraData->parentSwitch) std::unique_ptr<WeaponParentSwitch::NodeState>();
     // NiNew does not construct
     extraData->accumRootChild = false;
     extraData->hasComputedRotate = false;

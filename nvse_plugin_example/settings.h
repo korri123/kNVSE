@@ -21,6 +21,7 @@ struct PluginINISettings
 #endif
     bool fixBlendFromPose{};
     bool fixWeaponParentSwitch{};
+    bool easeWeaponHolster{};
     bool fixGaitSwitch{};
     bool fixMovementMorphKeys{};
     bool fixOverlappingBlends{};

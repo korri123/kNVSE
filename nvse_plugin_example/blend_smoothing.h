@@ -144,6 +144,9 @@ public:
     bool accumRootChild = false;
     // Weapon nodes only; survives ClearValues, as it describes the skeleton and its sequences, not the current blend
     std::unique_ptr<WeaponHandBlend::NodeData> weaponHandBlend;
+    // Weapon nodes only, created by the holster ease (WeaponParentSwitch::EaseHolster); survives ClearValues but for the
+    // ease in progress
+    std::unique_ptr<WeaponParentSwitch::NodeState> parentSwitch;
     // the rotation of the node's computed weights (before blend smoothing) and the one written to it at its last
     // evaluation, while the two differ (FireDirection: blend smoothing, additive animations, WeaponHandBlend)
     bool hasComputedRotate = false;
@@ -158,6 +161,8 @@ public:
         owner = nullptr;
         attachedItems = 0;
         hasComputedRotate = false;
+        if (parentSwitch)
+            parentSwitch->bEasing = false;
     }
 
     NiNewRTTI(kBlendInterpolatorExtraData, NiExtraData)

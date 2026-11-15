@@ -738,7 +738,10 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
             ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
     }
     if (kExtraData)
+    {
+        WeaponParentSwitch::EaseHolster(*kExtraData, pkInterpTarget, BlendSmoothing::GetElapsedTime(m_fLastTime, fTime), kValue);
         FireDirection::Record(*kExtraData, kComputedRotate, kValue);
+    }
     m_fLastTime = fTime;
     return !kValue.IsTransformInvalid() && bReturnValue;
 }
