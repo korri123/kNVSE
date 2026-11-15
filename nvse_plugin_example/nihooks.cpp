@@ -2125,6 +2125,10 @@ void NiControllerSequence::DetachInterpolatorsHooked()
             DebugAssert(blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator
                 && extraInterpItem.interpolator == kItem.m_spInterpolator && kItem.m_spInterpolator != nullptr);
 
+            // also for an item removed at once (no weight on the Weapon node): the arms may still fade its sequence out
+            if (blendIndex != INVALID_INDEX)
+                if (WeaponHandBlend::Context weaponHandBlend(target, extraData); weaponHandBlend)
+                    weaponHandBlend.CacheDetachedPose(extraInterpItem, *this, blendInterp->m_pkInterpArray[blendIndex].m_fUpdateTime);
             if (extraInterpItem.IsSmoothedWeightZero() || extraInterpItem.isAdditive)
             {
                 DebugAssert(!extraInterpItem.detached && blendIndex != INVALID_INDEX);
@@ -2144,8 +2148,6 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                     blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator &&
                     kItem.m_spInterpolator != nullptr);
                 extraInterpItem.debugState = kInterpDebugState::DetachedButSmoothing;
-                if (WeaponHandBlend::Context weaponHandBlend(target, extraData); weaponHandBlend)
-                    weaponHandBlend.CacheDetachedPose(extraInterpItem, *this, blendInterp->m_pkInterpArray[blendIndex].m_fUpdateTime);
                 // the sequence may be removed and destroyed while this item fades out
                 extraInterpItem.sequence = nullptr;
             }

@@ -11,6 +11,7 @@
 #include "string_view_util.h"
 #include "text_key_arguments.h"
 #include "utility.h"
+#include "weapon_parent_switch.h"
 
 using WeaponHandBlend::Acceptance;
 using WeaponHandBlend::ArmReach;
@@ -671,6 +672,8 @@ namespace
         float translateWeight = 0.0f;
         float rotateWeight = 0.0f;
         bool off = false; // "weaponSpace: off"
+        // a sequence that has left the Weapon node's blend while the arms still fade it out (AddFadingSequences)
+        bool fading = false;
         // Set by Blend for the items that weigh in. Its arms: its sequence's, a detached item's as cached, the blended
         // ones for an item without arms of its own (pose interpolators)
         const ChainLocals* locals = nullptr;
@@ -917,6 +920,42 @@ namespace
                 return true;
         return false;
     }
+
+    // Nothing but the entry holds its interpolators: the sequence is gone, and its items have left every blend
+    bool IsReleased(const SequenceInfo& info)
+    {
+        const auto released = [](const NiPointer<NiInterpolator>& interpolator) { return !interpolator || interpolator.data->m_uiRefCount == 1; };
+        return released(info.weaponInterpolator) && std::ranges::all_of(info.rightInterpolators, released)
+            && std::ranges::all_of(info.leftInterpolators, released);
+    }
+
+    // Adds the sequences that have left the Weapon node's blend while the arms may still fade them out, with no weight on
+    // the Weapon node and the pose of their detach. HoldLeftHand models the arms by the Weapon node's sequences, weighted
+    // as the arms' blends weigh them; a sequence must not leave that model while an arm still blends it, or the hand moves
+    // by the sequence's share of the arm in one frame. A sequence without weight on the Weapon node loses its item there as
+    // it detaches (nothing to fade out), while it can have weight on the arms: third person 2hr run -> aimIS, the run (35
+    // on the Weapon node, under aim 45, 36 on the arms, over aim 35) eased out with 6-13 % of the arms, and the left hand
+    // jumped 1.0-1.4 units. Returns whether one of them holds the weapon with the left hand.
+    bool AddFadingSequences(WeaponHandBlend::NodeData& data)
+    {
+        bool anyHandOff = false;
+        for (size_t i = 0; i < data.sequences.size(); ++i)
+        {
+            const SequenceInfo& info = data.sequences[i];
+            const int index = static_cast<int>(i);
+            if (!info.fading || std::ranges::any_of(t_entries, [index](const Entry& entry) { return entry.sequenceIndex == index; }))
+                continue;
+            Entry& entry = t_entries.emplace_back();
+            entry.key = &info;
+            entry.sequenceIndex = index;
+            entry.transform = info.detachedPose.weapon;
+            entry.acceptance = info.detachedPose.acceptance;
+            entry.off = info.detachedOff;
+            entry.fading = true;
+            anyHandOff |= !entry.acceptance.IsRightOnly();
+        }
+        return anyHandOff;
+    }
 }
 
 bool WeaponHandBlend::Acceptance::IsRightOnly() const
@@ -1108,7 +1147,8 @@ void WeaponHandBlend::Context::AddItem(const void* key, kBlendInterpItem* extraI
         {
             entry.sequence = sequence;
             entry.sequenceIndex = FindOrMeasureSequence(extraItem->interpolator.data, *sequence);
-            const SequenceInfo& info = m_data->sequences[entry.sequenceIndex];
+            SequenceInfo& info = m_data->sequences[entry.sequenceIndex];
+            info.fading = false;
             entry.acceptance = info.Sample(fTime);
             entry.off = info.IsOff(fTime);
         }
@@ -1152,13 +1192,17 @@ void WeaponHandBlend::Context::CacheDetachedPose(const kBlendInterpItem& extraIt
 {
     if (!m_weapon || !extraItem.interpolator || extraItem.isAdditive)
         return;
-    // Sequences detach here, outside of blending, so this is where released sequences are dropped: an entry whose Weapon
-    // interpolator is referenced by nobody else belongs to a sequence that is gone.
-    std::erase_if(m_data->sequences, [](const SequenceInfo& info) { return info.weaponInterpolator.data->m_uiRefCount == 1; });
+    // Sequences detach here, outside of blending, so this is where released sequences are dropped
+    std::erase_if(m_data->sequences, IsReleased);
+    // an item without weight that was never blended here while attached (bone LOD skips the Weapon node) is in no model
+    // of the arms yet: not worth measuring the sequence for
+    if (extraItem.IsSmoothedWeightZero() && FindSequence(extraItem.interpolator.data) == -1)
+        return;
 
     const int index = FindOrMeasureSequence(extraItem.interpolator.data, sequence);
     SequenceInfo& info = m_data->sequences[index];
     info.hasDetachedPose = false;
+    info.fading = false;
     info.detachedOff = info.IsOff(fTime);
     const Acceptance acceptance = info.Sample(fTime);
     // every item's arms, also of those holding the weapon in the right hand only: HoldLeftHand blends them by the arms' own
@@ -1175,7 +1219,10 @@ void WeaponHandBlend::Context::CacheDetachedPose(const kBlendInterpItem& extraIt
         return;
     pose.acceptance = acceptance;
     pose.hasRelativeToLeft = info.SampleLeftSpace(fTime, pose.relativeToLeft);
+    if (!info.weaponInterpolator->Update(WeaponParentSwitch::GetUpdateTime(&extraItem, m_weapon, fTime), m_weapon, pose.weapon))
+        pose.weapon.MakeInvalid();
     info.hasDetachedPose = true;
+    info.fading = true;
 }
 
 namespace
@@ -1307,6 +1354,10 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     if (!m_weapon)
         return;
     UndoReach(*m_data);
+    if (!m_collecting)
+        return; // no item evaluated: t_entries is another evaluation's
+    if (g_pluginSettings.keepLeftHandOnWeapon)
+        m_anyHandOff |= AddFadingSequences(*m_data);
     if (!m_anyHandOff || !EnsureChains())
         return;
     const bool bTranslate = kValue.IsTranslateValid();
@@ -1317,13 +1368,11 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     // how much of the blend's weight accepts each hand, and how much opted out
     float total = 0.0f;
     float off = 0.0f;
-    float largest = 0.0f;
     Acceptance agreement{ 0.0f, 0.0f };
     for (const Entry& entry : t_entries)
     {
         const float weight = bTranslate ? entry.translateWeight : entry.rotateWeight;
         total += weight;
-        largest = (std::max)(largest, weight);
         if (entry.off)
             off += weight;
         agreement.right += weight * entry.acceptance.right;
@@ -1343,27 +1392,38 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     referenceWeights[kBody] = (std::max)(0.0f, 1.0f - referenceWeights[kRight] - referenceWeights[kLeft]);
     const bool bMoveWeapon = referenceWeights[kRight] < 1.0f - kMinReferenceWeight;
     // Left hand: where the weapon stays on the right hand, the share of the left hand's blend whose animations hold the
-    // weapon pulls the hand to where they hold it. With a single animation on the Weapon node the hand is there already.
+    // weapon pulls the hand to where they hold it. Not skipped while one animation has all of the Weapon node: the arms
+    // can be another's (third person, a gait keys the arms over aim and under aimIS), and the correction then switched on
+    // and off with the aim up/down weights (strafing with the rifle, 0.5 degrees of pitch moved the hand 1.3-1.7 units in
+    // a frame) and at the ends of the Weapon node's blends.
     const HandChains& chains = m_data->chains;
     float holdShare = 0.0f;
     ChainBlends chainBlends;
-    if (g_pluginSettings.keepLeftHandOnWeapon && chains.leftCount >= 3 && largest < total * (1.0f - kMinReferenceWeight)
-        && referenceWeights[kRight] > kMinReferenceWeight && FindChainBlends(m_weapon, chains, chainBlends))
+    if (g_pluginSettings.keepLeftHandOnWeapon && chains.leftCount >= 3 && referenceWeights[kRight] > kMinReferenceWeight
+        && FindChainBlends(m_weapon, chains, chainBlends))
     {
         float holding = 0.0f;
+        unsigned int weighted = 0;
         for (Entry& entry : t_entries)
         {
-            if (entry.sequenceIndex == -1)
-                continue;
-            const SequenceInfo& info = m_data->sequences[entry.sequenceIndex];
-            for (unsigned int i = 0; i < chains.rightCount; ++i)
-                entry.rightChainWeights[i] = ChainWeight(chainBlends.right[i], info.rightInterpolators[i]);
-            for (unsigned int i = 0; i < chains.leftCount; ++i)
-                entry.leftChainWeights[i] = ChainWeight(chainBlends.left[i], info.leftInterpolators[i]);
-            if (!entry.off && entry.acceptance.left > kMinAcceptance)
-                holding += entry.leftChainWeights[chains.leftCount - 1] * entry.acceptance.left;
+            if (entry.sequenceIndex != -1)
+            {
+                SequenceInfo& info = m_data->sequences[entry.sequenceIndex];
+                for (unsigned int i = 0; i < chains.rightCount; ++i)
+                    entry.rightChainWeights[i] = ChainWeight(chainBlends.right[i], info.rightInterpolators[i]);
+                for (unsigned int i = 0; i < chains.leftCount; ++i)
+                    entry.leftChainWeights[i] = ChainWeight(chainBlends.left[i], info.leftInterpolators[i]);
+                // its items have left the arms' blends, which a detached sequence does not join again
+                if (entry.fading && !IsChainWeighted(entry))
+                    info.fading = false;
+                if (!entry.off && entry.acceptance.left > kMinAcceptance)
+                    holding += entry.leftChainWeights[chains.leftCount - 1] * entry.acceptance.left;
+            }
+            weighted += IsWeighted(entry) || IsChainWeighted(entry);
         }
-        holdShare = referenceWeights[kRight] * holding;
+        // one animation alone places the weapon and the arms (as far as these animations do): the step is 0
+        if (weighted > 1)
+            holdShare = referenceWeights[kRight] * holding;
     }
     const bool bHoldLeftHand = holdShare > kMinReferenceWeight;
     if (!bMoveWeapon && !bHoldLeftHand)

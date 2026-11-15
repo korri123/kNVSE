@@ -67,12 +67,15 @@ namespace WeaponHandBlend
     };
 
     // What a detached item (sequence deactivated, weight still fading out under blend smoothing) contributes: it no longer
-    // has its sequence and its update time stopped advancing on detach, so this is captured once on detach.
+    // has its sequence and its update time stopped advancing on detach, so this is captured once on detach. Also kept for
+    // items the Weapon node drops at once (no weight there) while the arms still fade the sequence out (SequenceInfo::fading).
     struct ItemPose
     {
         Acceptance acceptance;
         // the sequence's arms
         ChainLocals locals;
+        // the sequence's Weapon track, as the Weapon node's blend evaluated it
+        NiQuatTransform weapon;
         // the weapon relative to the left hand, from the left hand keys (SequenceInfo::SampleLeftSpace)
         NiTransform relativeToLeft;
         bool hasRelativeToLeft = false;
@@ -94,8 +97,9 @@ namespace WeaponHandBlend
         float scale;
     };
 
-    // A sequence that animates the Weapon node, keyed by its Weapon interpolator. The reference keeps that address from
-    // being reused by another sequence while the entry lives; entries are dropped once only this reference is left.
+    // A sequence that animates the Weapon node, keyed by its Weapon interpolator. The references keep these addresses from
+    // being reused by another sequence while the entry lives; entries are dropped once nothing else holds any of them: the
+    // sequence is gone, and so are its items in the blends (the arms' may fade out after the Weapon node's).
     struct SequenceInfo
     {
         NiPointer<NiInterpolator> weaponInterpolator = nullptr;
@@ -119,6 +123,10 @@ namespace WeaponHandBlend
         ItemPose detachedPose;
         // whether a detached item is opted out, captured on detach like detachedPose but for every sequence
         bool detachedOff = false;
+        // Detached, and its items on the arms may still be fading out after the Weapon node's item is gone: the left hand's
+        // correction keeps it in its model of the arms (with detachedPose) until their blends no longer have it. Cleared
+        // when it attaches again, or when an evaluation that measured the arms' weights found none.
+        bool fading = false;
 
         Acceptance Sample(float fTime) const;
         bool IsOff(float fTime) const;
