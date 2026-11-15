@@ -349,11 +349,16 @@ namespace
         }
     }
 
-    void AddKeyTimes(NiInterpolator* interpolator)
+    // Adds a keyframed track's key times. False for a track without keys (B-spline compressed: vanilla KFs have most arm
+    // tracks and many Weapon tracks so, e.g. every track of the .357 Revolver's 1hpreloadx), a smooth curve fitted to the
+    // densely sampled animation, which therefore swims no more between its control points than a densely keyed track.
+    bool AddKeyTimes(NiInterpolator* interpolator)
     {
-        auto* transform = interpolator ? NI_DYNAMIC_CAST(NiTransformInterpolator, interpolator) : nullptr;
+        if (!interpolator)
+            return true;
+        auto* transform = NI_DYNAMIC_CAST(NiTransformInterpolator, interpolator);
         if (!transform)
-            return;
+            return false;
         unsigned int numKeys;
         NiAnimationKey::KeyType keyType;
         unsigned char keySize;
@@ -378,6 +383,7 @@ namespace
                     t_keyTimes.push_back(rotData->GetKeyAt(i, keySize)->m_fTime);
             }
         }
+        return true;
     }
 
     // The weapon relative to the left hand at every key time of the weapon and hand tracks. Between keys each track
@@ -387,11 +393,16 @@ namespace
     {
         auto& times = t_keyTimes;
         times.clear();
-        AddKeyTimes(info.weaponInterpolator.data);
+        // a track without keys is as dense as a densely keyed one; taking the begin and end time for all of its keys made
+        // the relation a spline between the poses at the ends, which moved the weapon 21 units / 40 degrees off the right
+        // hand in the .357 Revolver's reload
+        bool keyed = AddKeyTimes(info.weaponInterpolator.data);
         for (unsigned int i = 0; i < chains.rightCount; ++i)
-            AddKeyTimes(info.rightInterpolators[i]);
+            keyed &= AddKeyTimes(info.rightInterpolators[i]);
         for (unsigned int i = 0; i < chains.leftCount; ++i)
-            AddKeyTimes(info.leftInterpolators[i]);
+            keyed &= AddKeyTimes(info.leftInterpolators[i]);
+        if (!keyed)
+            return;
         times.push_back(beginTime);
         times.push_back(endTime);
         std::erase_if(times, [&](float time) { return !(time >= beginTime && time <= endTime); });
