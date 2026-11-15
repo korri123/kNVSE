@@ -568,8 +568,10 @@ SavedAnims* Overrides::Find(UInt16 groupId, AnimData* animData, TransitionKind t
 
 	auto* actor = animData->actor;
 	auto* state = ActorOverrides::Get(animData);
-	// A copy: a condition script may ask about the actor's animations, which can move the state's
-	constexpr size_t kInline = 32;
+	// A copy: a condition script may ask about the actor's animations, which can move the state's. On the stack for up to
+	// 128 sets (512 bytes): Idle on a third person skeleton with Idle Variety's global conditional sets has ~41, looked up
+	// several times per frame
+	constexpr size_t kInline = 128;
 	SavedAnims* inlineSets[kInline];
 	std::vector<SavedAnims*> moreSets;
 	std::span<SavedAnims* const> candidates;

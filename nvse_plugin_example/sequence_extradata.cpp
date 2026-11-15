@@ -90,6 +90,7 @@ void kAnimationExtraData::Destroy(bool freeMem)
     this->sequenceKeys.~vector();
     this->sequenceData.~vector();
     this->hardCuts.~vector();
+    this->pendingStoreTargets.~vector();
     this->addedNodes.~vector();
     this->overrides.~ActorOverrides();
     ThisStdCall(0xA7B300, this); // ~NiExtraData
@@ -123,6 +124,7 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
     new(&extraData->sequenceData) std::vector<SequenceExtraData>();
     std::ranges::fill(extraData->sequenceHints, UInt16(0));
     new(&extraData->hardCuts) std::vector<HardCut>();
+    new(&extraData->pendingStoreTargets) std::vector<SequenceKey>();
     new(&extraData->openSwitch) OpenSwitch();
     extraData->aimPitch = 0.0f;
     extraData->namedCurveEaseEnd = -NI_INFINITY;
@@ -162,6 +164,7 @@ void SequenceExtraDatas::Delete(const NiControllerSequence* sequence)
     {
         return cut.sequence == sequence && cut.manager == manager;
     });
+    std::erase(nodeData->pendingStoreTargets, kAnimationExtraData::SequenceKey{ manager, sequence });
     auto& keys = nodeData->sequenceKeys;
     auto& data = nodeData->sequenceData;
     const auto iter = std::ranges::find(keys, kAnimationExtraData::SequenceKey{ manager, sequence });
@@ -176,6 +179,36 @@ void SequenceExtraDatas::Delete(const NiControllerSequence* sequence)
     }
     keys.pop_back();
     data.pop_back();
+}
+
+void SequenceExtraDatas::MarkStoreTargets(NiControllerManager* manager)
+{
+    if (!manager->m_pkTarget)
+        return;
+    // every sequence of the manager is marked: the manager's entries are replaced, which also drops duplicates. Called on
+    // every update of a dying actor (TESObjectREFR::ClearInterpolators from Actor::Update)
+    auto& pending = kAnimationExtraData::GetOrCreate(manager->m_pkTarget)->pendingStoreTargets;
+    std::erase_if(pending, [manager](const kAnimationExtraData::SequenceKey& key) { return key.manager == manager; });
+    pending.reserve(pending.size() + manager->sequences.Length());
+    for (auto& sequence : manager->sequences)
+    {
+        if (sequence)
+            pending.push_back({ manager, sequence });
+    }
+}
+
+bool SequenceExtraDatas::TakeStoreTargets(const NiControllerSequence* sequence)
+{
+    auto* nodeData = GetNodeData(sequence);
+    if (!nodeData || nodeData->pendingStoreTargets.empty())
+        return false;
+    auto& pending = nodeData->pendingStoreTargets;
+    const auto iter = std::ranges::find(pending, kAnimationExtraData::SequenceKey{ sequence->m_pkOwner, sequence });
+    if (iter == pending.end())
+        return false;
+    *iter = pending.back();
+    pending.pop_back();
+    return true;
 }
 
 void SequenceExtraDatas::WriteHooks()

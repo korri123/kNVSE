@@ -156,8 +156,8 @@ public:
     void ClearValues()
     {
         target = nullptr;
+        // capacity kept: every weapon attach clears every bone's items (ReloadTargets), which then fill again
         items.clear();
-        items.shrink_to_fit();
         owner = nullptr;
         attachedItems = 0;
         hasComputedRotate = false;

@@ -107,6 +107,9 @@ kBlendInterpItem& kBlendInterpolatorExtraData::GetOrCreateItem(NiInterpolator* i
         freeItem->interpolator = interpolator;
         return *freeItem;
     }
+    // most bones have up to 4 items (aim, its up/down variants, a gait or attack): one allocation instead of four
+    if (items.empty() && items.capacity() == 0)
+        items.reserve(4);
     return items.emplace_back(interpolator);
 }
 

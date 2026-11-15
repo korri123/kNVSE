@@ -1326,13 +1326,12 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
     if (sequenceExtraData)
         sequenceExtraData->ease = Ease();
 
-    if (sequenceExtraData && sequenceExtraData->needsStoreTargets)
+    if (SequenceExtraDatas::TakeStoreTargets(this))
     {
         auto* target = NI_DYNAMIC_CAST(NiAVObject, this->m_pkOwner->m_pkTarget);
         DebugAssert(target);
         if (target)
             StoreTargets(target);
-        sequenceExtraData->needsStoreTargets = false;
     }
 
     if (sequenceExtraData && sequenceExtraData->additiveMetadata)

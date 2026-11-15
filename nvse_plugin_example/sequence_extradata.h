@@ -16,7 +16,6 @@ class SequenceExtraData
 {
 public:
     bool startInReloadTargets = false;
-    bool needsStoreTargets = false;
     // Set by the feature that plays the sequence as a start or stop animation (TransitionAnims): MovementTransitions
     // for a walk's or run's, AimTransitions for one of aiming (bAimTransition). Those are only ever played as such
     // (normal picks leave the tagged files out), so it holds for as long as the sequence belongs to the manager
@@ -77,6 +76,11 @@ public:
         Ease ease;
     };
     std::vector<HardCut> hardCuts;
+    // Sequences bound to the skeleton again at their next activation (AttachInterpolatorsHooked): the hook at 0x49918B
+    // (Animation::ClearControllersInterpolators: dying actors on every update, RevertTES) deactivated their manager and
+    // cleared their blend interpolators. Kept apart from sequenceData, which would get an entry for every sequence of
+    // every dying actor; dropped with the sequence (SequenceExtraDatas::Delete), like a cut
+    std::vector<SequenceKey> pendingStoreTargets;
     // The switch the Animation animating this node is making (AnimSwitch::Current): one per update of the Animation
     struct OpenSwitch
     {
@@ -119,6 +123,10 @@ namespace SequenceExtraDatas
     SequenceExtraData* GetOrCreate(NiControllerSequence* sequence);
     // call while sequence->m_pkOwner is still set. Also drops what else the node keeps of the sequence (its hard cut)
     void Delete(const NiControllerSequence* sequence);
+    // every sequence of the manager is bound again at its next activation (TakeStoreTargets)
+    void MarkStoreTargets(NiControllerManager* manager);
+    // whether the sequence was marked by MarkStoreTargets; takes the mark
+    bool TakeStoreTargets(const NiControllerSequence* sequence);
 
     void WriteHooks();
 }

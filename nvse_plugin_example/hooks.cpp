@@ -1461,9 +1461,8 @@ void ApplyHooks()
 						if (block.m_spInterpCtlr && block.m_spInterpCtlr->GetType() == NiMultiTargetTransformController::ms_RTTI)
 							block.m_pkBlendInterp = nullptr;
 					}
-					if (auto* sequenceExtraData = SequenceExtraDatas::GetOrCreate(sequence))
-						sequenceExtraData->needsStoreTargets = true;
 				}
+				SequenceExtraDatas::MarkStoreTargets(manager);
 				return nullptr;
 			}
 		}
