@@ -110,6 +110,28 @@ namespace Overrides
 	// where the engine runs conditions itself
 	SavedAnims* Find(UInt16 groupId, AnimData* animData, TransitionKind transition = TransitionKind{});
 
+	// What Find makes of a candidate set
+	enum class Verdict : UInt8
+	{
+		Plays,
+		Disabled, // by a script or by the user (SavedAnims::IsEnabled)
+		FolderCondition, // the actor is not of the set's subfolder (male, female, mod1, hurt, ...)
+		NoTransition, // has no start or stop animation of the kind asked for, or only those
+		OtherIdle, // a special idle plays whose file name it has no file of
+		LoaderThread, // has a script condition, which is not run on a loader thread
+		ConditionFailed, // its condition did not compile
+		ConditionFalse,
+		NoFiles, // only an additive animation
+	};
+	struct Candidate
+	{
+		SavedAnims* set;
+		Verdict verdict;
+	};
+	// Every set that may apply to the actor's group in the order Find tries them, with what Find makes of each: the
+	// first that plays is the one it returns. Runs their conditions. Main thread
+	std::vector<Candidate> Explain(UInt16 groupId, AnimData* animData, TransitionKind transition = TransitionKind{});
+
 	struct LoadedAnim
 	{
 		BSAnimGroupSequence* sequence = nullptr;

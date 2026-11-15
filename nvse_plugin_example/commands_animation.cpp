@@ -533,6 +533,7 @@ void PluginOverrideFormAnimation(const TESForm* form, const char* path, bool fir
 		.isModIndex = false,
 		.conditionScript = conditionScript,
 		.pollCondition = pollCondition,
+		.origin = Overrides::GetOrigin(OverrideOrigin::Kind::Plugin, "plugin"),
 	};
 	const Overrides::File file{ path, firstPerson };
 	Overrides::Register(source, { &file, 1 }, enable);
@@ -744,6 +745,13 @@ ScopedList<char> GetDirectoryAnimPaths(std::string_view path)
 	return FileFinder::FindFiles(searchPath.c_str(), renamePath.c_str(), ARCHIVE_TYPE_MESHES);
 }
 
+// The origin of what a script registers: the script's mod
+const OverrideOrigin* GetScriptOrigin(Script* script)
+{
+	const char* modName = script ? GetModName(script) : nullptr;
+	return Overrides::GetOrigin(OverrideOrigin::Kind::Script, FormatString("script: %s", modName && *modName ? modName : "console"));
+}
+
 // A file, or the KFs of a folder as one batch: those of the same group are the variants of one set
 bool OverrideAnimsFromScript(const char* path, const Overrides::Source& source, bool firstPerson, bool enable)
 {
@@ -777,7 +785,7 @@ bool Cmd_SetWeaponAnimationPath_Execute(COMMAND_ARGS)
 	try
 	{
 		LogScript(scriptObj, weapon, "SetWeaponAnimationPath");
-		const Overrides::Source source{ .identifier = weapon->refID, .isModIndex = false };
+		const Overrides::Source source{ .identifier = weapon->refID, .isModIndex = false, .origin = GetScriptOrigin(scriptObj) };
 		*result = OverrideAnimsFromScript(path, source, firstPerson, enable);
 	}
 	catch (std::exception& e)
@@ -825,7 +833,8 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 			.isModIndex = !actor,
 			.conditionScript = conditionScript,
 			.pollCondition = static_cast<bool>(pollCondition),
-			.matchBaseGroupId = static_cast<bool>(matchBaseGroupId)
+			.matchBaseGroupId = static_cast<bool>(matchBaseGroupId),
+			.origin = GetScriptOrigin(scriptObj),
 		};
 		*result = OverrideAnimsFromScript(path, source, firstPerson, enable);
 	}
@@ -932,13 +941,11 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 	return true;
 }
 
-// Registers the override files anew, and reads every KF from the disk again when it next plays (for animators: files
-// changed while the game runs). Main thread, from the console: the other threads must not be picking animations
-bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
+void ReloadOverrideFiles()
 {
 	// the player's animations start over if one of them was an override
 	bool refresh = false;
-	for (auto* animData : { g_thePlayer->firstPersonAnimData, g_thePlayer->baseProcess->GetAnimData() })
+	for (auto* animData : { g_thePlayer->firstPersonAnimData, g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr })
 	{
 		if (const auto* state = animData ? ActorOverrides::Peek(animData) : nullptr)
 		{
@@ -964,7 +971,13 @@ bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 
 	if (refresh)
 		g_thePlayer->RestartAnims();
-	
+}
+
+// Registers the override files anew, and reads every KF from the disk again when it next plays (for animators: files
+// changed while the game runs). Main thread, from the console: the other threads must not be picking animations
+bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
+{
+	ReloadOverrideFiles();
 	if (!IsConsoleMode())
 		Console_Print("kNVSEReset called from a script! This is a DEBUG function that maybe leak memory");
 	return true;
@@ -1098,7 +1111,10 @@ std::vector<std::string_view> FindCustomAnimations(AnimData* animData, const UIn
 	if (const auto* set = Overrides::Find(nearestGroupId, animData))
 	{
 		for (const auto& animPath : set->anims)
-			result.push_back(animPath.path);
+		{
+			if (set->IsFileEnabled(animPath))
+				result.push_back(animPath.path);
+		}
 	}
 	return result;
 }
@@ -2666,62 +2682,41 @@ void CreateCommands(NVSECommandBuilder& builder)
 #undef PARAM
 #undef OPT_PARAM
 
-#if _DEBUG
+	// kNVSE.ini settings by key (bBlendSmoothing) or short name (blendSmoothing, overlappingBlends). Not saved to the INI
+	builder.Create("GetkNVSESetting", kRetnType_Default, { ParamInfo{"sName", kParamType_String, false} }, false, [](COMMAND_ARGS)
+	{
+		sv::stack_string<0x400> name;
+		*result = 0;
+		if (!ExtractArgs(EXTRACT_ARGS, &name))
+			return true;
+		if (const auto* setting = Settings::Find(name.str()))
+			*result = Settings::GetNumber(*setting);
+		return true;
+	});
+
+	builder.Create("SetkNVSESetting", kRetnType_Default, { ParamInfo{"sName", kParamType_String, false}, ParamInfo{"sValue", kParamType_String, false} }, false, [](COMMAND_ARGS)
+	{
+		sv::stack_string<0x400> name;
+		sv::stack_string<0x400> value;
+		*result = 0;
+		if (!ExtractArgs(EXTRACT_ARGS, &name, &value))
+			return true;
+		const auto* setting = Settings::Find(name.str());
+		*result = setting && Settings::SetText(*setting, value.str());
+		return true;
+	});
 
 	builder.Create("kNVSEToggleSetting", kRetnType_Default, { ParamInfo{"sFeatureName", kParamType_String, false} }, false, [](COMMAND_ARGS)
 	{
-		sv::stack_string<0x400> featureName;
+		sv::stack_string<0x400> name;
 		*result = 0;
-		if (!ExtractArgs(EXTRACT_ARGS, &featureName))
+		if (!ExtractArgs(EXTRACT_ARGS, &name))
 			return true;
-
-		if (featureName.str() == "blendSmoothing")
-		{
-			g_pluginSettings.blendSmoothing = !g_pluginSettings.blendSmoothing;
-			*result = g_pluginSettings.blendSmoothing;
-		}
-		else if (featureName.str() == "weaponHandBlend")
-		{
-			g_pluginSettings.fixWeaponHandBlend = !g_pluginSettings.fixWeaponHandBlend;
-			*result = g_pluginSettings.fixWeaponHandBlend;
-		}
-		else if (featureName.str() == "keepLeftHandOnWeapon")
-		{
-			g_pluginSettings.keepLeftHandOnWeapon = !g_pluginSettings.keepLeftHandOnWeapon;
-			*result = g_pluginSettings.keepLeftHandOnWeapon;
-		}
-		else if (featureName.str() == "overlappingBlends")
-		{
-			g_pluginSettings.fixOverlappingBlends = !g_pluginSettings.fixOverlappingBlends;
-			*result = g_pluginSettings.fixOverlappingBlends;
-		}
-		else if (featureName.str() == "reloadStance")
-		{
-			g_pluginSettings.fixReloadStance = !g_pluginSettings.fixReloadStance;
-			*result = g_pluginSettings.fixReloadStance;
-		}
-		else if (featureName.str() == "movementMorphKeys")
-		{
-			g_pluginSettings.fixMovementMorphKeys = !g_pluginSettings.fixMovementMorphKeys;
-			*result = g_pluginSettings.fixMovementMorphKeys;
-		}
-		else if (featureName.str() == "accumRootBlend")
-		{
-			g_pluginSettings.fixAccumRootBlend = !g_pluginSettings.fixAccumRootBlend;
-			*result = g_pluginSettings.fixAccumRootBlend;
-		}
-		else if (featureName.str() == "movementTransitions")
-		{
-			g_pluginSettings.movementTransitions = !g_pluginSettings.movementTransitions;
-			*result = g_pluginSettings.movementTransitions;
-		}
-		else if (featureName.str() == "aimTransitions")
-		{
-			g_pluginSettings.aimTransitions = !g_pluginSettings.aimTransitions;
-			*result = g_pluginSettings.aimTransitions;
-		}
-		
+		const auto* setting = Settings::Find(name.str());
+		if (!setting || !setting->IsBool())
+			return true;
+		Settings::SetNumber(*setting, Settings::GetNumber(*setting) == 0.0);
+		*result = Settings::GetNumber(*setting);
 		return true;
 	});
-#endif
 }

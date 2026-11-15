@@ -67,7 +67,7 @@ bool TransitionAnims::HasGaitStops()
 
 bool TransitionAnims::HasPaths(const SavedAnims& set, TransitionKind kind)
 {
-	return std::ranges::any_of(set.anims, [&](const AnimPath& path) { return GetKind(path) == kind; });
+	return std::ranges::any_of(set.anims, [&](const AnimPath& path) { return GetKind(path) == kind && set.IsFileEnabled(path); });
 }
 
 SavedAnims* TransitionAnims::FindSet(AnimData* animData, UInt16 groupId, TransitionKind kind)
@@ -91,7 +91,7 @@ std::vector<const AnimPath*> TransitionAnims::GetPaths(SavedAnims& set, Transiti
 		return paths;
 	for (const auto& path : set.anims)
 	{
-		if (GetKind(path) == kind)
+		if (GetKind(path) == kind && set.IsFileEnabled(path))
 			paths.push_back(&path);
 	}
 	return paths;

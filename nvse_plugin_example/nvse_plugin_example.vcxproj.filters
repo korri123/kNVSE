@@ -66,6 +66,13 @@
       <Filter>nvse</Filter>
     </ClCompile>
     <ClCompile Include="hooks.cpp" />
+    <ClCompile Include="settings.cpp" />
+    <ClCompile Include="override_prefs.cpp" />
+    <ClCompile Include="menu_engine.cpp" />
+    <ClCompile Include="knvse_menu.cpp" />
+    <ClCompile Include="menu_settings_page.cpp" />
+    <ClCompile Include="menu_animations_page.cpp" />
+    <ClCompile Include="menu_status_pages.cpp" />
     <ClCompile Include="commands_animation.cpp" />
     <ClCompile Include="file_animations.cpp" />
     <ClCompile Include="anim_overrides.cpp" />
@@ -170,6 +177,11 @@
       <Filter>nvse</Filter>
     </ClInclude>
     <ClInclude Include="hooks.h" />
+    <ClInclude Include="settings.h" />
+    <ClInclude Include="override_prefs.h" />
+    <ClInclude Include="menu_engine.h" />
+    <ClInclude Include="knvse_menu.h" />
+    <ClInclude Include="menu_page.h" />
     <ClInclude Include="commands_animation.h" />
     <ClInclude Include="..\nvse\nvse\GameProcess.h">
       <Filter>nvse</Filter>

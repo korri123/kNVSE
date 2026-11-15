@@ -30,6 +30,7 @@
 #include "commands_misc.h"
 #endif
 #include "knvse_events.h"
+#include "knvse_menu.h"
 #include "spawn_keys.h"
 #include "debug_tools.h"
 #include "gamebryo/NiStream.h"
@@ -637,7 +638,13 @@ static void CheckAndWarnForFixPack()
 void MessageHandler(NVSEMessagingInterface::Message* msg)
 {
 	DebugTools::HandleMessage(msg->type);
-	if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
+	if (msg->type == NVSEMessagingInterface::kMessage_PostPostLoad)
+	{
+		// after every plugin's load (Stewie's Tweaks patches the start menu's calls there), before the start menu
+		// builds its lists
+		KnvseMenu::WriteHooks();
+	}
+	else if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
 	{
 		g_isThreadCacheEnabled = true;
 		Console_Print("kNVSE version %d", VERSION_MAJOR);

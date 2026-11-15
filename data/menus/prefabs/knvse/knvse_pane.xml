@@ -1,0 +1,39 @@
+<!-- A list of kNVSE's menu (knvse_menu.xml): its heading, the tile its rows are added to, its scroll bar -->
+<locus> &true; </locus>
+<target> &true; </target>
+
+<text name="Heading">
+	<systemcolor> &hudmain; </systemcolor>
+	<font> 3 </font>
+	<x> 4 </x>
+	<y> 0 </y>
+	<alpha> 170 </alpha>
+</text>
+
+<image name="Line">
+	<filename> solid.dds </filename>
+	<texatlas> Interface\InterfaceShared.tai </texatlas>
+	<systemcolor> &hudmain; </systemcolor>
+	<width> <copy src="parent()" trait="width"/> </width>
+	<height> 1 </height>
+	<y> 30 </y>
+	<alpha> 90 </alpha>
+</image>
+
+<rect name="Rows">
+	<locus> &true; </locus>
+	<x> 0 </x>
+	<y> 34 </y>
+	<width> <copy src="parent()" trait="width"/> <sub> 10 </sub> </width>
+	<height> <copy src="parent()" trait="height"/> <sub> 34 </sub> </height>
+
+	<image name="Scroll">
+		<filename> solid.dds </filename>
+		<texatlas> Interface\InterfaceShared.tai </texatlas>
+		<systemcolor> &hudmain; </systemcolor>
+		<x> <copy src="parent()" trait="width"/> <add> 4 </add> </x>
+		<width> 4 </width>
+		<height> 10 </height>
+		<alpha> 150 </alpha>
+	</image>
+</rect>

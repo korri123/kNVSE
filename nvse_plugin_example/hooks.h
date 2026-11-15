@@ -4,6 +4,7 @@
 #include "commands_animation.h"
 #include "GameRTTI.h"
 #include "NiObjects.h"
+#include "settings.h"
 
 extern bool g_startedAnimation;
 extern BSAnimGroupSequence* g_lastLoopSequence;
@@ -12,43 +13,6 @@ void ApplyHooks();
 BSAnimGroupSequence* GetAnimByFullGroupID(AnimData* animData, UInt16 groupId);
 BSAnimGroupSequence* GetAnimByGroupID(AnimData* animData, AnimGroupID ani);
 void ApplyDestFrame(NiControllerSequence* sequence, float destFrame);
-
-struct PluginINISettings
-{
-    bool fixSpineBlendBug = true;
-    bool fixAttackISTransition = true;
-    bool fixBlendSamePriority = false;
-    bool fixLoopingReloadStart = false;
-    bool disableFirstPersonTurningAnims = false;
-    bool fixEndKeyTimeShorterThanStopTime = false;
-    bool fixWrongAKeyInRespectEndKeyAnim = false;
-    bool fixWrongPrnKey = false;
-    bool fixWrongAnimName = false;
-    bool fixMissingPrnKey = false;
-    bool fixReloadStartAllowReloadTweak = false;
-    bool fixReloadStance = true;
-    bool fixShortGaitBlend = true;
-    bool blendSmoothing = true;
-    float blendSmoothingRate = 0.075f;
-    float blendEaseCurve = 0.7f;
-    bool fixWeaponHandBlend = true;
-    bool keepLeftHandOnWeapon = true;
-    bool fixBlendFromPose = true;
-    bool fixWeaponParentSwitch = true;
-    bool fixGaitSwitch = true;
-    bool fixMovementMorphKeys = true;
-    bool fixOverlappingBlends = true;
-    bool movementTransitions = true;
-    bool aimTransitions = true;
-    bool fixAccumRootBlend = true;
-#if _DEBUG
-    bool weaponHandBlendDebugLog = false;
-#endif
-
-    bool fixDeactivateControllerManagers = true;
-    std::vector<std::string> legacyAnimTimePaths;
-};
-extern PluginINISettings g_pluginSettings;
 
 struct PluginGlobalData
 {

@@ -17,7 +17,6 @@
 #include "commands_animation.h"
 #include "SafeWrite.h"
 #include "nitypes.h"
-#include "SimpleINILibrary.h"
 #include "utility.h"
 #include "main.h"
 #include "nihooks.h"
@@ -227,6 +226,8 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void*, UInt16 groupID
 	{
 		return ThisStdCall<UInt16>(0x495740, animData, groupID, noRecurse);
 	};
+	if (!g_pluginSettings.fixLoopingReloads)
+		return defaultRet();
 	groupID = groupID & 0xFF; // prevent swimming animation if crouched and reloading
 	auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
 	if (!weaponInfo)
@@ -366,7 +367,7 @@ void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool
 	const auto* animData = GET_CALLER_VAR(AnimData*, -0x5C);
 	auto* animBlend = GET_CALLER_VAR_PTR(float*, -0x34);
 	const auto mult = GetAnimMult(animData, static_cast<UInt8>(anim->animGroup->groupID));
-	if (mult > 1.0f)
+	if (g_pluginSettings.fixBlendAnimMultipliers && mult > 1.0f)
 	{
 		*animBlend /= mult;
 	}
@@ -832,7 +833,6 @@ void ApplyFixLoopingReloadStartHooks()
 #endif
 }
 
-PluginINISettings g_pluginSettings;
 thread_local PluginGlobalData g_globals;
 
 thread_local bool g_isThreadCacheEnabled = false;
@@ -909,58 +909,9 @@ void ApplyHooks()
 	// stop ° in console
 	hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, NULL, 0);
 #endif
-	const auto iniPath = R"(Data\NVSE\Plugins\kNVSE.ini)";
-	CSimpleIniA ini;
-	ini.SetUnicode();
-	if (ini.LoadFile(iniPath) < 0)
-	{
-		ERROR_LOG("INI file missing, generating a new one.");
-	}
-	g_logLevel = ini.GetOrCreate("General", "iConsoleLogLevel", 1, "; 0 = no log, 1 = kNVSE.log, 2 = console log");
-	g_errorLogLevel = ini.GetOrCreate("General", "iErrorLogLevel", 1, "; 0 = no log, 1 = kNVSE.log, 2 = error console log");
-	auto& conf = g_pluginSettings;
+	Settings::Load();
+	const auto& conf = g_pluginSettings;
 
-#if 0
-	conf.fixBlendSamePriority = ini.GetOrCreate("General", "bFixBlendSamePriority", 1, "; fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority");
-	conf.fixLoopingReloadStart = ini.GetOrCreate("General", "bFixLoopingReloadStart", 1, "; fix looping reload start anims transitioning to aim anim before main looping reload anim");
-
-	g_disableFirstPersonTurningAnims = ini.GetOrCreate("General", "bDisableFirstPersonTurningAnims", 1, "; disable first person turning anims (they mess with shit and serve barely any purpose)");
-#endif
-	conf.blendSmoothing = ini.GetOrCreate("Blend Fixes", "bBlendSmoothing", 1, "; smooths out the snaps in animation blending: where the blend weights jump (animations switched without a blend, more than two animation priorities on a bone) the previous pose fades out instead. Blends that are smooth already keep their timing. for some animations this might not be wanted, add noBlendSmoothing as text key to disable.");
-	conf.blendSmoothingRate = ini.GetOrCreate("Blend Fixes", "fBlendSmoothingRate", 0.075, "; how long (in seconds) a snap takes to fade out with bBlendSmoothing: about a third of it is left after this time. higher values mean smoother but slower.");
-	if (conf.blendSmoothingRate <= 0.0f)
-		conf.blendSmoothingRate = 0.075f;
-	conf.blendEaseCurve = ini.GetOrCreate("Blend Fixes", "fBlendEaseCurve", 0.7, "; how gradually blends between animations start and stop, from 0 (constant speed, as the game does it) to 1 (they speed up at their start and slow down towards their end). Blends take as long as before and are half way at the same moment. Animations can pick another curve with the text keys \"blendCurve: <curve>\" (blends into and out of them), \"blendInCurve: <curve>\" and \"blendOutCurve: <curve>\", each from its time on: default, linear, smooth, inSine, outSine, inOutSine (also Quad, Cubic, Quart, Expo, Circ) or \"bezier x1 y1 x2 y2\" with each in 0..1. A blend takes the blendInCurve of the animation blending in, else the blendOutCurve of the one blending out; with bBlendSmoothing the curve is exactly how far the bone has blended.");
-	conf.blendEaseCurve = std::clamp(conf.blendEaseCurve, 0.0f, 1.0f);
-	conf.fixSpineBlendBug = ini.GetOrCreate("Blend Fixes", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down (requires bBlendSmoothing).");
-	conf.fixWeaponHandBlend = ini.GetOrCreate("Blend Fixes", "bFixWeaponHandBlend", 1, "; keep the weapon on the hand holding it when animations move it to the left hand (counter-animated against the right hand): during blends, and between keys of animations baked at low frame rates. Detected automatically; animators can set it with the text keys \"weaponSpace: left\", \"weaponSpace: right\", \"weaponSpace: body\" (follows neither hand, for hand-offs) and \"weaponSpace: auto\", each holding until the next, or opt an animation out with \"weaponSpace: off\" (its share of a blend is blended as without this fix).");
-	conf.keepLeftHandOnWeapon = ini.GetOrCreate("Blend Fixes", "bKeepLeftHandOnWeapon", 1, "; keep the left hand on two-handed weapons during blends (hip to sights and back, ...): the arms are blended joint by joint, so the hand slid off the weapon halfway through a blend between two animations that both hold it. The left arm is turned to reach for where those animations hold the weapon. Requires bFixWeaponHandBlend.");
-#if _DEBUG
-	conf.weaponHandBlendDebugLog = ini.GetOrCreate("Blend Fixes", "bWeaponHandBlendDebugLog", 0, "; log to kNVSE.log how long each animation holds the weapon in each hand, as detected by bFixWeaponHandBlend.");
-#endif
-	conf.fixBlendFromPose = ini.GetOrCreate("Blend Fixes", "bFixBlendFromPose", 1, "; start animations that the game blends in from a frozen snapshot of the pose (drawing weapons, hit reactions, special idles, the Pip-Boy) with a normal ease-in instead: lower priority animations keep playing under them during the blend and they play from their start instead of holding their first frame, and the animations the game cut off for them fade out over the same time. Knocked down, ragdolled and dead actors keep the snapshot. Requires bBlendSmoothing.");
-	conf.fixWeaponParentSwitch = ini.GetOrCreate("Blend Fixes", "bFixWeaponParentSwitch", 1, "; fix the weapon flying off the hand or holster for a moment while equip and unequip animations move it between them (e.g. the Service Rifle's 2haunequip.kf, most visible with a low sgtm): the weapon's animation is held in the space of the node it is attached to until the game moves it. Requires bBlendSmoothing.");
-	conf.fixGaitSwitch = ini.GetOrCreate("Blend Fixes", "bFixGaitSwitch", 1, "; keep walking and running in step when the game switches to another version of the same movement animation (to the drawn weapon's at the point of drawing or holstering where the weapon reaches the hand or holster, sneaking, power armor): the new one starts at the step the legs are at instead of its first frame, so the feet don't slide or scissor through the blend. Requires bBlendSmoothing.");
-	conf.fixMovementMorphKeys = ini.GetOrCreate("Blend Fixes", "bFixMovementMorphKeys", 1, "; make m: text keys (m:L, m:R, ...) keep movement animations in step, as they do in the game without bBlendSmoothing: switching between two movement animations with the same set of m: keys starts the new one at the point between its keys that matches where the old one is, and the old one follows the new one's cycle while it fades out. Unlike the game, the two need not animate the same number of bones or start with the same m: key. Used instead of bFixGaitSwitch where both animations have them. Requires bBlendSmoothing.");
-	conf.fixOverlappingBlends = ini.GetOrCreate("Blend Fixes", "bFixOverlappingBlends", 1, "; blend animation switches that overlap on the same bones (holstering while the run switches to the unarmed one, aiming while the strafe changes, ...) as a mix of what each switch goes from and to: the game only blends the two highest priorities on a bone, so the hand lingered at the holster for a moment when holstering a weapon while running in third person. Bones with one switch at a time blend as before. Requires bBlendSmoothing.");
-	conf.movementTransitions = ini.GetOrCreate("Blend Fixes", "bMovementTransitions", 1, "; play start and stop animations of walks and runs: files in an AnimGroupOverride folder named like the walk or run they belong to with _start or _stop in the name (mtforward_start.kf, 2hafastforward_stop_a.kf; the KF's cycle type may be Clamp). A start animation plays when an actor starts walking or running from standing and goes on to the walk at its End text key, a stop animation (of several, the one whose first frame has the feet closest to where they are: stops on the left and right foot) plays when the player stops and blends to the idle at its End key. NPCs walking to the end of a path start theirs before they get there, where its root motion ends at the point they stop, so they stop where they would have; NPCs stopped by anything else (dialogue, waiting for another actor) stop as before. Both move the actor by their root motion. In first person the player plays those of _1stperson folders; a third person one plays there only with an allowFirstPerson text key (else the camera would move by a start or stop the arms do not show). Requires bBlendSmoothing.");
-	conf.aimTransitions = ini.GetOrCreate("Blend Fixes", "bAimTransitions", 1, "; play animations of raising the weapon to the sights and lowering it, for the player: files in an AnimGroupOverride folder named like the aiming down the sights animation they belong to with _start (hip to sights) or _stop (sights to hip) in the name (2haaimis_start.kf, 1hpaimis_stop_a.kf; _1stperson folders for the first person arms). One plays in place of the blend between the aim and aimIS animations and goes on to the animation it leads to at its End text key, with its own blend out. Aim released or pressed again partway plays the animation of the other way from where the weapon is, or the same one backwards when there is none (its sound and script text keys are skipped while it plays backwards). The weapon fires once the animation has ended. In third person they follow the pitch like an animation with an aimPitch text key. Requires bBlendSmoothing and bFixSpineBlendBug.");
-	conf.fixAttackISTransition = ini.GetOrCreate("General", "bFixAttackISTransition", 1, "; fix iron sight attack anims being glued to player's face even after player has released aim button. kNVSE will trigger a blend to the hipfire attack animation when the attack key is released.");
-
-	conf.fixBlendSamePriority = ini.GetOrCreate("Blend Fixes", "bFixBlendSamePriority", 1, "; try to fix blending weapon animations with same bone priorities causing flickering as game tries to blend them with bones with the next high priority anim (usually mtidle.kf)");
-	conf.fixEndKeyTimeShorterThanStopTime = ini.GetOrCreate("Anim Fixes", "bFixEndKeyTimeShorterThanStopTime", 1, "; try to fix animations with broken export stop time where it's greater than the end key time and time of last transform data");
-	conf.fixWrongAKeyInRespectEndKeyAnim = ini.GetOrCreate("Anim Fixes", "bFixWrongAKeyInRespectEndKeyAnim", 1, "; try to fix animations where animator messed up the a: text key value in the first person animation. Previous versions of kNVSE ignored this key in first person animations.");
-	conf.fixWrongPrnKey = ini.GetOrCreate("Anim Fixes", "bFixWrongPrnKey", 1, "; try to fix animations where animator messed up the prn text key value in the first person animation. Previous versions of kNVSE ignored this key in first person animations.");
-	conf.fixWrongAnimName = ini.GetOrCreate("Anim Fixes", "bFixWrongAnimName", 1, "; try to fix animations where the name of the animation file does not match anim group name.");
-	conf.fixMissingPrnKey = ini.GetOrCreate("Anim Fixes", "bFixMissingPrnKey", 1, "; try to fix animations where the prn key is missing in the first person animation.");
-	conf.fixReloadStartAllowReloadTweak = ini.GetOrCreate("Anim Fixes", "bFixReloadStartAllowReloadTweak", 1, "; fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest.");
-	conf.fixReloadStance = ini.GetOrCreate("Anim Fixes", "bFixReloadStance", 1, "; fix the body staying in the old stance when sneaking or standing up during a reload in third person: the game only switches the reload to the new stance's animation when it starts the next reload (or round of a looping reload, e.g. the Cowboy Repeater, whose legs sink into the ground or float above it until then), while the camera moves at once. kNVSE blends to it at once.");
-	conf.fixShortGaitBlend = ini.GetOrCreate("Anim Fixes", "bFixShortGaitBlend", 1, "; fix walk and run animations that blend in or out much faster than the others, e.g. the vanilla third person 1hpfastforward.kf and 2hlfastforward.kf (Blend: 3, a tenth of a second, where the other walks and runs take 6 or 9 frames): Blend, BlendIn and BlendOut text keys of a walk or run below 6 frames (0.2 seconds, the game's default blend) are changed to 6 when the animation loads. Start and stop animations and KFs with a noFix text key keep theirs.");
-
-	const std::string legacyAnimTimePaths = ini.GetOrCreate("Anim Fixes", "sLegacyAnimTimePaths", "B42Inject,B42Interact,B42Loot", "; use legacy anim time algorithm for these paths (these mods rely on bugged behavior from previous versions of kNVSE).");
-	if (!legacyAnimTimePaths.empty())
-		conf.legacyAnimTimePaths = SplitString(legacyAnimTimePaths);
-		
 	//WriteRelJump(0x4949D0, AnimationHook);
 	
 	WriteRelCall(0x494989, HandleAnimationChange);
@@ -990,36 +941,23 @@ void ApplyHooks()
 		AimPitch::WriteHooks();
 	}
 	
-	if (ini.GetOrCreate("Engine Fixes", "bFixLoopingReloads", 1, "; see https://www.youtube.com/watch?v=Vnh2PG-D15A"))
-	{
-		WriteRelCall(0x8BABCA, LoopingReloadFixHook);
-		WriteRelCall(0x948CEC, LoopingReloadFixHook); // part of cancelling looping reload after shooting
-	}
+	// these check their setting each time they run: the menu switches them both ways
+	WriteRelCall(0x8BABCA, LoopingReloadFixHook);
+	WriteRelCall(0x948CEC, LoopingReloadFixHook); // part of cancelling looping reload after shooting
+	AccumBlendFix::WriteHooks();
+	WriteRelCall(0x4951D2, FixBlendMult);
 
-	const bool fixModReloadAnims = ini.GetOrCreate("Engine Fixes", "bFixModReloadAnims", 1, "; fix weapons whose Increase Clip Capacity mod switches the reload animation between a looping (ReloadW-Z) and a non-looping one: the reload did not play at all, or its loop played only once");
-	if (fixModReloadAnims)
+	if (conf.fixModReloadAnims)
 		ModReloadAnimFix::ApplyHooks();
 
-	if (ini.GetOrCreate("Engine Fixes", "bFixNPCLoopingReloads", 1, "; fix NPCs loading the whole clip of a weapon with a looping reload (Cowboy Repeater, lever-action shotgun, ...) in one round: they load one round per loop, like the player. Needs xNVSE 6.4.9 or newer."))
-		NPCLoopingReloadFix::ApplyHooks(fixModReloadAnims);
+	if (conf.fixNPCLoopingReloads)
+		NPCLoopingReloadFix::ApplyHooks(conf.fixModReloadAnims);
 
-	conf.fixAccumRootBlend = ini.GetOrCreate("Engine Fixes", "bFixAccumRootBlend", 1, "; fix actors stalling for a frame (or slowing down for one) at the start and end of blends between animations that move them by their root motion: the game's blend of the root's movement lost a frame of it whenever an animation joined or left the blend. Vanilla walks and runs hide it (the game moves the actor at the walk's average speed while a walk blends in); start and stop animations (bMovementTransitions) do not.");
-	if (conf.fixAccumRootBlend)
-		AccumBlendFix::WriteHooks();
-
-	if (ini.GetOrCreate("Engine Fixes", "bFixAimUpDownVariants", 1, "; fix third person aim and attack animations not following the pitch (looking up or down) for weapon types whose up/down KFs are in more than one archive: the game failed to find the up and down animations that go with the playing one when a KF is listed twice (2haaimup in Update.bsa: the Service Rifle, Assault Carbine, ...; 2hh via Old World Blues, h2h via Dead Money, 1hpattack8 via Update.bsa) or a group has several KFs."))
+	if (conf.fixAimUpDownVariants)
 		UpDownVariantFix::WriteHooks();
 
-	if (ini.GetOrCreate("Engine Fixes", "bFixIdleStrafing", 1, "; allow player to strafe/turn sideways mid idle animation"))
+	if (conf.fixIdleStrafing)
 		FixIdleAnimStrafe();
-
-	if (ini.GetOrCreate("Blend Fixes", "bFixBlendAnimMultipliers", 1, "; fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)"))
-		WriteRelCall(0x4951D2, FixBlendMult);
-
-	if (ini.SaveFile(iniPath, false) < 0)
-	{
-		ERROR_LOG("Failed to save ini file");
-	}
 
 	ApplyNiHooks();
 

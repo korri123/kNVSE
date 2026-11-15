@@ -172,8 +172,9 @@
       <OptimizeReferences>false</OptimizeReferences>
     </Link>
     <PostBuildEvent>
-      <Message>Installing DLL...</Message>
-      <Command>copy "$(TargetPath)" "$(FalloutNVPath)\Data\NVSE\Plugins\$(TargetFileName)"</Command>
+      <Message>Installing DLL and menu files...</Message>
+      <Command>copy "$(TargetPath)" "$(FalloutNVPath)\Data\NVSE\Plugins\$(TargetFileName)"
+xcopy /Y /S /I /Q "$(SolutionDir)..\data" "$(FalloutNVPath)\Data"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug GECK|Win32'">
@@ -230,8 +231,9 @@
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <PostBuildEvent>
-      <Message>Installing DLL...</Message>
-      <Command>copy "$(TargetPath)" "$(FalloutNVPath)\Data\NVSE\Plugins\$(TargetFileName)"</Command>
+      <Message>Installing DLL and menu files...</Message>
+      <Command>copy "$(TargetPath)" "$(FalloutNVPath)\Data\NVSE\Plugins\$(TargetFileName)"
+xcopy /Y /S /I /Q "$(SolutionDir)..\data" "$(FalloutNVPath)\Data"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release Debug Launch GECK|Win32'">
@@ -436,6 +438,13 @@
     <ClCompile Include="gamebryo\NiStream.cpp" />
     <ClCompile Include="game_types.cpp" />
     <ClCompile Include="hooks.cpp" />
+    <ClCompile Include="settings.cpp" />
+    <ClCompile Include="override_prefs.cpp" />
+    <ClCompile Include="menu_engine.cpp" />
+    <ClCompile Include="knvse_menu.cpp" />
+    <ClCompile Include="menu_settings_page.cpp" />
+    <ClCompile Include="menu_animations_page.cpp" />
+    <ClCompile Include="menu_status_pages.cpp" />
     <ClCompile Include="jip_fixes.cpp" />
     <ClCompile Include="knvse_events.cpp" />
     <ClCompile Include="LambdaVariableContext.cpp" />
@@ -504,6 +513,11 @@
     <ClInclude Include="kf_loader.h" />
     <ClInclude Include="gamebryo\NiStream.h" />
     <ClInclude Include="hooks.h" />
+    <ClInclude Include="settings.h" />
+    <ClInclude Include="override_prefs.h" />
+    <ClInclude Include="menu_engine.h" />
+    <ClInclude Include="knvse_menu.h" />
+    <ClInclude Include="menu_page.h" />
     <ClInclude Include="game_types.h" />
     <ClInclude Include="jip_fixes.h" />
     <ClInclude Include="knvse_events.h" />

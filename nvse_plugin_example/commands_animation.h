@@ -499,6 +499,11 @@ AnimGroupID SimpleGroupNameToId(std::string_view name);
 
 extern std::recursive_mutex g_animTimeMutex;
 
+// kNVSEReset: registers the override files anew (sets registered by scripts are gone), and reads every KF from the
+// disk again when it next plays; the player's animations start over if an override played. Main thread, while the
+// other threads do not pick animations (console, menus)
+void ReloadOverrideFiles();
+
 extern "C" { 
 	__declspec(dllexport) void PluginOverrideFormAnimation(const TESForm* form, const char* path, bool firstPerson, bool enable, Script* conditionScript, bool pollCondition);
 	__declspec(dllexport) bool CopyAnimationsToForm(TESForm* fromForm, TESForm* toForm);

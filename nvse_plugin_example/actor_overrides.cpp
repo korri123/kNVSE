@@ -129,7 +129,7 @@ namespace
 		bool operator()(const AnimPath& animPath) const
 		{
 			// start and stop animations only play through MovementTransitions and AimTransitions
-			if (animPath.isStartAnim || animPath.isStopAnim)
+			if (animPath.isStartAnim || animPath.isStopAnim || !set.IsFileEnabled(animPath))
 				return false;
 			if (idleFileStem && !IsIdleFileStem(animPath, *idleFileStem))
 				return false;
@@ -156,7 +156,7 @@ namespace
 		const PathFilter filter(set, groupId, animData, state);
 		// a set of one file plays it, whatever the reload's kind
 		if (set.anims.size() == 1 && !filter.idleFileStem && !set.hasTransitionAnims) [[likely]]
-			return { state && state->HasFailed(set.anims[0].path.data()) ? nullptr : &set.anims[0] };
+			return { (state && state->HasFailed(set.anims[0].path.data())) || !set.IsFileEnabled(set.anims[0]) ? nullptr : &set.anims[0] };
 
 		const auto count = static_cast<UInt32>(std::ranges::count_if(set.anims, filter));
 		if (!count)
@@ -465,7 +465,7 @@ void ActorOverrides::UpdatePolled()
 	for (const auto [set, groupId] : polledScratch)
 	{
 		auto* conditionScript = set->conditionScript.load(std::memory_order_acquire);
-		if (!conditionScript || set->disabled.load(std::memory_order_relaxed))
+		if (!conditionScript || !set->IsEnabled())
 			continue;
 		const auto* animInfo = GetGroupInfo(static_cast<AnimGroupID>(groupId));
 		auto* curAnim = animData->animSequence[animInfo->sequenceType];
@@ -515,6 +515,47 @@ void ActorOverrides::UpdatePolled()
 	polledScratch.clear();
 }
 
+namespace
+{
+	// What Overrides::Find makes of one candidate set. Runs its condition script; with trackFor, a set with
+	// pollCondition is tracked for the group
+	Overrides::Verdict Judge(SavedAnims& set, Actor* actor, UInt16 groupId, TransitionKind transition,
+		const std::optional<std::string_view>& idleFileStem, ActorOverrides* trackFor)
+	{
+		using enum Overrides::Verdict;
+		if (!set.IsEnabled())
+			return Disabled;
+		if (!set.MatchesFolderCondition(actor))
+			return FolderCondition;
+		if ((set.hasTransitionAnims || transition != TransitionKind::None) && !TransitionAnims::HasPaths(set, transition))
+			return NoTransition;
+		if (idleFileStem && std::ranges::none_of(set.anims, [&](const AnimPath& animPath) { return IsIdleFileStem(animPath, *idleFileStem); }))
+			return OtherIdle;
+		if (set.conditionScript.load(std::memory_order_relaxed) || !set.conditionScriptText.empty())
+		{
+			if (IsLoaderThread())
+			{
+#if _DEBUG
+				ERROR_LOG_ONCE(FormatString("Overrides: the conditional set of %s was passed over on a loader thread (group %X of actor %X)",
+					set.anims.empty() ? "?" : set.anims[0].path.data(), groupId, actor->refID));
+#endif
+				return LoaderThread;
+			}
+			auto* conditionScript = Overrides::GetCondition(set);
+			if (!conditionScript)
+				return ConditionFailed;
+			// start and stop animations are looked up when one is due: the poll plays the set's group.
+			// Tracked whether or not the condition holds, so that it can come to hold
+			if (set.pollCondition && transition == TransitionKind::None && trackFor)
+				trackFor->Track(set, groupId);
+			NVSEArrayVarInterface::Element result;
+			if (!CallFunction(conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
+				return ConditionFalse;
+		}
+		return set.anims.empty() ? NoFiles : Plays;
+	}
+}
+
 SavedAnims* Overrides::Find(UInt16 groupId, AnimData* animData, TransitionKind transition)
 {
 	if (!FileAnimations::IsLoaded()) [[unlikely]]
@@ -557,37 +598,24 @@ SavedAnims* Overrides::Find(UInt16 groupId, AnimData* animData, TransitionKind t
 	const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
 	for (auto* set : candidates)
 	{
-		if (set->disabled.load(std::memory_order_relaxed) || !set->MatchesFolderCondition(actor))
-			continue;
-		if ((set->hasTransitionAnims || transition != TransitionKind::None) && !TransitionAnims::HasPaths(*set, transition))
-			continue;
-		if (idleFileStem && std::ranges::none_of(set->anims, [&](const AnimPath& animPath) { return IsIdleFileStem(animPath, *idleFileStem); }))
-			continue;
-		if (set->conditionScript.load(std::memory_order_relaxed) || !set->conditionScriptText.empty())
-		{
-			if (IsLoaderThread())
-			{
-#if _DEBUG
-				ERROR_LOG_ONCE(FormatString("Overrides: the conditional set of %s was passed over on a loader thread (group %X of actor %X)",
-					set->anims.empty() ? "?" : set->anims[0].path.data(), groupId, actor->refID));
-#endif
-				continue;
-			}
-			auto* conditionScript = GetCondition(*set);
-			if (!conditionScript)
-				continue;
-			// start and stop animations are looked up when one is due: the poll plays the set's group.
-			// Tracked whether or not the condition holds, so that it can come to hold
-			if (set->pollCondition && transition == TransitionKind::None && state)
-				state->Track(*set, groupId);
-			NVSEArrayVarInterface::Element result;
-			if (!CallFunction(conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
-				continue;
-		}
-		if (!set->anims.empty())
+		if (Judge(*set, actor, groupId, transition, idleFileStem, state) == Verdict::Plays)
 			return set;
 	}
 	return nullptr;
+}
+
+std::vector<Overrides::Candidate> Overrides::Explain(UInt16 groupId, AnimData* animData, TransitionKind transition)
+{
+	std::vector<Candidate> explained;
+	if (!animData || !animData->actor || !animData->actor->baseProcess)
+		return explained;
+	auto* actor = animData->actor;
+	std::vector<SavedAnims*> candidates;
+	CollectCandidates(GetIdentity(actor), animData == g_thePlayer->firstPersonAnimData, groupId, candidates);
+	const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
+	for (auto* set : candidates)
+		explained.push_back({ set, Judge(*set, actor, groupId, transition, idleFileStem, nullptr) });
+	return explained;
 }
 
 Overrides::LoadedAnim Overrides::Load(std::string_view path, AnimData* animData)
@@ -616,6 +644,7 @@ Overrides::LoadedAnim Overrides::Load(std::string_view path, AnimData* animData)
 	if (!created)
 	{
 		state->failed.push_back(path.data());
+		Overrides::ReportProblem(Overrides::Problem::Kind::Load, FormatString("%s (see kNVSE.log)", path.data()));
 		return {};
 	}
 	state->loaded.push_back({ path.data(), created.sequence, created.base });

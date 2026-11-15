@@ -1,0 +1,24 @@
+<!-- A button of kNVSE's menu (knvse_menu.xml): hidden without a label -->
+<locus> &true; </locus>
+<target> &true; </target>
+<clicksound> UIMenuOK </clicksound>
+<y> <copy src="parent()" trait="height"/> <sub> 82 </sub> </y>
+<width> 220 </width>
+<height> 34 </height>
+
+<image name="Fill">
+	<filename> solid.dds </filename>
+	<texatlas> Interface\InterfaceShared.tai </texatlas>
+	<systemcolor> &hudmain; </systemcolor>
+	<width> <copy src="parent()" trait="width"/> </width>
+	<height> <copy src="parent()" trait="height"/> </height>
+	<alpha> <copy> 30 </copy> <add> <copy src="parent()" trait="mouseover"/> <mul> 40 </mul> </add> </alpha>
+</image>
+
+<text name="Label">
+	<systemcolor> &hudmain; </systemcolor>
+	<font> 3 </font>
+	<justify> &center; </justify>
+	<x> <copy src="parent()" trait="width"/> <div> 2 </div> </x>
+	<y> 4 </y>
+</text>

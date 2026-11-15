@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "anim_overrides.h"
+#include "override_prefs.h"
 #include "string_view_util.h"
 #include "bethesda/bethesda_types.h"
 
@@ -37,6 +38,8 @@ namespace
 		int loadPriority;
 		bool pollCondition;
 		bool matchBaseGroupId;
+		// the JSON file's name
+		std::string jsonFile;
 	};
 
 	// One KF of an AnimGroupOverride folder
@@ -186,9 +189,9 @@ namespace
 		return Overrides::Register(source, files);
 	}
 
-	Overrides::Source GetSource(UInt32 identifier, bool isModIndex, const JSONEntry* jsonEntry)
+	Overrides::Source GetSource(UInt32 identifier, bool isModIndex, const JSONEntry* jsonEntry, const OverrideOrigin* origin)
 	{
-		Overrides::Source source{ .identifier = identifier, .isModIndex = isModIndex, .keepCondition = true };
+		Overrides::Source source{ .identifier = identifier, .isModIndex = isModIndex, .keepCondition = true, .origin = origin };
 		if (jsonEntry)
 		{
 			source.conditionText = jsonEntry->condition;
@@ -216,7 +219,9 @@ namespace
 
 	void LoadModAnimPaths(const fs::path& path, const ModInfo* mod, FolderCache& cache)
 	{
-		Register(GetSource(mod->modIndex, true, nullptr), GetLooseFiles(path, cache));
+		const auto modFolder = ToAnsi(path.filename());
+		const auto* modOrigin = Overrides::GetOrigin(OverrideOrigin::Kind::ModFolder, modFolder);
+		Register(GetSource(mod->modIndex, true, nullptr, modOrigin), GetLooseFiles(path, cache));
 		for (const auto& entry : GetSortedEntries(path))
 		{
 			if (!IsDirectory(entry))
@@ -227,19 +232,24 @@ namespace
 			const auto id = HexStringToInt(folderName);
 			if (id == -1)
 			{
-				ERROR_LOG("Failed to convert " + folderName + " to a form ID");
+				const auto problem = "Failed to convert " + folderName + " to a form ID";
+				ERROR_LOG(problem);
+				Overrides::ReportProblem(Overrides::Problem::Kind::Files, problem);
 				continue;
 			}
 			const auto formId = (id & 0x00FFFFFF) + (mod->modIndex << 24);
 			const auto* form = LookupFormByID(formId);
 			if (!form)
 			{
-				ERROR_LOG(FormatString("Form %X not found!", formId));
+				const auto problem = FormatString("%s\\%s: form %X not found", modFolder.c_str(), folderName.c_str(), formId);
+				ERROR_LOG(problem);
+				Overrides::ReportProblem(Overrides::Problem::Kind::Files, problem);
 				continue;
 			}
+			const auto* formOrigin = Overrides::GetOrigin(OverrideOrigin::Kind::ModFolder, modFolder + '\\' + folderName);
 			ForEachForm(form, [&](UInt32 identifier)
 			{
-				return Register(GetSource(identifier, false, nullptr), GetLooseFiles(entry.path(), cache));
+				return Register(GetSource(identifier, false, nullptr, formOrigin), GetLooseFiles(entry.path(), cache));
 			});
 		}
 	}
@@ -343,22 +353,26 @@ namespace
 									pathString.c_str(), localFormId, modName.c_str(), formId, folder.c_str()));
 								continue;
 							}
-							jsonEntries.push_back({ folder, form, condition, priority, pollCondition, matchBaseGroupId });
+							jsonEntries.push_back({ folder, form, condition, priority, pollCondition, matchBaseGroupId, ToAnsi(path.filename()) });
 						}
 					}
 					else
 					{
-						jsonEntries.push_back({ folder, nullptr, condition, priority, pollCondition, matchBaseGroupId });
+						jsonEntries.push_back({ folder, nullptr, condition, priority, pollCondition, matchBaseGroupId, ToAnsi(path.filename()) });
 					}
 				}
 			}
 			else
+			{
 				ERROR_LOG(pathString + " does not start as a JSON array");
+				Overrides::ReportProblem(Overrides::Problem::Kind::Files, pathString + " does not start as a JSON array");
+			}
 		}
 		catch (const nlohmann::json::exception& e)
 		{
 			ERROR_LOG("The JSON is incorrectly formatted! It will not be applied. Path: " + pathString);
 			ERROR_LOG(FormatString("JSON error: %s\n", e.what()));
+			Overrides::ReportProblem(Overrides::Problem::Kind::Files, FormatString("%s is not valid JSON and was not applied: %s", pathString.c_str(), e.what()));
 		}
 	}
 
@@ -416,9 +430,10 @@ namespace
 		const auto folderPath = fs::path(R"(Data\Meshes\AnimGroupOverride)") / entry.folderName;
 		std::error_code error;
 		const bool hasLooseFiles = fs::exists(folderPath, error);
+		const auto* origin = Overrides::GetOrigin(OverrideOrigin::Kind::Json, entry.folderName, entry.jsonFile, entry.loadPriority);
 		const auto registerFor = [&](UInt32 identifier, bool isModIndex)
 		{
-			const auto source = GetSource(identifier, isModIndex, &entry);
+			const auto source = GetSource(identifier, isModIndex, &entry, origin);
 			auto numFiles = Register(source, bsaFiles);
 			numFiles += Register(source, GetArchiveFiles(entry.folderName, cache));
 			if (hasLooseFiles)
@@ -451,6 +466,8 @@ void LoadFileAnimPaths()
 {
 	ScopedTimer timer("Loaded AnimGroupOverride");
 	LOG("Loading file anims");
+	// before the first set is made: each takes the user's choices for its files when it is made
+	OverridePrefs::Load();
 
 	const fs::path dir = R"(Data\Meshes\AnimGroupOverride)";
 	std::error_code error;
@@ -471,7 +488,9 @@ void LoadFileAnimPaths()
 		}
 		catch (const std::exception& e)
 		{
-			ERROR_LOG(FormatString("AnimGroupOverride Error: %s: %s", what.c_str(), e.what()));
+			const auto problem = FormatString("AnimGroupOverride Error: %s: %s", what.c_str(), e.what());
+			ERROR_LOG(problem);
+			Overrides::ReportProblem(Overrides::Problem::Kind::Files, problem);
 		}
 	};
 	for (const auto& entry : GetSortedEntries(dir))
@@ -501,6 +520,8 @@ void LoadFileAnimPaths()
 	std::ranges::stable_sort(jsonEntries, {}, &JSONEntry::loadPriority);
 	for (const auto& entry : jsonEntries)
 		guarded(entry.folderName, [&] { LoadJsonEntry(entry, bsaAnimPaths, cache); });
+	// the user's order of the origins, once they all exist
+	Overrides::ApplyPrefs();
 }
 
 std::atomic<bool> FileAnimations::g_loaded = false;

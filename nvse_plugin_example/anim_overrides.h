@@ -1,7 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
+#include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -31,11 +34,36 @@ enum class FolderCondition : UInt8
 	None, Male, Female, Mod1, Mod2, Mod3, Hurt, Human
 };
 
+// Where sets were registered from, as the user knows them: what the kNVSE menu lists, and disables and orders as one
+// (OverridePrefs keeps that by name)
+struct OverrideOrigin
+{
+	enum class Kind : UInt8
+	{
+		ModFolder, // AnimGroupOverride\<mod>, AnimGroupOverride\<mod>\<form ID>
+		Json, // a folder a JSON file lists
+		Script, // a script command (SetActorAnimationPath, ...)
+		Plugin, // another plugin through kNVSE's exports
+	};
+	Kind kind;
+	// what identifies it: the folder relative to AnimGroupOverride (a mod's, a form's in it, a JSON entry's), or
+	// "script: <mod of the script>" / "plugin"
+	std::string name;
+	// the JSON file that listed the folder first, and that entry's priority
+	std::string jsonFile;
+	int jsonPriority = 0;
+	// disabled by the user. Set under the registry's lock, read without it
+	std::atomic<bool> userDisabled = false;
+	// its place in the user's order of origins (all equal while the user has not ordered them): a stack is ordered by
+	// it before the order of registration. Under the registry's lock
+	int rank = 0;
+};
+
 // An override set: the files registered together for one anim group of one identifier (a form, a mod, or everyone) that
 // play under the same conditions: random or ordered variants, and with a reload its partial and ammo swap versions.
 // Complete when the registry publishes it and not changed afterwards, but for the atomics (disabled or not, the
-// condition once it is compiled): the threads that pick animations read sets without a lock, and keep pointers to them
-// (they live until Overrides::Clear).
+// condition once it is compiled, the files the user disabled): the threads that pick animations read sets without a
+// lock, and keep pointers to them (they live until Overrides::Clear).
 struct SavedAnims
 {
 	std::vector<AnimPath> anims;
@@ -45,6 +73,13 @@ struct SavedAnims
 	std::atomic<Script*> conditionScript = nullptr;
 	// keeps a lambda's variables: the registry's, under its lock
 	LambdaVariableContext conditionContext = nullptr;
+	const OverrideOrigin* origin = nullptr;
+	// when it was registered, or registered again: the order of a stack among the sets of origins of one rank. Under
+	// the registry's lock
+	UInt32 sequence = 0;
+	// per file of anims: disabled by the user (OverridePrefs)
+	std::unique_ptr<std::atomic<bool>[]> fileDisabled;
+	std::atomic<UInt32> numFilesDisabled = 0;
 	FolderCondition folderCondition = FolderCondition::None;
 	bool hasOrder = false;
 	bool pollCondition = false;
@@ -52,6 +87,7 @@ struct SavedAnims
 	bool hasTransitionAnims = false;
 	bool hasPartialReload = false;
 	bool hasAmmoSwap = false;
+	// disabled by a script command, or replaced by a copy with another condition
 	std::atomic<bool> disabled = false;
 	// the condition text failed to compile: never play, whatever enables the set again. Without its condition it would
 	// play for every actor the set's identifier covers (global sets: all of them)
@@ -59,6 +95,9 @@ struct SavedAnims
 
 	bool ContainsAnim(const BSAnimGroupSequence* anim) const;
 	bool MatchesFolderCondition(const Actor* actor) const;
+	bool IsFileEnabled(const AnimPath& anim) const;
+	// Not disabled by a script nor by the user (its origin, or every one of its files)
+	bool IsEnabled() const;
 };
 
 // The registry of override sets: per point of view, per identifier (a form's ID, a mod index, or everyone), per full anim
@@ -86,7 +125,17 @@ namespace Overrides
 		// folders: JSON files list a folder for the same form more than once, with another condition or none, and its
 		// animations have always played under the first one's). Script commands replace the condition
 		bool keepCondition = false;
+		// where the files come from: the sets made from them keep it
+		const OverrideOrigin* origin = nullptr;
 	};
+
+	// The origin of that name, made the first time it is asked for (with the kind and JSON file given then). Lives
+	// until the game closes: the user's choices for it outlast kNVSEReset
+	const OverrideOrigin* GetOrigin(OverrideOrigin::Kind kind, std::string_view name, std::string_view jsonFile = {}, int jsonPriority = 0);
+	// Every origin, in the order they were made
+	std::vector<const OverrideOrigin*> GetOrigins();
+	// Applies the user's choices (OverridePrefs) to the origins and sets: what is disabled, the order of the stacks
+	void ApplyPrefs();
 
 	struct File
 	{
@@ -111,6 +160,40 @@ namespace Overrides
 	// Whether any set was ever registered for the group in that point of view. Lock-free
 	bool HasGroup(bool firstPerson, UInt16 groupId);
 	UInt32 Generation();
+
+	// A set as the registry has it
+	struct SetView
+	{
+		const SavedAnims* set;
+		// a form ID, or with isModIndex a mod index (kEveryone: any actor)
+		UInt32 identifier;
+		bool isModIndex;
+		bool firstPerson;
+		UInt16 groupId;
+		// 0: the top of its stack, tried first
+		UInt32 stackPosition;
+		UInt32 stackSize;
+	};
+	// Every set, under the registry's shared lock: the visitor must not change the registry
+	void ForEachSet(const std::function<void(const SetView&)>& visitor);
+
+	// What went wrong with the override files, each once, for the kNVSE menu. Not logged: the callers log what they
+	// report
+	struct Problem
+	{
+		enum class Kind : UInt8
+		{
+			Files, // JSON files, folders, forms they name
+			Condition, // conditions that do not compile
+			Load, // KFs that do not load
+		};
+		Kind kind;
+		std::string text;
+
+		bool operator==(const Problem&) const = default;
+	};
+	void ReportProblem(Problem::Kind kind, const std::string& text);
+	std::vector<Problem> GetProblems();
 
 	// What decides the identifiers an actor's sets are registered under
 	struct Identity

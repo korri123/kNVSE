@@ -1,6 +1,8 @@
 #include "anim_overrides.h"
 
 #include <algorithm>
+#include <climits>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ranges>
@@ -11,20 +13,22 @@
 #include "file_animations.h"
 #include "GameObjects.h"
 #include "string_view_util.h"
+#include "override_prefs.h"
 #include "transition_anims.h"
 #include "utility.h"
 
 namespace
 {
-	struct Stack
+	struct SetStack
 	{
-		// the set registered or enabled last at the back
+		// the set tried last first: by the rank of their origins, then in the order they were registered (or registered
+		// again: on top)
 		std::vector<std::unique_ptr<SavedAnims>> sets;
 	};
 
 	struct IdentifierOverrides
 	{
-		std::unordered_map<UInt16, Stack> stacks;
+		std::unordered_map<UInt16, SetStack> stacks;
 	};
 
 	using OverrideMap = std::unordered_map<UInt32, IdentifierOverrides>;
@@ -42,17 +46,63 @@ namespace
 	std::vector<std::unique_ptr<SavedAnims>> s_retiredSets;
 	// base path -> pooled paths
 	std::unordered_map<std::string, std::vector<std::string_view>, transparent_string_hash, std::equal_to<>> s_customGroupPaths;
+	// every origin made, never freed: sets point to them, and the user's choices are by origin
+	std::vector<std::unique_ptr<OverrideOrigin>> s_origins;
+	// by lower case name
+	std::unordered_map<std::string, OverrideOrigin*> s_originsByName;
+	// counts registrations: SavedAnims::sequence
+	UInt32 s_sequence = 0;
+
+	std::mutex s_problemsMutex;
+	std::vector<Overrides::Problem> s_problems;
 
 	// one thread compiles at a time (CompileConditionScript keeps the scripts by their text)
 	std::mutex s_compileMutex;
 	std::atomic<bool> s_conditionsWaiting = false;
+
+	int RankOf(const SavedAnims& set)
+	{
+		return set.origin ? set.origin->rank : 0;
+	}
+
+	bool IsTriedBefore(const std::unique_ptr<SavedAnims>& set, const std::unique_ptr<SavedAnims>& other)
+	{
+		const auto rank = RankOf(*set);
+		const auto otherRank = RankOf(*other);
+		return rank != otherRank ? rank > otherRank : set->sequence > other->sequence;
+	}
+
+	void Order(SetStack& stack)
+	{
+		std::ranges::sort(stack.sets, [](const auto& set, const auto& other) { return IsTriedBefore(other, set); });
+	}
+
+	// Whether the set would be tried first of the sets of its rank or below: registering it again moves nothing
+	bool IsOnTopOfItsRank(const SetStack& stack, const SavedAnims& set)
+	{
+		const auto rank = RankOf(set);
+		const auto iter = std::ranges::find(stack.sets, &set, &std::unique_ptr<SavedAnims>::get);
+		return std::all_of(std::next(iter), stack.sets.end(), [&](const std::unique_ptr<SavedAnims>& above) { return RankOf(*above) > rank; });
+	}
+
+	void ApplyFilePrefs(SavedAnims& set, const OverridePrefs::Prefs& prefs)
+	{
+		UInt32 numDisabled = 0;
+		for (size_t i = 0; i < set.anims.size(); ++i)
+		{
+			const bool disabled = prefs.disabledFiles.contains(std::string(set.anims[i].path));
+			set.fileDisabled[i].store(disabled, std::memory_order_relaxed);
+			numDisabled += disabled;
+		}
+		set.numFilesDisabled.store(numDisabled, std::memory_order_relaxed);
+	}
 
 	void SetGroup(bool firstPerson, UInt16 groupId)
 	{
 		s_groups[firstPerson][groupId / 32].fetch_or(1u << groupId % 32, std::memory_order_relaxed);
 	}
 
-	Stack* FindStack(OverrideMap& map, UInt32 identifier, UInt16 groupId)
+	SetStack* FindStack(OverrideMap& map, UInt32 identifier, UInt16 groupId)
 	{
 		const auto identifierIter = map.find(identifier);
 		if (identifierIter == map.end())
@@ -110,6 +160,15 @@ namespace
 		}
 		if (set.hasOrder)
 			std::ranges::sort(set.anims, {}, &AnimPath::path);
+		set.fileDisabled = std::make_unique<std::atomic<bool>[]>(set.anims.size());
+		UInt32 numDisabled = 0;
+		for (size_t i = 0; i < set.anims.size(); ++i)
+		{
+			const bool disabled = OverridePrefs::IsFileDisabled(set.anims[i].path);
+			set.fileDisabled[i].store(disabled, std::memory_order_relaxed);
+			numDisabled += disabled;
+		}
+		set.numFilesDisabled.store(numDisabled, std::memory_order_relaxed);
 	}
 
 	// A set gets its script once: at registration, or when its text is compiled
@@ -166,6 +225,14 @@ namespace
 			if (source.conditionScript)
 				SetCondition(*replacement, source.conditionScript);
 		}
+		// in the set's place, with what the user chose for it
+		replacement->origin = set->origin;
+		replacement->sequence = set->sequence;
+		if (!replacement->fileDisabled)
+			replacement->fileDisabled = std::make_unique<std::atomic<bool>[]>(replacement->anims.size());
+		for (size_t i = 0; i < replacement->anims.size(); ++i)
+			replacement->fileDisabled[i].store(set->fileDisabled[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+		replacement->numFilesDisabled.store(set->numFilesDisabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
 		if (!replacement->conditionScriptText.empty() && !replacement->conditionScript.load(std::memory_order_relaxed)
 			&& !replacement->conditionFailed.load(std::memory_order_relaxed))
 			s_conditionsWaiting.store(true, std::memory_order_relaxed);
@@ -187,6 +254,7 @@ namespace
 			// once per condition: a mod's JSON gives the same one to every folder
 			ERROR_LOG_ONCE(FormatString("Condition '%s' failed to compile (see the console for the error): the animations of the sets that have it are disabled",
 				set.conditionScriptText.data()));
+			Overrides::ReportProblem(Overrides::Problem::Kind::Condition, std::string(set.conditionScriptText));
 			set.conditionFailed.store(true, std::memory_order_relaxed);
 			return nullptr;
 		}
@@ -195,15 +263,25 @@ namespace
 		return script;
 	}
 
+	// Every stack with what it is registered under. Under the lock
 	template <typename F>
-	void ForEachSet(F&& f)
+	void ForEachStack(F&& f)
 	{
-		for (auto& povMaps : s_maps)
-			for (auto& map : povMaps)
-				for (auto& identifierOverrides : map | std::views::values)
-					for (auto& stack : identifierOverrides.stacks | std::views::values)
-						for (auto& set : stack.sets)
-							f(*set);
+		for (const bool firstPerson : { false, true })
+			for (const int mapIndex : { kForms, kModIndices })
+				for (auto& [identifier, identifierOverrides] : s_maps[firstPerson][mapIndex])
+					for (auto& [groupId, stack] : identifierOverrides.stacks)
+						f(stack, identifier, mapIndex == kModIndices, firstPerson, groupId);
+	}
+
+	template <typename F>
+	void ForEachSetLocked(F&& f)
+	{
+		ForEachStack([&](SetStack& stack, auto&&...)
+		{
+			for (auto& set : stack.sets)
+				f(*set);
+		});
 	}
 }
 
@@ -259,6 +337,8 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 	};
 	std::vector<OpenSet> openSets;
 	std::vector<SavedAnims*> newSets;
+	// stacks with a set added or moved: put in order at the end
+	std::vector<SetStack*> touchedStacks;
 	size_t applied = 0;
 	bool changed = false;
 
@@ -296,9 +376,11 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 			}
 			if ((*existing)->disabled.exchange(false, std::memory_order_relaxed))
 				changed = true;
-			if (std::next(existing) != stack->sets.end())
+			// on top of the sets of its origin's rank
+			(*existing)->sequence = ++s_sequence;
+			if (!IsOnTopOfItsRank(*stack, **existing))
 			{
-				std::rotate(existing, std::next(existing), stack->sets.end());
+				touchedStacks.push_back(stack);
 				changed = true;
 			}
 			++applied;
@@ -318,6 +400,9 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 			if (!stack)
 				stack = &map[source.identifier].stacks[groupId];
 			auto* set = stack->sets.emplace_back(std::make_unique<SavedAnims>()).get();
+			set->origin = source.origin;
+			set->sequence = ++s_sequence;
+			touchedStacks.push_back(stack);
 			set->folderCondition = folderCondition;
 			set->matchBaseGroupId = source.matchBaseGroupId;
 			set->pollCondition = source.pollCondition;
@@ -341,6 +426,8 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 		}
 		TransitionAnims::TagPath(set, set.anims.emplace_back(path), groupId);
 	}
+	for (auto* stack : touchedStacks)
+		Order(*stack);
 	for (auto* set : newSets)
 	{
 		Complete(*set);
@@ -350,6 +437,18 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 	if (changed)
 		s_generation.fetch_add(1, std::memory_order_release);
 	return applied;
+}
+
+bool SavedAnims::IsFileEnabled(const AnimPath& anim) const
+{
+	return !fileDisabled || !fileDisabled[&anim - anims.data()].load(std::memory_order_relaxed);
+}
+
+bool SavedAnims::IsEnabled() const
+{
+	return !disabled.load(std::memory_order_relaxed)
+		&& !(origin && origin->userDisabled.load(std::memory_order_relaxed))
+		&& (anims.empty() || numFilesDisabled.load(std::memory_order_relaxed) < anims.size());
 }
 
 bool Overrides::DisableForm(UInt32 formId)
@@ -404,6 +503,7 @@ bool Overrides::CopyForm(UInt32 fromFormId, UInt32 toFormId)
 						.conditionText = set->conditionScriptText,
 						.pollCondition = set->pollCondition,
 						.matchBaseGroupId = set->matchBaseGroupId,
+						.origin = set->origin,
 					};
 					for (const auto& anim : set->anims)
 						batch.files.push_back({ anim.path, firstPerson });
@@ -432,6 +532,86 @@ void Overrides::Clear()
 	s_retiredSets.clear();
 	s_conditionsWaiting.store(false, std::memory_order_relaxed);
 	s_generation.fetch_add(1, std::memory_order_release);
+	std::scoped_lock problemsLock(s_problemsMutex);
+	s_problems.clear();
+}
+
+const OverrideOrigin* Overrides::GetOrigin(OverrideOrigin::Kind kind, std::string_view name, std::string_view jsonFile, int jsonPriority)
+{
+	auto key = ToLower(name);
+	{
+		std::shared_lock lock(s_mutex);
+		if (const auto iter = s_originsByName.find(key); iter != s_originsByName.end())
+			return iter->second;
+	}
+	auto origin = std::make_unique<OverrideOrigin>();
+	origin->kind = kind;
+	origin->name = name;
+	origin->jsonFile = jsonFile;
+	origin->jsonPriority = jsonPriority;
+	origin->userDisabled = OverridePrefs::IsOriginDisabled(name);
+	origin->rank = OverridePrefs::GetRank(OverridePrefs::Get(), name);
+	std::unique_lock lock(s_mutex);
+	// another thread may have made it meanwhile
+	const auto [iter, inserted] = s_originsByName.try_emplace(std::move(key), origin.get());
+	if (inserted)
+		s_origins.push_back(std::move(origin));
+	return iter->second;
+}
+
+std::vector<const OverrideOrigin*> Overrides::GetOrigins()
+{
+	std::shared_lock lock(s_mutex);
+	std::vector<const OverrideOrigin*> origins;
+	origins.reserve(s_origins.size());
+	for (const auto& origin : s_origins)
+		origins.push_back(origin.get());
+	return origins;
+}
+
+void Overrides::ApplyPrefs()
+{
+	const auto prefs = OverridePrefs::Get();
+	std::unique_lock lock(s_mutex);
+	for (const auto& origin : s_origins)
+	{
+		origin->userDisabled.store(prefs.disabledOrigins.contains(ToLower(origin->name)), std::memory_order_relaxed);
+		origin->rank = OverridePrefs::GetRank(prefs, origin->name);
+	}
+	ForEachStack([&](SetStack& stack, auto&&...)
+	{
+		for (const auto& set : stack.sets)
+			ApplyFilePrefs(*set, prefs);
+		Order(stack);
+	});
+	for (const auto& set : s_retiredSets)
+		ApplyFilePrefs(*set, prefs);
+	s_generation.fetch_add(1, std::memory_order_release);
+}
+
+void Overrides::ForEachSet(const std::function<void(const SetView&)>& visitor)
+{
+	std::shared_lock lock(s_mutex);
+	ForEachStack([&](const SetStack& stack, UInt32 identifier, bool isModIndex, bool firstPerson, UInt16 groupId)
+	{
+		const auto size = static_cast<UInt32>(stack.sets.size());
+		for (UInt32 i = 0; i < size; ++i)
+			visitor({ stack.sets[i].get(), identifier, isModIndex, firstPerson, groupId, size - 1 - i, size });
+	});
+}
+
+void Overrides::ReportProblem(Problem::Kind kind, const std::string& text)
+{
+	Problem problem{ kind, text };
+	std::scoped_lock lock(s_problemsMutex);
+	if (std::ranges::find(s_problems, problem) == s_problems.end())
+		s_problems.push_back(std::move(problem));
+}
+
+std::vector<Overrides::Problem> Overrides::GetProblems()
+{
+	std::scoped_lock lock(s_problemsMutex);
+	return s_problems;
 }
 
 bool Overrides::HasGroup(bool firstPerson, UInt16 groupId)
@@ -505,7 +685,7 @@ void Overrides::CollectFormPaths(UInt32 formId, bool firstPerson, const Actor* a
 	{
 		for (const auto& set : stack.sets)
 		{
-			if (set->disabled.load(std::memory_order_relaxed) || set->conditionFailed.load(std::memory_order_relaxed))
+			if (!set->IsEnabled() || set->conditionFailed.load(std::memory_order_relaxed))
 				continue;
 			// the weapon's mods can change while it is equipped, the actor's sex and kind do not
 			const auto condition = set->folderCondition;
@@ -513,7 +693,10 @@ void Overrides::CollectFormPaths(UInt32 formId, bool firstPerson, const Actor* a
 				&& !set->MatchesFolderCondition(actor))
 				continue;
 			for (const auto& anim : set->anims)
-				out.push_back(anim.path.data());
+			{
+				if (set->IsFileEnabled(anim))
+					out.push_back(anim.path.data());
+			}
 			if (!set->additiveAnimPath.empty())
 				out.push_back(set->additiveAnimPath.data());
 		}
@@ -536,7 +719,7 @@ void Overrides::CompileConditions()
 	std::vector<SavedAnims*> waiting;
 	{
 		std::shared_lock lock(s_mutex);
-		ForEachSet([&](SavedAnims& set)
+		ForEachSetLocked([&](SavedAnims& set)
 		{
 			if (!set.conditionScriptText.empty() && !set.conditionScript.load(std::memory_order_relaxed)
 				&& !set.conditionFailed.load(std::memory_order_relaxed))

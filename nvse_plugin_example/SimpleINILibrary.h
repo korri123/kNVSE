@@ -998,6 +998,7 @@ public:
         bool            a_bForceReplace = false
     )
     {
+        m_bChangesMade = true;
         return AddEntry(a_pSection, a_pKey, a_pValue, a_pComment, a_bForceReplace, true);
     }
 

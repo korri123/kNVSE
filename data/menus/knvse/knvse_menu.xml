@@ -1,0 +1,299 @@
+<!-- kNVSE's menu: Settings > Animation in the start and pause menu (knvse_menu.cpp). The code finds the tiles by their
+names (Frame\Title, Frame\LeftPane\Rows, ...), fills the lists with rows from the Row template and sets the traits
+_selected (0, 1 selected, 2 selected in the list that has the focus), _dim, _checkable, _adjustable, _indent on them and
+_active on the tabs. Vanilla textures and fonts only. -->
+<menu name="kNVSEMenu">
+	<class> &kNVSEMenu; </class>
+	<stackingtype> &no_click_past; </stackingtype>
+	<menufade> 0.15 </menufade>
+	<explorefade> 0.15 </explorefade>
+	<locus> &true; </locus>
+	<visible> &true; </visible>
+	<x> 0 </x>
+	<y> 0 </y>
+	<width> <copy src="screen()" trait="width"/> </width>
+	<height> <copy src="screen()" trait="height"/> </height>
+
+	<!-- dims everything behind it -->
+	<image name="Shade">
+		<filename> solid.dds </filename>
+		<texatlas> Interface\InterfaceShared.tai </texatlas>
+		<width> <copy src="parent()" trait="width"/> </width>
+		<height> <copy src="parent()" trait="height"/> </height>
+		<systemcolor> &nosystemcolor; </systemcolor>
+		<red> 0 </red> <green> 0 </green> <blue> 0 </blue>
+		<alpha> 170 </alpha>
+		<depth> 1 </depth>
+	</image>
+
+	<!-- behind the frame: drawn under the frame's own tiles -->
+	<image name="Background">
+		<filename> solid.dds </filename>
+		<texatlas> Interface\InterfaceShared.tai </texatlas>
+		<systemcolor> &nosystemcolor; </systemcolor>
+		<red> 8 </red> <green> 10 </green> <blue> 8 </blue>
+		<alpha> 235 </alpha>
+		<depth> 1 </depth>
+		<x> <copy src="sibling(Frame)" trait="x"/> </x>
+		<y> <copy src="sibling(Frame)" trait="y"/> </y>
+		<width> <copy src="sibling(Frame)" trait="width"/> </width>
+		<height> <copy src="sibling(Frame)" trait="height"/> </height>
+	</image>
+
+	<rect name="Frame">
+		<locus> &true; </locus>
+		<depth> 2 </depth>
+		<width> 1180 </width>
+		<height> <copy src="screen()" trait="height"/> <sub> 100 </sub> </height>
+		<x> <copy src="screen()" trait="width"/> <sub src="me()" trait="width"/> <div> 2 </div> </x>
+		<y> <copy src="screen()" trait="height"/> <sub src="me()" trait="height"/> <div> 2 </div> </y>
+
+		<image name="Border">
+			<filename> solid.dds </filename>
+			<texatlas> Interface\InterfaceShared.tai </texatlas>
+			<systemcolor> &hudmain; </systemcolor>
+			<width> <copy src="parent()" trait="width"/> </width>
+			<height> 2 </height>
+			<y> 88 </y>
+			<alpha> 160 </alpha>
+		</image>
+
+		<text name="Title">
+			<systemcolor> &hudmain; </systemcolor>
+			<font> 1 </font>
+			<x> 24 </x>
+			<y> 10 </y>
+		</text>
+
+		<hotrect name="CloseButton">
+			<locus> &true; </locus>
+			<id> 7 </id>
+			<target> &true; </target>
+			<clicksound> UIMenuCancel </clicksound>
+			<width> 120 </width>
+			<height> 34 </height>
+			<x> <copy src="parent()" trait="width"/> <sub src="me()" trait="width"/> <sub> 16 </sub> </x>
+			<y> 10 </y>
+			<text name="Label">
+				<systemcolor> &hudmain; </systemcolor>
+				<font> 3 </font>
+				<string> Close (Esc) </string>
+				<justify> &right; </justify>
+				<x> <copy src="parent()" trait="width"/> </x>
+				<y> 2 </y>
+				<alpha> <copy> 200 </copy> <add> <copy src="parent()" trait="mouseover"/> <mul> 55 </mul> </add> </alpha>
+			</text>
+		</hotrect>
+
+		<!-- page tabs -->
+		<hotrect name="Tab0">
+			<id> 10 </id>
+			<x> 24 </x>
+			<include src="knvse\knvse_tab.xml"/>
+		</hotrect>
+		<hotrect name="Tab1">
+			<id> 11 </id>
+			<x> 214 </x>
+			<include src="knvse\knvse_tab.xml"/>
+		</hotrect>
+		<hotrect name="Tab2">
+			<id> 12 </id>
+			<x> 404 </x>
+			<include src="knvse\knvse_tab.xml"/>
+		</hotrect>
+		<hotrect name="Tab3">
+			<id> 13 </id>
+			<x> 594 </x>
+			<include src="knvse\knvse_tab.xml"/>
+		</hotrect>
+
+		<text name="Filter">
+			<systemcolor> &hudmain; </systemcolor>
+			<font> 3 </font>
+			<_dim> 1 </_dim>
+			<justify> &right; </justify>
+			<x> <copy src="parent()" trait="width"/> <sub> 24 </sub> </x>
+			<y> 56 </y>
+			<alpha> <copy> 255 </copy> <sub> <copy src="me()" trait="_dim"/> <mul> 135 </mul> </sub> </alpha>
+		</text>
+
+		<hotrect name="LeftPane">
+			<id> 4 </id>
+			<wheelable> &true; </wheelable>
+			<x> 24 </x>
+			<y> 100 </y>
+			<width> 430 </width>
+			<height> <copy src="parent()" trait="height"/> <sub> 400 </sub> </height>
+			<include src="knvse\knvse_pane.xml"/>
+		</hotrect>
+
+		<hotrect name="RightPane">
+			<id> 5 </id>
+			<wheelable> &true; </wheelable>
+			<x> 474 </x>
+			<y> 100 </y>
+			<width> <copy src="parent()" trait="width"/> <sub src="me()" trait="x"/> <sub> 24 </sub> </width>
+			<height> <copy src="parent()" trait="height"/> <sub> 400 </sub> </height>
+			<include src="knvse\knvse_pane.xml"/>
+		</hotrect>
+
+		<image name="DescriptionLine">
+			<filename> solid.dds </filename>
+			<texatlas> Interface\InterfaceShared.tai </texatlas>
+			<systemcolor> &hudmain; </systemcolor>
+			<x> 24 </x>
+			<width> <copy src="parent()" trait="width"/> <sub> 48 </sub> </width>
+			<height> 2 </height>
+			<y> <copy src="parent()" trait="height"/> <sub> 292 </sub> </y>
+			<alpha> 120 </alpha>
+		</image>
+
+		<text name="Description">
+			<systemcolor> &hudmain; </systemcolor>
+			<font> 2 </font>
+			<x> 24 </x>
+			<y> <copy src="parent()" trait="height"/> <sub> 284 </sub> </y>
+			<wrapwidth> <copy src="parent()" trait="width"/> <sub> 48 </sub> </wrapwidth>
+			<wraplines> 6 </wraplines>
+		</text>
+
+		<hotrect name="Button0">
+			<id> 20 </id>
+			<x> 24 </x>
+			<include src="knvse\knvse_button.xml"/>
+		</hotrect>
+		<hotrect name="Button1">
+			<id> 21 </id>
+			<x> 254 </x>
+			<include src="knvse\knvse_button.xml"/>
+		</hotrect>
+		<hotrect name="Button2">
+			<id> 22 </id>
+			<x> 484 </x>
+			<include src="knvse\knvse_button.xml"/>
+		</hotrect>
+		<hotrect name="Button3">
+			<id> 23 </id>
+			<x> 714 </x>
+			<include src="knvse\knvse_button.xml"/>
+		</hotrect>
+
+		<text name="Help">
+			<systemcolor> &hudmain; </systemcolor>
+			<font> 2 </font>
+			<x> 24 </x>
+			<y> <copy src="parent()" trait="height"/> <sub> 36 </sub> </y>
+			<alpha> 160 </alpha>
+		</text>
+	</rect>
+
+	<!-- a row of the lists -->
+	<template name="Row">
+		<hotrect name="Row">
+			<locus> &true; </locus>
+			<target> &true; </target>
+			<clicksound> UIMenuFocus </clicksound>
+			<_selected> 0 </_selected>
+			<_dim> 0 </_dim>
+			<_checkable> 0 </_checkable>
+			<_adjustable> 0 </_adjustable>
+			<_indent> 0 </_indent>
+			<width> <copy src="parent()" trait="width"/> </width>
+			<height> 28 </height>
+
+			<image name="Highlight">
+				<filename> solid.dds </filename>
+				<texatlas> Interface\InterfaceShared.tai </texatlas>
+				<systemcolor> &hudmain; </systemcolor>
+				<width> <copy src="parent()" trait="width"/> </width>
+				<height> <copy src="parent()" trait="height"/> </height>
+				<alpha>
+					<copy src="parent()" trait="_selected"/> <mul> 30 </mul>
+					<add> <copy src="parent()" trait="mouseover"/> <mul> 20 </mul> </add>
+				</alpha>
+			</image>
+
+			<hotrect name="Check">
+				<locus> &true; </locus>
+				<id> 104 </id>
+				<target> <copy src="parent()" trait="_checkable"/> </target>
+				<visible> <copy src="parent()" trait="_checkable"/> </visible>
+				<clicksound> UIMenuOK </clicksound>
+				<x> <copy src="parent()" trait="_indent"/> <mul> 26 </mul> <add> 4 </add> </x>
+				<width> 40 </width>
+				<height> <copy src="parent()" trait="height"/> </height>
+				<text name="Label">
+					<systemcolor> &hudmain; </systemcolor>
+					<font> 3 </font>
+					<y> 1 </y>
+					<alpha> <copy> 230 </copy> <add> <copy src="parent()" trait="mouseover"/> <mul> 25 </mul> </add> </alpha>
+				</text>
+			</hotrect>
+
+			<text name="Text">
+				<systemcolor> &hudmain; </systemcolor>
+				<font> 3 </font>
+				<x>
+					<copy src="parent()" trait="_indent"/> <mul> 26 </mul> <add> 8 </add>
+					<add> <copy src="parent()" trait="_checkable"/> <mul> 40 </mul> </add>
+				</x>
+				<y> 1 </y>
+				<wrapwidth>
+					<copy src="parent()" trait="width"/> <sub src="me()" trait="x"/>
+					<sub src="sibling(Value)" trait="width"/> <sub> 20 </sub>
+					<sub> <copy src="parent()" trait="_adjustable"/> <mul> 60 </mul> </sub>
+				</wrapwidth>
+				<wraplines> 1 </wraplines>
+				<alpha> <copy> 255 </copy> <sub> <copy src="parent()" trait="_dim"/> <mul> 140 </mul> </sub> </alpha>
+			</text>
+
+			<text name="Value">
+				<systemcolor> &hudmain; </systemcolor>
+				<font> 3 </font>
+				<justify> &right; </justify>
+				<x>
+					<copy src="parent()" trait="width"/> <sub> 10 </sub>
+					<sub> <copy src="parent()" trait="_adjustable"/> <mul> 30 </mul> </sub>
+				</x>
+				<y> 1 </y>
+				<alpha> <copy> 255 </copy> <sub> <copy src="parent()" trait="_dim"/> <mul> 140 </mul> </sub> </alpha>
+			</text>
+
+			<hotrect name="Less">
+				<locus> &true; </locus>
+				<id> 102 </id>
+				<target> <copy src="parent()" trait="_adjustable"/> </target>
+				<visible> <copy src="parent()" trait="_adjustable"/> </visible>
+				<clicksound> UIMenuPrevNext </clicksound>
+				<width> 24 </width>
+				<height> <copy src="parent()" trait="height"/> </height>
+				<x> <copy src="sibling(Value)" trait="x"/> <sub src="sibling(Value)" trait="width"/> <sub> 28 </sub> </x>
+				<text name="Label">
+					<systemcolor> &hudmain; </systemcolor>
+					<font> 3 </font>
+					<x> 6 </x>
+					<y> 1 </y>
+					<alpha> <copy> 180 </copy> <add> <copy src="parent()" trait="mouseover"/> <mul> 75 </mul> </add> </alpha>
+				</text>
+			</hotrect>
+
+			<hotrect name="More">
+				<locus> &true; </locus>
+				<id> 103 </id>
+				<target> <copy src="parent()" trait="_adjustable"/> </target>
+				<visible> <copy src="parent()" trait="_adjustable"/> </visible>
+				<clicksound> UIMenuPrevNext </clicksound>
+				<width> 24 </width>
+				<height> <copy src="parent()" trait="height"/> </height>
+				<x> <copy src="parent()" trait="width"/> <sub> 30 </sub> </x>
+				<text name="Label">
+					<systemcolor> &hudmain; </systemcolor>
+					<font> 3 </font>
+					<x> 6 </x>
+					<y> 1 </y>
+					<alpha> <copy> 180 </copy> <add> <copy src="parent()" trait="mouseover"/> <mul> 75 </mul> </add> </alpha>
+				</text>
+			</hotrect>
+		</hotrect>
+	</template>
+</menu>
