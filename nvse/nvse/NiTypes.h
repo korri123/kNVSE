@@ -1121,6 +1121,8 @@ template <typename T>
 class NiPointer
 {
 public:
+	NiPointer() : data(nullptr) {}
+
 	NiPointer(T *init) : data(init)
 	{
 		if (data)

@@ -31,9 +31,9 @@ class kBlendInterpolatorExtraData;
 // "weaponSpace: off" opts an animation out: its share of the blend weight keeps the regular blend.
 // Where the weapon stays on the right hand and the blended animations hold it with the left hand as well (two-handed aim
 // and aimIS), the left hand is kept on it during blends (bKeepLeftHandOnWeapon): each arm is blended joint by joint, so the
-// hand drifted off the weapon between two poses that both hold it. That error, measured on the Weapon node's items alone,
-// is taken off the arm's hand by two-bone IK on upper arm and forearm while the Weapon node is evaluated, and only on a
-// skeleton whose updates blend those bones before the Weapon node.
+// hand drifted off the weapon between two poses that both hold it. That error, measured on the Weapon node's animations
+// weighted as each arm bone's own blend weighs them, is taken off the arm's hand by two-bone IK on upper arm and forearm
+// while the Weapon node is evaluated, and only on a skeleton whose updates blend those bones before the Weapon node.
 namespace WeaponHandBlend
 {
     constexpr unsigned int kMaxChainLength = 8;
@@ -99,10 +99,10 @@ namespace WeaponHandBlend
     struct SequenceInfo
     {
         NiPointer<NiInterpolator> weaponInterpolator = nullptr;
-        // the sequence's hand chain interpolators, null where it does not animate a node. Only read while the sequence has
-        // weaponInterpolator attached, which keeps them alive.
-        NiInterpolator* rightInterpolators[kMaxChainLength] = {};
-        NiInterpolator* leftInterpolators[kMaxChainLength] = {};
+        // the sequence's hand chain interpolators, null where it does not animate a node. Held, as a detached item's are
+        // looked up by address in the arms' blends while it fades out (HoldLeftHand), when its sequence may be gone.
+        NiPointer<NiInterpolator> rightInterpolators[kMaxChainLength];
+        NiPointer<NiInterpolator> leftInterpolators[kMaxChainLength];
         // acceptance sampled over the key time range; empty: the right hand only throughout
         float beginTime = 0.0f;
         float step = 0.0f;

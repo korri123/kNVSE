@@ -173,7 +173,7 @@ namespace
         return ToTransform(value, node);
     }
 
-    NiTransform SampleChain(NiAVObject* const* nodes, NiInterpolator* const* interpolators, unsigned int count, float fTime,
+    NiTransform SampleChain(NiAVObject* const* nodes, const NiPointer<NiInterpolator>* interpolators, unsigned int count, float fTime,
                             bool bInvalidateCache)
     {
         NiTransform result = IdentityTransform();
@@ -661,11 +661,15 @@ namespace
         float rotateWeight = 0.0f;
         bool off = false; // "weaponSpace: off"
         // Set by Blend for the items that weigh in. Its arms: its sequence's, a detached item's as cached, the blended
-        // ones for an item without arms of its own
+        // ones for an item without arms of its own (pose interpolators)
         const ChainLocals* locals = nullptr;
         // the left hand relative to the weapon in the item's pose, never from the left hand keys: HoldLeftHand compares it
         // with the items' blended arms, which follow the tracks between keys
         NiTransform handOnWeapon;
+        // Set by Blend while the left hand is held: the weight each hand chain bone's own blend gave the item's sequence in
+        // this update (ChainWeight), 0 where the sequence does not animate the bone or is not known (pose interpolators)
+        float rightChainWeights[WeaponHandBlend::kMaxChainLength] = {};
+        float leftChainWeights[WeaponHandBlend::kMaxChainLength] = {};
     };
     // evaluations of the Weapon node do not nest, so one buffer per blending thread is enough
     thread_local std::vector<Entry> t_entries;
@@ -795,14 +799,52 @@ namespace
         }
     }
 
-    // Whether every update of the skeleton's bones blends the left arm (upper arm, forearm, hand) before the Weapon node,
-    // so that what HoldLeftHand gives the arm is not overwritten by the arm's own blend, or by a part of it. The engine
-    // (BSTransCon::UpdateAllButTarget) and Stewie's Tweaks' replacement of it go through the multi-target controller's
-    // slots in order; kNVSE's own loops (NiMultiTargetTransformController::_Update in Debug builds, UpdateHooked) do too,
-    // but leave the Weapon node for last. Slots are given out in the order the skeleton's sequences name their nodes:
-    // the Weapon node's is after the arms' on the vanilla skeletons (60 of 67 in third person and on NPCs, 41 of 68 in
-    // first person; the left arm 15-18 and 9-12), but nothing makes it so.
-    bool IsLeftArmBlendedFirst(const NiAVObject* weapon, const HandChains& chains)
+    // A hand chain node's blend interpolator and the sum of the weights it blended its items with when it was last
+    // evaluated: smoothed weights do not add up to 1 (an item easing out keeps the weight a jump took from it, the others
+    // theirs), BlendValues divides by their sum
+    struct ChainBlend
+    {
+        const NiBlendInterpolator* blend = nullptr;
+        float total = 0.0f;
+    };
+
+    ChainBlend MakeChainBlend(const NiBlendInterpolator* blend, NiAVObject* node)
+    {
+        ChainBlend result{ blend };
+        if (blend->m_ucInterpCount == 1)
+        {
+            result.total = 1.0f;
+            return result;
+        }
+        // additive items are applied on top of the blend, not in it
+        auto* extraData = kBlendInterpolatorExtraData::GetExtraData(node);
+        for (const auto& item : blend->GetItems())
+        {
+            if (!item.m_spInterpolator)
+                continue;
+            if (const auto* extraItem = extraData ? extraData->GetItem(item.m_spInterpolator) : nullptr; extraItem && extraItem->isAdditive)
+                continue;
+            result.total += item.m_fNormalizedWeight;
+        }
+        return result;
+    }
+
+    // The hand chains' nodes' blends; a node the skeleton's controller does not animate has none
+    struct ChainBlends
+    {
+        ChainBlend right[WeaponHandBlend::kMaxChainLength];
+        ChainBlend left[WeaponHandBlend::kMaxChainLength];
+    };
+
+    // Finds the hand chains' blend interpolators in the skeleton's multi-target controller, and whether every update of the
+    // skeleton's bones blends the left arm (upper arm, forearm, hand) before the Weapon node, so that what HoldLeftHand gives
+    // the arm is not overwritten by the arm's own blend, or by a part of it, and the arm's blend weights are this update's.
+    // The engine (BSTransCon::UpdateAllButTarget) and Stewie's Tweaks' replacement of it go through the multi-target
+    // controller's slots in order; kNVSE's own loops (NiMultiTargetTransformController::_Update in Debug builds,
+    // UpdateHooked) do too, but leave the Weapon node for last. Slots are given out in the order the skeleton's sequences
+    // name their nodes: the Weapon node's is after the arms' on the vanilla skeletons (60 of 67 in third person and on NPCs,
+    // 41 of 68 in first person; the left arm 15-18 and 9-12), but nothing makes it so.
+    bool FindChainBlends(const NiAVObject* weapon, const HandChains& chains, ChainBlends& blends)
     {
         const NiMultiTargetTransformController* controller = nullptr;
         for (const Entry& entry : t_entries)
@@ -815,14 +857,53 @@ namespace
         }
         if (!controller)
             return false;
-        NiAVObject* const* arm = chains.left + (chains.leftCount - 3);
-        unsigned int found = 0;
-        for (const NiAVObject* target : controller->GetTargets())
+        const auto targets = controller->GetTargets();
+        const auto blendInterps = controller->GetBlendInterps();
+        const unsigned int firstArmBone = chains.leftCount - 3;
+        bool weaponFound = false;
+        unsigned int armBlendedFirst = 0;
+        for (size_t slot = 0; slot < targets.size(); ++slot)
         {
+            NiAVObject* target = targets[slot];
+            if (!target)
+                continue;
             if (target == weapon)
-                return found == 3;
-            found += target == arm[0] || target == arm[1] || target == arm[2];
+            {
+                weaponFound = true;
+                continue;
+            }
+            for (unsigned int i = 0; i < chains.rightCount; ++i)
+                if (chains.right[i] == target)
+                    blends.right[i] = MakeChainBlend(&blendInterps[slot], target);
+            for (unsigned int i = 0; i < chains.leftCount; ++i)
+            {
+                if (chains.left[i] != target)
+                    continue;
+                blends.left[i] = MakeChainBlend(&blendInterps[slot], target);
+                armBlendedFirst += !weaponFound && i >= firstArmBone;
+            }
         }
+        return weaponFound && armBlendedFirst == 3;
+    }
+
+    // The share of a bone's blend one of its interpolators had when the bone was last evaluated: the normalized weight it
+    // was blended with (smoothed; the rotation's, the channel BlendValues computes last) over all of them
+    float ChainWeight(const ChainBlend& chainBlend, const NiInterpolator* interpolator)
+    {
+        const NiBlendInterpolator* blend = chainBlend.blend;
+        if (!blend || !interpolator || !(chainBlend.total > 0.0f))
+            return 0.0f;
+        if (blend->m_ucInterpCount == 1)
+            return blend->m_pkSingleInterpolator == interpolator ? 1.0f : 0.0f;
+        const auto* item = blend->GetItemByInterpolator(interpolator);
+        return item ? item->m_fNormalizedWeight / chainBlend.total : 0.0f;
+    }
+
+    bool IsChainWeighted(const Entry& entry)
+    {
+        for (unsigned int i = 0; i < WeaponHandBlend::kMaxChainLength; ++i)
+            if (entry.rightChainWeights[i] > 0.0f || entry.leftChainWeights[i] > 0.0f)
+                return true;
         return false;
     }
 }
@@ -1069,7 +1150,10 @@ void WeaponHandBlend::Context::CacheDetachedPose(const kBlendInterpItem& extraIt
     info.hasDetachedPose = false;
     info.detachedOff = info.IsOff(fTime);
     const Acceptance acceptance = info.Sample(fTime);
-    if (acceptance.IsRightOnly() || !EnsureChains())
+    // every item's arms, also of those holding the weapon in the right hand only: HoldLeftHand blends them by the arms' own
+    // weights for as long as they fade out there (a blended arm standing in for them moved the hand 6-12 units in a frame
+    // when the run detached from the Weapon node of a third person 9mm Pistol at the end of its blend to aimIS)
+    if (!EnsureChains())
         return;
     const HandChains& chains = m_data->chains;
     ItemPose& pose = info.detachedPose;
@@ -1140,8 +1224,11 @@ namespace
         return base;
     }
 
-    // A hand chain (HandChains::left or right) relative to its top, as blending the items' own chains joint by joint with
-    // the weights of the Weapon node's blend gives it: what the arm's blend makes of these items
+    // A hand chain (HandChains::left or right) relative to its top, as blending the items' own chains joint by joint, each
+    // joint with the weights its own blend gave their sequences, gives it: what the arm's blend makes of these items. Not
+    // the Weapon node's weights: the arms blend other animations as well (third person 1hp: aim and the walk key the arms,
+    // not the weapon) and take up other jumps of the weights (blend smoothing), so their weights for the same sequences
+    // differ, by up to half of the bone for seconds at a high fBlendSmoothingRate
     NiTransform BlendItemsChain(const HandChains& chains, const ChainLocals& blendedLocals, bool bLeft)
     {
         const auto side = [bLeft](const ChainLocals& locals) { return bLeft ? locals.left : locals.right; };
@@ -1151,8 +1238,12 @@ namespace
         {
             TransformBlender joint;
             for (const Entry& entry : t_entries)
-                if (entry.locals)
-                    joint.Add(side(*entry.locals)[i], entry.translateWeight, entry.rotateWeight);
+            {
+                if (!entry.locals)
+                    continue;
+                const float weight = bLeft ? entry.leftChainWeights[i] : entry.rightChainWeights[i];
+                joint.Add(side(*entry.locals)[i], weight, weight);
+            }
             result = result * Merge(joint, side(blendedLocals)[i]);
         }
         return result;
@@ -1160,32 +1251,30 @@ namespace
 
     // Each arm is blended joint by joint, so between two poses that both hold the weapon with the left hand the hand
     // drifts off it (aim -> aimIS: 1.4 units in first person, 2.5 in third, at the middle of the blend). The error is
-    // measured on the items alone: their arms and weapon blended joint by joint as the engine does (BlendItemsChain)
-    // give the hand some place relative to the weapon, the items' own places of the hand on the weapon blended by their
-    // weights give where it belongs. The step from the one to the other, holdShare of it (the share of the blend's
-    // weight holding the weapon), is applied to the arm's hand, so whatever else moves the arm keeps doing so: additive
-    // animations, and animations the Weapon node does not have (3rd person sneak attacks without a Weapon track: their
-    // arms blend while the weapon follows the other variant alone; going for the place on the weapon itself instead
-    // snapped the hand 5.9 units in a frame when a second item reached the Weapon node). The arm then reaches for it
-    // (ReachWithArm). Runs while the Weapon node is evaluated, after the left arm was (IsLeftArmBlendedFirst).
+    // measured on the items alone: their arms blended joint by joint as the engine does (BlendItemsChain) and the weapon
+    // as the Weapon node's blend does give the hand some place relative to the weapon, the items' own places of the hand
+    // on the weapon blended by the left hand's weights give where it belongs. The step from the one to the other, holdShare
+    // of it (the share of the left hand's blend holding the weapon), is applied to the arm's hand, so whatever else moves
+    // the arm keeps doing so: additive animations, and animations the Weapon node does not have (3rd person sneak attacks
+    // without a Weapon track: their arms blend while the weapon follows the other variant alone; going for the place on
+    // the weapon itself instead snapped the hand 5.9 units in a frame when a second item reached the Weapon node). The arm
+    // then reaches for it (ReachWithArm). Runs while the Weapon node is evaluated, after the left arm was (FindChainBlends).
     void HoldLeftHand(const NiAVObject* weapon, WeaponHandBlend::NodeData& data, float holdShare, const ChainLocals& blendedLocals,
                       const NiTransform& leftBlended)
     {
+        const HandChains& chains = data.chains;
         TransformBlender handOnWeapon;
         TransformBlender weaponLocal;
         for (const Entry& entry : t_entries)
         {
-            if (!IsWeighted(entry))
-                continue;
             weaponLocal.Add(ToTransform(entry.transform, weapon), entry.translateWeight, entry.rotateWeight);
-            if (entry.off || entry.acceptance.left <= kMinAcceptance)
+            if (!entry.locals || entry.off || entry.acceptance.left <= kMinAcceptance)
                 continue;
-            const float left = entry.acceptance.left;
-            handOnWeapon.Add(entry.handOnWeapon, entry.translateWeight * left, entry.rotateWeight * left);
+            const float weight = entry.leftChainWeights[chains.leftCount - 1] * entry.acceptance.left;
+            handOnWeapon.Add(entry.handOnWeapon, weight, weight);
         }
         if (!handOnWeapon.HasTranslate() || !handOnWeapon.HasRotate())
             return;
-        const HandChains& chains = data.chains;
         const NiTransform blendedOnWeapon = Inverse(BlendItemsChain(chains, blendedLocals, false) * Merge(weaponLocal, CurrentLocal(weapon)))
             * BlendItemsChain(chains, blendedLocals, true);
         const NiTransform step = Inverse(blendedOnWeapon) * handOnWeapon.Get();
@@ -1214,11 +1303,10 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     if (!bTranslate && !bRotate)
         return;
 
-    // how much of the blend's weight accepts each hand, how much opted out, and how much holds the weapon with the left hand
+    // how much of the blend's weight accepts each hand, and how much opted out
     float total = 0.0f;
     float off = 0.0f;
     float largest = 0.0f;
-    float holding = 0.0f;
     Acceptance agreement{ 0.0f, 0.0f };
     for (const Entry& entry : t_entries)
     {
@@ -1227,8 +1315,6 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
         largest = (std::max)(largest, weight);
         if (entry.off)
             off += weight;
-        else if (entry.acceptance.left > kMinAcceptance)
-            holding += weight * entry.acceptance.left;
         agreement.right += weight * entry.acceptance.right;
         agreement.left += weight * entry.acceptance.left;
     }
@@ -1245,12 +1331,30 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     referenceWeights[kLeft] = (1.0f - referenceWeights[kRight]) * static_cast<float>(std::pow(agreement.left / total, kAgreementExponent));
     referenceWeights[kBody] = (std::max)(0.0f, 1.0f - referenceWeights[kRight] - referenceWeights[kLeft]);
     const bool bMoveWeapon = referenceWeights[kRight] < 1.0f - kMinReferenceWeight;
-    // Left hand: where the weapon stays on the right hand, the share of the blend whose left hand holds it pulls the left
-    // hand to where those animations hold it. A single animation's hand is there already.
+    // Left hand: where the weapon stays on the right hand, the share of the left hand's blend whose animations hold the
+    // weapon pulls the hand to where they hold it. With a single animation on the Weapon node the hand is there already.
     const HandChains& chains = m_data->chains;
-    const float holdShare = referenceWeights[kRight] * holding / total;
-    const bool bHoldLeftHand = g_pluginSettings.keepLeftHandOnWeapon && chains.leftCount >= 3 && largest < total * (1.0f - kMinReferenceWeight)
-        && holdShare > kMinReferenceWeight && IsLeftArmBlendedFirst(m_weapon, chains);
+    float holdShare = 0.0f;
+    ChainBlends chainBlends;
+    if (g_pluginSettings.keepLeftHandOnWeapon && chains.leftCount >= 3 && largest < total * (1.0f - kMinReferenceWeight)
+        && referenceWeights[kRight] > kMinReferenceWeight && FindChainBlends(m_weapon, chains, chainBlends))
+    {
+        float holding = 0.0f;
+        for (Entry& entry : t_entries)
+        {
+            if (entry.sequenceIndex == -1)
+                continue;
+            const SequenceInfo& info = m_data->sequences[entry.sequenceIndex];
+            for (unsigned int i = 0; i < chains.rightCount; ++i)
+                entry.rightChainWeights[i] = ChainWeight(chainBlends.right[i], info.rightInterpolators[i]);
+            for (unsigned int i = 0; i < chains.leftCount; ++i)
+                entry.leftChainWeights[i] = ChainWeight(chainBlends.left[i], info.leftInterpolators[i]);
+            if (!entry.off && entry.acceptance.left > kMinAcceptance)
+                holding += entry.leftChainWeights[chains.leftCount - 1] * entry.acceptance.left;
+        }
+        holdShare = referenceWeights[kRight] * holding;
+    }
+    const bool bHoldLeftHand = holdShare > kMinReferenceWeight;
     if (!bMoveWeapon && !bHoldLeftHand)
         return; // the regular blend
 
@@ -1268,7 +1372,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     for (size_t i = 0; i < t_entries.size(); ++i)
     {
         Entry& entry = t_entries[i];
-        if (!IsWeighted(entry))
+        if (!IsWeighted(entry) && !(bHoldLeftHand && IsChainWeighted(entry)))
             continue;
         const NiTransform weaponLocal = ToTransform(entry.transform, m_weapon);
         const Acceptance& acceptance = entry.acceptance;
@@ -1278,7 +1382,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
         if (!bPlacesWeapon && !bHoldLeftHand)
             continue;
 
-        // items without arms of their own (detached right hand only items, pose interpolators) use the blended arms
+        // items without arms of their own (pose interpolators) use the blended arms
         entry.locals = &blendedLocals;
         NiTransform sequenceRight = rightBlended;
         NiTransform sequenceLeft = leftBlended;
