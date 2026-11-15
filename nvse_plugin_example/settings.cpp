@@ -25,8 +25,11 @@ namespace Settings
 
 		auto& s = g_pluginSettings;
 
-		// Keys of settings that were removed: left in the INI they would look like they do something
-		constexpr const char* kRemovedKeys[] = { "fBlendSmoothingRate", "fBlendEaseCurve" };
+		// Keys of settings that were removed or renamed: left in the INI they would look like they do something
+		constexpr std::pair<const char*, const char*> kRemovedKeys[] = {
+			{ "Blend Fixes", "fBlendSmoothingRate" }, { "Blend Fixes", "fBlendEaseCurve" },
+			{ "Anim Fixes", "bFixLoopingReloadStance" }, { "Anim Fixes", "bFixReloadStance" },
+		};
 
 		// In the order the keys are added to a new INI
 		const Setting s_settings[] =
@@ -125,10 +128,10 @@ namespace Settings
 				.label = "Fix Allow Reload In Attack", .category = kGameFixes, .apply = Apply::Live,
 				.summary = "Fixes looping reloads with Stewie's Allow Reload In Attack.",
 				.description = "fix looping reloads in Stewie Tweak \"Allow Reload In Attack\" when attacking when attack is done when Aim is EaseIn and ReloadXStart becomes TransDest." },
-			{ .section = "Anim Fixes", .key = "bFixReloadStance", .value = &s.fixReloadStance, .defaultValue = 1,
-				.label = "Switch reload stance at once", .category = kGameFixes, .apply = Apply::Live,
-				.summary = "Sneaking or standing up mid-reload switches the reload's stance at once.",
-				.description = "fix the body staying in the old stance when sneaking or standing up during a reload in third person: the game only switches the reload to the new stance's animation when it starts the next reload (or round of a looping reload, e.g. the Cowboy Repeater, whose legs sink into the ground or float above it until then), while the camera moves at once. kNVSE blends to it at once." },
+			{ .section = "Anim Fixes", .key = "bFixWeaponStance", .value = &s.fixWeaponStance, .defaultValue = 1,
+				.label = "Switch weapon animation stance at once", .category = kGameFixes, .apply = Apply::Live,
+				.summary = "Sneaking or standing up mid-attack, -reload, -draw or -holster switches its stance at once.",
+				.description = "fix the body staying in the old stance when sneaking or standing up during an attack, reload, equip, unequip or any other weapon animation in third person: the game only switches it to the new stance's animation when it starts the next one (or the next round of a looping reload, e.g. the Cowboy Repeater, whose legs sink into the ground or float above it until then), while the camera moves at once. kNVSE blends to it at once." },
 			{ .section = "Anim Fixes", .key = "bFixShortGaitBlend", .value = &s.fixShortGaitBlend, .defaultValue = 1,
 				.label = "Fix too short walk blends", .category = kAnimFixes, .apply = Apply::NewAnimations,
 				.summary = "Raises walk and run blends shorter than 0.2 s to 0.2 s.",
@@ -268,8 +271,8 @@ namespace Settings
 			OnChanged(setting);
 			s_loadedText[index] = s_savedText[index] = GetText(setting);
 		}
-		for (const auto* key : kRemovedKeys)
-			ini.Delete("Blend Fixes", key);
+		for (const auto& [section, key] : kRemovedKeys)
+			ini.Delete(section, key);
 		if (ini.SaveFile(kIniPath, false) < 0)
 			ERROR_LOG("Failed to save ini file");
 	}

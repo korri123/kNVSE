@@ -12,6 +12,7 @@
 #include "anim_fixes.h"
 #include "sequence_extradata.h"
 #include "aim_transitions.h"
+#include "transition_anims.h"
 #include "jip_fixes.h"
 
 
@@ -192,7 +193,7 @@ namespace
 	// Cross fades a sequence to a variant of its group (hip fire / iron sights, standing / sneaking) at the same point of
 	// the sequence. Both keep playing through the blend: a transition (StartBlend) holds both sequences at their frame
 	// until it ends, which delays the sequence, its text keys and its end by the blend time. The variant continues the
-	// source for Animation::Update while it eases in (ContinuedVariantStateHook).
+	// source for Animation::Update while it eases in (ContinuedVariantState).
 	bool TransitionToVariant(AnimData* animData, BSAnimGroupSequence* targetSeq, eAnimSequence sourceSequenceId, float blend)
 	{
 		auto* sourceSeq = animData->animSequence[sourceSequenceId];
@@ -215,27 +216,37 @@ namespace
 
 		const auto fTime = animData->timePassed;
 		const auto destFrame = sourceSeq->m_fLastScaledTime / sourceSeq->m_fEndKeyTime * targetSeq->m_fEndKeyTime;
-		const Ease* sourceEase = Eases::Find(*sourceSeq);
-		const bool sourceAnimating = sourceSeq->m_eState == NiControllerSequence::ANIMATING
-			|| (sourceEase && sourceEase->bContinuesVariant);
+		// From when the source counts as ANIMATING for Animation::Update, the time the variant takes over from: now, or
+		// once the source's own ease in would have ended (an equip's Attach, a reload's round must not wait for the
+		// variant's longer blend: the engine acts on the keys of an easing in sequence only once it is in)
+		float continuesFrom = -NI_INFINITY;
+		if (sourceSeq->m_eState == NiControllerSequence::EASEIN)
+		{
+			if (const Ease* sourceEase = Eases::Find(*sourceSeq); sourceEase && sourceEase->bContinuesVariant)
+				continuesFrom = sourceEase->fContinuesFrom;
+			else // m_fEndTime holds the ease in time until the sequence's first update makes it the end time
+				continuesFrom = sourceSeq->m_fStartTime == INVALID_TIME ? fTime + sourceSeq->m_fEndTime : sourceSeq->m_fEndTime;
+		}
 
 		const auto animSwitch = AnimSwitch::Current(animData);
 		animSwitch.EaseOut(sourceSeq, blend);
 		if (!animSwitch.EaseIn(targetSeq, blend))
 			return false;
-		if (sourceAnimating)
+		if (auto* targetExtraData = SequenceExtraDatas::GetOrCreate(targetSeq))
 		{
-			if (auto* targetExtraData = SequenceExtraDatas::GetOrCreate(targetSeq))
-				Eases::Get(*targetExtraData, *targetSeq, Eases::GetSpinner(*targetSeq, fTime)).bContinuesVariant = true;
-			// the ease-out the switch just gave the source
-			if (Ease* easeOut = Eases::Find(*sourceSeq))
-				easeOut->bContinuedByVariant = true;
+			Ease& easeIn = Eases::Get(*targetExtraData, *targetSeq, Eases::GetSpinner(*targetSeq, fTime));
+			easeIn.bContinuesVariant = true;
+			easeIn.fContinuesFrom = continuesFrom;
 		}
+		// the ease-out the switch just gave the source
+		if (Ease* easeOut = Eases::Find(*sourceSeq))
+			easeOut->bContinuedByVariant = true;
 		targetSeq->m_fOffset = destFrame / targetSeq->m_fFrequency - fTime;
 		targetSeq->Update(fTime, true);
 
 		Overrides::Played(animData, targetSeq);
 		HandleExtraOperations(animData, targetSeq);
+		SkipPassedBurstFireKeys(targetSeq);
 		HandleSoundPathMismatch(animData, sourceSeq, targetSeq);
 
 		animData->SetCurrentSequence(targetSeq, false);
@@ -309,8 +320,8 @@ void BlendFixes::ApplyAttackToAttackISFix()
 
 namespace
 {
-	// What is left of the ease in of the idle or movement group the stance switched to: the reload's legs and the
-	// pelvis that group poses then arrive together
+	// What is left of the ease in of the idle or movement group the stance switched to: the body the weapon animation
+	// poses and the pelvis that group poses then arrive together
 	float GetStanceSwitchBlendTime(const AnimData* animData, const BSAnimGroupSequence* targetSeq)
 	{
 		float blend = 0.0f;
@@ -327,29 +338,44 @@ namespace
 		return blend > 0.0f ? blend : targetSeq->GetEaseInTime();
 	}
 
-	// The variant of the sequence's group the actor's current stance picks, if it is another one. Compared by group ID:
-	// a group with several KFs (random variants, override sets) returns another sequence on each lookup
+	// The variant of the sequence's group in the actor's current stance (the move type of the group ID: standing,
+	// sneaking, swimming), if it is another one. Only the move type changes: before an equip's Attach and after an
+	// unequip's Detach the weapon is not out, so the groups the actor would pick now have the hand type of no weapon,
+	// and in a weapon swap the old weapon's unequip plays while the new one is equipped. Compared by group ID: a group
+	// with several KFs (random variants, override sets) returns another sequence on each lookup
 	BSAnimGroupSequence* GetStanceVariant(AnimData* animData, const BSAnimGroupSequence* sequence)
 	{
-		const auto groupId = GetNearestGroupID(animData, sequence->animGroup->GetBaseGroupID());
-		if (groupId == 0xFFFF || groupId == sequence->animGroup->groupID)
+		constexpr UInt16 kMoveTypeMask = 0x7000;
+		const UInt16 groupId = sequence->animGroup->groupID;
+		const UInt16 moveType = GetActorRealAnimGroup(animData->actor, sequence->animGroup->GetBaseGroupID()) & kMoveTypeMask;
+		if (moveType == (groupId & kMoveTypeMask))
 			return nullptr;
-		return GetAnimByFullGroupID(animData, groupId);
+		// the nearest group the engine would play: the same one where the stance has no variant of it
+		const UInt16 variantId = GameFuncs::GetNearestGroupID(animData, (groupId & ~kMoveTypeMask) | moveType, false);
+		if (variantId == groupId || (variantId & ~kMoveTypeMask) != (groupId & ~kMoveTypeMask))
+			return nullptr;
+		return GetAnimByFullGroupID(animData, variantId);
 	}
 }
 
-// The engine picks a reload's stance variant (sneaking or not) only when it starts the reload, or a looping reload's
-// round, while the idle and movement groups and the camera switch to the new stance at once. The third person reloads
-// key the legs: a reload (9mm Pistol 1hpreloadl) held the body standing until it ended while the camera was already at
-// the sneak height, a looping reload's variants don't key Bip01 NonAccum, so the feet sank into the ground or floated
-// above it for the rest of the round, and for the whole rest of the reload after its last round. Cross fades the reload
-// to the new stance's variant at once.
-void BlendFixes::ApplyReloadStanceFix()
+// The engine picks the stance variant (sneaking or not) of a weapon section group only when it starts the group, while
+// the idle and movement groups and the camera switch to the new stance at once (the aim groups too: the engine restarts
+// aim in the new stance). The third person weapon animations key the legs and the pelvis: an attack, equip, unequip or
+// reload held the body standing until it ended while the camera was already at the sneak height (Service Rifle hip
+// shot: 0.7 s), and a looping reload's variants don't key Bip01 NonAccum, so the feet sank into the ground or floated
+// above it for the rest of the round. Cross fades the weapon animation (and an attack's aim pitch variants) to the new
+// stance's variant at once, at the same point.
+void BlendFixes::ApplyWeaponStanceFix()
 {
 	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
 	auto* animData1st = g_thePlayer->firstPersonAnimData;
 	auto* sourceSeq = animData3rd ? animData3rd->animSequence[kSequence_Weapon] : nullptr;
-	if (!sourceSeq || !sourceSeq->animGroup || !sourceSeq->animGroup->IsReload())
+	if (!sourceSeq || !sourceSeq->animGroup)
+		return;
+	// the engine restarts aim in the new stance itself; a start/stop clip of an aim transition plays under the aimIS
+	// group, whose variant is not the clip
+	const auto baseGroupId = sourceSeq->animGroup->GetBaseGroupID();
+	if (IsAnimGroupAim(baseGroupId) || TransitionAnims::Of(sourceSeq) != TransitionKind::None)
 		return;
 	auto* targetSeq = GetStanceVariant(animData3rd, sourceSeq);
 	if (!targetSeq || !targetSeq->animGroup)
@@ -358,26 +384,41 @@ void BlendFixes::ApplyReloadStanceFix()
 	if (!TransitionToVariant(animData3rd, targetSeq, kSequence_Weapon, blend))
 		return;
 
+	// the up and down variants of an attack, weighted by the aim pitch (base group + 1 and + 2)
+	for (const auto sequenceId : { kSequence_WeaponUp, kSequence_WeaponDown })
+	{
+		auto* sourceVariant = animData3rd->animSequence[sequenceId];
+		if (sourceVariant && sourceVariant->animGroup
+			&& sourceVariant->animGroup->GetBaseGroupID() == baseGroupId + (sequenceId - kSequence_Weapon))
+		{
+			if (auto* targetVariant = GetStanceVariant(animData3rd, sourceVariant))
+				TransitionToVariant(animData3rd, targetVariant, sequenceId, blend);
+		}
+	}
+
 	if (auto* sourceSeq1st = animData1st->animSequence[kSequence_Weapon]; sourceSeq1st && sourceSeq1st->animGroup
-		&& sourceSeq1st->animGroup->GetBaseGroupID() == sourceSeq->animGroup->GetBaseGroupID())
+		&& sourceSeq1st->animGroup->GetBaseGroupID() == baseGroupId)
 	{
 		if (auto* targetSeq1st = GetStanceVariant(animData1st, sourceSeq1st))
 			TransitionToVariant(animData1st, targetSeq1st, kSequence_Weapon, blend);
 	}
 
-	const auto animAction = static_cast<Decoding::AnimAction>(g_thePlayer->GetHighProcess()->GetCurrentAnimAction());
-	g_thePlayer->SetAnimAction(animAction, targetSeq);
+	// the action (attack, equip, reload, ...) ends with its sequence: the player's is the third person one
+	auto* process = g_thePlayer->baseProcess;
+	if (process->GetCurrentSequence() == sourceSeq)
+		g_thePlayer->SetAnimAction(static_cast<Decoding::AnimAction>(process->GetCurrentAnimAction()), targetSeq);
 }
 
 namespace
 {
-	// The ease of a sequence easing in that continues a variant of its group (TransitionToVariant); null for any other
-	const Ease* FindContinuedVariantEase(const NiControllerSequence* sequence)
+	// The ease of a sequence easing in that continues a variant of its group (TransitionToVariant) and has taken over
+	// from it by the Animation's time; null for any other
+	const Ease* FindContinuedVariantEase(const AnimData* animData, const NiControllerSequence* sequence)
 	{
 		if (sequence->m_eState != NiControllerSequence::EASEIN)
 			return nullptr;
 		const Ease* ease = Eases::Find(*sequence);
-		return ease && ease->bContinuesVariant ? ease : nullptr;
+		return ease && ease->bContinuesVariant && animData->timePassed >= ease->fContinuesFrom ? ease : nullptr;
 	}
 }
 
@@ -389,9 +430,17 @@ namespace
 // sequence it replaced, but as EASEIN its keys were acted on only once the ease was over: a looping reload eased in
 // across its Hit restarted the next round from 0.73 s instead of 0.5 s, the arms and weapon jumped 20 units in a frame;
 // and a round started during the ease held the reload at its first frame for the blend.
-NiControllerSequence::AnimState __fastcall BlendFixes::ContinuedVariantStateHook(const NiControllerSequence* sequence)
+NiControllerSequence::AnimState BlendFixes::ContinuedVariantState(const AnimData* animData, const NiControllerSequence* sequence)
 {
-	return FindContinuedVariantEase(sequence) ? NiControllerSequence::ANIMATING : sequence->m_eState;
+	return FindContinuedVariantEase(animData, sequence) ? NiControllerSequence::ANIMATING : sequence->m_eState;
+}
+
+bool BlendFixes::ContinuesVariant(const NiControllerSequence& sequence)
+{
+	if (sequence.m_eState != NiControllerSequence::EASEIN)
+		return false;
+	const Ease* ease = Eases::Find(sequence);
+	return ease && ease->bContinuesVariant;
 }
 
 namespace
@@ -427,14 +476,29 @@ namespace
 		}
 	}
 
+	// Animation::Update (0x491B1B): the state of a section's current sequence, deciding whether its clock runs at the
+	// group's speed (Animation at [ebp-0x18C])
+	NiControllerSequence::AnimState __fastcall SectionClockStateHook(const NiControllerSequence* sequence)
+	{
+		return BlendFixes::ContinuedVariantState(GET_CALLER_VAR(const AnimData*, -0x18C), sequence);
+	}
+
+	// Animation::StartGroup (0x494BE8, 0x494C09): whether the sequence to start is the current one, still playing, to
+	// restart in place (Animation at [ebp-0x5C])
+	NiControllerSequence::AnimState __fastcall StartGroupStateHook(const NiControllerSequence* sequence)
+	{
+		return BlendFixes::ContinuedVariantState(GET_CALLER_VAR(const AnimData*, -0x5C), sequence);
+	}
+
 	// Animation::Update (0x491C73): the state of a section's current sequence once the engine ran its clock at the
 	// group's speed (Animation at [ebp-0x18C]), before the sequences update
 	NiControllerSequence::AnimState __fastcall SectionClockRanStateHook(const NiControllerSequence* sequence)
 	{
-		const Ease* ease = FindContinuedVariantEase(sequence);
+		const auto* animData = GET_CALLER_VAR(const AnimData*, -0x18C);
+		const Ease* ease = FindContinuedVariantEase(animData, sequence);
 		if (!ease)
 			return sequence->m_eState;
-		LockVariantSources(GET_CALLER_VAR(const AnimData*, -0x18C), *sequence, *ease);
+		LockVariantSources(animData, *sequence, *ease);
 		return NiControllerSequence::ANIMATING;
 	}
 }
@@ -442,8 +506,9 @@ namespace
 void BlendFixes::WriteDelayedHooks()
 {
 	// Stewie's NVAC inlines these GetState calls in its NVSEPlugin_Load
-	for (const UInt32 addr : { 0x491B1B, 0x494BE8, 0x494C09 })
-		WriteRelCall(addr, ContinuedVariantStateHook);
+	WriteRelCall(0x491B1B, SectionClockStateHook);
+	for (const UInt32 addr : { 0x494BE8, 0x494C09 })
+		WriteRelCall(addr, StartGroupStateHook);
 	WriteRelCall(0x491C73, SectionClockRanStateHook);
 }
 

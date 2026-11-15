@@ -37,8 +37,10 @@ struct Ease
     bool bCurveResolved = false;
     // Cross faded in from another variant of its group at the same point (BlendFixes' TransitionToVariant): it continues
     // that sequence, so Animation::Update acts on its group's keys and scales its clock while it eases in, as for the
-    // ANIMATING sequence it replaced
+    // ANIMATING sequence it replaced. From fContinuesFrom on (its owner's time): a sequence replaced while still easing
+    // in would have counted as ANIMATING only from the end of that ease in
     bool bContinuesVariant = false;
+    float fContinuesFrom = -NI_INFINITY;
     // The other side: the ease-out of the sequence a variant continues. Animation::Update runs only the variant's clock
     // at the group's speed, so this sequence is kept at the variant's point of the sequence while both blend (BlendFixes'
     // LockVariantSources)

@@ -34,7 +34,7 @@ struct PluginINISettings
     bool fixWrongAnimName{};
     bool fixMissingPrnKey{};
     bool fixReloadStartAllowReloadTweak{};
-    bool fixReloadStance{};
+    bool fixWeaponStance{};
     bool fixShortGaitBlend{};
     std::string legacyAnimTimePathsText;
     bool fixLoopingReloads{};

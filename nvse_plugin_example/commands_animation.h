@@ -436,6 +436,7 @@ float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
 AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, bool createIfNoKeys = false);
+void SkipPassedBurstFireKeys(const BSAnimGroupSequence* anim);
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID);
 bool IsAnimGroupReload(AnimGroupID animGroupId);
 bool IsAnimGroupReload(UInt8 animGroupId);

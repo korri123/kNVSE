@@ -137,6 +137,23 @@ AnimTime::~AnimTime()
 
 std::list<BurstFireData> g_burstFireQueue;
 
+// A sequence started partway, continuing another variant of its group (BlendFixes' TransitionToVariant): the burst's
+// shots and ejects before its time were the other variant's. HandleBurstFire handles one passed key per frame, so they
+// would all be fired again, one a frame
+void SkipPassedBurstFireKeys(const BSAnimGroupSequence* anim)
+{
+	const auto time = anim->m_fLastScaledTime;
+	for (auto& burst : g_burstFireQueue)
+	{
+		if (burst.anim.data != anim)
+			continue;
+		while (burst.index < burst.hitKeys.size() && burst.hitKeys[burst.index]->m_fTime < time)
+			++burst.index;
+		while (burst.ejectIdx < burst.ejectKeys.size() && burst.ejectKeys[burst.ejectIdx]->m_fTime < time)
+			++burst.ejectIdx;
+	}
+}
+
 TimeTrackedAnimsMap g_timeTrackedAnims;
 
 void EraseTimeTrackedAnim(BSAnimGroupSequence* anim)

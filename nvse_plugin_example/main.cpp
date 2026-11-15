@@ -675,8 +675,8 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 				BlendFixes::ApplyAttackToAttackISFix();
 			}
 #endif
-			if (g_pluginSettings.fixReloadStance)
-				BlendFixes::ApplyReloadStanceFix();
+			if (g_pluginSettings.fixWeaponStance)
+				BlendFixes::ApplyWeaponStanceFix();
 			AimTransitions::Update();
 		}
 		HandleSynchronizedExecutionQueue();

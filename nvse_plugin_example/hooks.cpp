@@ -1323,8 +1323,12 @@ void ApplyHooks()
 		if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixBlendFromPose)
 			PoseBlendFixes::RecordHardCut(animData, pkSequence, fEaseOut);
 		const auto animSwitch = AnimSwitch::Current(animData);
-		if (g_pluginSettings.blendSmoothing && pkSequence->animGroup->GetSequenceType() == kSequence_Movement &&
-			pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f)
+		// a variant BlendFixes cross faded in (TransitionToVariant) that the engine ends while it eases in, e.g. an
+		// unequip that ends during a stance switch: Deactivate would ease it out from a full weight, the body jumped
+		// half way to the stance of the variant in a frame
+		if (pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f
+			&& ((g_pluginSettings.blendSmoothing && pkSequence->animGroup->GetSequenceType() == kSequence_Movement)
+				|| BlendFixes::ContinuesVariant(*pkSequence)))
 		{
 			result = animSwitch.EaseOut(pkSequence, fEaseOut);
 		}
@@ -1527,7 +1531,7 @@ namespace
 		if (MovementTransitions::RunClock(animData, sequence, fStep))
 			return NiControllerSequence::ANIMATING;
 		AimTransitions::RunClock(animData, sequence, fStep);
-		return BlendFixes::ContinuedVariantStateHook(sequence);
+		return BlendFixes::ContinuedVariantState(animData, sequence);
 	}
 }
 
