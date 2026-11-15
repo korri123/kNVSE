@@ -913,34 +913,116 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
-// Gamebryo's blend of the two highest priorities, with kNVSE's cross fade rule for the highest one's ease spinner
-static void ComputeNormalizedWeightsOfTwoHighestPriorities(
+// Gamebryo's blend of the two highest priorities, with kNVSE's cross fade rule for the highest one's ease spinner, and
+// below a next priority that is fading out, the priorities down to the one easing in
+static void ComputeNormalizedWeightsOfHighestPriorities(
     const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items)
 {
     const auto isDetached = [](auto& item)
     {
         return item.second && item.second->detached;
     };
+    // Items at weight 0 contribute nothing: they take no priority, and neither their ease spinner nor their blend curve
+    // counts (as in BlendTransitions). Gamebryo ranks them too: in third person the aimIS up/down variants (weight 0 at
+    // level pitch) key Weapon at 45, between aimIS (50) and aim (35), so aimIS -> aim kept the weapon at the aimIS pose
+    // until aimIS was gone while the arms blended to aim.
+    const auto isWeighted = [&](auto& item)
+    {
+        return item.first->m_spInterpolator != nullptr && !isDetached(item) && item.first->m_fWeight > 0.0f;
+    };
+    const auto stateOf = [](auto& item)
+    {
+        const auto* sequence = item.second ? item.second->sequence : nullptr;
+        return sequence ? sequence->m_eState : NiControllerSequence::INACTIVE;
+    };
     char cHighPriority = INVALID_INDEX;
     char cNextHighPriority = INVALID_INDEX;
     for (auto& item : items)
     {
-        if (item.first->m_spInterpolator != nullptr && !isDetached(item))
+        if (!isWeighted(item))
+            continue;
+        if (item.first->m_cPriority > cHighPriority)
         {
-            if (item.first->m_cPriority > cHighPriority)
-            {
-                cNextHighPriority = cHighPriority;
-                cHighPriority = item.first->m_cPriority;
-            }
-            else if (item.first->m_cPriority > cNextHighPriority && item.first->m_cPriority < cHighPriority)
-            {
-                cNextHighPriority = item.first->m_cPriority;
-            }
+            cNextHighPriority = cHighPriority;
+            cHighPriority = item.first->m_cPriority;
+        }
+        else if (item.first->m_cPriority > cNextHighPriority && item.first->m_cPriority < cHighPriority)
+        {
+            cNextHighPriority = item.first->m_cPriority;
         }
     }
 
-    float fHighSumOfWeights = 0.0f;
-    float fNextHighSumOfWeights = 0.0f;
+    // whether a weighted item at the priority is in the state, and whether all of them are
+    const auto anyInState = [&](char cPriority, NiControllerSequence::AnimState eState)
+    {
+        return std::ranges::any_of(items, [&](auto& item)
+        {
+            return isWeighted(item) && item.first->m_cPriority == cPriority && stateOf(item) == eState;
+        });
+    };
+    const auto allInState = [&](char cPriority, NiControllerSequence::AnimState eState)
+    {
+        return std::ranges::none_of(items, [&](auto& item)
+        {
+            return isWeighted(item) && item.first->m_cPriority == cPriority && stateOf(item) != eState;
+        });
+    };
+    // Gamebryo gives the next priority all that the highest leaves, normalized by its own weights, however far it has
+    // faded. Where it is easing out and something below eases in, that hid the incoming animation: a switch that took over
+    // an earlier one (AnimSwitch) eases out sequences of several priorities until its last ease in ends (Caravan Shotgun,
+    // 1st person: attack 57 and attackIS 55 easing out, aimIS 54 or aim 45 easing in), and the weapon stood at the
+    // attackIS pose for the whole blend, then jumped. So while the lowest priority taken is all easing out and a lower
+    // one has a sequence easing in, the next lower priority is taken too, and each priority below the highest takes its
+    // own ease spinner's share of what is left (Gamebryo's rule against everything below it), the lowest the rest. Only
+    // where something eases in below: under an easing out next priority with nothing easing in below (aim -> attack,
+    // mtidle below), the next priority keeps it all as in Gamebryo, which is what a cross fade over two priorities needs.
+    // And not while the highest priority has a sequence easing in: the next priority fading out under it is the other
+    // side of such a cross fade (first person aim 45 -> aimIS 54), and the two keep the bone between them whatever
+    // starts below in the same update (a stance change, a gait).
+    constexpr int kMaxLevels = 8;
+    char levels[kMaxLevels];
+    int levelCount = 0;
+    if (cHighPriority != static_cast<char>(INVALID_INDEX))
+        levels[levelCount++] = cHighPriority;
+    if (cNextHighPriority != static_cast<char>(INVALID_INDEX))
+        levels[levelCount++] = cNextHighPriority;
+    const auto isLowestFading = [&]
+    {
+        return levelCount < kMaxLevels && allInState(levels[levelCount - 1], NiControllerSequence::EASEOUT);
+    };
+    if (levelCount == 2 && isLowestFading() && !anyInState(cHighPriority, NiControllerSequence::EASEIN))
+    {
+        do
+        {
+            const char cLowest = levels[levelCount - 1];
+            bool bEaseInBelow = false;
+            char cBelow = static_cast<char>(INVALID_INDEX);
+            for (auto& item : items)
+            {
+                const char cPriority = item.first->m_cPriority;
+                if (!isWeighted(item) || cPriority >= cLowest)
+                    continue;
+                bEaseInBelow |= stateOf(item) == NiControllerSequence::EASEIN;
+                if (cPriority > cBelow)
+                    cBelow = cPriority;
+            }
+            if (!bEaseInBelow)
+                break;
+            levels[levelCount++] = cBelow;
+        }
+        while (isLowestFading());
+    }
+    const auto levelOf = [&](char cPriority)
+    {
+        for (int i = 0; i < levelCount; ++i)
+            if (levels[i] == cPriority)
+                return i;
+        return -1;
+    };
+
+    // real weights and the largest ease spinner of each level
+    float afSumOfWeights[kMaxLevels] = {};
+    float afEaseSpinner[kMaxLevels] = {};
     // The highest priority's ease spinner is the share of the bone it takes from the next priority. Gamebryo uses the
     // largest of its items': two sequences cross fading at one priority (NiControllerManager::CrossFade and the movement
     // blends ease one out while the other eases in) hand half of the bone to the next priority halfway through. The
@@ -950,31 +1032,30 @@ static void ComputeNormalizedWeightsOfTwoHighestPriorities(
     for (auto& item : items)
     {
         auto& kItem = *item.first;
-        if (kItem.m_spInterpolator != nullptr && !isDetached(item))
+        if (!isWeighted(item))
+            continue;
+        const int level = levelOf(kItem.m_cPriority);
+        if (level == -1)
+            continue;
+        afSumOfWeights[level] += kItem.m_fWeight * kItem.m_fEaseSpinner;
+        if (level == 0)
         {
-            float fRealWeight = kItem.m_fWeight * kItem.m_fEaseSpinner;
-            if (kItem.m_cPriority == cHighPriority)
-            {
-                fHighSumOfWeights += fRealWeight;
-                const auto* sequence = item.second ? item.second->sequence : nullptr;
-                auto& fEaseSpinner = sequence && sequence->m_eState == NiControllerSequence::EASEOUT
-                    ? fHighEaseOutSpinner : fHighEaseSpinner;
-                if (kItem.m_fEaseSpinner > fEaseSpinner)
-                {
-                    fEaseSpinner = kItem.m_fEaseSpinner;
-                }
-            }
-            else if (kItem.m_cPriority == cNextHighPriority)
-            {
-                fNextHighSumOfWeights += fRealWeight;
-            }
+            auto& fEaseSpinner = stateOf(item) == NiControllerSequence::EASEOUT ? fHighEaseOutSpinner : fHighEaseSpinner;
+            if (kItem.m_fEaseSpinner > fEaseSpinner)
+                fEaseSpinner = kItem.m_fEaseSpinner;
         }
+        else if (kItem.m_fEaseSpinner > afEaseSpinner[level])
+            afEaseSpinner[level] = kItem.m_fEaseSpinner;
     }
     fHighEaseSpinner = min(fHighEaseSpinner + fHighEaseOutSpinner, 1.0f);
+    const float fHighSumOfWeights = afSumOfWeights[0];
+    float fBelowSumOfWeights = 0.0f;
+    for (int i = 1; i < levelCount; ++i)
+        fBelowSumOfWeights += afSumOfWeights[i];
 
     float fOneMinusHighEaseSpinner = 1.0f - fHighEaseSpinner;
     float fTotalSumOfWeights = fHighEaseSpinner * fHighSumOfWeights +
-        fOneMinusHighEaseSpinner * fNextHighSumOfWeights;
+        fOneMinusHighEaseSpinner * fBelowSumOfWeights;
     float fOneOverTotalSumOfWeights =
         (fTotalSumOfWeights > 0.0f) ? (1.0f / fTotalSumOfWeights) : 0.0f;
 
@@ -982,21 +1063,42 @@ static void ComputeNormalizedWeightsOfTwoHighestPriorities(
     // spinner, the next one the rest, each shared by real weight. The single normalization above weighs the spinner in
     // twice, giving a higher priority easing in over a lower one about s^2 / (s^2 + 1 - s)
     float fOneOverHighSumOfWeights = fOneOverTotalSumOfWeights;
-    float fOneOverNextHighSumOfWeights = fOneOverTotalSumOfWeights;
-    if (fHighEaseSpinner < 1.0f && fHighSumOfWeights > 0.0f && fNextHighSumOfWeights > 0.0f)
+    // the share of the bone the levels below the highest priority get
+    float fBelowShare = fOneMinusHighEaseSpinner * fBelowSumOfWeights * fOneOverTotalSumOfWeights;
+    if (fHighEaseSpinner < 1.0f && fHighSumOfWeights > 0.0f && fBelowSumOfWeights > 0.0f)
     {
         const bool bNamedCurve = std::ranges::any_of(items, [&](auto& item)
         {
             const auto& kItem = *item.first;
-            return kItem.m_spInterpolator != nullptr && !isDetached(item) && kItem.m_cPriority == cHighPriority &&
+            return isWeighted(item) && kItem.m_cPriority == cHighPriority &&
                 kItem.m_fEaseSpinner < 1.0f && item.second && item.second->sequence &&
                 BlendCurves::HasNamedCurve(*item.second->sequence);
         });
         if (bNamedCurve)
         {
             fOneOverHighSumOfWeights = 1.0f / fHighSumOfWeights;
-            fOneOverNextHighSumOfWeights = 1.0f / fNextHighSumOfWeights;
+            fBelowShare = fOneMinusHighEaseSpinner;
         }
+    }
+
+    // each level below the highest: its ease spinner's share of what is left against the levels under it, the lowest
+    // the rest; per real weight within a level
+    float afPerRealWeight[kMaxLevels] = {};
+    float fLeft = fBelowShare;
+    for (int i = 1; i < levelCount; ++i)
+    {
+        float fShare = fLeft;
+        if (i < levelCount - 1)
+        {
+            float fUnder = 0.0f;
+            for (int j = i + 1; j < levelCount; ++j)
+                fUnder += afSumOfWeights[j];
+            const float fOwn = afEaseSpinner[i] * afSumOfWeights[i];
+            const float fSum = fOwn + (1.0f - afEaseSpinner[i]) * fUnder;
+            fShare = fSum > 0.0f ? fLeft * fOwn / fSum : 0.0f;
+        }
+        fLeft -= fShare;
+        afPerRealWeight[i] = afSumOfWeights[i] > 0.0f ? fShare / afSumOfWeights[i] : 0.0f;
     }
 
     // Compute normalized weights.
@@ -1010,18 +1112,17 @@ static void ComputeNormalizedWeightsOfTwoHighestPriorities(
                 kItem.m_fNormalizedWeight = 0.0f;
                 continue;
             }
-            if (kItem.m_cPriority == cHighPriority)
+            const int level = levelOf(kItem.m_cPriority);
+            if (level == 0)
             {
                 kItem.m_fNormalizedWeight = fHighEaseSpinner *
                     kItem.m_fWeight * kItem.m_fEaseSpinner *
                     fOneOverHighSumOfWeights;
                 continue;
             }
-            if (kItem.m_cPriority == cNextHighPriority)
+            if (level > 0)
             {
-                kItem.m_fNormalizedWeight = fOneMinusHighEaseSpinner *
-                    kItem.m_fWeight * kItem.m_fEaseSpinner *
-                    fOneOverNextHighSumOfWeights;
+                kItem.m_fNormalizedWeight = kItem.m_fWeight * kItem.m_fEaseSpinner * afPerRealWeight[level];
                 continue;
             }
             kItem.m_fNormalizedWeight = 0.0f;
@@ -1042,7 +1143,7 @@ void NiBlendInterpolator::ComputeNormalizedWeights(const std::vector<std::pair<I
     }
 
     if (!BlendTransitions::ComputeNormalizedWeights(items))
-        ComputeNormalizedWeightsOfTwoHighestPriorities(items);
+        ComputeNormalizedWeightsOfHighestPriorities(items);
     
     // Exclude weights below threshold, computing new sum in the process.
     float fSumOfNormalizedWeights = 1.0f;

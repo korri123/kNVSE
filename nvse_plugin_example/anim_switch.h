@@ -40,15 +40,16 @@ private:
     bool Join(NiControllerSequence* sequence) const;
     // The sequence was eased out while the switch uiEasedInBy was still easing it in. What that switch was easing out
     // was making way for it, and now does for what this switch eases in instead: the members of that switch become
-    // this one's, and its ease-outs, like the sequence itself, last until this switch's ease-ins are in (CoverEaseIns)
+    // this one's. The sequence itself lasts until this switch's ease-ins are in (CoverEaseIns); the ease-outs it takes
+    // over keep their own windows
     void TakeOver(NiControllerSequence* sequence, UInt32 uiEasedInBy) const;
     // The ease-outs that make way for this switch's ease-ins (Ease::bMakesWay) are stretched to end with the last of
-    // those, from the weight they have. Left to their own windows they end first: a sequence eased out while easing in
-    // fades in the time it took to get that far (DeactivateNoReset mirrors the window; right beside a sequence turned
-    // around with it, aim tapped twice: both take that long and keep adding up to 1), and what the interrupted switch
-    // was easing out ends when that switch would have. What they and the ease-ins then leave of a bone falls to the
-    // lower priorities: aiming down the sights just as an attack ended (the attack easing out, aim barely in and
-    // turned around, aimIS starting) gave the first person arms' mtidle, the bind pose, up to half of them for the blend
+    // those, from the weight they have. Left to its own window a sequence eased out while easing in fades in the time it
+    // took to get that far (DeactivateNoReset mirrors the window; right beside a sequence turned around with it, aim
+    // tapped twice: both take that long and keep adding up to 1). What it and the ease-ins then leave of a bone falls to
+    // the lower priorities: aiming down the sights just as an attack ended (the attack easing out, aim barely in and
+    // turned around, aimIS starting) gave the first person arms' mtidle, the bind pose, up to half of them for the blend.
+    // While it lasts, the ease-ins below it take what it and the other ease-outs leave (the regular blend's levels)
     void CoverEaseIns() const;
 
     const NiControllerManager* m_pkManager;

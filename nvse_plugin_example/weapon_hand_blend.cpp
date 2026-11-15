@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string_view>
 
 #include "blend_smoothing.h"
@@ -12,7 +13,10 @@
 #include "utility.h"
 
 using WeaponHandBlend::Acceptance;
+using WeaponHandBlend::ArmReach;
+using WeaponHandBlend::ChainLocals;
 using WeaponHandBlend::HandChains;
+using WeaponHandBlend::ItemPose;
 using WeaponHandBlend::SequenceInfo;
 
 namespace
@@ -178,11 +182,30 @@ namespace
         return result;
     }
 
-    NiTransform BlendedChain(NiAVObject* const* chain, unsigned int count)
+    // The hand chains' nodes as the sequence poses them at a time
+    void SampleLocals(const SequenceInfo& info, const HandChains& chains, float fTime, ChainLocals& locals)
+    {
+        for (unsigned int i = 0; i < chains.rightCount; ++i)
+            locals.right[i] = SampleLocal(info.rightInterpolators[i], chains.right[i], fTime, false);
+        for (unsigned int i = 0; i < chains.leftCount; ++i)
+            locals.left[i] = SampleLocal(info.leftInterpolators[i], chains.left[i], fTime, false);
+    }
+
+    // The hand chains' nodes as they are: this update's blend, for the nodes evaluated before the Weapon node
+    void CurrentLocals(const HandChains& chains, ChainLocals& locals)
+    {
+        for (unsigned int i = 0; i < chains.rightCount; ++i)
+            locals.right[i] = CurrentLocal(chains.right[i]);
+        for (unsigned int i = 0; i < chains.leftCount; ++i)
+            locals.left[i] = CurrentLocal(chains.left[i]);
+    }
+
+    // The last of a chain's first count nodes relative to the chain's top
+    NiTransform Compose(const NiTransform* locals, unsigned int count)
     {
         NiTransform result = IdentityTransform();
         for (unsigned int i = 0; i < count; ++i)
-            result = result * CurrentLocal(chain[i]);
+            result = result * locals[i];
         return result;
     }
 
@@ -637,9 +660,22 @@ namespace
         float translateWeight = 0.0f;
         float rotateWeight = 0.0f;
         bool off = false; // "weaponSpace: off"
+        // Set by Blend for the items that weigh in. Its arms: its sequence's, a detached item's as cached, the blended
+        // ones for an item without arms of its own
+        const ChainLocals* locals = nullptr;
+        // the left hand relative to the weapon in the item's pose, never from the left hand keys: HoldLeftHand compares it
+        // with the items' blended arms, which follow the tracks between keys
+        NiTransform handOnWeapon;
     };
     // evaluations of the Weapon node do not nest, so one buffer per blending thread is enough
     thread_local std::vector<Entry> t_entries;
+    // the arms of the entries that have their sequence, by entry index
+    thread_local std::vector<ChainLocals> t_sampled;
+
+    bool IsWeighted(const Entry& entry)
+    {
+        return entry.translateWeight > 0.0f || entry.rotateWeight > 0.0f;
+    }
 
     Entry* FindEntry(const void* key)
     {
@@ -656,6 +692,138 @@ namespace
                             from.GetY() + (sign * to.GetY() - from.GetY()) * t, from.GetZ() + (sign * to.GetZ() - from.GetZ()) * t);
         result.Normalize();
         return result;
+    }
+
+    NiPoint3 Cross(const NiPoint3& a, const NiPoint3& b)
+    {
+        return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
+    }
+
+    // Rotation by fAngle (radians) about a unit axis (right-handed, column vectors: R * v)
+    NiMatrix33 AxisAngle(const NiPoint3& axis, float fAngle)
+    {
+        const float c = std::cos(fAngle);
+        const float s = std::sin(fAngle);
+        const float t = 1.0f - c;
+        const float x = axis.x;
+        const float y = axis.y;
+        const float z = axis.z;
+        return NiMatrix33{ { { c + t * x * x, t * x * y - s * z, t * x * z + s * y },
+                             { t * x * y + s * z, c + t * y * y, t * y * z - s * x },
+                             { t * x * z - s * y, t * y * z + s * x, c + t * z * z } } };
+    }
+
+    // The smallest rotation that turns direction from into direction to
+    NiMatrix33 RotationBetween(const NiPoint3& from, const NiPoint3& to)
+    {
+        const NiPoint3 axis = Cross(from, to);
+        const float sine = axis.Length();
+        if (!(sine > 1e-6f * from.Length() * to.Length()))
+            return IdentityTransform().m_Rotate;
+        return AxisAngle(axis / sine, std::atan2(sine, from.Dot(to)));
+    }
+
+    constexpr float kMinBoneLength = 0.01f;
+
+    // Turns the last three nodes of a hand chain (upper arm, forearm, hand; the chain posed as in locals) so that the hand
+    // takes handGoal, relative to the chain's top: the elbow bends until the wrist is as far from the shoulder as the goal,
+    // about the axis it bends about now, then the upper arm swings the wrist onto the goal by the smallest rotation, and
+    // the hand turns to the goal's rotation. Only rotations change, so bones keep their lengths; a goal out of reach is
+    // approached as far as the arm stretches. A straight arm has no side to bend to and is left alone.
+    void ReachWithArm(NiAVObject* const* chain, const NiTransform* locals, unsigned int count, const NiTransform& handGoal,
+                      ArmReach& reach)
+    {
+        NiAVObject* const* arm = chain + (count - 3);
+        const NiTransform parent = Compose(locals, count - 3);
+        const NiTransform upperInChain = parent * locals[count - 3];
+        const NiTransform foreInChain = upperInChain * locals[count - 2];
+        const NiTransform handInChain = foreInChain * locals[count - 1];
+        const NiPoint3 shoulder = upperInChain.m_Translate;
+        const NiPoint3 elbow = foreInChain.m_Translate;
+        const NiPoint3 toShoulder = shoulder - elbow;
+        const NiPoint3 toWrist = handInChain.m_Translate - elbow;
+        const float upperLength = toShoulder.Length();
+        const float foreLength = toWrist.Length();
+        const NiPoint3 bendAxis = Cross(toShoulder, toWrist);
+        const float bendAxisLength = bendAxis.Length();
+        if (!(upperLength > kMinBoneLength) || !(foreLength > kMinBoneLength) || !(bendAxisLength > 1e-4f * upperLength * foreLength))
+            return;
+        const float minReach = std::fabs(upperLength - foreLength) + kMinBoneLength;
+        const float maxReach = upperLength + foreLength - kMinBoneLength;
+        if (!(maxReach > minReach))
+            return;
+        const float reachLength = std::clamp((handGoal.m_Translate - shoulder).Length(), minReach, maxReach);
+        const float elbowAngle = std::acos(std::clamp(
+            (upperLength * upperLength + foreLength * foreLength - reachLength * reachLength) / (2.0f * upperLength * foreLength), -1.0f, 1.0f));
+        // rotating the wrist about toShoulder x toWrist opens the elbow
+        const float currentAngle = std::atan2(bendAxisLength, toShoulder.Dot(toWrist));
+        const NiMatrix33 bend = AxisAngle(bendAxis / bendAxisLength, elbowAngle - currentAngle);
+        const NiPoint3 bentWrist = elbow + bend * toWrist;
+        const NiMatrix33 swing = RotationBetween(bentWrist - shoulder, handGoal.m_Translate - shoulder);
+
+        const NiMatrix33 upperRotate = swing * upperInChain.m_Rotate;
+        const NiMatrix33 foreRotate = swing * bend * foreInChain.m_Rotate;
+        NiTransform reached[3] = { arm[0]->m_kLocal, arm[1]->m_kLocal, arm[2]->m_kLocal };
+        reached[0].m_Rotate = Transpose(parent.m_Rotate) * upperRotate;
+        reached[1].m_Rotate = Transpose(upperRotate) * foreRotate;
+        reached[2].m_Rotate = Transpose(foreRotate) * handGoal.m_Rotate;
+        if (!IsFinite(reached[0]) || !IsFinite(reached[1]) || !IsFinite(reached[2]))
+            return;
+        for (int i = 0; i < 3; ++i)
+        {
+            NiMatrix33& rotate = arm[i]->m_kLocal.m_Rotate;
+            reach.blended[i] = rotate;
+            reach.reached[i] = reached[i].m_Rotate;
+            rotate = reached[i].m_Rotate;
+        }
+        reach.applied = true;
+    }
+
+    // ArmReach: the bones nothing has blended since they were turned get their blend's rotation back
+    void UndoReach(WeaponHandBlend::NodeData& data)
+    {
+        ArmReach& reach = data.leftReach;
+        if (!reach.applied)
+            return;
+        reach.applied = false;
+        NiAVObject* const* arm = data.chains.left + (data.chains.leftCount - 3);
+        for (int i = 0; i < 3; ++i)
+        {
+            NiMatrix33& rotate = arm[i]->m_kLocal.m_Rotate;
+            if (std::memcmp(&rotate, &reach.reached[i], sizeof(NiMatrix33)) == 0)
+                rotate = reach.blended[i];
+        }
+    }
+
+    // Whether every update of the skeleton's bones blends the left arm (upper arm, forearm, hand) before the Weapon node,
+    // so that what HoldLeftHand gives the arm is not overwritten by the arm's own blend, or by a part of it. The engine
+    // (BSTransCon::UpdateAllButTarget) and Stewie's Tweaks' replacement of it go through the multi-target controller's
+    // slots in order; kNVSE's own loops (NiMultiTargetTransformController::_Update in Debug builds, UpdateHooked) do too,
+    // but leave the Weapon node for last. Slots are given out in the order the skeleton's sequences name their nodes:
+    // the Weapon node's is after the arms' on the vanilla skeletons (60 of 67 in third person and on NPCs, 41 of 68 in
+    // first person; the left arm 15-18 and 9-12), but nothing makes it so.
+    bool IsLeftArmBlendedFirst(const NiAVObject* weapon, const HandChains& chains)
+    {
+        const NiMultiTargetTransformController* controller = nullptr;
+        for (const Entry& entry : t_entries)
+        {
+            if (entry.sequence && entry.sequence->m_pkOwner)
+            {
+                controller = entry.sequence->m_pkOwner->GetMultiTargetTransformController();
+                break;
+            }
+        }
+        if (!controller)
+            return false;
+        NiAVObject* const* arm = chains.left + (chains.leftCount - 3);
+        unsigned int found = 0;
+        for (const NiAVObject* target : controller->GetTargets())
+        {
+            if (target == weapon)
+                return found == 3;
+            found += target == arm[0] || target == arm[1] || target == arm[2];
+        }
+        return false;
     }
 }
 
@@ -829,14 +997,6 @@ int WeaponHandBlend::Context::FindOrMeasureSequence(NiInterpolator* weaponInterp
     return index;
 }
 
-void WeaponHandBlend::Context::SampleHands(const SequenceInfo& info, float fTime, bool bInvalidateCache, NiTransform& right,
-                                           NiTransform& left) const
-{
-    const HandChains& chains = m_data->chains;
-    right = SampleChain(chains.right, info.rightInterpolators, chains.rightCount, fTime, bInvalidateCache);
-    left = SampleChain(chains.left, info.leftInterpolators, chains.leftCount, fTime, bInvalidateCache);
-}
-
 void WeaponHandBlend::Context::AddItem(const void* key, kBlendInterpItem* extraItem, float fTime, const NiQuatTransform& kTransform)
 {
     if (!m_weapon)
@@ -911,37 +1071,164 @@ void WeaponHandBlend::Context::CacheDetachedPose(const kBlendInterpItem& extraIt
     const Acceptance acceptance = info.Sample(fTime);
     if (acceptance.IsRightOnly() || !EnsureChains())
         return;
-    NiTransform sequenceRight;
-    NiTransform sequenceLeft;
-    SampleHands(info, fTime, false, sequenceRight, sequenceLeft);
+    const HandChains& chains = m_data->chains;
+    ItemPose& pose = info.detachedPose;
+    SampleLocals(info, chains, fTime, pose.locals);
     // a hand track that ends before the sequence does is sampled past its last key
-    if (!IsFinite(sequenceRight) || !IsFinite(sequenceLeft) || sequenceLeft.m_fScale <= 0.0f)
+    const NiTransform sequenceLeft = Compose(pose.locals.left, chains.leftCount);
+    if (!IsFinite(Compose(pose.locals.right, chains.rightCount)) || !IsFinite(sequenceLeft) || sequenceLeft.m_fScale <= 0.0f)
         return;
-    NiTransform relativeToLeft;
-    const bool hasRelativeToLeft = info.SampleLeftSpace(fTime, relativeToLeft);
-    info.detachedPose = { acceptance, sequenceRight, sequenceLeft, relativeToLeft, hasRelativeToLeft };
+    pose.acceptance = acceptance;
+    pose.hasRelativeToLeft = info.SampleLeftSpace(fTime, pose.relativeToLeft);
     info.hasDetachedPose = true;
+}
+
+namespace
+{
+    // Places the weapon by the references the blended items agree on (Blend), relative to the blended right hand (its
+    // parent); corrected is the share of the blend that did not opt out.
+    void MoveWeapon(NiQuatTransform& kValue, const TransformBlender* relatives, const float* referenceWeights, float corrected,
+                    const NiTransform& rightBlended, const NiTransform& leftBlended)
+    {
+        const bool bTranslate = kValue.IsTranslateValid();
+        const bool bRotate = kValue.IsRotateValid();
+        const NiTransform rightBlendedInverse = Inverse(rightBlended);
+        TransformBlender result;
+        for (int reference = 0; reference < kReferenceCount; ++reference)
+        {
+            const TransformBlender& relative = relatives[reference];
+            const float weight = referenceWeights[reference];
+            if (weight <= kMinReferenceWeight || (bTranslate && !relative.HasTranslate()) || (bRotate && !relative.HasRotate()))
+                continue;
+            NiTransform candidate = relative.Get();
+            if (reference == kLeft)
+                candidate = rightBlendedInverse * leftBlended * candidate;
+            else if (reference == kBody)
+                candidate = rightBlendedInverse * candidate;
+            result.Add(candidate, weight, weight);
+        }
+        if (!result.HasTranslate())
+            return;
+        const NiTransform blended = result.Get();
+        if (!IsFinite(blended))
+            return;
+        if (bTranslate)
+            kValue.SetTranslate(kValue.GetTranslate() + (blended.m_Translate - kValue.GetTranslate()) * corrected);
+        if (bRotate)
+        {
+            NiQuaternion rotate;
+            rotate.FromRotation(blended.m_Rotate);
+            if (corrected < 1.0f)
+                rotate = Nlerp(kValue.GetRotate(), rotate, corrected);
+            kValue.SetRotate(rotate);
+        }
+    }
+
+    // base with the channels the blender has replaced by its blend
+    NiTransform Merge(const TransformBlender& blender, NiTransform base)
+    {
+        if (!blender.HasTranslate() && !blender.HasRotate())
+            return base;
+        const NiTransform blended = blender.Get();
+        if (blender.HasTranslate())
+        {
+            base.m_Translate = blended.m_Translate;
+            base.m_fScale = blended.m_fScale;
+        }
+        if (blender.HasRotate())
+            base.m_Rotate = blended.m_Rotate;
+        return base;
+    }
+
+    // A hand chain (HandChains::left or right) relative to its top, as blending the items' own chains joint by joint with
+    // the weights of the Weapon node's blend gives it: what the arm's blend makes of these items
+    NiTransform BlendItemsChain(const HandChains& chains, const ChainLocals& blendedLocals, bool bLeft)
+    {
+        const auto side = [bLeft](const ChainLocals& locals) { return bLeft ? locals.left : locals.right; };
+        const unsigned int count = bLeft ? chains.leftCount : chains.rightCount;
+        NiTransform result = IdentityTransform();
+        for (unsigned int i = 0; i < count; ++i)
+        {
+            TransformBlender joint;
+            for (const Entry& entry : t_entries)
+                if (entry.locals)
+                    joint.Add(side(*entry.locals)[i], entry.translateWeight, entry.rotateWeight);
+            result = result * Merge(joint, side(blendedLocals)[i]);
+        }
+        return result;
+    }
+
+    // Each arm is blended joint by joint, so between two poses that both hold the weapon with the left hand the hand
+    // drifts off it (aim -> aimIS: 1.4 units in first person, 2.5 in third, at the middle of the blend). The error is
+    // measured on the items alone: their arms and weapon blended joint by joint as the engine does (BlendItemsChain)
+    // give the hand some place relative to the weapon, the items' own places of the hand on the weapon blended by their
+    // weights give where it belongs. The step from the one to the other, holdShare of it (the share of the blend's
+    // weight holding the weapon), is applied to the arm's hand, so whatever else moves the arm keeps doing so: additive
+    // animations, and animations the Weapon node does not have (3rd person sneak attacks without a Weapon track: their
+    // arms blend while the weapon follows the other variant alone; going for the place on the weapon itself instead
+    // snapped the hand 5.9 units in a frame when a second item reached the Weapon node). The arm then reaches for it
+    // (ReachWithArm). Runs while the Weapon node is evaluated, after the left arm was (IsLeftArmBlendedFirst).
+    void HoldLeftHand(const NiAVObject* weapon, WeaponHandBlend::NodeData& data, float holdShare, const ChainLocals& blendedLocals,
+                      const NiTransform& leftBlended)
+    {
+        TransformBlender handOnWeapon;
+        TransformBlender weaponLocal;
+        for (const Entry& entry : t_entries)
+        {
+            if (!IsWeighted(entry))
+                continue;
+            weaponLocal.Add(ToTransform(entry.transform, weapon), entry.translateWeight, entry.rotateWeight);
+            if (entry.off || entry.acceptance.left <= kMinAcceptance)
+                continue;
+            const float left = entry.acceptance.left;
+            handOnWeapon.Add(entry.handOnWeapon, entry.translateWeight * left, entry.rotateWeight * left);
+        }
+        if (!handOnWeapon.HasTranslate() || !handOnWeapon.HasRotate())
+            return;
+        const HandChains& chains = data.chains;
+        const NiTransform blendedOnWeapon = Inverse(BlendItemsChain(chains, blendedLocals, false) * Merge(weaponLocal, CurrentLocal(weapon)))
+            * BlendItemsChain(chains, blendedLocals, true);
+        const NiTransform step = Inverse(blendedOnWeapon) * handOnWeapon.Get();
+        if (!IsFinite(step))
+            return;
+        const float share = (std::min)(holdShare, 1.0f);
+        NiTransform partial = step;
+        partial.m_Translate = step.m_Translate * share;
+        partial.m_fScale = 1.0f;
+        NiQuaternion rotate;
+        rotate.FromRotation(step.m_Rotate);
+        ToUnitRotation(Nlerp(NiQuaternion(1.0f, 0.0f, 0.0f, 0.0f), rotate, share), partial.m_Rotate);
+        ReachWithArm(chains.left, blendedLocals.left, chains.leftCount, leftBlended * partial, data.leftReach);
+    }
 }
 
 void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
 {
-    if (!m_weapon || !m_anyHandOff || !EnsureChains())
+    if (!m_weapon)
+        return;
+    UndoReach(*m_data);
+    if (!m_anyHandOff || !EnsureChains())
         return;
     const bool bTranslate = kValue.IsTranslateValid();
     const bool bRotate = kValue.IsRotateValid();
     if (!bTranslate && !bRotate)
         return;
 
-    // how much of the blend's weight accepts each hand, and how much opted out
+    // how much of the blend's weight accepts each hand, how much opted out, and how much holds the weapon with the left hand
     float total = 0.0f;
     float off = 0.0f;
+    float largest = 0.0f;
+    float holding = 0.0f;
     Acceptance agreement{ 0.0f, 0.0f };
     for (const Entry& entry : t_entries)
     {
         const float weight = bTranslate ? entry.translateWeight : entry.rotateWeight;
         total += weight;
+        largest = (std::max)(largest, weight);
         if (entry.off)
             off += weight;
+        else if (entry.acceptance.left > kMinAcceptance)
+            holding += weight * entry.acceptance.left;
         agreement.right += weight * entry.acceptance.right;
         agreement.left += weight * entry.acceptance.left;
     }
@@ -957,27 +1244,42 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     referenceWeights[kRight] = static_cast<float>(std::pow(agreement.right / total, kAgreementExponent));
     referenceWeights[kLeft] = (1.0f - referenceWeights[kRight]) * static_cast<float>(std::pow(agreement.left / total, kAgreementExponent));
     referenceWeights[kBody] = (std::max)(0.0f, 1.0f - referenceWeights[kRight] - referenceWeights[kLeft]);
-    if (referenceWeights[kRight] >= 1.0f - kMinReferenceWeight)
+    const bool bMoveWeapon = referenceWeights[kRight] < 1.0f - kMinReferenceWeight;
+    // Left hand: where the weapon stays on the right hand, the share of the blend whose left hand holds it pulls the left
+    // hand to where those animations hold it. A single animation's hand is there already.
+    const HandChains& chains = m_data->chains;
+    const float holdShare = referenceWeights[kRight] * holding / total;
+    const bool bHoldLeftHand = g_pluginSettings.keepLeftHandOnWeapon && chains.leftCount >= 3 && largest < total * (1.0f - kMinReferenceWeight)
+        && holdShare > kMinReferenceWeight && IsLeftArmBlendedFirst(m_weapon, chains);
+    if (!bMoveWeapon && !bHoldLeftHand)
         return; // the regular blend
 
-    const HandChains& chains = m_data->chains;
-    const NiTransform rightBlended = BlendedChain(chains.right, chains.rightCount);
-    const NiTransform leftBlended = BlendedChain(chains.left, chains.leftCount);
+    ChainLocals blendedLocals;
+    CurrentLocals(chains, blendedLocals);
+    const NiTransform rightBlended = Compose(blendedLocals.right, chains.rightCount);
+    const NiTransform leftBlended = Compose(blendedLocals.left, chains.leftCount);
     if (rightBlended.m_fScale <= 0.0f || leftBlended.m_fScale <= 0.0f)
         return;
-    const bool bNeedBody = referenceWeights[kBody] > kMinReferenceWeight;
+    const bool bNeedBody = bMoveWeapon && referenceWeights[kBody] > kMinReferenceWeight;
 
     // each item's weapon relative to each reference, in the item's own pose
     TransformBlender relatives[kReferenceCount];
-    for (const Entry& entry : t_entries)
+    t_sampled.resize(t_entries.size());
+    for (size_t i = 0; i < t_entries.size(); ++i)
     {
+        Entry& entry = t_entries[i];
+        if (!IsWeighted(entry))
+            continue;
         const NiTransform weaponLocal = ToTransform(entry.transform, m_weapon);
         const Acceptance& acceptance = entry.acceptance;
         relatives[kRight].Add(weaponLocal, entry.translateWeight * acceptance.right, entry.rotateWeight * acceptance.right);
-        if (acceptance.IsRightOnly() && !bNeedBody)
+        // the left hand and body references need the item's hands, the left hand's correction every item's arms
+        const bool bPlacesWeapon = !acceptance.IsRightOnly() || bNeedBody;
+        if (!bPlacesWeapon && !bHoldLeftHand)
             continue;
 
-        // items without hands of their own (detached right hand only items, pose interpolators) use the blended hands
+        // items without arms of their own (detached right hand only items, pose interpolators) use the blended arms
+        entry.locals = &blendedLocals;
         NiTransform sequenceRight = rightBlended;
         NiTransform sequenceLeft = leftBlended;
         NiTransform relativeToLeft;
@@ -987,12 +1289,14 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
             const SequenceInfo& info = m_data->sequences[entry.sequenceIndex];
             if (entry.sequence)
             {
-                NiTransform sampledRight;
-                NiTransform sampledLeft;
-                SampleHands(info, entry.time, false, sampledRight, sampledLeft);
+                ChainLocals& sampled = t_sampled[i];
+                SampleLocals(info, chains, entry.time, sampled);
+                const NiTransform sampledRight = Compose(sampled.right, chains.rightCount);
+                const NiTransform sampledLeft = Compose(sampled.left, chains.leftCount);
                 // a hand track that ends before the sequence does is sampled past its last key
                 if (IsFinite(sampledRight) && IsFinite(sampledLeft) && sampledLeft.m_fScale > 0.0f)
                 {
+                    entry.locals = &sampled;
                     sequenceRight = sampledRight;
                     sequenceLeft = sampledLeft;
                 }
@@ -1000,49 +1304,27 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
             }
             else
             {
-                sequenceRight = info.detachedPose.sequenceRight;
-                sequenceLeft = info.detachedPose.sequenceLeft;
-                keyedLeft = info.detachedPose.hasRelativeToLeft;
-                relativeToLeft = info.detachedPose.relativeToLeft;
+                const ItemPose& pose = info.detachedPose;
+                entry.locals = &pose.locals;
+                sequenceRight = Compose(pose.locals.right, chains.rightCount);
+                sequenceLeft = Compose(pose.locals.left, chains.leftCount);
+                keyedLeft = pose.hasRelativeToLeft;
+                relativeToLeft = pose.relativeToLeft;
             }
         }
 
         const NiTransform relativeToBody = sequenceRight * weaponLocal;
+        entry.handOnWeapon = Inverse(relativeToBody) * sequenceLeft;
+        if (!bPlacesWeapon)
+            continue;
         if (!keyedLeft)
             relativeToLeft = Inverse(sequenceLeft) * relativeToBody;
         relatives[kLeft].Add(relativeToLeft, entry.translateWeight * acceptance.left, entry.rotateWeight * acceptance.left);
         relatives[kBody].Add(relativeToBody, entry.translateWeight, entry.rotateWeight);
     }
 
-    // where each reference puts the weapon, relative to the blended right hand (its parent)
-    const NiTransform rightBlendedInverse = Inverse(rightBlended);
-    TransformBlender result;
-    for (int reference = 0; reference < kReferenceCount; ++reference)
-    {
-        const TransformBlender& relative = relatives[reference];
-        const float weight = referenceWeights[reference];
-        if (weight <= kMinReferenceWeight || (bTranslate && !relative.HasTranslate()) || (bRotate && !relative.HasRotate()))
-            continue;
-        NiTransform candidate = relative.Get();
-        if (reference == kLeft)
-            candidate = rightBlendedInverse * leftBlended * candidate;
-        else if (reference == kBody)
-            candidate = rightBlendedInverse * candidate;
-        result.Add(candidate, weight, weight);
-    }
-    if (!result.HasTranslate())
-        return;
-    const NiTransform blended = result.Get();
-    if (!IsFinite(blended))
-        return;
-    if (bTranslate)
-        kValue.SetTranslate(kValue.GetTranslate() + (blended.m_Translate - kValue.GetTranslate()) * corrected);
-    if (bRotate)
-    {
-        NiQuaternion rotate;
-        rotate.FromRotation(blended.m_Rotate);
-        if (corrected < 1.0f)
-            rotate = Nlerp(kValue.GetRotate(), rotate, corrected);
-        kValue.SetRotate(rotate);
-    }
+    if (bMoveWeapon)
+        MoveWeapon(kValue, relatives, referenceWeights, corrected, rightBlended, leftBlended);
+    if (bHoldLeftHand)
+        HoldLeftHand(m_weapon, *m_data, holdShare, blendedLocals, leftBlended);
 }

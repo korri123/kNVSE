@@ -117,14 +117,15 @@ void AnimSwitch::TakeOver(NiControllerSequence* sequence, UInt32 uiEasedInBy) co
         if (!ease || ease->uiSwitch != uiEasedInBy)
             continue;
         // all of them: a cross fade split over two switches is blended as two eases that have nothing to do with each
-        // other (BlendTransitions)
+        // other (BlendTransitions). Its ease-outs keep their windows: stretched as well, they stood still at the turn
+        // (attack -> attackIS cut by the attack's end: the rest of the attack's ease-out went at a fifth of its speed
+        // over aimIS's ease-in, the weapon stopped from 190 units/s), and the sequence turned around covers the bone
+        // until the ease-ins are in.
         if (ease->uiSwitch != m_uiID)
         {
             ease->uiSwitch = m_uiID;
             ease->bCurveResolved = false;
         }
-        if (other->m_eState == NiControllerSequence::EASEOUT)
-            ease->bMakesWay = true;
     }
 }
 

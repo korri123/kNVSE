@@ -29,6 +29,11 @@ class kBlendInterpolatorExtraData;
 // - for left hand stretches, interpolates the weapon relative to the left hand between keys instead of relative to the
 //   right hand, so sparse keys no longer make it swim.
 // "weaponSpace: off" opts an animation out: its share of the blend weight keeps the regular blend.
+// Where the weapon stays on the right hand and the blended animations hold it with the left hand as well (two-handed aim
+// and aimIS), the left hand is kept on it during blends (bKeepLeftHandOnWeapon): each arm is blended joint by joint, so the
+// hand drifted off the weapon between two poses that both hold it. That error, measured on the Weapon node's items alone,
+// is taken off the arm's hand by two-bone IK on upper arm and forearm while the Weapon node is evaluated, and only on a
+// skeleton whose updates blend those bones before the Weapon node.
 namespace WeaponHandBlend
 {
     constexpr unsigned int kMaxChainLength = 8;
@@ -54,14 +59,20 @@ namespace WeaponHandBlend
         bool IsRightOnly() const;
     };
 
+    // Local transforms of the hand chains' nodes (HandChains::right, left), top first
+    struct ChainLocals
+    {
+        NiTransform right[kMaxChainLength];
+        NiTransform left[kMaxChainLength];
+    };
+
     // What a detached item (sequence deactivated, weight still fading out under blend smoothing) contributes: it no longer
     // has its sequence and its update time stopped advancing on detach, so this is captured once on detach.
     struct ItemPose
     {
         Acceptance acceptance;
-        // the sequence's hands relative to their closest common ancestor
-        NiTransform sequenceRight;
-        NiTransform sequenceLeft;
+        // the sequence's arms
+        ChainLocals locals;
         // the weapon relative to the left hand, from the left hand keys (SequenceInfo::SampleLeftSpace)
         NiTransform relativeToLeft;
         bool hasRelativeToLeft = false;
@@ -115,6 +126,17 @@ namespace WeaponHandBlend
         bool SampleLeftSpace(float fTime, NiTransform& relativeToLeft) const;
     };
 
+    // What keeping the left hand on the weapon last did to the left arm (upper arm, forearm, hand): the rotations their
+    // blends had given the bones, and the ones they were given instead. A bone that still has the latter has not been
+    // blended since (bone LOD, an update of the Weapon node alone) and gets the former back before the arm is read again:
+    // the hand's correction is a step from where the arm is, and would be added to itself.
+    struct ArmReach
+    {
+        bool applied = false;
+        NiMatrix33 blended[3];
+        NiMatrix33 reached[3];
+    };
+
     // State of one Weapon node, kept on its kBlendInterpolatorExtraData. Like the rest of that extra data it needs no
     // locks: an actor's skeleton is blended by one thread at a time, and sequences detach in the sequential animation
     // update or on the main thread, never while the same actor blends.
@@ -124,6 +146,7 @@ namespace WeaponHandBlend
         bool chainsBuilt = false;
         bool chainsValid = false;
         std::vector<SequenceInfo> sequences;
+        ArmReach leftReach;
 #if _DEBUG
         const NiNode* loggedParent = nullptr; // bWeaponHandBlendDebugLog
 #endif
@@ -151,7 +174,7 @@ namespace WeaponHandBlend
 
         // Replaces kValue's valid translation and rotation with the blend of the collected items relative to the hand
         // they agree on. Leaves kValue alone when every item accepts the right hand: the regular blend already keeps the
-        // weapon on it.
+        // weapon on it. Then turns the left arm so that its hand stays where the items holding the weapon with it hold it.
         void Blend(NiQuatTransform& kValue);
 
         // A lone item, weighted 1.
@@ -168,7 +191,6 @@ namespace WeaponHandBlend
         // indices into NodeData::sequences, -1 if none; measuring a new sequence may reallocate the vector
         int FindSequence(const NiInterpolator* weaponInterpolator) const;
         int FindOrMeasureSequence(NiInterpolator* weaponInterpolator, const NiControllerSequence& sequence);
-        void SampleHands(const SequenceInfo& info, float fTime, bool bInvalidateCache, NiTransform& right, NiTransform& left) const;
 
         NiAVObject* m_weapon = nullptr;
         NodeData* m_data = nullptr;

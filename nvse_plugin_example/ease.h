@@ -39,7 +39,12 @@ struct Ease
     // that sequence, so Animation::Update acts on its group's keys and scales its clock while it eases in, as for the
     // ANIMATING sequence it replaced
     bool bContinuesVariant = false;
-    // An ease-out that makes way for the sequences its switch eases in: it lasts until they are in (AnimSwitch::TakeOver)
+    // The other side: the ease-out of the sequence a variant continues. Animation::Update runs only the variant's clock
+    // at the group's speed, so this sequence is kept at the variant's point of the sequence while both blend (BlendFixes'
+    // LockVariantSources)
+    bool bContinuedByVariant = false;
+    // An ease-out turned around from an ease-in, making way for the sequences its switch eases in: it lasts until they are
+    // in (AnimSwitch::TakeOver)
     bool bMakesWay = false;
 
     // An ease into the state that is at the spinner, on the default curve

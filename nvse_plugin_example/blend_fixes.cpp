@@ -224,8 +224,13 @@ namespace
 		if (!animSwitch.EaseIn(targetSeq, blend))
 			return false;
 		if (sourceAnimating)
+		{
 			if (auto* targetExtraData = SequenceExtraDatas::GetOrCreate(targetSeq))
 				Eases::Get(*targetExtraData, *targetSeq, Eases::GetSpinner(*targetSeq, fTime)).bContinuesVariant = true;
+			// the ease-out the switch just gave the source
+			if (Ease* easeOut = Eases::Find(*sourceSeq))
+				easeOut->bContinuedByVariant = true;
+		}
 		targetSeq->m_fOffset = destFrame / targetSeq->m_fFrequency - fTime;
 		targetSeq->Update(fTime, true);
 
@@ -364,6 +369,18 @@ void BlendFixes::ApplyReloadStanceFix()
 	g_thePlayer->SetAnimAction(animAction, targetSeq);
 }
 
+namespace
+{
+	// The ease of a sequence easing in that continues a variant of its group (TransitionToVariant); null for any other
+	const Ease* FindContinuedVariantEase(const NiControllerSequence* sequence)
+	{
+		if (sequence->m_eState != NiControllerSequence::EASEIN)
+			return nullptr;
+		const Ease* ease = Eases::Find(*sequence);
+		return ease && ease->bContinuesVariant ? ease : nullptr;
+	}
+}
+
 // Animation::Update (0x491180) applies the group's speed (fWeaponReloadSpeed, fAttackSpeed, ...; call at 0x491B1B) and
 // acts on its action keys (a looping reload's Hit loads a round and starts the next, an attack's keys fire and end it;
 // call at 0x491C73) only while the section's current sequence is ANIMATING, and Animation::StartGroup (0x4949A0) restarts
@@ -374,19 +391,60 @@ void BlendFixes::ApplyReloadStanceFix()
 // and a round started during the ease held the reload at its first frame for the blend.
 NiControllerSequence::AnimState __fastcall BlendFixes::ContinuedVariantStateHook(const NiControllerSequence* sequence)
 {
-	if (sequence->m_eState == NiControllerSequence::EASEIN)
+	return FindContinuedVariantEase(sequence) ? NiControllerSequence::ANIMATING : sequence->m_eState;
+}
+
+namespace
+{
+	// Animation::Update runs only the current sequence of a section at the group's speed (fAttackSpeed,
+	// fWeaponReloadSpeed, ...), and TransitionToVariant's variant counts as current, so the sequence it continues ran at
+	// 1.0x while it eased out: Caravan Shotgun attack -> attackIS ran 1.5x vs 1.0x, the two drifted apart through the
+	// blend and the attackIS reached its end first, stopping the weapon mid-blend. Keeps the sequences the variant's
+	// switch declared continued (Ease::bContinuedByVariant; the section tells the weapon sequence from its up and down
+	// variants) at the point of the variant: the proportion of its length TransitionToVariant started the variant at.
+	void LockVariantSources(const AnimData* animData, const NiControllerSequence& variant, const Ease& variantEase)
 	{
-		if (const Ease* ease = Eases::Find(*sequence); ease && ease->bContinuesVariant)
-			return NiControllerSequence::ANIMATING;
+		if (!variantEase.uiSwitch || !variant.m_pkOwner || variant.m_fOffset == -NI_INFINITY || !(variant.m_fEndKeyTime > 0.0f)
+			|| NOT_TYPE(&variant, BSAnimGroupSequence))
+			return;
+		const TESAnimGroup* variantGroup = static_cast<const BSAnimGroupSequence&>(variant).animGroup;
+		if (!variantGroup)
+			return;
+		const auto sequenceType = variantGroup->GetGroupInfo()->sequenceType;
+		const float fTime = animData->timePassed;
+		const float fProgress = (fTime + variant.m_fOffset) * variant.m_fFrequency / variant.m_fEndKeyTime;
+		for (auto* other : variant.m_pkOwner->m_kActiveSequences)
+		{
+			if (!other || other->m_eState != NiControllerSequence::EASEOUT || other->m_fOffset == -NI_INFINITY
+				|| !(other->m_fFrequency > 0.0f) || NOT_TYPE(other, BSAnimGroupSequence))
+				continue;
+			auto* source = static_cast<BSAnimGroupSequence*>(other);
+			const Ease* ease = Eases::Find(*source);
+			if (!ease || !ease->bContinuedByVariant || ease->uiSwitch != variantEase.uiSwitch || !source->animGroup
+				|| source->animGroup->GetGroupInfo()->sequenceType != sequenceType)
+				continue;
+			source->m_fOffset = fProgress * source->m_fEndKeyTime / source->m_fFrequency - fTime;
+		}
 	}
-	return sequence->m_eState;
+
+	// Animation::Update (0x491C73): the state of a section's current sequence once the engine ran its clock at the
+	// group's speed (Animation at [ebp-0x18C]), before the sequences update
+	NiControllerSequence::AnimState __fastcall SectionClockRanStateHook(const NiControllerSequence* sequence)
+	{
+		const Ease* ease = FindContinuedVariantEase(sequence);
+		if (!ease)
+			return sequence->m_eState;
+		LockVariantSources(GET_CALLER_VAR(const AnimData*, -0x18C), *sequence, *ease);
+		return NiControllerSequence::ANIMATING;
+	}
 }
 
 void BlendFixes::WriteDelayedHooks()
 {
 	// Stewie's NVAC inlines these GetState calls in its NVSEPlugin_Load
-	for (const UInt32 addr : { 0x491B1B, 0x491C73, 0x494BE8, 0x494C09 })
+	for (const UInt32 addr : { 0x491B1B, 0x494BE8, 0x494C09 })
 		WriteRelCall(addr, ContinuedVariantStateHook);
+	WriteRelCall(0x491C73, SectionClockRanStateHook);
 }
 
 void BlendFixes::ApplyAimBlendHooks()

@@ -32,6 +32,7 @@ struct PluginINISettings
     float blendSmoothingRate = 0.075f;
     float blendEaseCurve = 0.7f;
     bool fixWeaponHandBlend = true;
+    bool keepLeftHandOnWeapon = true;
     bool fixBlendFromPose = true;
     bool fixWeaponParentSwitch = true;
     bool fixGaitSwitch = true;

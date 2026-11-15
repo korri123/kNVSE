@@ -78,7 +78,7 @@ namespace
         }
         if (s.bNamedCurve)
         {
-            // the higher priority takes exactly its spinner (ComputeNormalizedWeightsOfTwoHighestPriorities)
+            // the higher priority takes exactly its spinner (ComputeNormalizedWeightsOfHighestPriorities)
             if (!s.bFrom || (s.bTo && s.cToPriority > s.cFromPriority))
                 return s.fToSpinner;
             return 1.0f - s.fFromSpinner;

@@ -2685,6 +2685,11 @@ void CreateCommands(NVSECommandBuilder& builder)
 			g_pluginSettings.fixWeaponHandBlend = !g_pluginSettings.fixWeaponHandBlend;
 			*result = g_pluginSettings.fixWeaponHandBlend;
 		}
+		else if (featureName.str() == "keepLeftHandOnWeapon")
+		{
+			g_pluginSettings.keepLeftHandOnWeapon = !g_pluginSettings.keepLeftHandOnWeapon;
+			*result = g_pluginSettings.keepLeftHandOnWeapon;
+		}
 		else if (featureName.str() == "overlappingBlends")
 		{
 			g_pluginSettings.fixOverlappingBlends = !g_pluginSettings.fixOverlappingBlends;

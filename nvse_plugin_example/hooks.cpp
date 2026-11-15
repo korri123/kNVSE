@@ -934,6 +934,7 @@ void ApplyHooks()
 	conf.blendEaseCurve = std::clamp(conf.blendEaseCurve, 0.0f, 1.0f);
 	conf.fixSpineBlendBug = ini.GetOrCreate("Blend Fixes", "bFixSpineBlendBug", 1, "; fix spine blend bug when aiming down sights in 3rd person and cancelling the aim while looking up or down (requires bBlendSmoothing).");
 	conf.fixWeaponHandBlend = ini.GetOrCreate("Blend Fixes", "bFixWeaponHandBlend", 1, "; keep the weapon on the hand holding it when animations move it to the left hand (counter-animated against the right hand): during blends, and between keys of animations baked at low frame rates. Detected automatically; animators can set it with the text keys \"weaponSpace: left\", \"weaponSpace: right\", \"weaponSpace: body\" (follows neither hand, for hand-offs) and \"weaponSpace: auto\", each holding until the next, or opt an animation out with \"weaponSpace: off\" (its share of a blend is blended as without this fix).");
+	conf.keepLeftHandOnWeapon = ini.GetOrCreate("Blend Fixes", "bKeepLeftHandOnWeapon", 1, "; keep the left hand on two-handed weapons during blends (hip to sights and back, ...): the arms are blended joint by joint, so the hand slid off the weapon halfway through a blend between two animations that both hold it. The left arm is turned to reach for where those animations hold the weapon. Requires bFixWeaponHandBlend.");
 #if _DEBUG
 	conf.weaponHandBlendDebugLog = ini.GetOrCreate("Blend Fixes", "bWeaponHandBlendDebugLog", 0, "; log to kNVSE.log how long each animation holds the weapon in each hand, as detected by bFixWeaponHandBlend.");
 #endif
