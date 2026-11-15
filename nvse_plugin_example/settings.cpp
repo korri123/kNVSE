@@ -25,6 +25,9 @@ namespace Settings
 
 		auto& s = g_pluginSettings;
 
+		// Keys of settings that were removed: left in the INI they would look like they do something
+		constexpr const char* kRemovedKeys[] = { "fBlendSmoothingRate", "fBlendEaseCurve" };
+
 		// In the order the keys are added to a new INI
 		const Setting s_settings[] =
 		{
@@ -40,14 +43,10 @@ namespace Settings
 				.label = "Blend smoothing", .category = kBlending, .apply = Apply::RestartToEnable,
 				.summary = "Fades out snaps when animations switch without a blend.",
 				.description = "smooths out the snaps in animation blending: where the blend weights jump (animations switched without a blend, more than two animation priorities on a bone) the previous pose fades out instead. Blends that are smooth already keep their timing. for some animations this might not be wanted, add noBlendSmoothing as text key to disable." },
-			{ .section = "Blend Fixes", .key = "fBlendSmoothingRate", .value = &s.blendSmoothingRate, .defaultValue = 0.075, .min = 0.005, .max = 1, .step = 0.025,
-				.label = "Blend smoothing time", .category = kBlending, .apply = Apply::Live, .requirements = { "bBlendSmoothing" },
-				.summary = "Seconds a snap takes to fade out. Higher is smoother but slower.",
-				.description = "how long (in seconds) a snap takes to fade out with bBlendSmoothing: about a third of it is left after this time. higher values mean smoother but slower." },
-			{ .section = "Blend Fixes", .key = "fBlendEaseCurve", .value = &s.blendEaseCurve, .defaultValue = 0.7, .min = 0, .max = 1, .step = 0.05,
-				.label = "Blend ease curve", .category = kBlending, .apply = Apply::Live,
-				.summary = "0: blends run at constant speed, as in the game. 1: they ease in and out.",
-				.description = "how gradually blends between animations start and stop, from 0 (constant speed, as the game does it) to 1 (they speed up at their start and slow down towards their end). Blends take as long as before and are half way at the same moment. Animations can pick another curve with the text keys \"blendCurve: <curve>\" (blends into and out of them), \"blendInCurve: <curve>\" and \"blendOutCurve: <curve>\", each from its time on: default, linear, smooth, inSine, outSine, inOutSine (also Quad, Cubic, Quart, Expo, Circ) or \"bezier x1 y1 x2 y2\" with each in 0..1. A blend takes the blendInCurve of the animation blending in, else the blendOutCurve of the one blending out; with bBlendSmoothing the curve is exactly how far the bone has blended." },
+			{ .section = "Blend Fixes", .key = "fBlendSmoothness", .value = &s.blendSmoothness, .defaultValue = 0, .min = 0, .max = 1, .step = 0.05,
+				.label = "Smooth blends", .category = kBlending, .apply = Apply::Live, .requirements = { "bBlendSmoothing" },
+				.summary = "0: blends take the animations' blend times, as in the game. 1: softer, they slow down into the pose.",
+				.description = "makes blends between animations softer at the cost of their timing, from 0 (blends take as long as the animations' blend times say, as in the game) to 1 (they slow down as they reach the new pose and settle about a quarter of a second later: the blend smoothing of kNVSE before November 2026). Only what is shown changes: when the game counts an animation as blended in or out (firing after aiming, text keys) stays the same. Blends of two frames or less (the start of an attack), animations with a noBlendSmoothing text key and blends with a curve named by a text key are left as they are. Animations can pick the curve of their blends with the text keys \"blendCurve: <curve>\" (blends into and out of them), \"blendInCurve: <curve>\" and \"blendOutCurve: <curve>\", each from its time on: default, linear, smooth, inSine, outSine, inOutSine (also Quad, Cubic, Quart, Expo, Circ) or \"bezier x1 y1 x2 y2\" with each in 0..1; a blend takes the blendInCurve of the animation blending in, else the blendOutCurve of the one blending out, and the curve is exactly how far the bone has blended. Requires bBlendSmoothing." },
 			{ .section = "Blend Fixes", .key = "bFixSpineBlendBug", .value = &s.fixSpineBlendBug, .defaultValue = 1,
 				.label = "Fix spine blend when aiming", .category = kBlending, .apply = Apply::RestartToEnable, .requirements = { "bBlendSmoothing" },
 				.summary = "Fixes the spine when leaving 3rd person aim while looking up or down.",
@@ -269,6 +268,8 @@ namespace Settings
 			OnChanged(setting);
 			s_loadedText[index] = s_savedText[index] = GetText(setting);
 		}
+		for (const auto* key : kRemovedKeys)
+			ini.Delete("Blend Fixes", key);
 		if (ini.SaveFile(kIniPath, false) < 0)
 			ERROR_LOG("Failed to save ini file");
 	}

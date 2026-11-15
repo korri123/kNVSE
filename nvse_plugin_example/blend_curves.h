@@ -8,11 +8,11 @@
 
 // How a blend between animations moves over its time. The engine moves ease and transition spinners at constant speed;
 // every spinner of every blend passes through BlendCurves::Shape (NiControllerSequence::SetInterpsWeightAndTime), which
-// shapes it with fBlendEaseCurve or with a curve an animation names in a text key:
+// leaves it as it is (the default curve, the game's) or shapes it with a curve an animation names in a text key:
 //   "blendCurve: <curve>"      blends into and out of this animation
 //   "blendInCurve: <curve>"    blends into it
 //   "blendOutCurve: <curve>"   blends out of it
-// <curve>: default (fBlendEaseCurve), linear, smooth (smoothstep), in/out/inOut + Sine, Quad, Cubic, Quart, Expo or Circ
+// <curve>: default (the game's), linear, smooth (smoothstep), in/out/inOut + Sine, Quad, Cubic, Quart, Expo or Circ
 // (outSine: fast at the start of the blend, slow at its end), or "bezier x1 y1 x2 y2" (CSS cubic-bezier, each in 0..1;
 // commas allowed between them). Curves that overshoot (back, elastic, bounce) would weigh bones outside 0..1 and are
 // not offered.
@@ -34,7 +34,7 @@ struct BlendCurve
 {
     enum class Type : UInt8
     {
-        Default, // fBlendEaseCurve
+        Default, // the spinner as the engine moves it; not named, so Gamebryo's share across priorities stays
         Linear,
         Smooth,
         Sine,

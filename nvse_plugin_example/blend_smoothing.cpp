@@ -1,12 +1,23 @@
 ﻿#include "blend_smoothing.h"
 
 #include "additive_anims.h"
+#include "blend_curves.h"
 #include "GameAPI.h"
 #include "hooks.h"
 #include "SafeWrite.h"
 #include "sequence_extradata.h"
 #include "skeleton_nodes.h"
 #include "utility.h"
+
+namespace
+{
+    // How long a jump (and with fBlendSmoothness, a blend in progress) takes to fade out: about a third of it is left
+    // after this time
+    constexpr float kFadeTime = 0.075f;
+    // Blends this short are cuts the animation asked for (attack blend-ins: 1 frame), not smoothed by fBlendSmoothness:
+    // the low pass over every blend (before 775a6df) delayed the start of a shot and cut its recoil by a third
+    constexpr float kMinSmoothedBlendTime = 0.08f;
+}
 
 void* g_vtblExtraData[37] = {};
 
@@ -129,6 +140,8 @@ void BlendSmoothing::Step::AddItem(const NiBlendInterpolator::InterpArrayItem& i
 
     if (!extraItem)
         return;
+    if (g_pluginSettings.blendSmoothness > 0.0f && !m_bNamedCurve && extraItem->sequence)
+        m_bNamedCurve = BlendCurves::HasNamedCurve(*extraItem->sequence);
     if (extraItem->lastWeight != -NI_INFINITY)
     {
         const float fChange = std::abs(item.m_fWeight - extraItem->lastWeight)
@@ -144,7 +157,7 @@ void BlendSmoothing::Step::AddItem(const NiBlendInterpolator::InterpArrayItem& i
 // which comes with the switch of sequences, without a blend. The actor's angle is set before the evaluation that blends
 // the switch, its 3D is turned after it, before the frame is drawn. Whatever weight smoothing took up from that switch
 // posed the node relative to the old facing, turned with the actor: the body flipped around and turned back over
-// fBlendSmoothingRate.
+// kFadeTime.
 static bool ActorTurnsAtOnce(const kBlendInterpolatorExtraData* extraData)
 {
     NiAVObject* target = extraData->target;
@@ -184,17 +197,25 @@ void BlendSmoothing::Step::End(kBlendInterpolatorExtraData* extraData)
             item.scaleWeight.ClearValues();
         }
     }
+    // an ease spinner moves 1 over the blend's time (a transition's moves the weight instead)
+    bSmoothBlend = g_pluginSettings.blendSmoothness > 0.0f && !m_bNamedCurve
+        && fInputChange * kMinSmoothedBlendTime <= fDeltaTime;
 }
 
 // A blend in progress moves the normalized weights about as far as the ease spinner or sequence weight driving it, and
-// is left alone: it keeps its timing. The weights jump when
+// is left alone: it keeps its timing (fBlendSmoothness takes up that share of it, below). The weights jump when
 // - items come and go: ComputeNormalizedWeights only blends the two highest priorities, so with a third one an item
 //   attached at no weight can take a bone over at once, and one detached at no weight can hand it over at once; and
 //   sequences are switched without a blend (jump loop to landing) or dropped in the middle of one;
 // - it divides one vanishing sum by another: the highest priority still easing in while the next has all but eased
 //   out swings the weights between the two many times faster than either spinner moves, whatever is below them.
 // A jump is taken up by the items' offsets instead: each keeps the weight it was last blended with, and the offsets
-// decay from there, so the pose the jump left behind fades out over fBlendSmoothingRate.
+// decay from there, so the pose the jump left behind fades out over kFadeTime.
+// fBlendSmoothness (0..1) takes up that share of every other change of the weights the same way: at 1 the bone follows
+// the computed weights through a low pass of kFadeTime, so blends slow down into the new pose and end later than the
+// animations say, as kNVSE's blend smoothing did before 775a6df; in between, a mix of that and the computed weights.
+// Linear in the weights, so they still add up to what was computed. Only the weights the bone is blended with change:
+// the sequences' states and times stay the engine's
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type,
     const Step& step)
@@ -258,7 +279,13 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     // nothing was blended before (first evaluation, after ReloadTargets or noBlendSmoothing): nothing to continue from
     const bool bJump = fLastTotal >= MIN_WEIGHT
         && (step.bItemsChanged || (fWeightChange > MIN_JUMP && fWeightChange > MAX_GAIN * step.fInputChange));
-    const float fDecay = std::exp(-step.fDeltaTime / g_pluginSettings.blendSmoothingRate);
+    // the share of this evaluation's change the offsets take up
+    float fTakeUp = 0.0f;
+    if (bJump)
+        fTakeUp = 1.0f;
+    else if (step.bSmoothBlend && fLastTotal >= MIN_WEIGHT)
+        fTakeUp = g_pluginSettings.blendSmoothness;
+    const float fDecay = std::exp(-step.fDeltaTime / kFadeTime);
 
     for (const auto& pair : items)
     {
@@ -269,8 +296,7 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
         const float fWeight = item.m_fNormalizedWeight;
 
         float fOffset = weightState->offset;
-        if (bJump)
-            fOffset += getLastWeight(*weightState) - fWeight;
+        fOffset += fTakeUp * (getLastWeight(*weightState) - fWeight);
         fOffset *= fDecay;
         if (std::abs(fOffset) < MIN_WEIGHT)
             fOffset = 0.0f;

@@ -181,7 +181,6 @@ float BlendCurve::Evaluate(float fProgress) const
     switch (type)
     {
     case Type::Default:
-        return x + (Smoothstep(x) - x) * g_pluginSettings.blendEaseCurve;
     case Type::Linear:
         return x;
     case Type::Smooth:
@@ -305,13 +304,13 @@ float BlendCurves::Shape(NiControllerSequence& sequence, float fSpinner, float f
 {
     if (!Eases::IsEasing(sequence.m_eState))
         return fSpinner;
-    // No animation has named a curve: every ease is on the default one, which is point symmetric (1 - curve(x) ==
-    // curve(1 - x)). A cross fade's two spinners then add up to 1 and an ease turned around where it is (ActivateNoReset,
-    // DeactivateNoReset mirror its window) continues from the spinner it had: the weight is the curve of the spinner. The
-    // same for a sequence kNVSE has no data of (no switch, no keys)
+    // No animation has named a curve: every ease is on the default one, the game's spinner (linear, point symmetric:
+    // 1 - curve(x) == curve(1 - x)). A cross fade's two spinners then add up to 1 and an ease turned around where it is
+    // (ActivateNoReset, DeactivateNoReset mirror its window) continues from the spinner it had. The same for a sequence
+    // kNVSE has no data of (no switch, no keys)
     auto* extraData = g_anyKeys.load(std::memory_order_relaxed) ? SequenceExtraDatas::Get(&sequence) : nullptr;
     if (!extraData)
-        return BlendCurve().Evaluate(fSpinner);
+        return fSpinner;
 
     Ease& ease = Eases::Get(*extraData, sequence, fSpinner);
     if (!ease.bCurveResolved || ease.switchCurve.IsNamed())

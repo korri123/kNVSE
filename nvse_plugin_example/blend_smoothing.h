@@ -32,7 +32,7 @@ struct kWeightState
     float lastSmoothedWeight = -NI_INFINITY;
     // the weight ComputeNormalizedWeights gave it then
     float calculatedNormalizedWeight = -NI_INFINITY;
-    // what is left of the weight jumps taken up so far (BlendSmoothing::ApplyForItems): added to the computed weight
+    // what is left of the weight changes taken up so far (BlendSmoothing::ApplyForItems): added to the computed weight
     float offset = 0.0f;
 
     void ClearValues()
@@ -191,8 +191,12 @@ namespace BlendSmoothing
         // an attached item wants no smoothing (kBlendInterpItem::noSmoothing), or the node is posed relative to an actor the
         // engine is turning at once: nothing is taken up, and what was is dropped
         bool bDisabled = false;
+        // fBlendSmoothness takes up this evaluation's blend in progress: none of its items is in an ease with a named
+        // curve, and nothing moved faster than a blend of kMinSmoothedBlendTime would
+        bool bSmoothBlend = false;
     private:
         UInt32 m_uiAttachedItems = 0;
+        bool m_bNamedCurve = false;
     };
     void ApplyForItems(kBlendInterpolatorExtraData* extraData, const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type, const Step& step);
     float GetElapsedTime(float fLastTime, float fTime);

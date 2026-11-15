@@ -1228,7 +1228,7 @@ namespace
     // joint with the weights its own blend gave their sequences, gives it: what the arm's blend makes of these items. Not
     // the Weapon node's weights: the arms blend other animations as well (third person 1hp: aim and the walk key the arms,
     // not the weapon) and take up other jumps of the weights (blend smoothing), so their weights for the same sequences
-    // differ, by up to half of the bone for seconds at a high fBlendSmoothingRate
+    // differ, by up to half of the bone for seconds when the jumps fade slowly (measured with a 0.6 s fade time)
     NiTransform BlendItemsChain(const HandChains& chains, const ChainLocals& blendedLocals, bool bLeft)
     {
         const auto side = [bLeft](const ChainLocals& locals) { return bLeft ? locals.left : locals.right; };

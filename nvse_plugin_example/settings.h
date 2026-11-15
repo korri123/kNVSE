@@ -12,8 +12,7 @@
 struct PluginINISettings
 {
     bool blendSmoothing{};
-    float blendSmoothingRate{};
-    float blendEaseCurve{};
+    float blendSmoothness{};
     bool fixSpineBlendBug{};
     bool fixWeaponHandBlend{};
     bool keepLeftHandOnWeapon{};
