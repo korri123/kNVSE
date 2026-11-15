@@ -1243,13 +1243,6 @@ public:
 	UInt8 gap2D[3];
 };
 
-struct BSSemaphore
-{
-	UInt32 uiCount;
-	HANDLE hSemaphore;
-	UInt32 uiMaxCount;
-};
-
 class BSLinearTaskThread : public BSThread
 {
 public:

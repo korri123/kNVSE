@@ -46,28 +46,26 @@ namespace
 		return GameFuncs::NiTPointerMap_Lookup(animData->mapAnimSequenceBase, groupId, &base);
 	}
 
-	// The threads that load in the background: IOManager's task threads (BSTaskManager::ppThreads) and ModelLoader's
-	// clone thread. An actor's 3D is built there (QueuedReference::BackgroundClone -> Actor::Load3D), which asks about
-	// its animations while the main thread runs the game
+	// The threads that load in the background: IOManager's task threads and ModelLoader's clone thread. An actor's 3D is
+	// built there (QueuedReference::BackgroundClone -> Actor::Load3D), which asks about its animations while the main
+	// thread runs the game
 	bool IsLoaderThread()
 	{
 		thread_local int t_kind = 0;
 		if (!t_kind)
 		{
-			const auto isThread = [threadId = GetCurrentThreadId()](const UInt8* taskThread)
+			const auto isThread = [threadId = GetCurrentThreadId()](const BSTaskThread* taskThread)
 			{
-				return taskThread && *reinterpret_cast<const UInt32*>(taskThread + 0x8) == threadId; // BSTaskThread::uiThreadID
+				return taskThread && taskThread->uiThreadID == threadId;
 			};
 			bool isLoader = false;
-			if (const auto* ioManager = *reinterpret_cast<UInt8**>(0x1202D98))
+			if (const auto* ioManager = IOManager::GetSingleton(); ioManager && ioManager->ppThreads)
 			{
-				const auto numThreads = *reinterpret_cast<const UInt32*>(ioManager + 0x4C);
-				const auto* threads = *reinterpret_cast<UInt8** const*>(ioManager + 0x50);
-				for (auto i = 0u; threads && i < numThreads; ++i)
-					isLoader |= isThread(threads[i]);
+				for (UInt32 i = 0; i < ioManager->uiThreadCount; ++i)
+					isLoader |= isThread(ioManager->ppThreads[i]);
 			}
-			if (const auto* modelLoader = reinterpret_cast<const UInt8*>(ModelLoader::GetSingleton()))
-				isLoader |= isThread(*reinterpret_cast<UInt8* const*>(modelLoader + 0x28)); // pBackgroundCloneThread
+			if (const auto* modelLoader = ModelLoader::GetSingleton())
+				isLoader |= isThread(modelLoader->pBackgroundCloneThread);
 			t_kind = isLoader ? 2 : 1;
 		}
 		return t_kind == 2;

@@ -52,6 +52,14 @@ class QueuedReference;
 class Character;
 class AttachDistant3DTask;
 class BSTaskManagerThread;
+class AnimIdle;
+struct AnimData;
+class QueuedReplacementKFList;
+class QueuedHelmet;
+class BSFileEntry;
+class LoadedFile;
+template <typename T_Data> class LockFreeQueue;
+class LockFreePriorityQueue;
 
 class ModelLoader;
 
@@ -314,42 +322,6 @@ public:
 	Character			* character;			// 30
 	UInt32				unk34;					// 34
 };
-
-// 30
-class BSTaskManager : public LockFreeMap< NiPointer< BSTask > >
-{
-public:
-	virtual void Unk_0F(UInt32 arg0) = 0;
-	virtual void Unk_10(UInt32 arg0) = 0;
-	virtual void Unk_11(UInt32 arg0) = 0;
-	virtual void Unk_12(void) = 0;
-	virtual void Unk_13(UInt32 arg0) = 0;
-
-	UInt32				unk1C;			// 1C
-	UInt32				unk20;			// 20
-	UInt32				numThreads;		// 24
-	BSTaskManagerThread	** threads;		// 28 array of size numThreads
-	UInt32				unk2C;			// 2C
-};
-
-// 3C
-class IOManager : public BSTaskManager
-{
-public:
-	virtual void Unk_14(UInt32 arg0) = 0;
-
-	static IOManager* GetSingleton();
-
-	UInt32									unk30;			// 30
-	LockFreeQueue< NiPointer< IOTask > >	* taskQueue;	// 34
-	UInt32									unk38;			// 38
-
-	bool IsInQueue(TESObjectREFR *refr);
-	void QueueForDeletion(TESObjectREFR* refr);
-	void DumpQueuedTasks();
-};
-
-extern IOManager** g_ioManager;
 */
 
 // O4 assumed
@@ -425,14 +397,11 @@ public:
 	UInt32	**buckets;		// 0C array of arg1 DWord elements
 	UInt32	unk010;			// 10 Init'd to arg2
 	Data014	*dat014;		// 14 Init'd to a 16 bytes structure
-	UInt32	unk018;			// 18
+	UInt32	count;			// 18
 	UInt32	unk01C;			// 1C
-	UInt32	unk020[2];		// 20 Pair of DWord (tList ?)
-	// ?
-
-	
+	UInt32	kLock[8];		// 20 BSSpinLock
 };
-
+static_assert(sizeof(LockFreeMap<int, int>) == 0x40);
 
 template<class _C>
 class LockFreeStringMap: public LockFreeMap<char const *, _C> {};
@@ -529,22 +498,101 @@ public:
 
 };
 
-// 1C
+// C
+struct BSSemaphore
+{
+	UInt32 uiCount;
+	HANDLE hSemaphore;
+	UInt32 uiMaxCount;
+};
+
+// 30
+class BSTaskThread
+{
+public:
+	virtual ~BSTaskThread();
+
+	HANDLE		hThread;			// 04
+	UInt32		uiThreadID;			// 08
+	BSSemaphore	kTaskSemaphore;		// 0C
+	BSSemaphore	kPauseSemaphore;	// 18
+	UInt32		kHavokData[3];		// 24 BSHavokThreadData
+};
+static_assert(sizeof(BSTaskThread) == 0x30);
+
+class BSTaskManager;
+
+// 34
+class BSTaskManagerThread : public BSTaskThread
+{
+public:
+	BSTaskManager* pOwner;	// 30
+};
+static_assert(sizeof(BSTaskManagerThread) == 0x34);
+
+// 3C
+class BackgroundCloneThread : public BSTaskThread
+{
+public:
+	bool										bExit;					// 30
+	UInt32										iRunningCount;			// 34
+	LockFreeQueue<NiPointer<QueuedReference>>*	pCloneReferencesQueue;	// 38
+};
+static_assert(sizeof(BackgroundCloneThread) == 0x3C);
+
+// 5C
+class BSTaskManager : public LockFreeMap<SInt64, NiPointer<BSTask>>
+{
+public:
+	bool					bExit;				// 40
+	UInt32					uiSleepingThreads;	// 44
+	UInt32					uiSleepLock;		// 48
+	UInt32					uiThreadCount;		// 4C
+	BSTaskManagerThread**	ppThreads;			// 50 uiThreadCount of them
+	UInt32**				pBucketCounts;		// 54
+	UInt32					uiBucketCountTotal;	// 58
+};
+static_assert(sizeof(BSTaskManager) == 0x5C);
+
+// A0
+class IOManager : public BSTaskManager
+{
+public:
+	UInt32					unk05C;							// 5C
+	UInt32					uiTaskManagerThreadID;			// 60
+	LockFreePriorityQueue*	pPostProcessQueue;				// 64
+	UInt32					eLoadingQueuedPriority;			// 68
+	UInt32					(__thiscall* pGetExternalCountCallback)(IOManager*);			// 6C
+	void					(__thiscall* pUpdateQueueCallback)(IOManager*);					// 70
+	bool					(__thiscall* pUpdateSecondaryQueueCallback)(IOManager*);		// 74
+	void					(__thiscall* pLoadQueuedPriorityCallback)(IOManager*, float);	// 78
+	void					(__thiscall* pPauseCallback)(IOManager*);						// 7C
+	void					(__thiscall* pResumeCallback)(IOManager*);						// 80
+	UInt32					unk084[7];						// 84
+
+	static IOManager* GetSingleton();
+};
+static_assert(sizeof(IOManager) == 0xA0);
+
+// 30
 class ModelLoader
 {
 public:
 	ModelLoader();
 	~ModelLoader();
 
-	// #TODO: generalize key for LockFreeMap, document LockFreeStringMap
-
-	LockFreeCaseInsensitiveStringMap<Model *>			* modelMap;				// 00
-	LockFreeCaseInsensitiveStringMap<KFModel *>			* kfMap;				// 04
-	LockFreeMap< TESObjectREFR*, NiPointer<QueuedReference *> >		* refMap;	// 08 key is TESObjectREFR*
-	//LockFreeMap< NiPointer<QueuedAnimIdle *> >		* idleMap;					// 0C key is AnimIdle* (strange same constructor as for 08)
-	//LockFreeMap< NiPointer<QueuedHelmet *> >			* helmetMap;				// 10 key is TESObjectREFR*
-	//LockFreeQueue< NiPointer<AttachDistant3DTask *> >	* distant3DMap;				// 14
-	//BackgroundCloneThread								* bgCloneThread;			// 18
+	LockFreeCaseInsensitiveStringMap<Model*>*								pModelMap;					// 00
+	LockFreeCaseInsensitiveStringMap<KFModel*>*								pKFModelMap;				// 04
+	LockFreeMap<TESObjectREFR*, NiPointer<QueuedReference>>*				pQueuedReferences;			// 08
+	LockFreeMap<TESObjectREFR*, NiPointer<QueuedReference>>*				pDelayedQueue;				// 0C
+	LockFreeMap<AnimIdle*, NiPointer<QueuedAnimIdle>>*						pQueuedAnimIdleMap;			// 10
+	LockFreeMap<AnimData*, NiPointer<QueuedReplacementKFList>>*				pQueuedReplacementKFListMap;	// 14
+	LockFreeMap<TESObjectREFR*, NiPointer<QueuedHelmet>>*					pQueuedHelmetMap;			// 18
+	LockFreeQueue<NiPointer<AttachDistant3DTask>>*							pAttachDistant3DTaskQueue;	// 1C
+	LockFreeMap<BSFileEntry*, NiPointer<QueuedTexture>>*					pQueuedTextureMap;			// 20
+	LockFreeCaseInsensitiveStringMap<LoadedFile*>*							pLoadingFileMap;			// 24
+	BackgroundCloneThread*													pBackgroundCloneThread;		// 28
+	bool																	bHasDelayedFree;			// 2C
 
 	static ModelLoader* GetSingleton();
 
@@ -556,3 +604,4 @@ public:
 		return ThisStdCall<KFModel*>(0x4471C0, pThis, path);
 	}
 };
+static_assert(sizeof(ModelLoader) == 0x30);
