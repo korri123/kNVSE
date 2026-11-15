@@ -2457,8 +2457,9 @@ public:
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
 					 NiQuatTransform& kValue);
 
+	// kComputedRotate: the rotation of the computed weights, before blend smoothing took any up (FireDirection)
 	bool BlendValuesFixFloatingPointError(float fTime, NiObjectNET* pkInterpTarget,
-		NiQuatTransform& kValue);
+		NiQuatTransform& kValue, NiQuaternion& kComputedRotate);
 
 	bool _Update(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
 

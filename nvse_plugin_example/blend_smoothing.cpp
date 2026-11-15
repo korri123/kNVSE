@@ -57,6 +57,7 @@ kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::Create()
     new(&extraData->weaponHandBlend) std::unique_ptr<WeaponHandBlend::NodeData>();
     // NiNew does not construct
     extraData->accumRootChild = false;
+    extraData->hasComputedRotate = false;
     PopulateVtable(extraData);
     extraData->m_kName = GetKey();
     return extraData;

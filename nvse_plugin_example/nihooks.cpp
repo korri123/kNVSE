@@ -18,6 +18,7 @@
 #include "blend_curves.h"
 #include "blend_smoothing.h"
 #include "blend_transitions.h"
+#include "fire_direction.h"
 #include "sequence_extradata.h"
 #include "weapon_hand_blend.h"
 
@@ -460,7 +461,7 @@ bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInter
 }
 
 bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime, NiObjectNET* pkInterpTarget,
-    NiQuatTransform& kValue)
+    NiQuatTransform& kValue, NiQuaternion& kComputedRotate)
 {
     double dTotalTransWeight = 0.0;
     double dTotalScaleWeight = 0.0;
@@ -493,6 +494,8 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         NiQuaternion rotation;
         InterpArrayItem* item;
         kBlendInterpItem* extraItem;
+        // the item's weight as computed, before blend smoothing took any up (FireDirection)
+        float computedWeight = 0.0f;
     };
     thread_local std::vector<ValidRotation> validRotations;
     validRotations.clear();
@@ -577,6 +580,8 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     for (auto& item : validRotations)
         items.emplace_back(item.item, item.extraItem);
     ComputeNormalizedWeights(items);
+    for (auto& rotation : validRotations)
+        rotation.computedWeight = rotation.item->m_fNormalizedWeight;
     BlendSmoothing::ApplyForItems(kExtraData, items, kWeightType::Rotate, smoothingStep);
     
     for (auto& rotation : validRotations)
@@ -611,10 +616,10 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
 
     BlendSmoothing::DetachZeroWeightItems(kExtraData, this);
 
+    constexpr double EPSILON = 1e-10;
     kValue.MakeInvalid();
     if (bTransChanged || bRotChanged || bScaleChanged)
     {
-        constexpr double EPSILON = 1e-10;
         if (bTransChanged && dTotalTransWeight > EPSILON)
         {
             float fInverseWeight = static_cast<float>(1.0 / dTotalTransWeight);
@@ -633,6 +638,33 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
             float fInverseWeight = static_cast<float>(1.0 / dTotalScaleWeight);
             fFinalScale *= fInverseWeight;
             kValue.SetScale(fFinalScale);
+        }
+    }
+
+    kComputedRotate = kValue.IsRotateValid() ? kValue.GetRotate() : NiQuatTransform::INVALID_ROTATE;
+    // smoothing took some of the weights up: the rotation as computed, blended as above
+    bool bRotateSmoothed = false;
+    for (const auto& rotation : validRotations)
+        bRotateSmoothed |= rotation.item->m_fNormalizedWeight != rotation.computedWeight;
+    if (bRotateSmoothed)
+    {
+        NiQuaternion kComputedSum(0.0f, 0.0f, 0.0f, 0.0f);
+        double dComputedWeight = 0.0;
+        bool bFirstComputed = true;
+        for (const auto& rotation : validRotations)
+        {
+            NiQuaternion kRotValue = rotation.rotation;
+            if (!bFirstComputed && NiQuaternion::Dot(kComputedSum, kRotValue) < 0.0f)
+                kRotValue = -kRotValue;
+            bFirstComputed = false;
+            kComputedSum = kComputedSum + kRotValue * rotation.computedWeight;
+            dComputedWeight += rotation.computedWeight;
+        }
+        kComputedRotate = NiQuatTransform::INVALID_ROTATE;
+        if (dComputedWeight > EPSILON)
+        {
+            kComputedSum.Normalize();
+            kComputedRotate = kComputedSum;
         }
     }
 
@@ -666,6 +698,8 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
 {
     bool bReturnValue = false;
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
+    // the rotation of the bone's computed weights, without what kNVSE adds after them (FireDirection)
+    NiQuaternion kComputedRotate = NiQuatTransform::INVALID_ROTATE;
     if (m_ucInterpCount == 1)
     {
         kBlendInterpItem* extraItem = kExtraData ? kExtraData->GetItem(this->m_pkSingleInterpolator) : nullptr;
@@ -679,7 +713,10 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
                 fUpdateTime = WeaponParentSwitch::GetUpdateTime(extraItem, pkInterpTarget, fUpdateTime);
                 bReturnValue = m_pkSingleInterpolator->Update(fUpdateTime, pkInterpTarget, kValue);
                 if (bReturnValue)
+                {
                     AimPitch::Apply(kExtraData, extraItem, pkInterpTarget, kValue);
+                    kComputedRotate = kValue.GetRotate();
+                }
             }
             if (!bReturnValue)
                 kValue.MakeInvalid();
@@ -696,10 +733,12 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
     }
     else if (m_ucInterpCount > 0)
     {
-        bReturnValue = BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kValue);
+        bReturnValue = BlendValuesFixFloatingPointError(fTime, pkInterpTarget, kValue, kComputedRotate);
         if (GetHasAdditiveTransforms())
             ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
     }
+    if (kExtraData)
+        FireDirection::Record(*kExtraData, kComputedRotate, kValue);
     m_fLastTime = fTime;
     return !kValue.IsTransformInvalid() && bReturnValue;
 }

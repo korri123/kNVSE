@@ -432,6 +432,7 @@ xcopy /Y /S /I /Q "$(SolutionDir)..\data" "$(FalloutNVPath)\Data"</Command>
       </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="file_animations.cpp" />
+    <ClCompile Include="fire_direction.cpp" />
     <ClCompile Include="anim_overrides.cpp" />
     <ClCompile Include="actor_overrides.cpp" />
     <ClCompile Include="kf_loader.cpp" />
@@ -508,6 +509,7 @@ xcopy /Y /S /I /Q "$(SolutionDir)..\data" "$(FalloutNVPath)\Data"</Command>
     <ClInclude Include="containers.h" />
     <ClInclude Include="decompiled\AnimDataHooks.h" />
     <ClInclude Include="file_animations.h" />
+    <ClInclude Include="fire_direction.h" />
     <ClInclude Include="anim_overrides.h" />
     <ClInclude Include="actor_overrides.h" />
     <ClInclude Include="kf_loader.h" />

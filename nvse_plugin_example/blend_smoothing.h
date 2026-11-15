@@ -144,6 +144,11 @@ public:
     bool accumRootChild = false;
     // Weapon nodes only; survives ClearValues, as it describes the skeleton and its sequences, not the current blend
     std::unique_ptr<WeaponHandBlend::NodeData> weaponHandBlend;
+    // the rotation of the node's computed weights (before blend smoothing) and the one written to it at its last
+    // evaluation, while the two differ (FireDirection: blend smoothing, additive animations, WeaponHandBlend)
+    bool hasComputedRotate = false;
+    NiQuaternion computedRotate;
+    NiQuaternion writtenRotate;
     
     void ClearValues()
     {
@@ -152,6 +157,7 @@ public:
         items.shrink_to_fit();
         owner = nullptr;
         attachedItems = 0;
+        hasComputedRotate = false;
     }
 
     NiNewRTTI(kBlendInterpolatorExtraData, NiExtraData)

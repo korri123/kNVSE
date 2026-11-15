@@ -11,6 +11,7 @@
 #include "aim_transitions.h"
 #include "anim_fixes.h"
 #include "file_animations.h"
+#include "fire_direction.h"
 #include "anim_switch.h"
 #include "GameProcess.h"
 #include "GameObjects.h"
@@ -945,6 +946,7 @@ void ApplyHooks()
 	WriteRelCall(0x8BABCA, LoopingReloadFixHook);
 	WriteRelCall(0x948CEC, LoopingReloadFixHook); // part of cancelling looping reload after shooting
 	AccumBlendFix::WriteHooks();
+	FireDirection::WriteHooks();
 	WriteRelCall(0x4951D2, FixBlendMult);
 
 	if (conf.fixModReloadAnims)
