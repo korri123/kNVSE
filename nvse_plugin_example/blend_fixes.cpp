@@ -12,6 +12,7 @@
 #include "anim_fixes.h"
 #include "sequence_extradata.h"
 #include "aim_transitions.h"
+#include "jip_fixes.h"
 
 
 bool IsAnimGroupAim(AnimGroupID groupId)
@@ -233,6 +234,11 @@ namespace
 		HandleSoundPathMismatch(animData, sourceSeq, targetSeq);
 
 		animData->SetCurrentSequence(targetSeq, false);
+		// another group in the section (attack <-> attackIS): JIP's play group handlers, which the engine's StartGroup
+		// would have called. A stance variant (reloading standing <-> sneaking) goes on with the same group, as the
+		// engine's next round does
+		if (const auto targetGroupId = targetSeq->animGroup->GetBaseGroupID(); targetGroupId != sourceSeq->animGroup->GetBaseGroupID())
+			JIPFixes::CallSetAnimGroupEvent(animData, targetGroupId);
 
 		if (isThirdPersonWeapon)
 			if (auto* highProcess = animData->actor->baseProcess; IS_TYPE(highProcess, HighProcess))

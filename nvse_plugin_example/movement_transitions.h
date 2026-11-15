@@ -31,6 +31,10 @@ namespace MovementTransitions
     // starts moving from standing, else destAnim. Returns the sequence played
     BSAnimGroupSequence* PlayMovementAnim(AnimData* animData, BSAnimGroupSequence* destAnim, UInt16 groupId);
 
+    // Whether a play of groupId is the walk or run that the start animation playing under that group goes on to at its
+    // End key (the engine starting the queued group): not a new play of the group
+    bool ContinuesStart(const AnimData* animData, UInt16 groupId);
+
     // Animation::Update's clock of a section's current sequence (SectionClockHook): everything blending in the movement
     // section runs at fMoveSpeed while a start or stop animation plays or fades there. True when the sequence counts as
     // animating for the engine's own clock (the group's speed) though it eases in

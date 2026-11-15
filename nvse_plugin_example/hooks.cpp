@@ -146,8 +146,12 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	if (g_pluginSettings.blendSmoothing && destAnimGroup && destAnimGroup->GetSequenceType() == kSequence_Movement)
 	{
-		JIPFixes::CallSetAnimGroupEvent(animData, static_cast<AnimGroupID>(destAnimGroup->groupID));
+		// JIP's handlers were called for the group when its start animation began
+		const bool bContinuesStart = MovementTransitions::ContinuesStart(animData, animGroupId);
 		result = destAnim = MovementTransitions::PlayMovementAnim(animData, destAnim, animGroupId);
+		// after the section's group and sequence are written, as JIP's hook in StartGroup (0x494E19) does
+		if (!bContinuesStart)
+			JIPFixes::CallSetAnimGroupEvent(animData, static_cast<AnimGroupID>(destAnimGroup->groupID));
 	}
 	else
 	{

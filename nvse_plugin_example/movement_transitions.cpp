@@ -613,6 +613,11 @@ BSAnimGroupSequence* MovementTransitions::PlayMovementAnim(AnimData* animData, B
 	return MovementBlendFixes::PlayMovementAnim(animData, destAnim);
 }
 
+bool MovementTransitions::ContinuesStart(const AnimData* animData, UInt16 groupId)
+{
+	return animData->groupIDs[kSequence_Movement] == groupId && Of(animData->animSequence[kSequence_Movement]) == TransitionKind::Start;
+}
+
 // Animation::Update runs a section's clock at the group's speed (fMoveSpeed for movement groups) only for the current
 // sequence and only while it is ANIMATING. With root motion moving the actor through the blends of start and stop
 // animations (RootMotionStateHook), everything blending in the movement section runs at fMoveSpeed while one plays or
