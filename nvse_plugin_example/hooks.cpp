@@ -29,6 +29,7 @@
 #include "movement_transitions.h"
 #include "npc_looping_reload_fix.h"
 #include "pose_blend_fixes.h"
+#include "respect_end_key.h"
 #include "sequence_extradata.h"
 #include "text_key_arguments.h"
 #include "up_down_variant_fix.h"
@@ -36,7 +37,6 @@
 
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
-extern bool g_fixHolster;
 
 // QueueNextAnim: the sequence that plays in place of the group's next animation
 BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroupId)
@@ -180,10 +180,8 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 	if (textKeys->FindFirstByName("noBlend"))
 		animData->noBlend120 = true;
 	else
-	{
-		Save3rdPersonAnimGroupData(anim3rd);
-		Set3rdPersonAnimTimes(anim3rd, anim1st);
-	}
+		// before StartGroup, so the 3rd person sequence blends in with the 1st person blend times
+		RespectEndKey::Apply(anim3rd, anim1st);
 }
 
 void DecreaseAttackTimer()
@@ -575,27 +573,6 @@ namespace LoopingReloadPauseFix
 		}
 		endSequence();
 	}
-}
-
-BSAnimGroupSequence* Find1stPersonRespectEndKeyAnim(AnimData* animData, BSAnimGroupSequence* anim3rd)
-{
-	if (animData != g_thePlayer->baseProcess->animData || !anim3rd || !anim3rd->animGroup)
-		return nullptr;
-	const auto iter = ra::find_if(g_timeTrackedAnims, [&](const auto& pair)
-	{
-		return pair.second->respectEndKeyData.anim3rdCounterpart == anim3rd;
-	});
-	if (iter != g_timeTrackedAnims.end())
-	{
-		const auto& animTime = *iter->second;
-		const auto& respectEndKeyData = animTime.respectEndKeyData;
-		if (!animTime.respectEndKey || respectEndKeyData.povState != POVSwitchState::POV1st || animTime.actorId != g_thePlayer->refID)
-			return nullptr;
-		auto* anim = iter->first;
-		if (anim)
-			return anim;
-	}
-	return nullptr;
 }
 
 bool IsReadyForAnim()
@@ -1038,14 +1015,13 @@ void ApplyHooks()
 	WriteRelCall(0x490A35, RemoveDuplicateAnimsHook);
 
 	// AnimData::GetNextWeaponSequenceKey
-	// fixes respectEndKey not working for a: keys
+	// fixes respectEndKey not working for a: keys: the player's 3rd person sequence that has a 1st person animation's
+	// times (RespectEndKey) takes its a: keys from that animation too
 	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
 	{
-		NiTextKeyExtraData* defaultData = sequence->m_spTextKeys;
-		const auto* anim1st = Find1stPersonRespectEndKeyAnim(g_thePlayer->firstPersonAnimData, sequence);
-		if (anim1st)
+		if (const auto* anim1st = RespectEndKey::TimesSource(sequence))
 			return anim1st->m_spTextKeys;
-		return defaultData;
+		return sequence->m_spTextKeys;
 	}));
 
 	// NiControllerSequence destructor
@@ -1085,7 +1061,7 @@ void ApplyHooks()
 		{
 			return seq->offset + animData->timePassed;
 		};
-		if (const auto* anim1st = Find1stPersonRespectEndKeyAnim(animData, anim))
+		if (const auto* anim1st = animData == g_thePlayer->baseProcess->animData ? RespectEndKey::TimesSource(anim) : nullptr)
 			return toAnimTime(g_thePlayer->firstPersonAnimData, anim1st);
 		return toAnimTime(animData, anim);
 	}));
@@ -1544,6 +1520,7 @@ void WriteDelayedHooks()
 	ModReloadAnimFix::WriteDelayedHooks();
 	NPCLoopingReloadFix::WriteDelayedHooks();
 	BlendFixes::WriteDelayedHooks();
+	RespectEndKey::WriteDelayedHooks();
 	if (g_pluginSettings.blendSmoothing)
 	{
 		MovementTransitions::WriteDelayedHooks();

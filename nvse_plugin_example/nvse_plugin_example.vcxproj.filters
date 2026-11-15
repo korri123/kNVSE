@@ -110,6 +110,7 @@
     <ClCompile Include="movement_transitions.cpp" />
     <ClCompile Include="npc_looping_reload_fix.cpp" />
     <ClCompile Include="pose_blend_fixes.cpp" />
+    <ClCompile Include="respect_end_key.cpp" />
     <ClCompile Include="weapon_parent_switch.cpp" />
     <ClCompile Include="gamebryo\NiStream.cpp" />
     <ClCompile Include="sequence_extradata.cpp" />
@@ -244,6 +245,7 @@
     <ClInclude Include="movement_transitions.h" />
     <ClInclude Include="npc_looping_reload_fix.h" />
     <ClInclude Include="pose_blend_fixes.h" />
+    <ClInclude Include="respect_end_key.h" />
     <ClInclude Include="weapon_parent_switch.h" />
     <ClInclude Include="gamebryo\NiStream.h" />
     <ClInclude Include="sequence_extradata.h" />

@@ -31,6 +31,7 @@
 #endif
 #include "knvse_events.h"
 #include "knvse_menu.h"
+#include "respect_end_key.h"
 #include "spawn_keys.h"
 #include "debug_tools.h"
 #include "gamebryo/NiStream.h"
@@ -143,70 +144,6 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 	return success;
 }
 
-bool g_fixHolster = false;
-// Referenced, not borrowed: the unequip can be freed (save load, KF unload) while the fix waits for 3rd person. A raw
-// pointer with manual references rather than a NiPointer, which would release it from a static destructor at exit.
-BSAnimGroupSequence* g_fixHolsterUnequipAnim3rd = nullptr;
-
-static void SetFixHolster(BSAnimGroupSequence* unequipAnim3rd)
-{
-	if (unequipAnim3rd)
-		unequipAnim3rd->IncrementRefCount();
-	if (g_fixHolsterUnequipAnim3rd)
-		g_fixHolsterUnequipAnim3rd->DecrementRefCount();
-	g_fixHolsterUnequipAnim3rd = unequipAnim3rd;
-	g_fixHolster = unequipAnim3rd != nullptr;
-}
-
-struct ThirdPersonSavedData
-{
-	SimpleFixedArray<float> keyTimes;
-	UInt8 blendIn{};
-	UInt8 blendOut{};
-	UInt8 blend{};
-};
-std::unordered_map<BSAnimGroupSequence*, ThirdPersonSavedData> g_thirdPersonSavedData;
-
-void Save3rdPersonAnimGroupData(BSAnimGroupSequence* anim3rd)
-{
-	ThirdPersonSavedData thirdPersonSavedData{
-		.keyTimes = anim3rd->animGroup->keyTimes,
-		.blendIn = anim3rd->animGroup->blendIn,
-		.blendOut = anim3rd->animGroup->blendOut,
-		.blend = anim3rd->animGroup->blend,
-	};
-	g_thirdPersonSavedData.try_emplace(anim3rd, thirdPersonSavedData);
-}
-
-void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st)
-{
-	TESAnimGroup* animGroup3rd = anim3rd->animGroup;
-	const TESAnimGroup* animGroup1st = anim1st->animGroup;
-	if (!animGroup3rd || !animGroup1st)
-		return;
-	animGroup3rd->keyTimes = animGroup1st->keyTimes;
-	animGroup3rd->blend = animGroup1st->blend;
-	animGroup3rd->blendIn = animGroup1st->blendIn;
-	animGroup3rd->blendOut = animGroup1st->blendOut;
-}
-
-void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st)
-{
-	if (!anim3rd || !anim3rd->animGroup)
-		return;
-	if (const auto iter = g_thirdPersonSavedData.find(anim3rd); iter != g_thirdPersonSavedData.end())
-	{
-		const auto& savedData = iter->second;
-		anim3rd->animGroup->keyTimes = savedData.keyTimes;
-		anim3rd->animGroup->blend = savedData.blend;
-		anim3rd->animGroup->blendIn = savedData.blendIn;
-		anim3rd->animGroup->blendOut = savedData.blendOut;
-	}
-	const TESAnimGroup* animGroup = anim1st->animGroup;
-	if (animGroup && (animGroup->groupID & 0xFF) == kAnimGroup_Unequip && !g_fixHolster)
-		SetFixHolster(anim3rd);
-}
-
 bool IsActorInvalid(Actor* actor)
 {
 	return !actor || actor->IsDead(true) || actor->IsDeleted() || !actor->baseProcess || !actor->Get3D();
@@ -289,16 +226,13 @@ void HandleCustomTextKeys()
 		if (animTime.respectEndKey && anim->animGroup)
 		{
 			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
-
-			const auto current3rdPersonAnimHasChanged = _L(, current3rdPersonAnim != animTime.respectEndKeyData.anim3rdCounterpart);
-			const auto animHasEnded = _L(, anim->m_eState == kAnimState_Inactive);
-			if (current3rdPersonAnimHasChanged() && animHasEnded())
+			auto& respectEndKeyData = animTime.respectEndKeyData;
+			if (current3rdPersonAnim != respectEndKeyData.anim3rdCounterpart && anim->m_eState == kAnimState_Inactive)
 			{
 				erase();
 				continue;
 			}
-			auto& respectEndKeyData = animTime.respectEndKeyData;
-			if (respectEndKeyData.povState == POVSwitchState::NotSet)
+			if (!respectEndKeyData.anim3rdCounterpart)
 			{
 				const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
 				auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
@@ -312,22 +246,16 @@ void HandleCustomTextKeys()
 					continue;
 				}
 				respectEndKeyData.anim3rdCounterpart = anim3rd;
-				Save3rdPersonAnimGroupData(anim3rd);
 			}
-			if (!respectEndKeyData.anim3rdCounterpart)
+			// in 3rd person nothing applies them: RespectEndKey::EndFrame gives the sequence its own times back
+			if (!g_thePlayer->IsThirdPerson())
 			{
-				erase();
-				continue;
-			}
-			if (g_thePlayer->IsThirdPerson() && respectEndKeyData.povState != POVSwitchState::POV3rd)
-			{
-				Revert3rdPersonAnimTimes(respectEndKeyData.anim3rdCounterpart, anim);
-				respectEndKeyData.povState = POVSwitchState::POV3rd;
-			}
-			else if (!g_thePlayer->IsThirdPerson() && respectEndKeyData.povState != POVSwitchState::POV1st)
-			{
-				Set3rdPersonAnimTimes(respectEndKeyData.anim3rdCounterpart, anim);
-				respectEndKeyData.povState = POVSwitchState::POV1st;
+				// one that has ended keeps its times on the 3rd person sequence until that changes, but does not take them
+				// back from another 1st person animation of the group that started since
+				if (anim->m_eState != kAnimState_Inactive)
+					RespectEndKey::Apply(respectEndKeyData.anim3rdCounterpart, anim);
+				else
+					RespectEndKey::Keep(respectEndKeyData.anim3rdCounterpart);
 			}
 		}
 		if (!isAnimPlaying() && animTime.respectEndKey)
@@ -448,6 +376,7 @@ void HandleCustomTextKeys()
 		++it;
 	}
 	SpawnKeys::EndFrame();
+	RespectEndKey::EndFrame();
 }
 
 void HandleAnimTimes()
@@ -572,25 +501,6 @@ void HandleSynchronizedExecutionQueue()
 	}
 }
 
-void ApplyHolsterFix()
-{
-	// i have no idea if there is a better way to do this
-	if (g_fixHolster && g_thePlayer->IsThirdPerson())
-	{
-		auto* anim = g_thePlayer->GetHighProcess()->animData->animSequence[kSequence_Weapon];
-		if (!anim)
-		{
-			if (g_fixHolsterUnequipAnim3rd->m_eState == kAnimState_Inactive)
-			{
-				SetFixHolster(nullptr);
-				ThisStdCall(0x9231D0, g_thePlayer->baseProcess, false, g_thePlayer->validBip01Names, g_thePlayer->baseProcess->GetAnimData(), g_thePlayer);
-			}
-		}
-		else if (!anim->animGroup || anim->animGroup->GetBaseGroupID() != kAnimGroup_Unequip)
-			SetFixHolster(nullptr);
-	}
-}
-
 void ClearResultCaches()
 {
 	t_scriptResults.clear();
@@ -616,7 +526,6 @@ void SynchronizedQueue::RunAllAndClear()
 
 void HandleMisc()
 {
-	ApplyHolsterFix();
 	OnReloadHandler::Update();
 }
 
@@ -681,10 +590,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		}
 		HandleSynchronizedExecutionQueue();
 		g_mainThreadQueue.RunAllAndClear(); // kMessage_MainGameLoop runs before AILinearTaskThreads start
-	}
-	else if (msg->type == NVSEMessagingInterface::kMessage_PostLoadGame)
-	{
-		SetFixHolster(nullptr); // a holster started before the load is not the player's anymore
 	}
 }
 

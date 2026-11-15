@@ -124,7 +124,6 @@ void HandleOnAnimDataDelete(AnimData* animData)
 
 AnimTime::~AnimTime()
 {
-	Revert3rdPersonAnimTimes(this->respectEndKeyData.anim3rdCounterpart, this->anim);
 	if ((this->trackEndTime || this->isOverlayAdditiveAnim) && this->anim->m_eState != NiControllerSequence::EASEOUT && this->anim->m_eState != NiControllerSequence::TRANSSOURCE)
 	{
 		if (this->trackEndTime && !this->isOverlayAdditiveAnim && AdditiveManager::IsAdditiveSequence(this->anim))
@@ -267,8 +266,8 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	if (animData == g_thePlayer->firstPersonAnimData && anim->animGroup && hasRespectEndKey)
 	{
 		auto& animTime = getAnimTimeStruct();
-		auto& respectEndKeyData = animTime.respectEndKeyData;
-		respectEndKeyData.povState = POVSwitchState::NotSet;
+		// looked up again: the 3rd person sequence of this play
+		animTime.respectEndKeyData = {};
 		animTime.respectEndKey = true;
 	}
 	const auto baseGroupID = anim->animGroup ? anim->animGroup->GetBaseGroupID() : kAnimGroup_Invalid;

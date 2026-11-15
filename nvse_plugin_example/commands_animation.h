@@ -265,8 +265,8 @@ struct AnimTime
 
 	struct RespectEndKeyData
 	{
-		POVSwitchState povState = POVSwitchState::NotSet;
-		BSAnimGroupSequence* anim3rdCounterpart = nullptr;
+		// the player's 3rd person sequence that takes this animation's times in 1st person (RespectEndKey)
+		NiPointer<BSAnimGroupSequence> anim3rdCounterpart;
 	};
 	RespectEndKeyData respectEndKeyData;
 

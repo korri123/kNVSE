@@ -35,10 +35,6 @@ extern NVSEStringVarInterface* g_stringVarInterface;
 extern std::unordered_map<std::string, std::vector<CustomAnimGroupScript>> g_customAnimGroups;
 extern std::vector<std::string> g_eachFrameScriptLines;
 
-void Revert3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);
-void Set3rdPersonAnimTimes(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* anim1st);
-void Save3rdPersonAnimGroupData(BSAnimGroupSequence* anim3rd);
-
 bool IsGodMode();
 bool IsDemigodMode();
 
