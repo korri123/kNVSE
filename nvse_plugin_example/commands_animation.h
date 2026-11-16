@@ -153,21 +153,7 @@ public:
 			this->lastTime = time;
 			if (time - fLastTime < -0.01f)
 				index = 0;
-			if (index >= execution->items.size())
-				return;
-			while (index < execution->items.size())
-			{
-				auto& [item, nextTime] = execution->items.at(index);
-				if (time >= nextTime)
-				{
-					f(item);
-					++index;
-				}
-				else
-				{
-					break;
-				}
-			}
+			Fire(time, f);
 		}
 		
 		template <typename F>
@@ -185,19 +171,25 @@ public:
 				else
 					return;
 			}
-			while (index < execution->items.size())
-			{
-				auto& [item, nextTime] = execution->items.at(index);
-				if (time >= nextTime)
-				{
-					f(item);
-					++index;
-				}
-				else
-				{
-					break;
-				}
-			}
+			Fire(time, f);
+		}
+
+	private:
+		// Calls f for the items due by time. The context is advanced past them before the first call and not touched
+		// after: a callback may replace this context (a scriptLine key whose script activates its own animation again,
+		// ActivateAnim -> HandleExtraOperations -> CreateContext), and going on with the replaced one fired that key
+		// again at the same time, forever.
+		template <typename F>
+		void Fire(float time, F& f)
+		{
+			auto& items = execution->items;
+			const size_t first = index;
+			size_t end = first;
+			while (end < items.size() && time >= items[end].second)
+				++end;
+			index = end;
+			for (size_t i = first; i < end; ++i)
+				f(items[i].first);
 		}
 	};
 
