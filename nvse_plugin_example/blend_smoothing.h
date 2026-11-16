@@ -73,6 +73,8 @@ struct kBlendInterpItem
     bool isAdditive = false;
     // parentSwitch is set
     bool hasParentSwitch = false;
+    // Weapon node items: its Weapon track is relative to the right hand (WeaponParentSwitch::Counts)
+    bool inHandSpace = false;
 
     // Used when the item is attached and detached, or by few items
     NiBlendInterpolator* blendInterp = nullptr;
@@ -122,6 +124,7 @@ struct kBlendInterpItem
         isAdditive = false;
         additiveMetadata.ClearValues();
         hasParentSwitch = false;
+        inHandSpace = false;
     }
 };
 

@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "blend_smoothing.h"
+#include "game_types.h"
 #include "hooks.h"
 #include "NiObjects.h"
 #include "string_view_util.h"
@@ -104,6 +105,20 @@ namespace
         return groupId == kAnimGroup_Equip || groupId == kAnimGroup_Unequip;
     }
 
+    // An animation of a weapon type holds the weapon (relative to the right hand): every one but equip, unequip (which
+    // move it, parentSwitch) and the Holster group (the weapon in its holster). Groups without a weapon type (mt, special
+    // idles) are left alone: what their Weapon track is relative to is not known
+    bool HoldsWeapon(const NiControllerSequence& sequence)
+    {
+        if (NOT_TYPE(&sequence, BSAnimGroupSequence))
+            return false;
+        const TESAnimGroup* animGroup = static_cast<const BSAnimGroupSequence&>(sequence).animGroup;
+        if (!animGroup || AnimGroup::GetHandType(animGroup->groupID) == kAnimHandType_None)
+            return false;
+        const auto groupId = animGroup->GetBaseGroupID();
+        return groupId != kAnimGroup_Equip && groupId != kAnimGroup_Unequip && groupId != kAnimGroup_Holster;
+    }
+
     // an unequip animation is attached to the node: the engine moved it at its Detach key, not a script or a menu
     bool HasDetachItem(const kBlendInterpolatorExtraData& extraData)
     {
@@ -125,6 +140,7 @@ namespace
 void WeaponParentSwitch::Init(kBlendInterpItem& item, const NiControllerSequence& sequence)
 {
     item.hasParentSwitch = false;
+    item.inHandSpace = HoldsWeapon(sequence);
     if (!g_pluginSettings.fixWeaponParentSwitch || !sequence.m_spTextKeys || !MovesWeapon(sequence))
         return;
     auto* transform = item.interpolator ? NI_DYNAMIC_CAST(NiTransformInterpolator, item.interpolator.data) : nullptr;
@@ -196,10 +212,18 @@ float WeaponParentSwitch::GetUpdateTime(const kBlendInterpItem* item, const NiOb
     return (std::max)(fTime, window.fSwitchKey);
 }
 
-void WeaponParentSwitch::EaseHolster(kBlendInterpolatorExtraData& extraData, NiObjectNET* target, float fDeltaTime, NiQuatTransform& kValue)
+bool WeaponParentSwitch::Counts(const kBlendInterpItem* item, const NiObjectNET* target)
+{
+    if (!item || !item->inHandSpace || !g_pluginSettings.fixWeaponParentSwitch)
+        return true;
+    const auto* parent = static_cast<const NiAVObject*>(target)->m_pkParent;
+    return !parent || parent->m_pcName.data == RightHandName().data;
+}
+
+bool WeaponParentSwitch::EaseHolster(kBlendInterpolatorExtraData& extraData, NiObjectNET* target, float fDeltaTime, NiQuatTransform& kValue)
 {
     if (!g_pluginSettings.easeWeaponHolster || !WeaponHandBlend::IsWeaponNode(target))
-        return;
+        return false;
     auto* weapon = static_cast<NiAVObject*>(target);
     auto& state = extraData.parentSwitch;
     if (!state)
@@ -212,12 +236,20 @@ void WeaponParentSwitch::EaseHolster(kBlendInterpolatorExtraData& extraData, NiO
     state->bOnRightHand = parent && parent->m_pcName.data == RightHandName().data;
 
     const bool bValid = kValue.IsTranslateValid() && kValue.IsRotateValid();
+    // nothing left in the blend in the middle of the ease: the unequip ended within it (its Detach and end a frame apart),
+    // the animations holding the weapon are left out (Counts). The node would stay where the ease had it
+    const bool bFromLast = state->bEasing && !bMoved && !kValue.IsTranslateValid() && !kValue.IsRotateValid();
     // the engine's snap of bones bone LOD skipped (UpdateLODBonesHook): the world transforms are from before they were
     // skipped, and the unequip is over
-    if (!bValid || extraData.unsmoothedUpdate)
+    if ((!bValid && !bFromLast) || extraData.unsmoothedUpdate)
     {
         state->bEasing = false;
-        return;
+        return false;
+    }
+    if (bFromLast)
+    {
+        kValue.SetTranslate(state->lastTranslate);
+        kValue.SetRotate(state->lastRotate);
     }
     if (bMoved)
     {
@@ -225,7 +257,7 @@ void WeaponParentSwitch::EaseHolster(kBlendInterpolatorExtraData& extraData, NiO
         // the world transforms are those of the last evaluation, the weapon's still on the hand: not if that was long
         // ago (bone LOD, the actor not updated)
         if (!bWasOnRightHand || !parent || state->bOnRightHand || fDeltaTime >= kHolsterEaseTime || !HasDetachItem(extraData))
-            return;
+            return false;
         const NiTransform& parentWorld = parent->m_kWorld;
         const NiTransform& weaponWorld = weapon->m_kWorld;
         const NiQuaternion parentRotate = UnitRotation(parentWorld.m_Rotate);
@@ -255,12 +287,14 @@ void WeaponParentSwitch::EaseHolster(kBlendInterpolatorExtraData& extraData, NiO
         state->fElapsed += fDeltaTime;
     }
     if (!state->bEasing)
-        return;
+        return false;
+    state->lastTranslate = kValue.GetTranslate();
+    state->lastRotate = kValue.GetRotate();
     const float fProgress = state->fElapsed / kHolsterEaseTime;
     if (fProgress >= 1.0f)
     {
         state->bEasing = false;
-        return;
+        return bFromLast;
     }
     // ease-out: the weapon leaves where the hand let it go at speed and settles into its holster
     const float fRemaining = (1.0f - fProgress) * (1.0f - fProgress) * (1.0f - fProgress);
@@ -268,4 +302,5 @@ void WeaponParentSwitch::EaseHolster(kBlendInterpolatorExtraData& extraData, NiO
     NiQuaternion rotate = NiQuaternion::Slerp(fRemaining, NiQuaternion::IDENTITY, state->rotateOffset) * kValue.GetRotate();
     rotate.Normalize();
     kValue.SetRotate(rotate);
+    return bFromLast;
 }

@@ -524,6 +524,16 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                 continue;
             if (extraItem->detached)
                 item.m_fNormalizedWeight = 0.0f;
+            if (!WeaponParentSwitch::Counts(extraItem, pkInterpTarget))
+            {
+                // holding the weapon while it is in its holster: no weight, so that it goes once detached
+                // (DetachZeroWeightItems) and fades in from nothing if the weapon is drawn again while it plays
+                item.m_fNormalizedWeight = 0.0f;
+                extraItem->translateWeight.lastSmoothedWeight = 0.0f;
+                extraItem->rotateWeight.lastSmoothedWeight = 0.0f;
+                extraItem->scaleWeight.lastSmoothedWeight = 0.0f;
+                continue;
+            }
         }
         fUpdateTime = WeaponParentSwitch::GetUpdateTime(extraItem, pkInterpTarget, fUpdateTime);
         
@@ -708,7 +718,7 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
         else
         {
             float fUpdateTime = fTime;
-            if (GetSingleUpdateTime(fUpdateTime))
+            if (GetSingleUpdateTime(fUpdateTime) && WeaponParentSwitch::Counts(extraItem, pkInterpTarget))
             {
                 fUpdateTime = WeaponParentSwitch::GetUpdateTime(extraItem, pkInterpTarget, fUpdateTime);
                 bReturnValue = m_pkSingleInterpolator->Update(fUpdateTime, pkInterpTarget, kValue);
@@ -737,13 +747,14 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
         if (GetHasAdditiveTransforms())
             ApplyAdditiveTransforms(fTime, pkInterpTarget, kValue);
     }
+    bool bEased = false;
     if (kExtraData)
     {
-        WeaponParentSwitch::EaseHolster(*kExtraData, pkInterpTarget, BlendSmoothing::GetElapsedTime(m_fLastTime, fTime), kValue);
+        bEased = WeaponParentSwitch::EaseHolster(*kExtraData, pkInterpTarget, BlendSmoothing::GetElapsedTime(m_fLastTime, fTime), kValue);
         FireDirection::Record(*kExtraData, kComputedRotate, kValue);
     }
     m_fLastTime = fTime;
-    return !kValue.IsTransformInvalid() && bReturnValue;
+    return !kValue.IsTransformInvalid() && (bReturnValue || bEased);
 }
 
 // underscore needed since vtable

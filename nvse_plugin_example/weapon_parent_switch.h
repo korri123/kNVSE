@@ -20,6 +20,12 @@ struct kBlendInterpItem;
 // parent with a pose relative to the old one, the rifle in front of the body turned 131 degrees.
 // The Weapon track is evaluated in the space of the parent the node has: at its last key before the switch while it is
 // still on the old parent, from its first key relative to the new one once it is there.
+// Every other animation of a weapon type (gaits, idles, aims, attacks, reloads of 2hr, 1hp, ...; not the Holster group)
+// holds the weapon: its Weapon track is relative to the right hand, and it is left out of the node's blend while the node
+// is on another parent. The engine switches gaits and idles to the holstered variant at the Detach key, so the drawn
+// ones still fade out under the unequip; normally the unequip outlasts them, but where it ends within a frame of its
+// Detach (a 1st person respectEndKey animation's times, or those times taken back when the view switches to 3rd person
+// after its Detach time) the fading run held the holstered weapon in its hand pose, sticking out of the back.
 namespace WeaponParentSwitch
 {
     struct Window
@@ -44,15 +50,22 @@ namespace WeaponParentSwitch
         // where the weapon was relative to its holster when it was moved there, minus where its blend put it then
         NiPoint3 translateOffset{};
         NiQuaternion rotateOffset;
+        // where the blend put it at the last evaluation of the ease that had a blend: the ease goes on to there when
+        // the blend has nothing for the node
+        NiPoint3 lastTranslate{};
+        NiQuaternion lastRotate;
     };
 
     // Called when a sequence attaches its interpolator for the Weapon node
     void Init(kBlendInterpItem& item, const NiControllerSequence& sequence);
     // The time to evaluate the item's interpolator at instead of fTime, its update time
     float GetUpdateTime(const kBlendInterpItem* item, const NiObjectNET* weapon, float fTime);
+    // Whether the item is blended on the node: not one relative to the right hand while the node is on another parent
+    bool Counts(const kBlendInterpItem* item, const NiObjectNET* target);
     // bEaseWeaponHolster: the engine moves the weapon from the hand to its holster at once, wherever the hand is (vanilla
     // 2hrunequip.kf: 7.6 units and 46 degrees). The weapon keeps the place it had in the world when it is moved and goes
     // to where its animation has it over kHolsterEaseTime of animation time. kValue: the Weapon node's blended transform,
-    // fDeltaTime: animation time since the blend's last evaluation
-    void EaseHolster(kBlendInterpolatorExtraData& extraData, NiObjectNET* target, float fDeltaTime, NiQuatTransform& kValue);
+    // fDeltaTime: animation time since the blend's last evaluation. Returns whether it gave kValue the transform, the
+    // blend having none: the ease goes on after the unequip ended within it
+    bool EaseHolster(kBlendInterpolatorExtraData& extraData, NiObjectNET* target, float fDeltaTime, NiQuatTransform& kValue);
 }
