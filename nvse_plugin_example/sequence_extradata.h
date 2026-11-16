@@ -6,6 +6,7 @@
 
 #include "actor_overrides.h"
 #include "additive_anims.h"
+#include "anchor.h"
 #include "blend_curves.h"
 #include "ease.h"
 #include "skeleton_nodes.h"
@@ -98,6 +99,10 @@ public:
     float namedCurveEaseEnd = -NI_INFINITY;
     // The nodes kNVSE added to this skeleton (SkeletonNodes); added again when the model they were under returns
     std::vector<SkeletonNodes::Node> addedNodes;
+    // A sequence anchored a bone of this skeleton (Anchors::Attach), and the skeleton's rest pose, found before its
+    // next bone update (Anchors::Update). The pose is kept for the session.
+    bool wantsRestPose = false;
+    const Anchors::RestPose* restPose = nullptr;
     // The override animations of the Animation whose controller manager animates this node (ActorOverrides)
     ActorOverrides overrides;
 

@@ -106,3 +106,22 @@ public:
 	static NiStream* Create();
 };
 ASSERT_SIZE(NiStream, 0x5C8);
+
+// The game's NIF reader (NiStream and two fields of its own), constructed in place: what it read is freed with it
+class BSStream
+{
+public:
+	BSStream() { ThisStdCall(0x43CFD0, this); }
+	~BSStream() { ThisStdCall(0x43D090, this); }
+	BSStream(const BSStream&) = delete;
+	BSStream& operator=(const BSStream&) = delete;
+
+	// BSStream::Load3: opens the file through NiFile (loose files and archives), dataPath "Data\\Meshes\\..."
+	bool Load(const char* dataPath) { return ThisStdCall<bool>(0xC3A8A0, this, dataPath, nullptr); }
+	UInt32 GetObjectCount() const { return ThisStdCall<UInt32>(0x43B1E0, this); }
+	NiObject* GetObjectAt(UInt32 index) const { return ThisStdCall<NiObject*>(0x43B200, this, index); }
+
+private:
+	UInt32 m_storage[0x5CC / 4];
+};
+ASSERT_SIZE(BSStream, 0x5CC);

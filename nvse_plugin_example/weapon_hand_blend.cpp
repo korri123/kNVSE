@@ -5,12 +5,14 @@
 #include <cstring>
 #include <string_view>
 
+#include "bone_evaluation.h"
 #include "blend_smoothing.h"
 #include "hooks.h"
 #include "NiObjects.h"
 #include "string_view_util.h"
 #include "text_key_arguments.h"
 #include "utility.h"
+#include "transform_math.h"
 #include "weapon_parent_switch.h"
 
 using WeaponHandBlend::Acceptance;
@@ -19,6 +21,7 @@ using WeaponHandBlend::ChainLocals;
 using WeaponHandBlend::HandChains;
 using WeaponHandBlend::ItemPose;
 using WeaponHandBlend::SequenceInfo;
+using namespace TransformMath;
 
 namespace
 {
@@ -71,34 +74,6 @@ namespace
         return name;
     }
 
-    NiTransform IdentityTransform()
-    {
-        NiTransform result;
-        result.m_Rotate = NiMatrix33{ { { 1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } } };
-        result.m_Translate = NiPoint3::ZERO;
-        result.m_fScale = 1.0f;
-        return result;
-    }
-
-    NiMatrix33 Transpose(const NiMatrix33& matrix)
-    {
-        NiMatrix33 result;
-        for (int row = 0; row < 3; ++row)
-            for (int col = 0; col < 3; ++col)
-                result.m_pEntry[row][col] = matrix.m_pEntry[col][row];
-        return result;
-    }
-
-    // Rotation matrices in bone locals are orthonormal, so the inverse rotation is the transpose
-    NiTransform Inverse(const NiTransform& transform)
-    {
-        NiTransform result;
-        result.m_Rotate = Transpose(transform.m_Rotate);
-        result.m_fScale = 1.0f / transform.m_fScale;
-        result.m_Translate = result.m_Rotate * -transform.m_Translate * result.m_fScale;
-        return result;
-    }
-
     float RotationAngle(const NiMatrix33& a, const NiMatrix33& b)
     {
         // trace(a^T * b) = 1 + 2 cos(angle)
@@ -125,23 +100,6 @@ namespace
                 if (!std::isfinite(entry))
                     return false;
         return true;
-    }
-
-    // Key interpolation does not always produce unit quaternions. A non-unit quaternion gives a matrix that is not
-    // orthonormal, which breaks the transpose-as-inverse and makes identical rotations measure as different.
-    void ToUnitRotation(NiQuaternion quaternion, NiMatrix33& rotation)
-    {
-        quaternion.Normalize();
-        quaternion.ToRotation(rotation);
-    }
-
-    NiTransform CurrentLocal(const NiAVObject* node)
-    {
-        NiTransform result = node->m_kLocal;
-        NiQuaternion rotation;
-        rotation.FromRotation(result.m_Rotate);
-        ToUnitRotation(rotation, result.m_Rotate);
-        return result;
     }
 
     // An interpolator's value as a transform. Channels it does not provide come from the node's current local transform.
@@ -192,7 +150,7 @@ namespace
             locals.left[i] = SampleLocal(info.leftInterpolators[i], chains.left[i], fTime, false);
     }
 
-    // The hand chains' nodes as they are: this update's blend, for the nodes evaluated before the Weapon node
+    // The hand chains' nodes as they are: this pass's blend (Context::RequireChains)
     void CurrentLocals(const HandChains& chains, ChainLocals& locals)
     {
         for (unsigned int i = 0; i < chains.rightCount; ++i)
@@ -851,15 +809,9 @@ namespace
         ChainBlend left[WeaponHandBlend::kMaxChainLength];
     };
 
-    // Finds the hand chains' blend interpolators in the skeleton's multi-target controller. Returns true only if every
-    // update of the skeleton's bones blends the left arm (upper arm, forearm, hand) before the Weapon node, so that
-    // what HoldLeftHand gives the arm is not overwritten by the arm's own blend and the arm's blend weights are from
-    // this update. The engine (BSTransCon::UpdateAllButTarget) and Stewie's Tweaks' replacement of it go through the
-    // multi-target controller's slots in order. kNVSE's own loops (NiMultiTargetTransformController::_Update in Debug
-    // builds, UpdateHooked) do too, but leave the Weapon node for last. Slots are assigned in the order the skeleton's
-    // sequences name their nodes. The Weapon node's comes after the arms' on most vanilla skeletons, but nothing
-    // guarantees it.
-    bool FindChainBlends(const NiAVObject* weapon, const HandChains& chains, ChainBlends& blends)
+    // Finds the hand chains' blend interpolators in the skeleton's multi-target controller. Returns false if no item
+    // tells the controller.
+    bool FindChainBlends(const HandChains& chains, ChainBlends& blends)
     {
         const NiMultiTargetTransformController* controller = nullptr;
         for (const Entry& entry : t_entries)
@@ -874,31 +826,19 @@ namespace
             return false;
         const auto targets = controller->GetTargets();
         const auto blendInterps = controller->GetBlendInterps();
-        const unsigned int firstArmBone = chains.leftCount - 3;
-        bool weaponFound = false;
-        unsigned int armBlendedFirst = 0;
         for (size_t slot = 0; slot < targets.size(); ++slot)
         {
             NiAVObject* target = targets[slot];
             if (!target)
                 continue;
-            if (target == weapon)
-            {
-                weaponFound = true;
-                continue;
-            }
             for (unsigned int i = 0; i < chains.rightCount; ++i)
                 if (chains.right[i] == target)
                     blends.right[i] = MakeChainBlend(&blendInterps[slot], target);
             for (unsigned int i = 0; i < chains.leftCount; ++i)
-            {
-                if (chains.left[i] != target)
-                    continue;
-                blends.left[i] = MakeChainBlend(&blendInterps[slot], target);
-                armBlendedFirst += !weaponFound && i >= firstArmBone;
-            }
+                if (chains.left[i] == target)
+                    blends.left[i] = MakeChainBlend(&blendInterps[slot], target);
         }
-        return weaponFound && armBlendedFirst == 3;
+        return true;
     }
 
     // The share of a bone's blend that one of its interpolators had when the bone was last evaluated: its normalized
@@ -1070,6 +1010,22 @@ bool WeaponHandBlend::Context::EnsureChains()
         m_data->chainsBuilt = true;
     }
     return m_data->chainsValid;
+}
+
+void WeaponHandBlend::Context::RequireChains()
+{
+    if (!m_weapon)
+        return;
+    m_data->chainsCurrent = false;
+    if (!EnsureChains())
+        return;
+    // Every node is required, not only until one fails: the regular blend of the weapon reads both arms
+    bool bCurrent = true;
+    for (unsigned int i = 0; i < m_data->chains.rightCount; ++i)
+        bCurrent &= BoneEvaluation::Require(m_data->chains.right[i]);
+    for (unsigned int i = 0; i < m_data->chains.leftCount; ++i)
+        bCurrent &= BoneEvaluation::Require(m_data->chains.left[i]);
+    m_data->chainsCurrent = bCurrent;
 }
 
 WeaponHandBlend::WeaponBound WeaponHandBlend::Context::GetWeaponBound() const
@@ -1316,8 +1272,9 @@ namespace
     // The step from the first to the second, scaled by holdShare (the share of the left hand's blend holding the
     // weapon), is applied to the arm's hand, so whatever else moves the arm keeps doing so: additive animations, and
     // animations the Weapon node does not have (e.g. third person sneak attacks without a Weapon track). The arm then
-    // reaches for the corrected hand (ReachWithArm). Runs while the Weapon node is evaluated, after the left arm was
-    // (see FindChainBlends).
+    // reaches for the corrected hand (ReachWithArm). Runs while the Weapon node is evaluated, after this pass evaluated
+    // the arms (RequireChains), so what it gives the arm is not overwritten by the arm's own blend and the arm's blend
+    // weights are this pass's.
     void HoldLeftHand(const NiAVObject* weapon, WeaponHandBlend::NodeData& data, float holdShare, const ChainLocals& blendedLocals,
                       const NiTransform& leftBlended)
     {
@@ -1400,7 +1357,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     float holdShare = 0.0f;
     ChainBlends chainBlends;
     if (g_pluginSettings.keepLeftHandOnWeapon && chains.leftCount >= 3 && referenceWeights[kRight] > kMinReferenceWeight
-        && FindChainBlends(m_weapon, chains, chainBlends))
+        && m_data->chainsCurrent && FindChainBlends(chains, chainBlends))
     {
         float holding = 0.0f;
         unsigned int weighted = 0;

@@ -1266,6 +1266,7 @@ void ApplyHooks()
 	{
 		OnActorUpdateAnimation::Dispatch(actor);
 		AimPitch::Update(animData, actor);
+		Anchors::Update(animData, actor);
 		ThisStdCall(uiAnimDataUpdateControllersAddr, animData, actor);
 	}), &uiAnimDataUpdateControllersAddr);
 

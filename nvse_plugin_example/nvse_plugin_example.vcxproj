@@ -395,6 +395,8 @@ xcopy /Y /S /I /Q "$(SolutionDir)..\data" "$(FalloutNVPath)\Data"</Command>
     <ClCompile Include="additive_anims.cpp" />
     <ClCompile Include="aim_pitch.cpp" />
     <ClCompile Include="aim_transitions.cpp" />
+    <ClCompile Include="anchor.cpp" />
+    <ClCompile Include="bone_evaluation.cpp" />
     <ClCompile Include="transition_anims.cpp" />
     <ClCompile Include="spawn_keys.cpp" />
     <ClCompile Include="text_key_arguments.cpp" />
@@ -491,6 +493,9 @@ xcopy /Y /S /I /Q "$(SolutionDir)..\data" "$(FalloutNVPath)\Data"</Command>
     <ClInclude Include="additive_anims.h" />
     <ClInclude Include="aim_pitch.h" />
     <ClInclude Include="aim_transitions.h" />
+    <ClInclude Include="anchor.h" />
+    <ClInclude Include="bone_evaluation.h" />
+    <ClInclude Include="transform_math.h" />
     <ClInclude Include="transition_anims.h" />
     <ClInclude Include="spawn_keys.h" />
     <ClInclude Include="text_key_arguments.h" />

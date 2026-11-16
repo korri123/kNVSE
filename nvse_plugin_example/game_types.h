@@ -1063,7 +1063,13 @@ public:
 namespace FileFinder
 {
 	ScopedList<char> FindFiles(const char* path, const char* renameDirectory, ARCHIVE_TYPE archiveType);
+	// FileFinder::Locate in Data and the archives of the type, as the game looks for meshes: dataPath "Data\\Meshes\\..."
+	bool Exists(const char* dataPath, ARCHIVE_TYPE archiveType);
 }
+
+// A mesh path relative to Data\Meshes (what ModelLoader takes), lower case with backslashes, from one that may start
+// with "Data\" or "Meshes\"
+std::string NormalizeMeshPath(std::string_view path);
 
 class BSWin32Audio
 {

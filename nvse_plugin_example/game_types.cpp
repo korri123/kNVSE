@@ -8,6 +8,8 @@
 #include <span>
 
 #include "hooks.h"
+#include "string_view_util.h"
+#include "utility.h"
 
 bool AnimSequenceBase::Contains(BSAnimGroupSequence* anim)
 {
@@ -215,6 +217,22 @@ ScopedList<char> FileFinder::FindFiles(const char* path, const char* renameDirec
 	if (!result)
 		return {};
 	return std::move(*result);
+}
+
+bool FileFinder::Exists(const char* dataPath, ARCHIVE_TYPE archiveType)
+{
+	constexpr UInt8 kSkipCwdAndPaths = 0x2 | 0x4; // LOOKIN_FLAGS: SKIP_CWD | SKIP_PATHS
+	return CdeclCall<BOOL>(0x456A20, dataPath, static_cast<char*>(nullptr), kSkipCwdAndPaths, archiveType);
+}
+
+std::string NormalizeMeshPath(std::string_view path)
+{
+	std::string result(path);
+	std::ranges::replace(result, '/', '\\');
+	for (const std::string_view prefix : { "data\\", "meshes\\" })
+		if (sv::starts_with_ci(result, prefix))
+			result.erase(0, prefix.size());
+	return ToLower(std::move(result));
 }
 
 AnimGroupInfo* GetGroupInfo(AnimGroupID groupId)

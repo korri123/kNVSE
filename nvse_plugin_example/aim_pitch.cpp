@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "aim_transitions.h"
+#include "anchor.h"
 #include "blend_smoothing.h"
 #include "game_types.h"
 #include "hooks.h"
@@ -42,6 +43,7 @@ namespace
     void __fastcall UpdateMovementNoWorldUpdateHook(AnimData* animData, void*, Actor* actor)
     {
         AimPitch::Update(animData, actor);
+        Anchors::Update(animData, actor);
         ThisStdCall(g_uiUpdateMovementNoWorldUpdateAddr, animData, actor);
     }
 }

@@ -1,4 +1,6 @@
 #pragma once
+	// The model path of the base form (TESModel), relative to Data\Meshes; null if it has none
+	const char* GetModel() const { return ThisStdCall<const char*>(0x5715D0, this); }
 
 #include "GameForms.h"
 #include "GameBSExtraData.h"

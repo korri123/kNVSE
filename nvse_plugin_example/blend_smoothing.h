@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <memory>
 
+#include "anchor.h"
 #include "GameAPI.h"
 #include "weapon_hand_blend.h"
 #include "weapon_parent_switch.h"
@@ -74,6 +75,8 @@ struct kBlendInterpItem
     bool hasParentSwitch = false;
     // Weapon node items only: the Weapon track is relative to the right hand (WeaponParentSwitch::Counts)
     bool inHandSpace = false;
+    // The sequence anchors its pose of the bone to anchorReference (Anchors)
+    bool anchored = false;
 
     // Used when the item is attached or detached, or by few items
     NiBlendInterpolator* blendInterp = nullptr;
@@ -84,6 +87,8 @@ struct kBlendInterpItem
     kAdditiveInterpMetadata additiveMetadata;
     // Weapon node items of equip/unequip animations: where the track switches parent space (WeaponParentSwitch)
     WeaponParentSwitch::Window parentSwitch{};
+    // An ancestor of the bone, set while anchored. Compared, never followed: the bone's chain is walked up to it.
+    NiAVObject* anchorReference = nullptr;
 
     bool IsSmoothedWeightZero() const
     {
@@ -124,6 +129,8 @@ struct kBlendInterpItem
         additiveMetadata.ClearValues();
         hasParentSwitch = false;
         inHandSpace = false;
+        anchored = false;
+        anchorReference = nullptr;
     }
 };
 
@@ -149,6 +156,8 @@ public:
     // Weapon nodes only, created by the holster ease (WeaponParentSwitch::EaseHolster). Kept by ClearValues except
     // for the ease in progress.
     std::unique_ptr<WeaponParentSwitch::NodeState> parentSwitch;
+    // Bones that sequences anchor (Anchors). Kept by ClearValues like weaponHandBlend.
+    std::unique_ptr<Anchors::NodeData> anchor;
     // Rotation from the node's computed weights (before blend smoothing) and the rotation last written to it, valid
     // while the two differ (FireDirection: blend smoothing, additive animations, WeaponHandBlend)
     bool hasComputedRotate = false;

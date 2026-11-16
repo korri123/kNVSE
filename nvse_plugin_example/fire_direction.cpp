@@ -3,7 +3,10 @@
 #include "blend_smoothing.h"
 #include "GameObjects.h"
 #include "SafeWrite.h"
+#include "transform_math.h"
 #include "utility.h"
+
+using TransformMath::Transpose;
 
 namespace
 {
@@ -11,16 +14,6 @@ namespace
     {
         NiMatrix33 result;
         kRotate.ToRotation(result);
-        return result;
-    }
-
-    // Rotation matrices are orthonormal, so the inverse is the transpose
-    NiMatrix33 Transpose(const NiMatrix33& matrix)
-    {
-        NiMatrix33 result;
-        for (int row = 0; row < 3; ++row)
-            for (int col = 0; col < 3; ++col)
-                result.m_pEntry[row][col] = matrix.m_pEntry[col][row];
         return result;
     }
 

@@ -15,9 +15,11 @@
 
 #include "additive_anims.h"
 #include "aim_pitch.h"
+#include "anchor.h"
 #include "blend_curves.h"
 #include "blend_smoothing.h"
 #include "blend_transitions.h"
+#include "bone_evaluation.h"
 #include "fire_direction.h"
 #include "sequence_extradata.h"
 #include "weapon_hand_blend.h"
@@ -223,43 +225,13 @@ void NiMultiTargetTransformController::UpdateTarget(unsigned short usIndex, floa
     }
 }
 
-// BSTransCon::UpdateAllButTarget
+// BSTransCon::UpdateAllButTarget (0x4F0380), the engine's bone update
 void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
 {
     if (!GetActive() || !m_usNumInterps)
         return;
-
-    // The weapon is blended after the arms so WeaponHandBlend sees this frame's hand transforms
-    unsigned short usWeaponIndex = m_usNumInterps;
-    for (unsigned short us = 0; us < m_usNumInterps; us++)
-    {
-        auto* pkTarget = m_ppkTargets[us];
-        // We need to check the UpdateSelected flag before updating the
-        // interpolator. For instance, BoneLOD might have turned off that
-        // bone.
-        
-        if (!pkTarget)
-        {
-            continue;
-        }
-        if (bSelective == pkTarget->GetSelectiveUpdate() && us != m_usNumInterps - 1)
-        {
-            continue;
-        }
-        if (us == m_usNumInterps - 1 && (!bSelective && !pkTarget->GetSelectiveUpdate()))
-        {
-            // beth bs
-            break;
-        }
-        if (usWeaponIndex == m_usNumInterps && WeaponHandBlend::IsWeaponNode(pkTarget))
-        {
-            usWeaponIndex = us;
-            continue;
-        }
-        UpdateTarget(us, fTime);
-    }
-    if (usWeaponIndex != m_usNumInterps)
-        UpdateTarget(usWeaponIndex, fTime);
+    using Rule = BoneEvaluation::Pass::Rule;
+    BoneEvaluation::Pass(*this, fTime, bSelective ? Rule::AllButTargetSelective : Rule::AllButTarget).Run();
 }
 
 // NiMultiTargetTransformController::Update (0xA2FBE0), called from NiAVObject::UpdateObjectControllers
@@ -267,24 +239,7 @@ void NiMultiTargetTransformController::UpdateHooked(NiUpdateData* pkUpdateData)
 {
     if (!GetActive() || !m_usNumInterps)
         return;
-
-    const float fTime = pkUpdateData->fTime;
-    // The weapon is blended after the arms so WeaponHandBlend sees this frame's hand transforms
-    unsigned short usWeaponIndex = m_usNumInterps;
-    for (unsigned short us = 0; us < m_usNumInterps; us++)
-    {
-        auto* pkTarget = m_ppkTargets[us];
-        if (!pkTarget || !pkTarget->GetSelectiveUpdate())
-            continue;
-        if (usWeaponIndex == m_usNumInterps && WeaponHandBlend::IsWeaponNode(pkTarget))
-        {
-            usWeaponIndex = us;
-            continue;
-        }
-        UpdateTarget(us, fTime);
-    }
-    if (usWeaponIndex != m_usNumInterps)
-        UpdateTarget(usWeaponIndex, fTime);
+    BoneEvaluation::Pass(*this, pkUpdateData->fTime, BoneEvaluation::Pass::Rule::Selected).Run();
 }
 
 bool NiBlendTransformInterpolator::BlendValues(float fTime, NiObjectNET* pkInterpTarget,
@@ -540,6 +495,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         NiQuatTransform kTransform;
         if (!item.m_spInterpolator->Update(fUpdateTime, pkInterpTarget, kTransform))
             continue;
+        Anchors::Apply(kExtraData, extraItem, kTransform);
         AimPitch::Apply(kExtraData, extraItem, pkInterpTarget, kTransform);
         if (weaponHandBlend)
             weaponHandBlend.AddItem(&item, extraItem, fUpdateTime, kTransform);
@@ -708,6 +664,9 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
 {
     bool bReturnValue = false;
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
+    // Bones this blend reads, evaluated first in the pass (BoneEvaluation)
+    WeaponHandBlend::Context(pkInterpTarget, kExtraData).RequireChains();
+    Anchors::Prepare(kExtraData, pkInterpTarget);
     // Rotation from the bone's computed weights, without what kNVSE adds after them (FireDirection)
     NiQuaternion kComputedRotate = NiQuatTransform::INVALID_ROTATE;
     if (m_ucInterpCount == 1)
@@ -724,6 +683,7 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
                 bReturnValue = m_pkSingleInterpolator->Update(fUpdateTime, pkInterpTarget, kValue);
                 if (bReturnValue)
                 {
+                    Anchors::Apply(kExtraData, extraItem, kValue);
                     AimPitch::Apply(kExtraData, extraItem, pkInterpTarget, kValue);
                     kComputedRotate = kValue.GetRotate();
                 }
@@ -1361,6 +1321,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
     }
     const auto disabledBlendSmoothing = DisabledBlendSmoothing();
     const AimPitch::Shares aimPitchShares(*this);
+    const Anchors::Keys anchorKeys(*this);
     for (unsigned int ui = 0; ui < m_uiArraySize; ui++)
     {
         InterpArrayItem &kItem = m_pkInterpArray[ui];
@@ -1399,6 +1360,7 @@ void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
         extraInterpItem.sequence = this;
         extraInterpItem.noSmoothing = disabledBlendSmoothing;
         extraInterpItem.aimPitchShare = aimPitchShares.Get(idTag.m_kAVObjectName);
+        Anchors::Attach(*extraData, extraInterpItem, anchorKeys.GetReference(*target));
         if (WeaponHandBlend::IsWeaponNode(target))
             WeaponParentSwitch::Init(extraInterpItem, *this);
 
@@ -2343,7 +2305,6 @@ __declspec(naked) void NiNodeDestructorHook()
 // time, so they take its final pose (the Weapon bone its holster). They were not evaluated while the sequence played,
 // so their smoothed weights still favour the earlier animations. Smoothing this update would leave the holstered
 // weapon partway to the hand, so it is disabled for it.
-static UInt32 uiUpdateLODBonesAddr;
 void __fastcall UpdateLODBonesHook(NiMultiTargetTransformController* controller, void*, float fTime, bool bSelective)
 {
     const auto setUnsmoothed = [controller](bool unsmoothed)
@@ -2356,7 +2317,7 @@ void __fastcall UpdateLODBonesHook(NiMultiTargetTransformController* controller,
         }
     };
     setUnsmoothed(true);
-    ThisStdCall(uiUpdateLODBonesAddr, controller, fTime, bSelective); // BSTransCon::UpdateAllButTarget, or Stewie's
+    controller->_Update(fTime, bSelective);
     setUnsmoothed(false);
 }
 
@@ -2370,7 +2331,7 @@ namespace NiHooks
         WriteRelJump(0xA30900, &NiControllerSequence::AttachInterpolatorsHooked);
         WriteRelJump(0xA30540, &NiControllerSequence::DetachInterpolatorsHooked);
         ReplaceVTableEntry(0x1097598, &NiBlendTransformInterpolator::UpdateHooked);
-        ReplaceVTableEntry(0x10964D8, &NiMultiTargetTransformController::UpdateHooked); // blends the weapon after the arms
+        ReplaceVTableEntry(0x10964D8, &NiMultiTargetTransformController::UpdateHooked); // a BoneEvaluation pass
         WriteRelCall(0xA34E7B, &NiControllerSequence::SetInterpsWeightAndTime); // make it also update values even if single interpolator
         WriteRelCall(0x4AB03A, &RemoveBipedPartHook);
         WriteRelJump(0xA5E930, &NiNodeDestructorHook);
@@ -2393,12 +2354,11 @@ namespace NiHooks
     // override stewie's tweaks
     void WriteDelayedHooks()
     {
-        // Written after Stewie's NVAC, which replaces this call with its own controller update
-        WriteRelCall(0x4EFE53, &UpdateLODBonesHook, &uiUpdateLODBonesAddr);
-#if _DEBUG
+        // The engine's bone update (BSTransCon::UpdateAllButTarget) as a BoneEvaluation pass. Written after Stewie's
+        // Tweaks, which replaces both calls with its own copy of it.
+        WriteRelCall(0x4EFE53, &UpdateLODBonesHook);
         WriteRelCall(0x4F0087, &NiMultiTargetTransformController::_Update);
         WriteRelJump(0x4F0380, &NiMultiTargetTransformController::_Update);
-#endif
     }
 }
 

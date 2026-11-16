@@ -34,8 +34,8 @@ class kBlendInterpolatorExtraData;
 // and aimIS), the left hand is kept on it during blends (bKeepLeftHandOnWeapon). Each arm is blended joint by joint,
 // so the hand can drift off the weapon between two poses that both hold it. That error is measured using the Weapon
 // node's animations weighted as each arm bone's own blend weights them, and removed from the hand with two-bone IK on
-// the upper arm and forearm while the Weapon node is evaluated. It applies only on skeletons whose updates blend those
-// bones before the Weapon node.
+// the upper arm and forearm while the Weapon node is evaluated. The arms are evaluated first in the same pass
+// (RequireChains, BoneEvaluation).
 namespace WeaponHandBlend
 {
     constexpr unsigned int kMaxChainLength = 8;
@@ -156,6 +156,8 @@ namespace WeaponHandBlend
         HandChains chains;
         bool chainsBuilt = false;
         bool chainsValid = false;
+        // Every node of the chains has this pass's local transform (RequireChains, before each evaluation of the node)
+        bool chainsCurrent = false;
         std::vector<SequenceInfo> sequences;
         ArmReach leftReach;
 #if _DEBUG
@@ -176,6 +178,10 @@ namespace WeaponHandBlend
     public:
         Context(NiObjectNET* target, kBlendInterpolatorExtraData* extraData);
         explicit operator bool() const { return m_weapon != nullptr; }
+
+        // Call before the Weapon node's blend starts: evaluates the hand chains' nodes first if the pass has not yet
+        // (BoneEvaluation::Require), so Blend reads this pass's arms
+        void RequireChains();
 
         // Collects one blended item. key identifies it for the weight setters. fTime is the update time of the
         // interpolator that produced kTransform (sequence-local time). Weights start at 0.

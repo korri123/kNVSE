@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <unordered_map>
 
+#include "bethesda/bethesda_types.h"
 #include "game_types.h"
 #include "GameObjects.h"
 #include "GameProcess.h"
@@ -73,18 +74,12 @@ namespace
 
     NiNode* LoadModel(std::string_view mesh)
     {
-        std::string path(mesh);
-        std::ranges::replace(path, '/', '\\');
-        for (const std::string_view prefix : { "data\\", "meshes\\" })
-            if (sv::starts_with_ci(path, prefix))
-                path.erase(0, prefix.size());
-        auto [iter, inserted] = g_models.try_emplace(ToLower(path), nullptr);
+        const std::string path = NormalizeMeshPath(mesh);
+        auto [iter, inserted] = g_models.try_emplace(path, nullptr);
         if (inserted)
         {
-            // FileFinder::Locate, as BipedAnim::Resolve1stFileName looks for meshes (loose files and archives): LoadFile
-            // would return the error marker for a missing one
-            const std::string dataPath = "Data\\Meshes\\" + path;
-            if (!CdeclCall<BOOL>(0x456A20, dataPath.c_str(), static_cast<char*>(nullptr), 6, 1))
+            // LoadFile would return the error marker for a missing file
+            if (!FileFinder::Exists(("Data\\Meshes\\" + path).c_str(), ARCHIVE_TYPE_MESHES))
                 LogOnce(FormatString("no file Meshes\\%s", path.c_str()));
             else
             {
