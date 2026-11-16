@@ -4,7 +4,7 @@
 <clicksound> UIMenuPrevNext </clicksound>
 <_active> 0 </_active>
 <y> 50 </y>
-<width> 180 </width>
+<width> 150 </width>
 <height> 34 </height>
 
 <image name="Fill">

@@ -54,8 +54,9 @@ struct OverrideOrigin
 	int jsonPriority = 0;
 	// disabled by the user. Set under the registry's lock, read without it
 	std::atomic<bool> userDisabled = false;
-	// its place in the user's order of origins (all equal while the user has not ordered them): a stack is ordered by
-	// it before the order of registration. Under the registry's lock
+	// its place in the user's default order of origins (all equal while the user has not ordered them): a stack is
+	// ordered by its form's order of origins (SavedAnims::formRank), then by this, then by the order of registration.
+	// Under the registry's lock
 	int rank = 0;
 };
 
@@ -74,6 +75,9 @@ struct SavedAnims
 	// keeps a lambda's variables: the registry's, under its lock
 	LambdaVariableContext conditionContext = nullptr;
 	const OverrideOrigin* origin = nullptr;
+	// its origin's place in the user's order of the origins of the form it is registered for (OverridePrefs::FormPrefs;
+	// equal for all while there is none), tried before the origin's rank. Under the registry's lock
+	int formRank = 0;
 	// when it was registered, or registered again: the order of a stack among the sets of origins of one rank. Under
 	// the registry's lock
 	UInt32 sequence = 0;
@@ -89,6 +93,8 @@ struct SavedAnims
 	bool hasAmmoSwap = false;
 	// disabled by a script command, or replaced by a copy with another condition
 	std::atomic<bool> disabled = false;
+	// its origin is disabled by the user for the form it is registered for (OverridePrefs::FormPrefs)
+	std::atomic<bool> formDisabled = false;
 	// the condition text failed to compile: never play, whatever enables the set again. Without its condition it would
 	// play for every actor the set's identifier covers (global sets: all of them)
 	std::atomic<bool> conditionFailed = false;
@@ -96,7 +102,7 @@ struct SavedAnims
 	bool ContainsAnim(const BSAnimGroupSequence* anim) const;
 	bool MatchesFolderCondition(const Actor* actor) const;
 	bool IsFileEnabled(const AnimPath& anim) const;
-	// Not disabled by a script nor by the user (its origin, or every one of its files)
+	// Not disabled by a script nor by the user (its origin, its origin for its form, or every one of its files)
 	bool IsEnabled() const;
 };
 
@@ -136,6 +142,10 @@ namespace Overrides
 	std::vector<const OverrideOrigin*> GetOrigins();
 	// Applies the user's choices (OverridePrefs) to the origins and sets: what is disabled, the order of the stacks
 	void ApplyPrefs();
+	// What the user's choices for a form are kept by (OverridePrefs::FormPrefs): the same across load orders.
+	// "<plugin>:<form ID without the mod index>" (lower case), a mod's name for its actors, "everyone", the full form ID
+	// for a form made at run time
+	std::string FormKey(UInt32 identifier, bool isModIndex);
 
 	struct File
 	{

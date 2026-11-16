@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <format>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -10,6 +11,7 @@
 #include <unordered_map>
 
 #include "commands_animation.h"
+#include "GameData.h"
 #include "file_animations.h"
 #include "GameObjects.h"
 #include "string_view_util.h"
@@ -60,9 +62,11 @@ namespace
 	std::mutex s_compileMutex;
 	std::atomic<bool> s_conditionsWaiting = false;
 
-	int RankOf(const SavedAnims& set)
+	// where the set is tried in its stack, before the order of registration: its origin's place in its form's order,
+	// then in the default order
+	std::pair<int, int> RankOf(const SavedAnims& set)
 	{
-		return set.origin ? set.origin->rank : 0;
+		return { set.formRank, set.origin ? set.origin->rank : 0 };
 	}
 
 	bool IsTriedBefore(const std::unique_ptr<SavedAnims>& set, const std::unique_ptr<SavedAnims>& other)
@@ -95,6 +99,19 @@ namespace
 			numDisabled += disabled;
 		}
 		set.numFilesDisabled.store(numDisabled, std::memory_order_relaxed);
+	}
+
+	// form: the choices for the form the set is registered for, null without any
+	void ApplyFormPrefs(SavedAnims& set, const OverridePrefs::FormPrefs* form)
+	{
+		if (!form || !set.origin)
+		{
+			set.formRank = 0;
+			set.formDisabled.store(false, std::memory_order_relaxed);
+			return;
+		}
+		set.formRank = OverridePrefs::GetRank(form->order, set.origin->name);
+		set.formDisabled.store(form->disabledOrigins.contains(ToLower(set.origin->name)), std::memory_order_relaxed);
 	}
 
 	void SetGroup(bool firstPerson, UInt16 groupId)
@@ -228,6 +245,8 @@ namespace
 		// in the set's place, with what the user chose for it
 		replacement->origin = set->origin;
 		replacement->sequence = set->sequence;
+		replacement->formRank = set->formRank;
+		replacement->formDisabled.store(set->formDisabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
 		if (!replacement->fileDisabled)
 			replacement->fileDisabled = std::make_unique<std::atomic<bool>[]>(replacement->anims.size());
 		for (size_t i = 0; i < replacement->anims.size(); ++i)
@@ -341,6 +360,10 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 	std::vector<SetStack*> touchedStacks;
 	size_t applied = 0;
 	bool changed = false;
+	// the user's choices for the source's form: the key needs the mod's name, made only once there are any
+	OverridePrefs::FormPrefs formPrefs;
+	if (OverridePrefs::HasFormPrefs())
+		formPrefs = OverridePrefs::GetForm(FormKey(source.identifier, source.isModIndex));
 
 	std::unique_lock lock(s_mutex);
 	for (const auto& [path, groupId, firstPerson] : entries)
@@ -401,6 +424,7 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 				stack = &map[source.identifier].stacks[groupId];
 			auto* set = stack->sets.emplace_back(std::make_unique<SavedAnims>()).get();
 			set->origin = source.origin;
+			ApplyFormPrefs(*set, formPrefs.IsEmpty() ? nullptr : &formPrefs);
 			set->sequence = ++s_sequence;
 			touchedStacks.push_back(stack);
 			set->folderCondition = folderCondition;
@@ -448,6 +472,7 @@ bool SavedAnims::IsEnabled() const
 {
 	return !disabled.load(std::memory_order_relaxed)
 		&& !(origin && origin->userDisabled.load(std::memory_order_relaxed))
+		&& !formDisabled.load(std::memory_order_relaxed)
 		&& (anims.empty() || numFilesDisabled.load(std::memory_order_relaxed) < anims.size());
 }
 
@@ -550,7 +575,7 @@ const OverrideOrigin* Overrides::GetOrigin(OverrideOrigin::Kind kind, std::strin
 	origin->jsonFile = jsonFile;
 	origin->jsonPriority = jsonPriority;
 	origin->userDisabled = OverridePrefs::IsOriginDisabled(name);
-	origin->rank = OverridePrefs::GetRank(OverridePrefs::Get(), name);
+	origin->rank = OverridePrefs::GetRank(OverridePrefs::Get().order, name);
 	std::unique_lock lock(s_mutex);
 	// another thread may have made it meanwhile
 	const auto [iter, inserted] = s_originsByName.try_emplace(std::move(key), origin.get());
@@ -576,17 +601,48 @@ void Overrides::ApplyPrefs()
 	for (const auto& origin : s_origins)
 	{
 		origin->userDisabled.store(prefs.disabledOrigins.contains(ToLower(origin->name)), std::memory_order_relaxed);
-		origin->rank = OverridePrefs::GetRank(prefs, origin->name);
+		origin->rank = OverridePrefs::GetRank(prefs.order, origin->name);
 	}
-	ForEachStack([&](SetStack& stack, auto&&...)
+	// the stacks of one identifier come one after another per map: its form's choices looked up once per run
+	std::pair<UInt32, bool> lastForm{ 0, false };
+	const OverridePrefs::FormPrefs* form = nullptr;
+	bool lookedUp = false;
+	ForEachStack([&](SetStack& stack, UInt32 identifier, bool isModIndex, bool, UInt16)
 	{
+		if (!lookedUp || lastForm != std::pair(identifier, isModIndex))
+		{
+			lookedUp = true;
+			lastForm = { identifier, isModIndex };
+			const auto iter = prefs.forms.empty() ? prefs.forms.end() : prefs.forms.find(FormKey(identifier, isModIndex));
+			form = iter != prefs.forms.end() ? &iter->second : nullptr;
+		}
 		for (const auto& set : stack.sets)
+		{
 			ApplyFilePrefs(*set, prefs);
+			ApplyFormPrefs(*set, form);
+		}
 		Order(stack);
 	});
 	for (const auto& set : s_retiredSets)
 		ApplyFilePrefs(*set, prefs);
 	s_generation.fetch_add(1, std::memory_order_release);
+}
+
+std::string Overrides::FormKey(UInt32 identifier, bool isModIndex)
+{
+	if (isModIndex)
+	{
+		if (identifier == kEveryone)
+			return "everyone";
+		const char* modName = DataHandler::Get()->GetNthModName(identifier);
+		return *modName ? ToLower(modName) : std::format("{:02x}", identifier);
+	}
+	const auto modIndex = identifier >> 24;
+	// a form made at run time has no plugin
+	const char* modName = modIndex != kEveryone ? DataHandler::Get()->GetNthModName(modIndex) : "";
+	if (!*modName)
+		return std::format("{:08x}", identifier);
+	return std::format("{}:{:06x}", ToLower(modName), identifier & 0xFFFFFF);
 }
 
 void Overrides::ForEachSet(const std::function<void(const SetView&)>& visitor)

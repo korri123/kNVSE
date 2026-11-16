@@ -37,6 +37,8 @@ namespace KnvseMenu
 		bool adjustable = false;
 		// steps the text is moved to the right
 		int indent = 0;
+		// a heading of the rows below it: never selected (the selection passes over it)
+		bool heading = false;
 	};
 
 	struct Context
@@ -78,6 +80,7 @@ namespace KnvseMenu
 
 	std::unique_ptr<Page> MakeSettingsPage();
 	std::unique_ptr<Page> MakeAnimationsPage();
+	std::unique_ptr<Page> MakeSourcesPage();
 	std::unique_ptr<Page> MakePlayingPage();
 	std::unique_ptr<Page> MakeProblemsPage();
 
@@ -85,6 +88,4 @@ namespace KnvseMenu
 	std::string DescribeIdentifier(UInt32 identifier, bool isModIndex, bool brief = false);
 	// "AnimGroupOverride\... (x.json, priority 0)", "Script of <mod>"
 	std::string DescribeOrigin(const OverrideOrigin& origin);
-	// "2haaim (1st, Service Rifle)"
-	std::string DescribeSet(const Overrides::SetView& view);
 }

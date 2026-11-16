@@ -19,7 +19,7 @@ namespace KnvseMenu
 		// unused by the game (its default case of MenuManager::CreateMenuByClass), and by Stewie's Tweaks (1069)
 		constexpr UInt32 kMenuId = 1072;
 		constexpr auto kXmlPath = R"(Data\Menus\kNVSE\knvse_menu.xml)";
-		constexpr int kNumPages = 4;
+		constexpr int kNumPages = 5;
 		constexpr int kNumButtons = 4;
 
 		// <id> of the tiles that are clicked
@@ -28,7 +28,7 @@ namespace KnvseMenu
 			kId_Close = 7,
 			kId_LeftPane = 4,
 			kId_RightPane = 5,
-			kId_Tab = 10, // 10-13
+			kId_Tab = 10, // 10-14
 			kId_Button = 20, // 20-23
 			kId_LeftRow = 100,
 			kId_RightRow = 101,
@@ -59,15 +59,40 @@ namespace KnvseMenu
 			int selected = 0;
 			int offset = 0;
 			float rowHeight = 1.0f;
+			// the way the selection last moved: a heading is passed over that way
+			int direction = 1;
 
 			int Count() const { return static_cast<int>(rows.size()); }
 
+			bool IsSelectable(int row) const
+			{
+				return row >= 0 && row < Count() && !rows[row].heading;
+			}
+
+			// the row itself, or off a heading: the next row the given way, else back
+			int Resolve(int row, int step) const
+			{
+				if (!Count() || IsSelectable(row))
+					return row;
+				for (const int way : { step, -step })
+				{
+					int other = row;
+					while (other >= 0 && other < Count() && !IsSelectable(other))
+						other += way;
+					if (IsSelectable(other))
+						return other;
+				}
+				return row;
+			}
+
 			void Clamp()
 			{
-				selected = std::clamp(selected, 0, (std::max)(Count() - 1, 0));
+				selected = Resolve(std::clamp(selected, 0, (std::max)(Count() - 1, 0)), direction);
 				const int visible = static_cast<int>(tiles.size());
-				if (selected < offset)
-					offset = selected;
+				// the heading right above the selection stays in view
+				const int top = selected > 0 && rows.size() > static_cast<size_t>(selected) && rows[selected - 1].heading ? selected - 1 : selected;
+				if (top < offset)
+					offset = top;
 				else if (selected >= offset + visible)
 					offset = selected - visible + 1;
 				offset = std::clamp(offset, 0, (std::max)(Count() - visible, 0));
@@ -99,8 +124,9 @@ namespace KnvseMenu
 				id = kMenuId;
 				pages[0] = MakeSettingsPage();
 				pages[1] = MakeAnimationsPage();
-				pages[2] = MakePlayingPage();
-				pages[3] = MakeProblemsPage();
+				pages[2] = MakeSourcesPage();
+				pages[3] = MakePlayingPage();
+				pages[4] = MakeProblemsPage();
 			}
 
 			// The game destroys the menu once it has faded out, however it was closed: the pages keep their changes
@@ -177,6 +203,7 @@ namespace KnvseMenu
 				{
 					list.selected = 0;
 					list.offset = 0;
+					list.direction = 1;
 				}
 				Refresh();
 			}
@@ -188,6 +215,15 @@ namespace KnvseMenu
 				for (auto& list : lists)
 					list.rows.clear();
 				page.Build({ lists[0].selected, filter }, lists[0].rows, lists[1].rows);
+				// the left selection was on a heading: the right list shows what it moved to
+				const int built = lists[0].selected;
+				lists[0].Clamp();
+				if (lists[0].selected != built)
+				{
+					for (auto& list : lists)
+						list.rows.clear();
+					page.Build({ lists[0].selected, filter }, lists[0].rows, lists[1].rows);
+				}
 				MenuEngine::SetString(title, Tile::kTileValue_string, FormatString("kNVSE: %s", page.GetTitle()).c_str());
 				MenuEngine::SetString(filterText, Tile::kTileValue_string, filter.empty() ? "Type to filter" : FormatString("Filter: %s", filter.c_str()).c_str());
 				MenuEngine::SetFloat(filterText, traits.dim, filter.empty());
@@ -259,15 +295,19 @@ namespace KnvseMenu
 				return lists[static_cast<int>(focus)];
 			}
 
-			void Select(Side side, int row)
+			void Select(Side side, int row, int direction = 1)
 			{
+				auto& list = lists[static_cast<int>(side)];
+				row = list.Resolve(row, direction);
 				const bool leftChanged = side == Side::Left && row != lists[0].selected;
 				focus = side;
-				lists[static_cast<int>(side)].selected = row;
+				list.selected = row;
+				list.direction = direction;
 				if (leftChanged)
 				{
 					lists[1].selected = 0;
 					lists[1].offset = 0;
+					lists[1].direction = 1;
 				}
 				Refresh();
 			}
@@ -384,7 +424,7 @@ namespace KnvseMenu
 				{
 					const int step = key == MenuEngine::kKey_Up ? -1 : key == MenuEngine::kKey_Down ? 1 : key == MenuEngine::kKey_PageUp ? -pageStep : pageStep;
 					if (list.Count())
-						Select(focus, std::clamp(list.selected + step, 0, list.Count() - 1));
+						Select(focus, std::clamp(list.selected + step, 0, list.Count() - 1), step < 0 ? -1 : 1);
 					return true;
 				}
 				case MenuEngine::kKey_Left:

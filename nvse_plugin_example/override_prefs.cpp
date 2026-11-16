@@ -45,6 +45,17 @@ namespace OverridePrefs
 			if (contained ? strings.insert(std::move(key)).second : strings.erase(key) != 0)
 				s_changed = true;
 		}
+
+		// The form's entry is dropped once it holds no choice. Under the lock
+		template <typename F>
+		void ChangeForm(std::string_view formKey, F&& change)
+		{
+			const auto key = ToLower(formKey);
+			auto iter = s_prefs.forms.try_emplace(key).first;
+			change(iter->second);
+			if (iter->second.IsEmpty())
+				s_prefs.forms.erase(iter);
+		}
 	}
 
 	void Load()
@@ -62,6 +73,20 @@ namespace OverridePrefs
 				for (auto& path : ReadStrings(json, "disabledFiles"))
 					prefs.disabledFiles.insert(std::move(path));
 				prefs.order = ReadStrings(json, "order");
+				if (const auto forms = json.find("forms"); forms != json.end() && forms->is_object())
+				{
+					for (const auto& [key, value] : forms->items())
+					{
+						if (!value.is_object())
+							continue;
+						FormPrefs form;
+						form.order = ReadStrings(value, "order");
+						for (auto& name : ReadStrings(value, "disabled"))
+							form.disabledOrigins.insert(std::move(name));
+						if (!form.IsEmpty())
+							prefs.forms.emplace(ToLower(key), std::move(form));
+					}
+				}
 			}
 		}
 		catch (const std::exception& e)
@@ -83,6 +108,16 @@ namespace OverridePrefs
 			json["disabled"] = Sorted(s_prefs.disabledOrigins);
 			json["disabledFiles"] = Sorted(s_prefs.disabledFiles);
 			json["order"] = s_prefs.order;
+			auto forms = nlohmann::json::object();
+			for (const auto& [key, form] : s_prefs.forms)
+			{
+				auto& entry = forms[key];
+				if (!form.order.empty())
+					entry["order"] = form.order;
+				if (!form.disabledOrigins.empty())
+					entry["disabled"] = Sorted(form.disabledOrigins);
+			}
+			json["forms"] = std::move(forms);
 			s_changed = false;
 		}
 		std::ofstream file(kPath, std::ios::trunc);
@@ -121,15 +156,29 @@ namespace OverridePrefs
 		return s_prefs.disabledFiles.contains(key);
 	}
 
-	int GetRank(const Prefs& prefs, std::string_view name)
+	bool HasFormPrefs()
 	{
-		if (prefs.order.empty())
+		std::scoped_lock lock(s_mutex);
+		return !s_prefs.forms.empty();
+	}
+
+	FormPrefs GetForm(std::string_view formKey)
+	{
+		const auto key = ToLower(formKey);
+		std::scoped_lock lock(s_mutex);
+		const auto iter = s_prefs.forms.find(key);
+		return iter != s_prefs.forms.end() ? iter->second : FormPrefs{};
+	}
+
+	int GetRank(const std::vector<std::string>& order, std::string_view name)
+	{
+		if (order.empty())
 			return 0;
 		const auto key = ToLower(name);
-		const auto iter = std::ranges::find(prefs.order, key);
-		if (iter == prefs.order.end())
+		const auto iter = std::ranges::find(order, key);
+		if (iter == order.end())
 			return INT_MAX;
-		return static_cast<int>(prefs.order.end() - iter);
+		return static_cast<int>(order.end() - iter);
 	}
 
 	void SetOriginDisabled(std::string_view name, bool disabled)
@@ -154,5 +203,34 @@ namespace OverridePrefs
 			s_prefs.order = std::move(order);
 			s_changed = true;
 		}
+	}
+
+	void SetFormOrder(std::string_view formKey, std::vector<std::string> order)
+	{
+		for (auto& name : order)
+			name = ToLower(name);
+		std::scoped_lock lock(s_mutex);
+		ChangeForm(formKey, [&](FormPrefs& form)
+		{
+			if (order != form.order)
+			{
+				form.order = std::move(order);
+				s_changed = true;
+			}
+		});
+	}
+
+	void SetFormOriginDisabled(std::string_view formKey, std::string_view name, bool disabled)
+	{
+		std::scoped_lock lock(s_mutex);
+		ChangeForm(formKey, [&](FormPrefs& form) { Set(form.disabledOrigins, name, disabled); });
+	}
+
+	void ResetForm(std::string_view formKey)
+	{
+		const auto key = ToLower(formKey);
+		std::scoped_lock lock(s_mutex);
+		if (s_prefs.forms.erase(key))
+			s_changed = true;
 	}
 }

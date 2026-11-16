@@ -93,17 +93,22 @@ _active on the tabs. Vanilla textures and fonts only. -->
 		</hotrect>
 		<hotrect name="Tab1">
 			<id> 11 </id>
-			<x> 214 </x>
+			<x> 184 </x>
 			<include src="knvse\knvse_tab.xml"/>
 		</hotrect>
 		<hotrect name="Tab2">
 			<id> 12 </id>
-			<x> 404 </x>
+			<x> 344 </x>
 			<include src="knvse\knvse_tab.xml"/>
 		</hotrect>
 		<hotrect name="Tab3">
 			<id> 13 </id>
-			<x> 594 </x>
+			<x> 504 </x>
+			<include src="knvse\knvse_tab.xml"/>
+		</hotrect>
+		<hotrect name="Tab4">
+			<id> 14 </id>
+			<x> 664 </x>
 			<include src="knvse\knvse_tab.xml"/>
 		</hotrect>
 
