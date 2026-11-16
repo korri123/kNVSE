@@ -457,7 +457,8 @@ bool TESForm::IsTypeActor()
 	return IS_ID(this, Character) || IS_ID(this, Creature);
 }
 
-// %r / %R: line break (\r\n: the compiler needs both to split lines), %q / %Q: quote, %% is kept as is
+// Replaces %r / %R with a line break (\r\n, since the compiler needs both to split lines) and %q / %Q with a quote.
+// %% is left as is.
 void FormatScriptText(std::string& str)
 {
 	std::string formatted;

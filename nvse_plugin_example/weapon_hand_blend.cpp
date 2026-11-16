@@ -22,21 +22,21 @@ using WeaponHandBlend::SequenceInfo;
 
 namespace
 {
-    // Classification sampling
+    // Classification sampling: rate in Hz and the maximum number of samples per sequence
     constexpr float kSampleRate = 30.0f;
     constexpr unsigned int kMaxSamples = 512;
-    // Half width of the window over which reference-relative motion is accumulated (seconds)
+    // Half width of the window over which motion relative to a reference is accumulated (seconds)
     constexpr float kMotionWindowHalf = 0.1f;
     // Half width of the box filter applied to the acceptance curves (seconds)
     constexpr float kSmoothingHalf = 0.05f;
-    // Converts a rotation difference (radians) into game units so it can be summed with translation
+    // Converts a rotation difference (radians) into game units so it can be added to a translation
     constexpr float kLeverArm = 10.0f;
     // Below this accumulated motion over a window, the weapon is rigid relative to a reference
     constexpr float kMinWindowMotion = 0.75f;
-    // A hand is accepted fully while the weapon moves no more relative to it than relative to the steadiest reference (or
-    // kMinWindowMotion), and not at all once it moves kLooseRatio times as much
+    // A hand is fully accepted while the weapon moves no more relative to it than relative to the steadiest reference
+    // (or kMinWindowMotion), and not at all once it moves kLooseRatio times as much
     constexpr float kLooseRatio = 2.0f;
-    // When neither hand moves relative to the weapon, one this far from the right hand is not held by it
+    // If neither hand moves relative to the weapon, a hand this far (game units) from the right hand is not holding it
     constexpr float kFarFromRightHand = 15.0f;
     constexpr float kMinAcceptance = 0.001f;
     // Sharpens agreement: a hand accepted by only part of the blend's weight quickly yields to the next reference
@@ -46,7 +46,7 @@ namespace
     constexpr float kContactMargin = 4.0f;
     // A smaller bound means no weapon model is attached; contact is then not tested
     constexpr float kMinWeaponRadius = 1.0f;
-    // Key gaps longer than this (below 20 fps) let a counter-animated weapon swim visibly between keys
+    // Key gaps longer than this (below 20 fps) let a counter-animated weapon visibly drift between keys
     constexpr float kSparseKeyInterval = 1.5f / kSampleRate;
     constexpr unsigned int kMaxLeftSpaceKeys = 2048;
     constexpr float kSameKeyTime = 1e-4f;
@@ -127,7 +127,7 @@ namespace
         return true;
     }
 
-    // Key interpolation does not always produce unit quaternions; a non-unit quaternion turns into a matrix that is not
+    // Key interpolation does not always produce unit quaternions. A non-unit quaternion gives a matrix that is not
     // orthonormal, which breaks the transpose-as-inverse and makes identical rotations measure as different.
     void ToUnitRotation(NiQuaternion quaternion, NiMatrix33& rotation)
     {
@@ -144,7 +144,7 @@ namespace
         return result;
     }
 
-    // An interpolator's value as a transform; channels it does not provide come from the node's current local transform.
+    // An interpolator's value as a transform. Channels it does not provide come from the node's current local transform.
     NiTransform ToTransform(const NiQuatTransform& value, const NiAVObject* node)
     {
         NiTransform result = CurrentLocal(node);
@@ -157,7 +157,7 @@ namespace
         return result;
     }
 
-    // Local transform of a node as animated by one of a sequence's interpolators; without one (the sequence does not
+    // Local transform of a node as animated by one of a sequence's interpolators. Without one (the sequence does not
     // animate the node), the node's current (blended) local transform.
     NiTransform SampleLocal(NiInterpolator* interpolator, NiAVObject* node, float fTime, bool bInvalidateCache)
     {
@@ -168,7 +168,7 @@ namespace
             value.MakeInvalid();
         if (bInvalidateCache)
         {
-            // the interpolator caches its last evaluation by time; sampling at other times must not leave it stale
+            // The interpolator caches its last evaluation by time, so sampling at other times must not leave it stale
             interpolator->m_fLastTime = -NI_INFINITY;
         }
         return ToTransform(value, node);
@@ -259,21 +259,21 @@ namespace
         return transform;
     }
 
-    // 1 while the left hand touches the weapon model's bounding sphere, falling to 0 at kContactMargin outside of it; 1 when
-    // there is no model to test against
+    // 1 while the left hand touches the weapon model's bounding sphere, falling to 0 at kContactMargin outside of it.
+    // 1 when there is no model to test against.
     float Contact(const NiTransform& weaponRelativeToLeft, const WeaponHandBlend::WeaponBound& bound)
     {
         if (bound.radius < kMinWeaponRadius)
             return 1.0f;
-        const NiPoint3 hand = Inverse(weaponRelativeToLeft).m_Translate; // the left hand in Weapon node space
+        const NiPoint3 hand = Inverse(weaponRelativeToLeft).m_Translate; // left hand in Weapon node space
         const float outside = (hand - bound.center).Length() - bound.radius;
         if (!std::isfinite(outside))
             return 1.0f;
         return std::clamp(1.0f - outside / kContactMargin, 0.0f, 1.0f);
     }
 
-    // "weaponSpace: right|left|body|auto|off" text keys set the space from their time until the next one; auto (and the
-    // time before the first key) leaves it to the measurement; off keeps the regular blend for this animation's share
+    // "weaponSpace: right|left|body|auto|off" text keys set the space from their time until the next key. Auto (and the
+    // time before the first key) leaves it to the measurement. Off keeps the regular blend for this animation's share.
     enum class Space : unsigned char { Auto, Right, Left, Body, Off };
 
     struct SpaceKey
@@ -282,7 +282,7 @@ namespace
         Space space;
     };
 
-    // Scratch buffers for Measure, reused per thread: measuring runs on whichever thread blends the actor
+    // Scratch buffers for Measure, reused per thread because measuring runs on whichever thread blends the actor
     thread_local std::vector<NiTransform> t_relative[kReferenceCount];
     thread_local std::vector<float> t_motion[kReferenceCount];
     thread_local std::vector<float> t_contact;
@@ -350,9 +350,9 @@ namespace
         }
     }
 
-    // Adds a keyframed track's key times. False for a track without keys (B-spline compressed: vanilla KFs have most arm
-    // tracks and many Weapon tracks so, e.g. every track of the .357 Revolver's 1hpreloadx), a smooth curve fitted to the
-    // densely sampled animation, which therefore swims no more between its control points than a densely keyed track.
+    // Adds a keyframed track's key times. Returns false for a track without keys (B-spline compressed). Vanilla KFs
+    // store most arm tracks and many Weapon tracks that way: a smooth curve fitted to densely sampled animation, which
+    // drifts no more between its control points than a densely keyed track.
     bool AddKeyTimes(NiInterpolator* interpolator)
     {
         if (!interpolator)
@@ -372,7 +372,7 @@ namespace
         {
             if (keyType == NiAnimationKey::EULERKEY)
             {
-                // an Euler key's own time is never set; its three float tracks hold the timing
+                // An Euler key's own time is never set. Its three float tracks hold the timing.
                 const auto* euler = static_cast<NiEulerRotKey*>(rotData->GetKeyAt(0, keySize));
                 for (unsigned int axis = 0; axis < 3; ++axis)
                     for (unsigned int i = 0; i < euler->m_uiNumKeys[axis]; ++i)
@@ -387,16 +387,16 @@ namespace
         return true;
     }
 
-    // The weapon relative to the left hand at every key time of the weapon and hand tracks. Between keys each track
-    // interpolates on its own, so a weapon keyed relative to the right hand and a left hand keyed down its own chain drift
-    // apart; interpolating their relation instead keeps a counter-animated weapon on the left hand. Exact at the keys.
+    // Computes the weapon relative to the left hand at every key time of the weapon and hand tracks. Between keys each
+    // track interpolates on its own, so a weapon keyed relative to the right hand and a left hand keyed down its own
+    // chain drift apart. Interpolating their relation instead keeps a counter-animated weapon on the left hand. The
+    // result is exact at the keys.
     void BuildLeftSpaceKeys(SequenceInfo& info, NiAVObject* weapon, const HandChains& chains, float beginTime, float endTime)
     {
         auto& times = t_keyTimes;
         times.clear();
-        // a track without keys is as dense as a densely keyed one; taking the begin and end time for all of its keys made
-        // the relation a spline between the poses at the ends, which moved the weapon 21 units / 40 degrees off the right
-        // hand in the .357 Revolver's reload
+        // A track without keys counts as densely keyed. Using the begin and end time for all of its keys would make
+        // the relation a spline between the end poses and move the weapon off the hand.
         bool keyed = AddKeyTimes(info.weaponInterpolator.data);
         for (unsigned int i = 0; i < chains.rightCount; ++i)
             keyed &= AddKeyTimes(info.rightInterpolators[i]);
@@ -410,7 +410,7 @@ namespace
         std::ranges::sort(times);
         times.erase(std::unique(times.begin(), times.end(), [](float a, float b) { return b - a < kSameKeyTime; }), times.end());
 
-        // keys this dense already keep the tracks together
+        // Keys this dense already keep the tracks together
         bool sparse = false;
         for (size_t i = 1; i < times.size(); ++i)
             sparse |= times[i] - times[i - 1] > kSparseKeyInterval;
@@ -443,17 +443,18 @@ namespace
             info.leftSpaceKeys.clear();
     }
 
-    // Measures how firmly the weapon is held by each hand. A counter-animated weapon keeps a near-constant offset from the
-    // left hand while its local transform (relative to the right hand) changes; a weapon held in the right hand shows the
-    // opposite, and one held with both hands neither. Motion relative to the body (the hands' common ancestor) is measured
-    // too, so that a weapon moving on its own is not attributed to the hand it moves least relative to. A still pose is
-    // rigid relative to everything: there the left hand only counts as holding the weapon if it touches the weapon model.
+    // Measures how firmly each hand holds the weapon. A counter-animated weapon keeps a near-constant offset from the
+    // left hand while its local transform (relative to the right hand) changes. A weapon held in the right hand shows
+    // the opposite, and one held with both hands neither. Motion relative to the body (the hands' common ancestor) is
+    // measured too, so a weapon moving on its own is not attributed to the hand it moves least relative to. A still
+    // pose is rigid relative to everything, so there the left hand counts as holding the weapon only if it touches the
+    // weapon model.
     void Measure(SequenceInfo& info, const NiControllerSequence& sequence, NiAVObject* weapon, const HandChains& chains,
                  const WeaponHandBlend::WeaponBound& bound)
     {
         info.acceptance.clear();
         info.leftSpaceKeys.clear();
-        // read before anything else: an animation without left hand tracks can opt out as well
+        // Read first: an animation without left hand tracks can opt out as well
         CollectSpaceKeys(sequence);
         CollectOffRanges(info.offRanges);
         bool animatesLeftHand = false;
@@ -471,8 +472,8 @@ namespace
 
         const auto sampleCount = std::clamp(static_cast<unsigned int>(std::ceil((endTime - beginTime) * kSampleRate)) + 1, 2u, kMaxSamples);
         const float step = (endTime - beginTime) / static_cast<float>(sampleCount - 1);
-        // begin + step * i overshoots the end key time by a rounding error, and the engine's rotation key search reads past
-        // the key array for times beyond a track's last key
+        // begin + step * i can overshoot the end key time by a rounding error, and the engine's rotation key search
+        // reads past the key array for times beyond a track's last key
         const auto sampleTime = [&](unsigned int i) { return i + 1 == sampleCount ? endTime : beginTime + step * static_cast<float>(i); };
 
         auto& relative = t_relative;
@@ -492,7 +493,7 @@ namespace
             contact[i] = Contact(relative[kLeft][i], bound);
         }
 
-        // prefix sums of per-step motion relative to each reference
+        // Prefix sums of per-step motion relative to each reference
         auto& motion = t_motion;
         for (auto& sums : motion)
             sums.assign(sampleCount, 0.0f);
@@ -505,7 +506,7 @@ namespace
                 steps[reference] = Distance(relative[reference][i - 1], relative[reference][i]);
                 finite &= std::isfinite(steps[reference]);
             }
-            // a non-finite sample (a track that ends before the sequence does) contributes no motion
+            // A non-finite sample (a track that ends before the sequence does) contributes no motion
             for (int reference = 0; reference < kReferenceCount; ++reference)
                 motion[reference][i] = motion[reference][i - 1] + (finite ? steps[reference] : 0.0f);
         }
@@ -526,12 +527,12 @@ namespace
             const float body = motion[kBody][high] - motion[kBody][low];
             const float steadiest = (std::max)(kMinWindowMotion, (std::min)({ right, left, body }));
             raw[i] = { Rigidity(right, steadiest), Rigidity(left, steadiest) };
-            // rigid relative to both hands, so motion cannot tell them apart: a weapon far from the right hand is held by the
-            // left hand if that touches it; one touching neither (floating, like a levitation gag) stays with the right
-            // hand, which keeps the regular blend
+            // Rigid relative to both hands, so motion cannot tell them apart. A weapon far from the right hand is held
+            // by the left hand if that touches it. One touching neither (floating, e.g. a levitation gag) stays with
+            // the right hand, which keeps the regular blend.
             if (right < kMinWindowMotion && left < kMinWindowMotion && relative[kRight][i].m_Translate.Length() > kFarFromRightHand)
                 raw[i].right = 1.0f - contact[i];
-            // a left hand that only stays still next to a weapon the right hand holds is not holding it
+            // A left hand that only stays still next to a weapon the right hand holds is not holding it
             if (raw[i].right > 0.0f)
             {
 #if _DEBUG
@@ -551,7 +552,7 @@ namespace
                 raw[i] = { 0.0f, 0.0f };
                 break;
             case Space::Auto:
-            case Space::Off: // measured as usual; Blend fades the result out by the animation's weight
+            case Space::Off: // measured as usual, Blend fades the result out by the animation's weight
                 continue;
             }
 #if _DEBUG
@@ -611,7 +612,7 @@ namespace
 #endif
     }
 
-    // Weighted average of transforms, translation and rotation weighted separately like the regular blend
+    // Weighted average of transforms. Translation and rotation are weighted separately, like the regular blend.
     class TransformBlender
     {
     public:
@@ -662,9 +663,9 @@ namespace
     struct Entry
     {
         const void* key = nullptr;
-        // the item's sequence while attached, null for detached items, pose interpolators and items without extra data
+        // The item's sequence while attached. Null for detached items, pose interpolators and items without extra data.
         const NiControllerSequence* sequence = nullptr;
-        // NodeData::sequences index: the attached item's sequence, or a detached item's cached pose; -1 if neither
+        // NodeData::sequences index: the attached item's sequence, or a detached item's cached pose. -1 if neither.
         int sequenceIndex = -1;
         float time = 0.0f;
         NiQuatTransform transform;
@@ -672,22 +673,22 @@ namespace
         float translateWeight = 0.0f;
         float rotateWeight = 0.0f;
         bool off = false; // "weaponSpace: off"
-        // a sequence that has left the Weapon node's blend while the arms still fade it out (AddFadingSequences)
+        // A sequence that has left the Weapon node's blend while the arms still fade it out (AddFadingSequences)
         bool fading = false;
-        // Set by Blend for the items that weigh in. Its arms: its sequence's, a detached item's as cached, the blended
-        // ones for an item without arms of its own (pose interpolators)
+        // Set by Blend for the items that weigh in. Its arms: the sequence's, a detached item's as cached, or the
+        // blended ones for an item without arms of its own (pose interpolators).
         const ChainLocals* locals = nullptr;
-        // the left hand relative to the weapon in the item's pose, never from the left hand keys: HoldLeftHand compares it
-        // with the items' blended arms, which follow the tracks between keys
+        // The left hand relative to the weapon in the item's pose, never from the left hand keys. HoldLeftHand compares
+        // it with the items' blended arms, which follow the tracks between keys.
         NiTransform handOnWeapon;
-        // Set by Blend while the left hand is held: the weight each hand chain bone's own blend gave the item's sequence in
-        // this update (ChainWeight), 0 where the sequence does not animate the bone or is not known (pose interpolators)
+        // Set by Blend while the left hand is held: the weight each hand chain bone's own blend gave the item's
+        // sequence in this update (ChainWeight). 0 where the sequence does not animate the bone or is not known.
         float rightChainWeights[WeaponHandBlend::kMaxChainLength] = {};
         float leftChainWeights[WeaponHandBlend::kMaxChainLength] = {};
     };
-    // evaluations of the Weapon node do not nest, so one buffer per blending thread is enough
+    // Evaluations of the Weapon node do not nest, so one buffer per blending thread is enough
     thread_local std::vector<Entry> t_entries;
-    // the arms of the entries that have their sequence, by entry index
+    // The arms of the entries that have their sequence, by entry index
     thread_local std::vector<ChainLocals> t_sampled;
 
     bool IsWeighted(const Entry& entry)
@@ -743,10 +744,10 @@ namespace
 
     constexpr float kMinBoneLength = 0.01f;
 
-    // Turns the last three nodes of a hand chain (upper arm, forearm, hand; the chain posed as in locals) so that the hand
-    // takes handGoal, relative to the chain's top: the elbow bends until the wrist is as far from the shoulder as the goal,
-    // about the axis it bends about now, then the upper arm swings the wrist onto the goal by the smallest rotation, and
-    // the hand turns to the goal's rotation. Only rotations change, so bones keep their lengths; a goal out of reach is
+    // Rotates the last three nodes of a hand chain (upper arm, forearm, hand; the chain posed as in locals) so the hand
+    // reaches handGoal, relative to the chain's top. The elbow bends about its current axis until the wrist is as far
+    // from the shoulder as the goal, then the upper arm swings the wrist onto the goal by the smallest rotation, and
+    // the hand takes the goal's rotation. Only rotations change, so bone lengths are kept. A goal out of reach is
     // approached as far as the arm stretches. A straight arm has no side to bend to and is left alone.
     void ReachWithArm(NiAVObject* const* chain, const NiTransform* locals, unsigned int count, const NiTransform& handGoal,
                       ArmReach& reach)
@@ -773,7 +774,7 @@ namespace
         const float reachLength = std::clamp((handGoal.m_Translate - shoulder).Length(), minReach, maxReach);
         const float elbowAngle = std::acos(std::clamp(
             (upperLength * upperLength + foreLength * foreLength - reachLength * reachLength) / (2.0f * upperLength * foreLength), -1.0f, 1.0f));
-        // rotating the wrist about toShoulder x toWrist opens the elbow
+        // Rotating the wrist about toShoulder x toWrist opens the elbow
         const float currentAngle = std::atan2(bendAxisLength, toShoulder.Dot(toWrist));
         const NiMatrix33 bend = AxisAngle(bendAxis / bendAxisLength, elbowAngle - currentAngle);
         const NiPoint3 bentWrist = elbow + bend * toWrist;
@@ -797,7 +798,7 @@ namespace
         reach.applied = true;
     }
 
-    // ArmReach: the bones nothing has blended since they were turned get their blend's rotation back
+    // ArmReach: bones that nothing has blended since they were rotated get their blend's rotation back
     void UndoReach(WeaponHandBlend::NodeData& data)
     {
         ArmReach& reach = data.leftReach;
@@ -814,8 +815,8 @@ namespace
     }
 
     // A hand chain node's blend interpolator and the sum of the weights it blended its items with when it was last
-    // evaluated: smoothed weights do not add up to 1 (an item easing out keeps the weight a jump took from it, the others
-    // theirs), BlendValues divides by their sum
+    // evaluated. Smoothed weights do not add up to 1 (an item easing out keeps the weight a jump took from it, the
+    // others theirs), and BlendValues divides by their sum.
     struct ChainBlend
     {
         const NiBlendInterpolator* blend = nullptr;
@@ -830,7 +831,7 @@ namespace
             result.total = 1.0f;
             return result;
         }
-        // additive items are applied on top of the blend, not in it
+        // Additive items are applied on top of the blend, not in it
         auto* extraData = kBlendInterpolatorExtraData::GetExtraData(node);
         for (const auto& item : blend->GetItems())
         {
@@ -843,21 +844,21 @@ namespace
         return result;
     }
 
-    // The hand chains' nodes' blends; a node the skeleton's controller does not animate has none
+    // The hand chains' nodes' blends. A node the skeleton's controller does not animate has none.
     struct ChainBlends
     {
         ChainBlend right[WeaponHandBlend::kMaxChainLength];
         ChainBlend left[WeaponHandBlend::kMaxChainLength];
     };
 
-    // Finds the hand chains' blend interpolators in the skeleton's multi-target controller, and whether every update of the
-    // skeleton's bones blends the left arm (upper arm, forearm, hand) before the Weapon node, so that what HoldLeftHand gives
-    // the arm is not overwritten by the arm's own blend, or by a part of it, and the arm's blend weights are this update's.
-    // The engine (BSTransCon::UpdateAllButTarget) and Stewie's Tweaks' replacement of it go through the multi-target
-    // controller's slots in order; kNVSE's own loops (NiMultiTargetTransformController::_Update in Debug builds,
-    // UpdateHooked) do too, but leave the Weapon node for last. Slots are given out in the order the skeleton's sequences
-    // name their nodes: the Weapon node's is after the arms' on the vanilla skeletons (60 of 67 in third person and on NPCs,
-    // 41 of 68 in first person; the left arm 15-18 and 9-12), but nothing makes it so.
+    // Finds the hand chains' blend interpolators in the skeleton's multi-target controller. Returns true only if every
+    // update of the skeleton's bones blends the left arm (upper arm, forearm, hand) before the Weapon node, so that
+    // what HoldLeftHand gives the arm is not overwritten by the arm's own blend and the arm's blend weights are from
+    // this update. The engine (BSTransCon::UpdateAllButTarget) and Stewie's Tweaks' replacement of it go through the
+    // multi-target controller's slots in order. kNVSE's own loops (NiMultiTargetTransformController::_Update in Debug
+    // builds, UpdateHooked) do too, but leave the Weapon node for last. Slots are assigned in the order the skeleton's
+    // sequences name their nodes. The Weapon node's comes after the arms' on most vanilla skeletons, but nothing
+    // guarantees it.
     bool FindChainBlends(const NiAVObject* weapon, const HandChains& chains, ChainBlends& blends)
     {
         const NiMultiTargetTransformController* controller = nullptr;
@@ -900,8 +901,8 @@ namespace
         return weaponFound && armBlendedFirst == 3;
     }
 
-    // The share of a bone's blend one of its interpolators had when the bone was last evaluated: the normalized weight it
-    // was blended with (smoothed; the rotation's, the channel BlendValues computes last) over all of them
+    // The share of a bone's blend that one of its interpolators had when the bone was last evaluated: its normalized
+    // weight (smoothed; the rotation's, the channel BlendValues computes last) over the total of all of them
     float ChainWeight(const ChainBlend& chainBlend, const NiInterpolator* interpolator)
     {
         const NiBlendInterpolator* blend = chainBlend.blend;
@@ -921,7 +922,7 @@ namespace
         return false;
     }
 
-    // Nothing but the entry holds its interpolators: the sequence is gone, and its items have left every blend
+    // Returns true if nothing but the entry holds its interpolators: the sequence is gone and its items have left every blend
     bool IsReleased(const SequenceInfo& info)
     {
         const auto released = [](const NiPointer<NiInterpolator>& interpolator) { return !interpolator || interpolator.data->m_uiRefCount == 1; };
@@ -929,13 +930,12 @@ namespace
             && std::ranges::all_of(info.leftInterpolators, released);
     }
 
-    // Adds the sequences that have left the Weapon node's blend while the arms may still fade them out, with no weight on
-    // the Weapon node and the pose of their detach. HoldLeftHand models the arms by the Weapon node's sequences, weighted
-    // as the arms' blends weigh them; a sequence must not leave that model while an arm still blends it, or the hand moves
-    // by the sequence's share of the arm in one frame. A sequence without weight on the Weapon node loses its item there as
-    // it detaches (nothing to fade out), while it can have weight on the arms: third person 2hr run -> aimIS, the run (35
-    // on the Weapon node, under aim 45, 36 on the arms, over aim 35) eased out with 6-13 % of the arms, and the left hand
-    // jumped 1.0-1.4 units. Returns whether one of them holds the weapon with the left hand.
+    // Adds the sequences that have left the Weapon node's blend while the arms may still fade them out, with no weight
+    // on the Weapon node and the pose of their detach. HoldLeftHand models the arms from the Weapon node's sequences,
+    // weighted as the arms' blends weigh them. A sequence must not leave that model while an arm still blends it, or
+    // the hand moves by the sequence's share of the arm in one frame. A sequence without weight on the Weapon node
+    // loses its item there as it detaches (nothing to fade out) but can still have weight on the arms, e.g. a run
+    // easing out under an aimIS transition. Returns true if one of them holds the weapon with the left hand.
     bool AddFadingSequences(WeaponHandBlend::NodeData& data)
     {
         bool anyHandOff = false;
@@ -999,7 +999,7 @@ bool WeaponHandBlend::SequenceInfo::SampleLeftSpace(float fTime, NiTransform& re
     const size_t i0 = i1 - 1;
     const float h = keys[i1].time - keys[i0].time;
     const float s = std::clamp((fTime - keys[i0].time) / h, 0.0f, 1.0f);
-    // cubic Hermite with Catmull-Rom tangents (finite differences over the neighbouring keys, uneven spacing allowed)
+    // Cubic Hermite with Catmull-Rom tangents (finite differences over the neighbouring keys, uneven spacing allowed)
     const float s2 = s * s;
     const float s3 = s2 * s;
     const float h00 = 2.0f * s3 - 3.0f * s2 + 1.0f;
@@ -1050,7 +1050,7 @@ WeaponHandBlend::Context::Context(NiObjectNET* target, kBlendInterpolatorExtraDa
 #if _DEBUG
     if (g_pluginSettings.weaponHandBlendDebugLog && data->loggedParent != weapon->m_pkParent)
     {
-        // reports when the game moves the Weapon node to another parent (prn: keys)
+        // Reports when the game moves the Weapon node to another parent (prn: keys)
         data->loggedParent = weapon->m_pkParent;
         DebugPrint(FormatString("WeaponHandBlend: Weapon node %08X is now parented to %s", reinterpret_cast<UInt32>(weapon),
             weapon->m_pkParent->m_pcName.CStr()));
@@ -1117,12 +1117,12 @@ int WeaponHandBlend::Context::FindOrMeasureSequence(NiInterpolator* weaponInterp
     }
     else if (!model || model == m_data->sequences[index].weaponModel)
     {
-        // measured with this weapon model, or there is no model now to measure the contact against
+        // Measured with this weapon model, or there is no model now to measure the contact against
         return index;
     }
     SequenceInfo& info = m_data->sequences[index];
     info.weaponModel = model;
-    // a skeleton without a left hand chain keeps the right hand only entry so the search is not repeated every frame
+    // A skeleton without a left hand chain keeps the right hand only entry, so the search is not repeated every frame
     if (EnsureChains())
         Measure(info, sequence, m_weapon, m_data->chains, GetWeaponBound());
     return index;
@@ -1194,8 +1194,8 @@ void WeaponHandBlend::Context::CacheDetachedPose(const kBlendInterpItem& extraIt
         return;
     // Sequences detach here, outside of blending, so this is where released sequences are dropped
     std::erase_if(m_data->sequences, IsReleased);
-    // an item without weight that was never blended here while attached (bone LOD skips the Weapon node) is in no model
-    // of the arms yet: not worth measuring the sequence for
+    // An item without weight that was never blended here while attached (bone LOD skips the Weapon node) is in no model
+    // of the arms yet, so the sequence is not worth measuring
     if (extraItem.IsSmoothedWeightZero() && FindSequence(extraItem.interpolator.data) == -1)
         return;
 
@@ -1205,15 +1205,15 @@ void WeaponHandBlend::Context::CacheDetachedPose(const kBlendInterpItem& extraIt
     info.fading = false;
     info.detachedOff = info.IsOff(fTime);
     const Acceptance acceptance = info.Sample(fTime);
-    // every item's arms, also of those holding the weapon in the right hand only: HoldLeftHand blends them by the arms' own
-    // weights for as long as they fade out there (a blended arm standing in for them moved the hand 6-12 units in a frame
-    // when the run detached from the Weapon node of a third person 9mm Pistol at the end of its blend to aimIS)
+    // Cache every item's arms, including those holding the weapon in the right hand only: HoldLeftHand blends them by
+    // the arms' own weights for as long as they fade out there. Standing in a blended arm for them would move the hand
+    // when a sequence detaches from the Weapon node while the arms still blend it.
     if (!EnsureChains())
         return;
     const HandChains& chains = m_data->chains;
     ItemPose& pose = info.detachedPose;
     SampleLocals(info, chains, fTime, pose.locals);
-    // a hand track that ends before the sequence does is sampled past its last key
+    // A hand track that ends before the sequence does is sampled past its last key
     const NiTransform sequenceLeft = Compose(pose.locals.left, chains.leftCount);
     if (!IsFinite(Compose(pose.locals.right, chains.rightCount)) || !IsFinite(sequenceLeft) || sequenceLeft.m_fScale <= 0.0f)
         return;
@@ -1228,7 +1228,7 @@ void WeaponHandBlend::Context::CacheDetachedPose(const kBlendInterpItem& extraIt
 namespace
 {
     // Places the weapon by the references the blended items agree on (Blend), relative to the blended right hand (its
-    // parent); corrected is the share of the blend that did not opt out.
+    // parent). corrected is the share of the blend that did not opt out.
     void MoveWeapon(NiQuatTransform& kValue, const TransformBlender* relatives, const float* referenceWeights, float corrected,
                     const NiTransform& rightBlended, const NiTransform& leftBlended)
     {
@@ -1266,7 +1266,7 @@ namespace
         }
     }
 
-    // base with the channels the blender has replaced by its blend
+    // Returns base with the channels the blender has replaced by its blend
     NiTransform Merge(const TransformBlender& blender, NiTransform base)
     {
         if (!blender.HasTranslate() && !blender.HasRotate())
@@ -1282,11 +1282,11 @@ namespace
         return base;
     }
 
-    // A hand chain (HandChains::left or right) relative to its top, as blending the items' own chains joint by joint, each
-    // joint with the weights its own blend gave their sequences, gives it: what the arm's blend makes of these items. Not
-    // the Weapon node's weights: the arms blend other animations as well (third person 1hp: aim and the walk key the arms,
-    // not the weapon) and take up other jumps of the weights (blend smoothing), so their weights for the same sequences
-    // differ, by up to half of the bone for seconds when the jumps fade slowly (measured with a 0.6 s fade time)
+    // Returns a hand chain (HandChains::left or right) relative to its top, as blending the items' own chains joint by
+    // joint gives it, each joint with the weights its own blend gave their sequences: what the arm's blend makes of
+    // these items. The Weapon node's weights are not used because the arms also blend other animations (e.g. in third
+    // person 1hp the aim and the walk key the arms but not the weapon) and take up other weight jumps (blend smoothing),
+    // so their weights for the same sequences can differ substantially.
     NiTransform BlendItemsChain(const HandChains& chains, const ChainLocals& blendedLocals, bool bLeft)
     {
         const auto side = [bLeft](const ChainLocals& locals) { return bLeft ? locals.left : locals.right; };
@@ -1308,15 +1308,16 @@ namespace
     }
 
     // Each arm is blended joint by joint, so between two poses that both hold the weapon with the left hand the hand
-    // drifts off it (aim -> aimIS: 1.4 units in first person, 2.5 in third, at the middle of the blend). The error is
-    // measured on the items alone: their arms blended joint by joint as the engine does (BlendItemsChain) and the weapon
-    // as the Weapon node's blend does give the hand some place relative to the weapon, the items' own places of the hand
-    // on the weapon blended by the left hand's weights give where it belongs. The step from the one to the other, holdShare
-    // of it (the share of the left hand's blend holding the weapon), is applied to the arm's hand, so whatever else moves
-    // the arm keeps doing so: additive animations, and animations the Weapon node does not have (3rd person sneak attacks
-    // without a Weapon track: their arms blend while the weapon follows the other variant alone; going for the place on
-    // the weapon itself instead snapped the hand 5.9 units in a frame when a second item reached the Weapon node). The arm
-    // then reaches for it (ReachWithArm). Runs while the Weapon node is evaluated, after the left arm was (FindChainBlends).
+    // drifts off the weapon (e.g. aim -> aimIS, worst at the middle of the blend). The error is measured on the items
+    // alone:
+    // - the items' arms blended joint by joint as the engine does (BlendItemsChain), combined with the weapon as the
+    //   Weapon node's blend does, put the hand somewhere relative to the weapon;
+    // - the items' own places of the hand on the weapon, blended by the left hand's weights, give where it belongs.
+    // The step from the first to the second, scaled by holdShare (the share of the left hand's blend holding the
+    // weapon), is applied to the arm's hand, so whatever else moves the arm keeps doing so: additive animations, and
+    // animations the Weapon node does not have (e.g. third person sneak attacks without a Weapon track). The arm then
+    // reaches for the corrected hand (ReachWithArm). Runs while the Weapon node is evaluated, after the left arm was
+    // (see FindChainBlends).
     void HoldLeftHand(const NiAVObject* weapon, WeaponHandBlend::NodeData& data, float holdShare, const ChainLocals& blendedLocals,
                       const NiTransform& leftBlended)
     {
@@ -1355,7 +1356,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
         return;
     UndoReach(*m_data);
     if (!m_collecting)
-        return; // no item evaluated: t_entries is another evaluation's
+        return; // no item evaluated, so t_entries belongs to another evaluation
     if (g_pluginSettings.keepLeftHandOnWeapon)
         m_anyHandOff |= AddFadingSequences(*m_data);
     if (!m_anyHandOff || !EnsureChains())
@@ -1365,7 +1366,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     if (!bTranslate && !bRotate)
         return;
 
-    // how much of the blend's weight accepts each hand, and how much opted out
+    // How much of the blend's weight accepts each hand, and how much opted out
     float total = 0.0f;
     float off = 0.0f;
     Acceptance agreement{ 0.0f, 0.0f };
@@ -1380,22 +1381,21 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
     }
     if (total <= 0.0f)
         return;
-    // the opted out share keeps the regular blend, so the correction fades in and out with those animations' weight
+    // The opted out share keeps the regular blend, so the correction fades in and out with those animations' weight
     const float corrected = 1.0f - off / total;
     if (corrected <= kMinReferenceWeight)
         return;
 
-    // the right hand wins where all agree on it, then the left hand; the body takes whatever both leave
+    // The right hand wins where all agree on it, then the left hand. The body takes whatever both leave.
     float referenceWeights[kReferenceCount];
     referenceWeights[kRight] = static_cast<float>(std::pow(agreement.right / total, kAgreementExponent));
     referenceWeights[kLeft] = (1.0f - referenceWeights[kRight]) * static_cast<float>(std::pow(agreement.left / total, kAgreementExponent));
     referenceWeights[kBody] = (std::max)(0.0f, 1.0f - referenceWeights[kRight] - referenceWeights[kLeft]);
     const bool bMoveWeapon = referenceWeights[kRight] < 1.0f - kMinReferenceWeight;
     // Left hand: where the weapon stays on the right hand, the share of the left hand's blend whose animations hold the
-    // weapon pulls the hand to where they hold it. Not skipped while one animation has all of the Weapon node: the arms
-    // can be another's (third person, a gait keys the arms over aim and under aimIS), and the correction then switched on
-    // and off with the aim up/down weights (strafing with the rifle, 0.5 degrees of pitch moved the hand 1.3-1.7 units in
-    // a frame) and at the ends of the Weapon node's blends.
+    // weapon pulls the hand to where they hold it. This is not skipped while one animation has all of the Weapon node,
+    // because the arms can belong to another (third person: a gait keys the arms over aim and under aimIS). Skipping
+    // it would switch the correction on and off with the aim up/down weights and at the ends of the Weapon node's blends.
     const HandChains& chains = m_data->chains;
     float holdShare = 0.0f;
     ChainBlends chainBlends;
@@ -1413,7 +1413,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
                     entry.rightChainWeights[i] = ChainWeight(chainBlends.right[i], info.rightInterpolators[i]);
                 for (unsigned int i = 0; i < chains.leftCount; ++i)
                     entry.leftChainWeights[i] = ChainWeight(chainBlends.left[i], info.leftInterpolators[i]);
-                // its items have left the arms' blends, which a detached sequence does not join again
+                // Its items have left the arms' blends, which a detached sequence does not join again
                 if (entry.fading && !IsChainWeighted(entry))
                     info.fading = false;
                 if (!entry.off && entry.acceptance.left > kMinAcceptance)
@@ -1421,7 +1421,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
             }
             weighted += IsWeighted(entry) || IsChainWeighted(entry);
         }
-        // one animation alone places the weapon and the arms (as far as these animations do): the step is 0
+        // One animation alone places the weapon and the arms (as far as it animates them), so the step is 0
         if (weighted > 1)
             holdShare = referenceWeights[kRight] * holding;
     }
@@ -1437,7 +1437,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
         return;
     const bool bNeedBody = bMoveWeapon && referenceWeights[kBody] > kMinReferenceWeight;
 
-    // each item's weapon relative to each reference, in the item's own pose
+    // Each item's weapon relative to each reference, in the item's own pose
     TransformBlender relatives[kReferenceCount];
     t_sampled.resize(t_entries.size());
     for (size_t i = 0; i < t_entries.size(); ++i)
@@ -1448,12 +1448,12 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
         const NiTransform weaponLocal = ToTransform(entry.transform, m_weapon);
         const Acceptance& acceptance = entry.acceptance;
         relatives[kRight].Add(weaponLocal, entry.translateWeight * acceptance.right, entry.rotateWeight * acceptance.right);
-        // the left hand and body references need the item's hands, the left hand's correction every item's arms
+        // The left hand and body references need the item's hands, the left hand correction needs every item's arms
         const bool bPlacesWeapon = !acceptance.IsRightOnly() || bNeedBody;
         if (!bPlacesWeapon && !bHoldLeftHand)
             continue;
 
-        // items without arms of their own (pose interpolators) use the blended arms
+        // Items without arms of their own (pose interpolators) use the blended arms
         entry.locals = &blendedLocals;
         NiTransform sequenceRight = rightBlended;
         NiTransform sequenceLeft = leftBlended;
@@ -1468,7 +1468,7 @@ void WeaponHandBlend::Context::Blend(NiQuatTransform& kValue)
                 SampleLocals(info, chains, entry.time, sampled);
                 const NiTransform sampledRight = Compose(sampled.right, chains.rightCount);
                 const NiTransform sampledLeft = Compose(sampled.left, chains.leftCount);
-                // a hand track that ends before the sequence does is sampled past its last key
+                // A hand track that ends before the sequence does is sampled past its last key
                 if (IsFinite(sampledRight) && IsFinite(sampledLeft) && sampledLeft.m_fScale > 0.0f)
                 {
                     entry.locals = &sampled;

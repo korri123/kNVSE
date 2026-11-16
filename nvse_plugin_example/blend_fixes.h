@@ -15,10 +15,10 @@ namespace BlendFixes
 	void ApplyAttackISToAttackFix();
 	void ApplyAttackToAttackISFix();
 	void ApplyWeaponStanceFix();
-	// The state Animation::Update and StartGroup take a section's current sequence to be in: ANIMATING for a variant
-	// TransitionToVariant cross faded in that has taken over from the sequence it continues
+	// Returns the state Animation::Update and StartGroup should see for a section's current sequence: ANIMATING for a
+	// variant that TransitionToVariant cross faded in and that has taken over from the sequence it continues
 	NiControllerSequence::AnimState ContinuedVariantState(const AnimData* animData, const NiControllerSequence* sequence);
-	// A sequence easing in that TransitionToVariant cross faded in as a variant of another
+	// Returns true if the sequence is easing in as a variant that TransitionToVariant cross faded in
 	bool ContinuesVariant(const NiControllerSequence& sequence);
 	void WriteDelayedHooks();
 	void ApplyAimBlendHooks();

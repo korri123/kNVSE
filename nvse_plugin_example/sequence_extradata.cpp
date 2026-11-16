@@ -42,7 +42,7 @@ namespace
     {
         const kAnimationExtraData::SequenceKey key{ sequence->m_pkOwner, sequence };
         const auto& keys = nodeData->sequenceKeys;
-        // Fibonacci hashing: sequences are heap blocks, the low bits of their addresses alike
+        // Fibonacci hashing, because sequences are heap blocks whose addresses share their low bits
         UInt16& hint = nodeData->sequenceHints[reinterpret_cast<UInt32>(sequence) * 0x9E3779B1u >>
             (32 - kAnimationExtraData::kSequenceHintBits)];
         if (hint < keys.size() && keys[hint] == key)
@@ -55,14 +55,14 @@ namespace
         return &nodeData->sequenceData[index];
     }
 
-    // NiControllerManager::RemoveSequence and RemoveAllSequences clear a sequence's targets just before it leaves the
-    // manager, while m_pkOwner still points at it. Both run on a live Animation whose manager is attached to its scene root:
-    // ~Animation dereferences the manager's target itself right after RemoveAllSequences.
+    // Hook for NiControllerManager::RemoveSequence and RemoveAllSequences: clears a sequence's targets just before it
+    // leaves the manager, while m_pkOwner still points at it. Both run on a live Animation whose manager is attached to
+    // its scene root (~Animation dereferences the manager's target itself right after RemoveAllSequences).
     void __fastcall ClearTargetsAndDelete(NiControllerSequence* sequence)
     {
-        // sequences following this one (NiControllerSequence::m_pkPartnerSequence) would read it once it is freed. Before
-        // ClearTargets, which deactivates it and rebases its offset: the owner time of its last evaluation is the time it
-        // stored minus that offset, if it ran on its own clock
+        // Sequences following this one (NiControllerSequence::m_pkPartnerSequence) would read it after it is freed, so
+        // release them first. This must happen before ClearTargets, which deactivates the sequence and rebases its
+        // offset. If it ran on its own clock, the owner time of its last evaluation is the stored time minus the offset.
         const bool bOwnClock = sequence->m_fLastTime != -NI_INFINITY && !sequence->m_pkPartnerSequence &&
             sequence->m_fDestFrame == -NI_INFINITY;
         sequence->ReleaseFollowers(bOwnClock ? sequence->m_fLastTime - sequence->m_fOffset : NAN);
@@ -70,9 +70,9 @@ namespace
         SequenceExtraDatas::Delete(sequence);
     }
 
-    // NiControllerManager::AddSequence binding the sequence it adds (NiControllerSequence::StoreTargets): m_pkOwner is
-    // set, the sequence not in the manager's array yet. Not reached for a null manager (JohnnyGuitar's fix of the check at
-    // 0xA2F0CA returns before)
+    // Hook for NiControllerManager::AddSequence binding the sequence it adds (NiControllerSequence::StoreTargets).
+    // m_pkOwner is set and the sequence is not in the manager's array yet. Never reached for a null manager
+    // (JohnnyGuitar's fix of the check at 0xA2F0CA returns before).
     bool __fastcall StoreTargetsOnJoin(NiControllerSequence* sequence, void*, NiAVObject* root)
     {
         SpawnKeys::OnSequenceJoin(*sequence);
@@ -170,7 +170,7 @@ void SequenceExtraDatas::Delete(const NiControllerSequence* sequence)
     const auto iter = std::ranges::find(keys, kAnimationExtraData::SequenceKey{ manager, sequence });
     if (iter == keys.end())
         return;
-    // the last one takes its place
+    // The last entry takes its place
     const auto index = static_cast<size_t>(iter - keys.begin());
     if (index != keys.size() - 1)
     {
@@ -185,8 +185,8 @@ void SequenceExtraDatas::MarkStoreTargets(NiControllerManager* manager)
 {
     if (!manager->m_pkTarget)
         return;
-    // every sequence of the manager is marked: the manager's entries are replaced, which also drops duplicates. Called on
-    // every update of a dying actor (TESObjectREFR::ClearInterpolators from Actor::Update)
+    // Every sequence of the manager is marked. The manager's entries are replaced, which also drops duplicates. Called
+    // on every update of a dying actor (TESObjectREFR::ClearInterpolators from Actor::Update).
     auto& pending = kAnimationExtraData::GetOrCreate(manager->m_pkTarget)->pendingStoreTargets;
     std::erase_if(pending, [manager](const kAnimationExtraData::SequenceKey& key) { return key.manager == manager; });
     pending.reserve(pending.size() + manager->sequences.Length());

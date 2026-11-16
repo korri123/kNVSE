@@ -12,8 +12,8 @@
 
 namespace
 {
-	// A stop animation played this far (of its length): the actor counts as standing, so walking again starts with the
-	// start animation instead of blending back to the walk
+	// Progress (fraction of its length) at which a playing stop animation makes the actor count as standing. Walking
+	// again after that starts with the start animation instead of blending back to the walk.
 	constexpr float kStandingProgress = 0.5f;
 
 	bool IsEnabled()
@@ -28,10 +28,11 @@ namespace
 		return sequence && sequence->animGroup && IsGait(sequence->animGroup->groupID);
 	}
 
-	// Whether the start or stop animation may play on the skeleton. The player's 3rd person skeleton in 1st person: only
-	// with an allowFirstPerson text key. The view shows the 1st person skeleton, and the player moves by the 3rd person
-	// one's root motion while only it plays a start or stop animation (FirstPersonMovementGroupHook): a 3rd person clip
-	// would move the camera through a start or stop the arms don't show
+	// Returns whether the start or stop animation may play on the skeleton. On the player's 3rd person skeleton in
+	// 1st person it needs an allowFirstPerson text key: the view shows the 1st person skeleton, but the player moves by
+	// the 3rd person root motion while only that skeleton plays a start or stop animation
+	// (FirstPersonMovementGroupHook), so a clip without the key would move the camera through a start or stop the arms
+	// don't show.
 	bool IsAllowed(const AnimData* animData, const BSAnimGroupSequence* sequence)
 	{
 		if (animData->actor != g_thePlayer || animData == g_thePlayer->firstPersonAnimData || g_thePlayer->IsThirdPerson())
@@ -40,7 +41,7 @@ namespace
 		return sequence->m_spTextKeys && sequence->m_spTextKeys->FindFirstByName(kKey);
 	}
 
-	// One of the set's start animations at random that may play on the skeleton (IsAllowed)
+	// Picks one of the set's start animations at random that may play on the skeleton (IsAllowed)
 	BSAnimGroupSequence* PickStart(AnimData* animData, SavedAnims& set)
 	{
 		auto paths = TransitionAnims::GetPaths(set, TransitionKind::Start);
@@ -55,16 +56,16 @@ namespace
 		return nullptr;
 	}
 
-	// Start and stop animations and what blends with them in the movement section play at fMoveSpeed (RunClock), so
-	// blends into and out of them take their ease time in the animations' time
+	// Start and stop animations, and what blends with them in the movement section, play at fMoveSpeed (RunClock), so
+	// blends into and out of them take their ease time in animation time. Converts that time to real time.
 	float ToRealTime(const AnimData* animData, float fAnimTime)
 	{
 		const float fSpeed = animData->movementSpeedMult;
 		return fSpeed > 0.0f && std::isfinite(fSpeed) ? fAnimTime / fSpeed : fAnimTime;
 	}
 
-	// Marks the sequence and plays it in the movement section under groupId (the group the engine picked, which it keeps
-	// testing the section against), cross fading from what plays there. False if it could not start
+	// Marks the sequence and plays it in the movement section under groupId (the group the engine picked, which it
+	// keeps testing the section against), cross fading from what plays there. Returns false if it could not start.
 	bool Play(AnimData* animData, BSAnimGroupSequence* sequence, UInt16 groupId, TransitionKind kind)
 	{
 		auto* extraData = SequenceExtraDatas::GetOrCreate(sequence);
@@ -94,8 +95,8 @@ namespace
 		}
 	}
 
-	// How far the sequence has played, from 0 to 1. A sequence started over (m_fOffset unset until its first update)
-	// still has the times of its previous play
+	// Returns how far the sequence has played, from 0 to 1. A sequence started over has the times of its previous play
+	// until its first update sets m_fOffset.
 	float GetProgress(const NiControllerSequence* sequence)
 	{
 		const float fLength = sequence->m_fEndKeyTime - sequence->m_fBeginKeyTime;
@@ -109,9 +110,9 @@ namespace
 		return MovementTransitions::Of(sequence) == TransitionKind::Stop && GetProgress(sequence) >= kStandingProgress;
 	}
 
-	// Whether walking or running would start from standing: the movement section is empty, turning in place or most of
-	// the way through a stop animation, and no walk or run (or start or stop animation) still fading out has most of the
-	// legs (stopping and walking on at once, landing a jump)
+	// Returns true if walking or running would start from standing: the movement section is empty, turning in place or
+	// most of the way through a stop animation, and no walk or run (or start or stop animation) still fading out has
+	// most of the legs (e.g. stopping and walking on at once, or landing from a jump)
 	bool IsStanding(AnimData* animData)
 	{
 		if (const auto* current = animData->animSequence[kSequence_Movement])
@@ -143,8 +144,8 @@ namespace
 		return false;
 	}
 
-	// The walk or run the actor is in most: on a stick release the run hands over to a walk for a few frames before the
-	// stop, while it still has the legs
+	// Returns the walk or run the actor is in most. On a stick release the run hands over to a walk for a few frames
+	// before the stop, while it still has the legs.
 	BSAnimGroupSequence* GetMainGait(AnimData* animData)
 	{
 		BSAnimGroupSequence* result = nullptr;
@@ -164,18 +165,19 @@ namespace
 		return result;
 	}
 
-	// Animation::BlendOut of the movement section in Actor::PickAnimations, for a group picked in another section (idle):
-	// the stop animation of the walk or run instead. False to blend out as the engine does.
-	// The player only: an NPC is told to stop where its path ends, and its movement is dropped from then on
+	// Animation::BlendOut of the movement section in Actor::PickAnimations, for a group picked in another section
+	// (idle). Plays the stop animation of the walk or run instead and returns true, or returns false to blend out as
+	// the engine does.
+	// Player only: an NPC is told to stop where its path ends and its movement is dropped from then on
 	// (ActorMover::SetCurrentFrameMoveModeAndDelta while Animation::ShouldBeMoving), so a stop animation started there
-	// could only step in place. NPCs start theirs before they get there (StartArrival)
+	// could only step in place. NPCs start theirs before they get there (StartArrival).
 	bool PlayStop(AnimData* animData)
 	{
 		auto* current = animData->animSequence[kSequence_Movement];
 		if (animData->actor != g_thePlayer || !IsGait(current) || animData->noBlend120)
 			return false;
 		const auto currentTransition = MovementTransitions::Of(current);
-		// already stopping (the GetState hook keeps it), or released while the start animation was still blending in
+		// Already stopping (the GetState hook keeps it), or released while the start animation was still blending in
 		if (currentTransition == TransitionKind::Stop || (currentTransition == TransitionKind::Start && current->m_eState == NiControllerSequence::EASEIN))
 			return false;
 		auto* gait = GetMainGait(animData);
@@ -191,7 +193,7 @@ namespace
 		if (paths.empty())
 			return false;
 
-		// the one whose first frame has the feet where they are: stops on the left and on the right foot
+		// Picks the stop whose first frame has the feet where they are (stops on the left or right foot)
 		BSAnimGroupSequence* stop = nullptr;
 		float fBestMismatch = NI_INFINITY;
 		std::vector<BSAnimGroupSequence*> unmatched;
@@ -224,37 +226,36 @@ namespace
 		animData->BlendOut(sequenceId, bChar);
 	}
 
-	// NPC arrivals. NPCs move by the root motion of their animations (Animation::GetDelta in Actor::GetMovementDelta
-	// 0x8B7100), steered along their path by DetailedActorPathHandler::Update (0x9E0A00), and stop once they are within
-	// the goal radius of the path's last node (DetailedActorPathHandler 0x9E8000; a soft radius goes on to 5 units).
-	// The stop animation starts where its root motion still reaches that point (partway through when the point is
-	// nearer than its whole motion), and its root motion is scaled to land there (WarpArrivalHook): measured in
-	// Goodsprings, sandboxing NPCs walk paths of 50-300 units to a goal radius of 10, 25 or 50 (soft), so a stop played
-	// on arrival would have carried them its whole length past that point
+	// NPC arrivals. NPCs move by the root motion of their animations (Animation::GetDelta in Actor::GetMovementDelta,
+	// 0x8B7100) and are steered along their path by DetailedActorPathHandler::Update (0x9E0A00). They stop once they
+	// are within the goal radius of the path's last node (DetailedActorPathHandler 0x9E8000; a soft radius goes on to
+	// 5 units). The stop animation starts where its root motion still reaches that point (partway through when the
+	// point is nearer than its whole motion), and its root motion is scaled to land there (WarpArrivalHook). Starting
+	// a stop on arrival would carry the NPC its whole length past the stop point.
 	constexpr float kSoftGoalRadius = 5.0f;
-	// how far past the stop point the stop animation aims, so the engine's check passes before its motion runs out
+	// How far past the stop point the stop animation aims, so the engine's check passes before its motion runs out
 	constexpr float kArrivalOvershoot = 3.0f;
-	// root motion scale range: beyond it the feet would visibly slide
+	// Root motion scale range. Beyond it the feet would visibly slide.
 	constexpr float kMinWarp = 0.6f;
 	constexpr float kMaxWarp = 1.5f;
-	// how far short of the stop point an NPC may be when its stop animation's motion runs out (slowed by turns, other
-	// actors) to be stopped there: farther, it walks on
+	// How far short of the stop point an NPC may be when its stop animation's motion runs out (slowed by turns or
+	// other actors) and still be stopped there. Farther away, it walks on.
 	constexpr float kArrivalSlack = 16.0f;
-	// how much farther the stop point may get from one update to the next before the stop counts as cancelled (the goal
-	// moved on: following, a new path)
+	// How much farther the stop point may get from one update to the next before the stop counts as cancelled (the goal
+	// moved on, e.g. following or a new path)
 	constexpr float kGoalMovedDistance = 2.0f;
 
 	struct Arrival
 	{
 		enum class State
 		{
-			None, // not heading for the end of a path
+			None, // Not heading for the end of a path
 			Moving,
-			Arrived, // stopping or stopped at the path's end (the engine drops the movement), or turning to face its goal
+			Arrived, // Stopping or stopped at the path's end (the engine drops the movement), or turning to face its goal
 		};
 		State state = State::None;
-		float fDistance = NAN; // to the point where the NPC stops, while Moving
-		NiPoint3 goal; // the path's last node, while Moving
+		float fDistance = NAN; // To the point where the NPC stops, while Moving
+		NiPoint3 goal; // The path's last node, while Moving
 	};
 
 	Arrival GetArrival(Actor* actor)
@@ -273,11 +274,11 @@ namespace
 		if (handler->eState != DetailedActorPathHandler::kState_Moving || handler->bWaitingForUpdate || handler->bEndUpdatePath ||
 			!path || path->bIncompletePath || !path->numCurrentNodes)
 			return {};
-		// a door the path goes on through
+		// A door the path goes on through
 		const auto* goal = path->GetLastNode();
 		if (!goal || goal->IsTeleportDoor())
 			return {};
-		// along the path: to the node it heads for, then node to node
+		// Distance along the path: to the node it heads for, then node to node
 		const UInt32 lastIndex = path->numCurrentNodes - 1;
 		const UInt32 nextIndex = (std::min)(handler->currentNodeIndex + 1, lastIndex);
 		NiPoint3 from(actor->posX, actor->posY, 0.0f);
@@ -297,20 +298,20 @@ namespace
 		return { Arrival::State::Moving, (std::max)(fDistance - fStopRadius + kArrivalOvershoot, 0.0f), goal->location.location };
 	}
 
-	// Paths are rebuilt on the way (avoidance) and new ones can take a freed one's memory: they are told apart by their goal
+	// Paths are rebuilt on the way (avoidance) and new ones can reuse a freed one's memory, so paths are told apart by goal
 	bool IsSameGoal(const NiPoint3& goal, const NiPoint3& other)
 	{
 		return std::hypot(goal.x - other.x, goal.y - other.y) <= kGoalMovedDistance;
 	}
 
-	// The scale of the actor's movement: its root's (the accum root's parent)
+	// Returns the scale of the actor's movement: its root's (the accum root's parent)
 	float GetRootScale(const AnimData* animData)
 	{
 		const auto* root = animData->nBip01;
 		return root && root->m_pkParent ? root->m_pkParent->m_kWorld.m_fScale : 1.0f;
 	}
 
-	// The accum root's (Bip01's) track of a sequence: where it moves the actor
+	// The accum root's (Bip01's) track of a sequence, i.e. where the sequence moves the actor
 	class RootTrack
 	{
 	public:
@@ -326,7 +327,7 @@ namespace
 				end = At(sequence->m_fEndKeyTime);
 		}
 
-		// interpolators are shared by every clone of a KF and cache their last evaluation by time
+		// Interpolators are shared by every clone of a KF and cache their last evaluation time
 		~RootTrack()
 		{
 			if (interpolator)
@@ -338,7 +339,7 @@ namespace
 
 		explicit operator bool() const { return interpolator != nullptr; }
 
-		// how far the root moves on the ground from fTime to the sequence's end
+		// Returns how far the root moves on the ground from fTime to the sequence's end
 		float DistanceToEnd(float fTime) const
 		{
 			if (!interpolator)
@@ -347,7 +348,7 @@ namespace
 			return std::hypot(move.x, move.y) * fScale;
 		}
 
-		// the time from which the root moves fDistance to the end: the beginning if it moves less in all
+		// Returns the time from which the root moves fDistance to the end, or the beginning if it moves less in total
 		float TimeAtDistanceToEnd(float fDistance) const
 		{
 			float fLow = sequence->m_fBeginKeyTime;
@@ -378,17 +379,17 @@ namespace
 		NiPoint3 end{};
 	};
 
-	// Starts the stop animation of an NPC's walk or run once its root motion reaches the point where the NPC stops: as
-	// soon as that point is as near as the shortest one's motion, each from where it has that much left; of those the one
-	// whose pose there has the feet where they are. True if it plays
+	// Starts the stop animation of an NPC's walk or run once its root motion reaches the point where the NPC stops.
+	// That is when the point is as near as the shortest stop's motion, each stop starting from where it has that much
+	// left. Of those, the stop whose pose there has the feet where they are plays. Returns true if one plays.
 	bool StartArrival(AnimData* animData)
 	{
 		const UInt16 groupId = animData->groupIDs[kSequence_Movement];
-		// nothing to start: keeps the arrivals (the path handler's state, the lookup of the override set) out of every
-		// NPC's update while no stop animation is installed
+		// Nothing to start: keeps the arrivals (path handler state, override set lookup) out of every NPC's update
+		// while no stop animation is installed
 		if (!TransitionAnims::HasGaitStops())
 			return false;
-		// from a walk or start animation playing on its own: one still blending moves the NPC by less than the stop's
+		// Needs a walk or start animation playing on its own: one still blending moves the NPC by less than the stop's
 		// motion counts on
 		const auto* current = animData->animSequence[kSequence_Movement];
 		if (animData->noBlend120 || !IsGait(groupId) || !current || current->m_eState != NiControllerSequence::ANIMATING)
@@ -403,7 +404,7 @@ namespace
 		if (paths.empty())
 			return false;
 
-		// every update while walking: what each has left (the whole motion cached), before anything is sampled
+		// Runs every update while walking: computes what each has left (the whole motion is cached) before sampling
 		std::vector<BSAnimGroupSequence*> sequences;
 		for (const auto* path : paths)
 		{
@@ -411,7 +412,7 @@ namespace
 			auto* extraData = sequence ? SequenceExtraDatas::GetOrCreate(sequence) : nullptr;
 			if (!extraData)
 				continue;
-			// once per approach: after one was cancelled (the NPC fell behind its motion) it walks on to the end
+			// Once per approach: after one was cancelled (the NPC fell behind its motion) the NPC walks on to the end
 			if (IsSameGoal(extraData->arrivalGoal, arrival.goal) && arrival.fDistance <= extraData->fArrivalDistance + kGoalMovedDistance)
 				return false;
 			float fLeft;
@@ -429,7 +430,7 @@ namespace
 				const RootTrack track(animData, sequence);
 				fLeft = track ? track.DistanceToEnd(sequence->GetSequenceTime()) : 0.0f;
 			}
-			// no root motion: not one to stop with
+			// No root motion: not usable as a stop
 			if (fLeft <= 0.0f)
 				continue;
 			if (arrival.fDistance > fLeft)
@@ -445,14 +446,14 @@ namespace
 			BSAnimGroupSequence* sequence;
 			float fTime;
 			bool bStartOver;
-			float fMismatch; // of the legs' pose at fTime; infinite if it can't be measured
+			float fMismatch; // Of the legs' pose at fTime; infinite if it can't be measured
 		};
 		std::vector<Candidate> candidates;
 		for (auto* sequence : sequences)
 		{
 			const RootTrack track(animData, sequence);
-			// one still easing out (the NPC walked on from it) eases back in where it is: moving its clock would move
-			// the root, and with it the NPC, by as much at once
+			// One still easing out (the NPC walked on from it) eases back in where it is, because moving its clock
+			// would move the root, and the NPC with it, by as much at once
 			const bool bStartOver = sequence->m_eState == NiControllerSequence::INACTIVE;
 			const float fTime = bStartOver ? track.TimeAtDistanceToEnd(arrival.fDistance) : sequence->GetSequenceTime();
 			const float fMismatch = MovementBlendFixes::GetStrideMismatch(animData, sequence, fTime);
@@ -464,7 +465,8 @@ namespace
 			return false;
 		if (stop.bStartOver && stop.fTime > sequence->m_fBeginKeyTime)
 		{
-			// as MovementBlendFixes::PlayMovementAnim starts a gait partway; the last time skips the text keys before it
+			// Starts partway like MovementBlendFixes::PlayMovementAnim does for a gait. The last time skips the text
+			// keys before it.
 			sequence->m_fOffset = stop.fTime / sequence->m_fFrequency - animData->timePassed;
 			sequence->m_fLastScaledTime = stop.fTime;
 		}
@@ -477,9 +479,9 @@ namespace
 		return true;
 	}
 
-	// An NPC's stop animation plays under the walk it stops while the path still moves the NPC: kept unless the goal moves
-	// away (following, a new path). When its motion runs out short of the stop point (turns and other actors slow NPCs
-	// down), the NPC stops there if it is near, else walks on
+	// An NPC's stop animation plays under the walk it stops while the path still moves the NPC. It is kept unless the
+	// goal moves away (following, a new path). When its motion runs out short of the stop point (turns and other actors
+	// slow NPCs down), the NPC stops there if it is near, otherwise it walks on.
 	bool KeepArrival(AnimData* animData, BSAnimGroupSequence* stop)
 	{
 		const auto arrival = GetArrival(animData->actor);
@@ -498,9 +500,10 @@ namespace
 		return true;
 	}
 
-	// NiControllerSequence::GetState of the section's sequence in Actor::PickAnimations (Animation at [ebp-0x4], section at
-	// [ebp-0x1C]), deciding whether the group picked is playing already: the stop animation plays under the group it stops,
-	// and walking that way again replaces it. NPCs walking a path start their stop animation from here before they arrive
+	// NiControllerSequence::GetState of the section's sequence in Actor::PickAnimations (Animation at [ebp-0x4],
+	// section at [ebp-0x1C]), which decides whether the picked group is already playing. The stop animation plays under
+	// the group it stops, and walking that way again replaces it. NPCs walking a path start their stop animation from
+	// here before they arrive.
 	NiControllerSequence::AnimState __fastcall PickedGroupStateHook(BSAnimGroupSequence* sequence)
 	{
 		auto* animData = GET_CALLER_VAR(AnimData*, -0x4);
@@ -514,7 +517,7 @@ namespace
 	}
 
 	// Animation::GetDelta in Actor::GetMovementDelta: an NPC's movement along its path for this update. While its stop
-	// animation plays, scaled so the animation's root motion ends where the NPC stops
+	// animation plays, the delta is scaled so the animation's root motion ends where the NPC stops.
 	bool __fastcall WarpArrivalHook(AnimData* animData, void*, NiPoint3* delta, Actor* actor, bool bRotation, bool bNoHeight)
 	{
 		const bool bResult = animData->GetDelta(delta, actor, bRotation, bNoHeight);
@@ -527,7 +530,7 @@ namespace
 		const RootTrack track(animData, stop);
 		if (arrival.state != Arrival::State::Moving || !track)
 			return bResult;
-		// the delta is the root motion of the last update, which took the animation to its last time
+		// The delta is the root motion of the last update, which took the animation to its last time
 		const float fStep = std::hypot(delta->x, delta->y);
 		const float fLeft = fStep + track.DistanceToEnd(stop->GetSequenceTime());
 		if (fLeft > 0.01f)
@@ -539,10 +542,10 @@ namespace
 		return bResult;
 	}
 
-	// Animation::ShouldBeMoving in ActorMover::SetCurrentFrameMoveModeAndDelta: once the path has ended, the NPC's
-	// movement is dropped while the walk still plays (bStopCurrentMoveAnim), after it Actor::UpdateMovement moves the NPC
-	// by the animation's root motion. A stop animation's rest moves it the little it aimed past the stop point
-	// (kArrivalOvershoot) instead of stepping in place
+	// Animation::ShouldBeMoving in ActorMover::SetCurrentFrameMoveModeAndDelta. Once the path has ended, the NPC's
+	// movement is dropped while the walk still plays (bStopCurrentMoveAnim) and Actor::UpdateMovement moves the NPC by
+	// the animation's root motion. The rest of a stop animation moves it the little it aimed past the stop point
+	// (kArrivalOvershoot) instead of stepping in place.
 	bool __fastcall ArrivedShouldBeMovingHook(AnimData* animData)
 	{
 		if (IsEnabled() && MovementTransitions::Of(animData->animSequence[kSequence_Movement]) == TransitionKind::Stop)
@@ -550,9 +553,9 @@ namespace
 		return animData->ShouldBeMoving();
 	}
 
-	// NiControllerSequence::GetState of the movement sequence in Animation::Update: while it eases in (or is TRANSDEST)
-	// the actor moves at the group's average speed instead of by the accum root. While a start or stop animation plays or
-	// fades, the actor moves by the root motion of what blends in the movement section
+	// NiControllerSequence::GetState of the movement sequence in Animation::Update. While it eases in (or is TRANSDEST)
+	// the engine moves the actor at the group's average speed instead of by the accum root. While a start or stop
+	// animation plays or fades, the actor moves by the root motion of what blends in the movement section.
 	NiControllerSequence::AnimState __fastcall RootMotionStateHook(const NiControllerSequence* sequence)
 	{
 		const auto eState = sequence->m_eState;
@@ -561,11 +564,11 @@ namespace
 		return eState;
 	}
 
-	// Animation::GetGroup of the movement section of the 1st person skeleton in PlayerMover::Update: in 1st person the
-	// player moves by the 1st person skeleton's movement when it plays the same group as the 3rd person one, else by the
-	// 3rd person one's. A start or stop animation only plays on the skeletons that have one, and the other's movement
-	// section is empty or on to another group meanwhile (a stop: blended out, its movement dropped): the player moves by
-	// the 1st person skeleton while that plays one, by the 3rd person one while only that does
+	// Animation::GetGroup of the movement section of the 1st person skeleton in PlayerMover::Update. In 1st person the
+	// player moves by the 1st person skeleton's movement when it plays the same group as the 3rd person one, otherwise
+	// by the 3rd person one's. A start or stop animation only plays on skeletons that have one, and the other
+	// skeleton's movement section is meanwhile empty or on another group (after a stop: blended out, movement dropped).
+	// So the player moves by the 1st person skeleton while it plays one, and by the 3rd person one while only that does
 	UInt16 __fastcall FirstPersonMovementGroupHook(AnimData* animData, void*, eAnimSequence sequenceId)
 	{
 		const UInt16 groupId = animData->groupIDs[sequenceId];
@@ -599,7 +602,7 @@ BSAnimGroupSequence* MovementTransitions::PlayMovementAnim(AnimData* animData, B
 			auto* start = PickStart(animData, *set);
 			if (start && Play(animData, start, groupId, TransitionKind::Start))
 			{
-				// at its End key Animation::Update starts the queued group, the walk or run (or blends out the section
+				// At its End key Animation::Update starts the queued group, the walk or run (or blends out the section
 				// when the actor no longer moves)
 				animData->queuedGroupIDs[kSequence_Movement] = groupId;
 				animData->queuedGroupSequenceStates[kSequence_Movement] = static_cast<UInt32>(-1);
@@ -607,7 +610,7 @@ BSAnimGroupSequence* MovementTransitions::PlayMovementAnim(AnimData* animData, B
 			}
 		}
 	}
-	// the walk or run a start or stop animation goes on to
+	// The walk or run that a start or stop animation continues with
 	if (IsEnabled() && Of(animData->animSequence[kSequence_Movement]) != TransitionKind::None)
 		return MovementBlendFixes::PlayMovementAnim(animData, destAnim, ToRealTime(animData, destAnim->GetEaseInTime()));
 	return MovementBlendFixes::PlayMovementAnim(animData, destAnim);
@@ -619,9 +622,9 @@ bool MovementTransitions::ContinuesStart(const AnimData* animData, UInt16 groupI
 }
 
 // Animation::Update runs a section's clock at the group's speed (fMoveSpeed for movement groups) only for the current
-// sequence and only while it is ANIMATING. With root motion moving the actor through the blends of start and stop
-// animations (RootMotionStateHook), everything blending in the movement section runs at fMoveSpeed while one plays or
-// fades, or the actor would slow to the animations' authored speed for every blend
+// sequence, and only while it is ANIMATING. Start and stop animations move the actor by root motion through their
+// blends (RootMotionStateHook), so everything blending in the movement section runs at fMoveSpeed while one plays or
+// fades. Otherwise the actor would slow to the animations' authored speed during every blend.
 bool MovementTransitions::RunClock(AnimData* animData, NiControllerSequence* sequence, float fStep)
 {
 	if (!IsEnabled() || sequence != animData->animSequence[kSequence_Movement] || !HasActiveTransition(sequence->m_pkOwner))

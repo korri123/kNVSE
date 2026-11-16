@@ -10,8 +10,9 @@
 
 namespace
 {
-	// AnimSequenceMultiple::GetCorrespondingSequence (0x48F500): the KF of this group that goes with the playing weapon
-	// sequence, by file name. eLayer: the section of this group (5 weapon up, 6 weapon down, others: the same name)
+	// AnimSequenceMultiple::GetCorrespondingSequence (0x48F500): returns the KF of this group that goes with the
+	// playing weapon sequence, matched by file name. eLayer is the section of this group (5 weapon up, 6 weapon down,
+	// otherwise the same name).
 	BSAnimGroupSequence* __fastcall GetCorrespondingSequence(AnimSequenceMultiple* group, void*, BSAnimGroupSequence* sequence, int eLayer)
 	{
 		const char* name = sequence ? sequence->m_kName.CStr() : nullptr;
@@ -20,7 +21,8 @@ namespace
 			return nullptr;
 		const std::string_view file(fileName);
 		const char* suffix = eLayer == kSequence_WeaponUp ? "Up" : eLayer == kSequence_WeaponDown ? "Down" : "";
-		// before the first '_' (2haaim_b.kf -> 2haaimUp_b.kf, as the game does), else before the extension
+		// Inserts the suffix before the first '_' (2haaim_b.kf -> 2haaimUp_b.kf, as the game does), else before the
+		// extension
 		auto insertAt = file.find('_');
 		if (insertAt == std::string_view::npos)
 			insertAt = file.rfind('.');

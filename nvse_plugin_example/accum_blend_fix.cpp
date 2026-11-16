@@ -8,8 +8,8 @@
 
 namespace
 {
-	// NiBlendAccumTransformInterpolator::AddInterpInfo: going from one animation to two, the one playing keeps its last
-	// value, with the reference frame its deltas are rotated by set as CalculateValue would (Gamebryo 2.3)
+	// NiBlendAccumTransformInterpolator::AddInterpInfo. When a second animation joins, the playing one keeps its last
+	// value, with the reference frame for its deltas set as CalculateValue would (Gamebryo 2.3 behavior).
 	UInt8 __fastcall AccumAddInterpInfoHook(NiBlendAccumTransformInterpolator* blend, void*, NiInterpolator* interpolator, float fWeight, char cPriority, float fEaseSpinner)
 	{
 		const UInt8 ucSingleIdx = blend->m_ucSingleIdx;
@@ -17,11 +17,11 @@ namespace
 		if (g_pluginSettings.fixAccumRootBlend && blend->m_ucInterpCount == 1 && ucSingleIdx != NiBlendInterpolator::INVALID_INDEX &&
 			!blend->m_kAccumulatedTransformValue.IsTransformInvalid() && !blend->m_pkAccumArray[ucSingleIdx].m_kLastValue.IsTransformInvalid())
 			single = blend->m_pkAccumArray[ucSingleIdx];
-		// the engine's AddInterpInfo by address: the virtual call would come back here through the patched vtable
+		// Calls the engine's AddInterpInfo by address, since the virtual call would come back here through the vtable
 		const auto ucIndex = ThisStdCall<UInt8>(0xA392B0, blend, interpolator, fWeight, cPriority, fEaseSpinner);
 		if (single && ucIndex != NiBlendInterpolator::INVALID_INDEX && blend->m_ucInterpCount == 2)
 		{
-			// the accumulated transform has taken the single's last value
+			// The accumulated transform has taken the single's last value
 			auto& item = blend->m_pkAccumArray[ucSingleIdx];
 			item.m_fLastTime = single->m_fLastTime;
 			item.m_kLastValue = single->m_kLastValue;
@@ -33,9 +33,9 @@ namespace
 		return ucIndex;
 	}
 
-	// NiBlendAccumTransformInterpolator::RemoveInterpInfo: going from two animations to one, the remaining one continues
-	// from its last value: the accumulated transform (the blend's output so far) takes its inverse, as StoreSingleValue
-	// does on the reset, but from the last update instead of this one
+	// NiBlendAccumTransformInterpolator::RemoveInterpInfo. When one of two animations leaves, the remaining one
+	// continues from its last value: the accumulated transform (the blend's output so far) takes its inverse, as
+	// StoreSingleValue does on reset, but from the last update instead of the current one.
 	void __fastcall AccumRemoveInterpInfoHook(NiBlendAccumTransformInterpolator* blend, void*, UInt8 ucIndex)
 	{
 		UInt8 ucRemaining = NiBlendInterpolator::INVALID_INDEX;
@@ -53,7 +53,7 @@ namespace
 			if (ucRemaining != NiBlendInterpolator::INVALID_INDEX && !blend->m_pkAccumArray[ucRemaining].m_kLastValue.IsTransformInvalid())
 				remaining = blend->m_pkAccumArray[ucRemaining];
 		}
-		// the engine's RemoveInterpInfo by address, as above
+		// Calls the engine's RemoveInterpInfo by address, as above
 		ThisStdCall(0xA393C0, blend, ucIndex);
 		if (remaining && blend->m_ucInterpCount == 1 && blend->m_ucSingleIdx == ucRemaining && blend->m_bReset)
 		{
@@ -65,10 +65,10 @@ namespace
 		}
 	}
 
-	// NiBlendAccumTransformInterpolator::CalculateValue in UpdateTransform: an animation joining the blend has no motion of
-	// its own on its first update (Gamebryo 2.2 gives it a zero delta instead of an invalid one). As a zero it counted at
-	// its weight, slowing the actor on the second update of every blend by as much (by a third in a 4-update blend); as
-	// invalid, BlendValues leaves it out and gives its weight to the others, as for any channel an animation lacks
+	// NiBlendAccumTransformInterpolator::CalculateValue, called from UpdateTransform. An animation joining the blend has
+	// no motion on its first update, but Gamebryo 2.2 gives it a zero delta, which counts at its weight and slows the
+	// actor. The delta is made invalid instead, so BlendValues leaves it out and gives its weight to the others, as for
+	// any channel an animation lacks.
 	void __fastcall AccumCalculateValueHook(NiBlendAccumTransformInterpolator* blend, void*, UInt8 ucIndex, float fTime, NiObjectNET* pkTarget)
 	{
 		const bool bFirst = g_pluginSettings.fixAccumRootBlend && blend->m_pkAccumArray[ucIndex].m_fLastTime == -NI_INFINITY;
@@ -80,7 +80,7 @@ namespace
 
 void AccumBlendFix::WriteHooks()
 {
-	// NiBlendAccumTransformInterpolator's vtable
+	// NiBlendAccumTransformInterpolator vtable
 	SafeWrite32(0x1096860, reinterpret_cast<UInt32>(AccumAddInterpInfoHook));
 	SafeWrite32(0x1096864, reinterpret_cast<UInt32>(AccumRemoveInterpInfoHook));
 	// NiBlendAccumTransformInterpolator::UpdateTransform

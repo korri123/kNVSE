@@ -13,10 +13,11 @@ namespace
 {
     using HardCut = kAnimationExtraData::HardCut;
 
-    // The sequences of the Animation's manager that Animation::ClearGroup cut off for this switch. Its callers start the
-    // next sequence in the same update (StartGroup itself, Actor::ForceIdleAnimation, Actor::StopAttack,
-    // InterfaceManager::UpdatePipboy, ...). A sequence's cut is dropped when it leaves the manager, so every sequence
-    // returned is still owned by it. Taken off the node: the manager's other cuts are of switches that are over
+    // Takes the sequences of the Animation's manager that Animation::ClearGroup cut off for this switch. Its callers
+    // start the next sequence in the same update (StartGroup itself, Actor::ForceIdleAnimation, Actor::StopAttack,
+    // InterfaceManager::UpdatePipboy, ...). A sequence's cut is dropped when it leaves the manager, so every returned
+    // sequence is still owned by it. The cuts are removed from the node, since the manager's other cuts belong to
+    // finished switches.
     std::vector<HardCut> TakeHardCuts(const AnimSwitch& animSwitch, const NiControllerManager* manager)
     {
         std::vector<HardCut> cuts;
@@ -32,8 +33,8 @@ namespace
         return cuts;
     }
 
-    // Knocked down, ragdolled, unconscious, getting up or dead: the ragdoll poses the bones, not the animations, so the
-    // snapshot BlendFromPose takes is the only source of that pose
+    // True for an actor that is knocked down, ragdolled, unconscious, getting up or dead. The ragdoll poses the bones
+    // instead of the animations, so the snapshot BlendFromPose takes is the only source of that pose.
     bool IsPosedByRagdoll(const AnimData* animData)
     {
         auto* actor = animData->actor;
@@ -59,10 +60,10 @@ namespace
         case NiControllerSequence::EASEOUT:
             break;
         default:
-            // transitions and morphs: the partner sequence they were timed against has moved on
+            // Transitions and morphs: the partner sequence they were timed against has moved on
             return;
         }
-        // Deactivate(0) moved the time it was cut at into m_fOffset: without bStartOver it continues from there
+        // Deactivate(0) moved the time of the cut into m_fOffset, so without bStartOver the sequence continues from there
         if (!manager->ActivateSequence(sequence, 0, false, sequence->m_fSeqWeight, 0.0f, nullptr))
             return;
         if (cut.eState == NiControllerSequence::ANIMATING)
@@ -70,7 +71,7 @@ namespace
             animSwitch.EaseOut(sequence, fDuration);
             return;
         }
-        // the ease the cut interrupted: an ease-out goes on, an ease-in turns around at the weight it had reached
+        // Restore the ease the cut interrupted: an ease-out goes on, an ease-in turns around at the weight it had reached
         sequence->m_eState = cut.eState;
         sequence->m_fStartTime = cut.fStartTime;
         sequence->m_fEndTime = cut.fEndTime;
@@ -88,10 +89,10 @@ namespace
         const auto animSwitch = AnimSwitch::Current(animData);
         const auto cuts = TakeHardCuts(animSwitch, manager);
         const bool bRestart = std::ranges::any_of(cuts, [&](const HardCut& cut) { return cut.sequence == sequence; });
-        // a sequence cut to start over from its first frame has nothing of its own to fade out
+        // A sequence cut to start over from its first frame has nothing of its own to fade out
         if (bRestart || fDestFrame != 0.0f || pkSequenceToSynchronize || IsPosedByRagdoll(animData))
             return manager->BlendFromPose(sequence, fDestFrame, fDuration, iPriority, pkSequenceToSynchronize);
-        // with the weight StartGroup gave it (BlendFromPose replaced it with 1), at StartGroup's priority 0
+        // Ease in with the weight StartGroup gave the sequence (BlendFromPose replaces it with 1), at priority 0
         if (!animSwitch.EaseIn(sequence, fDuration))
             return false;
         for (const auto& cut : cuts)
@@ -99,8 +100,8 @@ namespace
         return true;
     }
 
-    // NiControllerManager::BlendFromPose in Animation::StartGroup (thiscall, 5 stack arguments): pass the Animation at
-    // [ebp-0x5C] in edx to the fastcall replacement, which pops the same 5 arguments
+    // NiControllerManager::BlendFromPose in Animation::StartGroup (thiscall, 5 stack arguments). Passes the Animation at
+    // [ebp-0x5C] in edx to the fastcall replacement, which pops the same 5 arguments.
     __declspec(naked) void BlendFromPoseHook()
     {
         __asm
@@ -120,7 +121,7 @@ void PoseBlendFixes::RecordHardCut(AnimData* animData, NiControllerSequence* seq
         return;
     const UInt32 uiSwitch = AnimSwitch::Current(animData).GetID();
     auto& cuts = kAnimationExtraData::GetOrCreate(manager->m_pkTarget)->hardCuts;
-    // a cut is for the sequence started in the same switch: the manager's cuts of earlier switches are over
+    // A cut belongs to the sequence started in the same switch; the manager's cuts of earlier switches are over
     std::erase_if(cuts, [&](const HardCut& cut)
     {
         return cut.manager == manager && (cut.uiSwitch != uiSwitch || cut.sequence == sequence);

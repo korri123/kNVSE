@@ -41,13 +41,13 @@ bool IsDemigodMode();
 float GetAnimTime(const NiControllerSequence* anim);
 void HandleCustomTextKeys();
 
-// Calls a condition script for the reference. On the threads that pick animations every frame (the main thread, AI
-// linear task thread 1) the result is kept until the frame's caches are cleared: the same condition is asked for
-// every group looked up
+// Calls a condition script for the reference. On the threads that pick animations every frame (the main thread and AI
+// linear task thread 1) the result is cached until the frame's caches are cleared, because the same condition is queried
+// for every group that is looked up.
 bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* container,
 		NVSEArrayVarInterface::Element* result);
 
-// dead, deleted, or without a process or 3D
+// True if the actor is dead, deleted, or has no process or 3D.
 bool IsActorInvalid(Actor* actor);
 
 struct MapHitCounter

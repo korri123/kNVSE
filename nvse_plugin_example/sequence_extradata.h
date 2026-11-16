@@ -16,37 +16,38 @@ class SequenceExtraData
 {
 public:
     bool startInReloadTargets = false;
-    // Set by the feature that plays the sequence as a start or stop animation (TransitionAnims): MovementTransitions
-    // for a walk's or run's, AimTransitions for one of aiming (bAimTransition). Those are only ever played as such
-    // (normal picks leave the tagged files out), so it holds for as long as the sequence belongs to the manager
+    // Set when the sequence is played as a start or stop animation (TransitionAnims): by MovementTransitions for a walk
+    // or run, by AimTransitions for aiming (bAimTransition). These files are only played as such (normal picks skip
+    // the tagged files), so the value holds for as long as the sequence belongs to the manager.
     TransitionKind transition = TransitionKind::None;
     bool bAimTransition : 1 = false;
-    // An aim transition played back (AimTransitions): its time runs backwards while it plays
+    // Set for an aim transition played backwards (AimTransitions): its time runs backwards while it plays
     bool bAimReversed : 1 = false;
-    // An NPC's stop animation (MovementTransitions' arrivals): the goal of the path it was started for (once per approach),
-    // and the distance to the stop point as of the last update
+    // An NPC's stop animation (MovementTransitions' arrivals): the goal of the path it was started for (set once per
+    // approach) and the distance to the stop point as of the last update
     NiPoint3 arrivalGoal{ NAN, NAN, NAN };
     float fArrivalDistance = NAN;
-    // A stop animation's whole root motion at scale 1 (MovementTransitions' arrivals), once sampled
+    // A stop animation's total root motion at scale 1 (MovementTransitions' arrivals), once sampled
     float fRootDistance = NAN;
     std::optional<AdditiveSequenceMetadata> additiveMetadata;
-    // The sequence's spawn:/despawn: keys (SpawnKeys), parsed when it joined the manager. The player's sequences only
+    // The sequence's spawn:/despawn: keys (SpawnKeys), parsed when it joined the manager. Player sequences only
     std::optional<SpawnKeys::Keys> spawnKeys;
     // The sequence's blendCurve/blendInCurve/blendOutCurve keys (BlendCurves), parsed when it joined the manager
     BlendCurves::Keys blendCurveKeys;
-    // The ease the sequence is in, or was last in (Eases::Find tells)
+    // The ease the sequence is in or was last in (see Eases::Find)
     Ease ease;
 };
 
 // kNVSE's data about the sequences of the NiControllerManagers animating a node, kept as extra data on that node (the
-// managers' target, an actor's animation root). Like kBlendInterpolatorExtraData on the bones, it needs no locks: an actor's
-// animations are updated by one thread at a time, and sequences join and leave managers in the sequential animation update
-// or on the main thread. It used to hang off the sequence's text keys, which every clone of a KF shares across actors.
+// managers' target, an actor's animation root). Like kBlendInterpolatorExtraData on the bones, it needs no locks: an
+// actor's animations are updated by one thread at a time, and sequences join and leave managers in the sequential
+// animation update or on the main thread. It is not stored on the sequence's text keys because every clone of a KF
+// shares those across actors.
 class kAnimationExtraData : public NiExtraData
 {
 public:
-    // The sequences kNVSE has data of and, at the same index, that data. Apart, so that finding a sequence reads 8 bytes
-    // per sequence and not its data: BlendTransitions asks for the ease of every easing animation of every bone
+    // The sequences kNVSE has data for and, at the same index, that data. Kept apart so that finding a sequence reads
+    // 8 bytes per sequence instead of its data. BlendTransitions asks for the ease of every easing animation of every bone.
     struct SequenceKey
     {
         const NiControllerManager* manager;
@@ -56,15 +57,15 @@ public:
     };
     std::vector<SequenceKey> sequenceKeys;
     std::vector<SequenceExtraData> sequenceData;
-    // Where the sequences looked up last were found, by a hash of their address: tried first, as the same few easing
-    // sequences are looked up for each of their bones. An index that is out of date is harmless: it is checked against
-    // sequenceKeys
+    // Index of the last lookup of each sequence, by a hash of its address. Tried first, because the same few easing
+    // sequences are looked up for each of their bones. A stale index is harmless since it is checked against
+    // sequenceKeys.
     static constexpr unsigned int kSequenceHintBits = 6;
     UInt16 sequenceHints[1u << kSequenceHintBits];
-    // Animation::ClearGroup deactivating a sequence without an ease-out (PoseBlendFixes): its state, window and ease
-    // just before, and the switch that cut it. Only the cuts of a manager's latest switch that cut any are kept, and a
-    // sequence's cut goes with the sequence when it leaves the manager (SequenceExtraDatas::Delete): the address of a
-    // sequence that is gone could be that of a new one
+    // Sequences that Animation::ClearGroup deactivated without an ease-out (PoseBlendFixes): their state, window and
+    // ease just before, and the switch that cut them. Only the cuts of a manager's latest switch that cut any are kept.
+    // A sequence's cut is removed when it leaves the manager (SequenceExtraDatas::Delete), because the address of a
+    // destroyed sequence can be reused by a new one.
     struct HardCut
     {
         const NiControllerManager* manager;
@@ -76,12 +77,12 @@ public:
         Ease ease;
     };
     std::vector<HardCut> hardCuts;
-    // Sequences bound to the skeleton again at their next activation (AttachInterpolatorsHooked): the hook at 0x49918B
-    // (Animation::ClearControllersInterpolators: dying actors on every update, RevertTES) deactivated their manager and
-    // cleared their blend interpolators. Kept apart from sequenceData, which would get an entry for every sequence of
-    // every dying actor; dropped with the sequence (SequenceExtraDatas::Delete), like a cut
+    // Sequences to bind to the skeleton again at their next activation (AttachInterpolatorsHooked). The hook at 0x49918B
+    // (Animation::ClearControllersInterpolators: dying actors on every update, RevertTES) deactivates their manager and
+    // clears their blend interpolators. Kept apart from sequenceData, which would get an entry for every sequence of
+    // every dying actor. Removed with the sequence (SequenceExtraDatas::Delete), like a hard cut.
     std::vector<SequenceKey> pendingStoreTargets;
-    // The switch the Animation animating this node is making (AnimSwitch::Current): one per update of the Animation
+    // The switch the Animation animating this node is making (AnimSwitch::Current); one per update of the Animation
     struct OpenSwitch
     {
         const NiControllerManager* manager = nullptr;
@@ -89,13 +90,13 @@ public:
         float fTime = 0.0f;
     };
     OpenSwitch openSwitch;
-    // The actor's pitch in radians, positive looking down, as of its last bone update (AimPitch::Update). Third person
-    // skeletons only
+    // The actor's pitch in radians, positive looking down, as of its last bone update (AimPitch::Update).
+    // Third person skeletons only.
     float aimPitch = 0.0f;
-    // The latest end, in the managers' time, of the eases BlendCurves shaped with a curve a text key named: a sequence
-    // whose ease ends after it has none (BlendCurves::HasNamedCurve, asked for every bone)
+    // The latest end, in the managers' time, of the eases that BlendCurves shaped with a named curve. A sequence whose
+    // ease ends after it has no named curve (BlendCurves::HasNamedCurve, asked for every bone).
     float namedCurveEaseEnd = -NI_INFINITY;
-    // The nodes kNVSE added to this skeleton (SkeletonNodes), added again when the model they were under comes back
+    // The nodes kNVSE added to this skeleton (SkeletonNodes); added again when the model they were under returns
     std::vector<SkeletonNodes::Node> addedNodes;
     // The override animations of the Animation whose controller manager animates this node (ActorOverrides)
     ActorOverrides overrides;
@@ -109,23 +110,23 @@ public:
     static kAnimationExtraData* GetOrCreate(NiObjectNET* obj);
 };
 
-// Data lives while the sequence belongs to a manager (m_pkOwner) that has a target. It is dropped when the sequence leaves
-// the manager (NiControllerManager::RemoveSequence, RemoveAllSequences from ~Animation) or with the node. Returned pointers
-// are valid until the next GetOrCreate or Delete on the same node.
-// A sequence joins a manager in NiControllerManager::AddSequence (the engine's Animation::AddAnimation, kNVSE adding a
-// cached sequence back); WriteHooks' hook there runs on the thread adding it, with m_pkOwner set and before the sequence
-// is bound to the skeleton's nodes: the place to prepare what depends on the sequence alone (its text keys) and to give
-// the skeleton the nodes it animates (SkeletonNodes::Require).
+// Data lives while the sequence belongs to a manager (m_pkOwner) that has a target. It is dropped when the sequence
+// leaves the manager (NiControllerManager::RemoveSequence, RemoveAllSequences from ~Animation) or with the node.
+// Returned pointers are valid until the next GetOrCreate or Delete on the same node.
+// A sequence joins a manager in NiControllerManager::AddSequence (the engine's Animation::AddAnimation, or kNVSE adding
+// a cached sequence back). WriteHooks installs a hook there that runs on the adding thread, with m_pkOwner set and
+// before the sequence is bound to the skeleton's nodes. It prepares what depends on the sequence alone (its text keys)
+// and gives the skeleton the nodes it animates (SkeletonNodes::Require).
 namespace SequenceExtraDatas
 {
     SequenceExtraData* Get(const NiControllerSequence* sequence);
-    // null if the sequence has no manager or the manager no target
+    // Returns null if the sequence has no manager or the manager has no target
     SequenceExtraData* GetOrCreate(NiControllerSequence* sequence);
-    // call while sequence->m_pkOwner is still set. Also drops what else the node keeps of the sequence (its hard cut)
+    // Call while sequence->m_pkOwner is still set. Also drops the other data the node keeps for the sequence (its hard cut)
     void Delete(const NiControllerSequence* sequence);
-    // every sequence of the manager is bound again at its next activation (TakeStoreTargets)
+    // Marks every sequence of the manager to be bound again at its next activation (see TakeStoreTargets)
     void MarkStoreTargets(NiControllerManager* manager);
-    // whether the sequence was marked by MarkStoreTargets; takes the mark
+    // Returns whether MarkStoreTargets marked the sequence, and clears the mark
     bool TakeStoreTargets(const NiControllerSequence* sequence);
 
     void WriteHooks();

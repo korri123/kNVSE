@@ -219,7 +219,7 @@ namespace Settings
 				SetNumber(setting, setting.defaultValue);
 		}
 
-		// The value as the code before the settings table wrote it: floats with six decimals
+		// Writes the value in the INI's text format: floats with six decimals.
 		void Write(CSimpleIniA& ini, const Setting& setting, bool withComment)
 		{
 			const auto comment = withComment ? std::format("; {}", setting.description) : std::string();

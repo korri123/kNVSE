@@ -12,7 +12,7 @@ namespace
 {
     using Items = std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>;
 
-    // a bone blends 2^kMaxSwitches combinations at most; more switches at once keep the regular blend
+    // A bone blends at most 2^kMaxSwitches combinations; more simultaneous switches keep the regular blend
     constexpr unsigned int kMaxSwitches = 4;
 
     struct Switch
@@ -20,16 +20,16 @@ namespace
         // AnimSwitch ids count per scene root
         const NiControllerManager* owner;
         UInt32 uiID;
-        // the largest ease spinner and priority on this bone of the sequences it eases out (from) and in (to)
+        // The largest ease spinner and priority on this bone among the sequences the switch eases out (from) and in (to)
         float fFromSpinner = 0.0f;
         float fToSpinner = 0.0f;
         char cFromPriority = 0;
         char cToPriority = 0;
         bool bFrom = false;
         bool bTo = false;
-        // it has an animation on this bone that can take it over: none below the highest one not easing
+        // True if the switch has an animation on this bone that can take it over: none below the highest non-easing one
         bool bRelevant = false;
-        // its curve was named by a key (BlendCurves): the bone shows the spinners as they are
+        // True if a text key named the switch's curve (BlendCurves), so the bone shows the spinners as they are
         bool bNamedCurve = false;
         unsigned int uiBit = 0;
         float fProgress = 0.0f;
@@ -51,8 +51,8 @@ namespace
         float fWeight = 0.0f;
     };
 
-    // An ease nothing declared (AnimSwitch): its bones keep the regular blend. Debug builds name the sequence once, so
-    // the place that eased it can be found
+    // Reports an ease that no switch declared (AnimSwitch); its bones keep the regular blend. Debug builds name the
+    // sequence once so the place that eased it can be found.
     void ReportUndeclaredEase(const NiControllerSequence* sequence)
     {
 #if _DEBUG
@@ -67,18 +67,18 @@ namespace
         return fSpinner * fSpinner / (fSpinner * fSpinner + 1.0f - fSpinner);
     }
 
-    // How far the bone has switched to the switch's "to" end when it is the only switch: what the regular blend gives it
+    // Returns how far the bone has switched to the switch's "to" end when it is the only switch (the regular blend's)
     float GetProgress(const Switch& s)
     {
         if (s.bFrom && s.bTo && s.cFromPriority == s.cToPriority)
         {
-            // a cross fade at one priority is shared by spinner (ComputeNormalizedWeights' cross fade rule)
+            // A cross fade at one priority is shared by spinner (ComputeNormalizedWeights' cross fade rule)
             const float fSum = s.fFromSpinner + s.fToSpinner;
             return fSum > 0.0f ? s.fToSpinner / fSum : 0.0f;
         }
         if (s.bNamedCurve)
         {
-            // the higher priority takes exactly its spinner (ComputeNormalizedWeightsOfHighestPriorities)
+            // The higher priority takes exactly its spinner (ComputeNormalizedWeightsOfHighestPriorities)
             if (!s.bFrom || (s.bTo && s.cToPriority > s.cFromPriority))
                 return s.fToSpinner;
             return 1.0f - s.fFromSpinner;
@@ -87,7 +87,7 @@ namespace
             return EaseCurve(s.fToSpinner);
         if (!s.bTo)
             return 1.0f - EaseCurve(s.fFromSpinner);
-        // across two priorities the higher takes its spinner's share, normalized against the lower one's
+        // Across two priorities the higher takes its spinner's share, normalized against the lower one's
         const float fSum = s.fFromSpinner * s.fFromSpinner + s.fToSpinner * s.fToSpinner;
         return fSum > 0.0f ? s.fToSpinner * s.fToSpinner / fSum : 0.0f;
     }
@@ -103,7 +103,7 @@ bool BlendTransitions::ComputeNormalizedWeights(const Items& items)
     if (!g_pluginSettings.fixOverlappingBlends || !g_pluginSettings.blendSmoothing)
         return false;
 
-    // two switches need two sequences easing
+    // Two switches need two sequences easing
     unsigned int uiEasing = 0;
     for (const auto& [item, extraItem] : items)
     {
@@ -151,7 +151,7 @@ bool BlendTransitions::ComputeNormalizedWeights(const Items& items)
         if (iter == switches.end())
         {
             iter = switches.insert(switches.end(), Switch{ sequence->m_pkOwner, uiSwitch });
-            // every sequence of a switch takes its curve
+            // Every sequence of a switch takes its curve
             iter->bNamedCurve = BlendCurves::HasNamedCurve(*sequence);
         }
         entry.iSwitch = static_cast<int>(iter - switches.begin());
@@ -164,7 +164,7 @@ bool BlendTransitions::ComputeNormalizedWeights(const Items& items)
         bSide = true;
     }
 
-    // a switch below the highest priority not easing never shows
+    // A switch below the highest non-easing priority never shows
     for (const auto& entry : entries)
     {
         if (entry.iSwitch != -1 && entry.item->m_fWeight > 0.0f && (!bSteady || entry.item->m_cPriority >= cSteadyPriority))
@@ -183,7 +183,7 @@ bool BlendTransitions::ComputeNormalizedWeights(const Items& items)
     if (uiSwitches < 2)
         return false;
 
-    // each combination of the switches' ends, blended as animations that are not easing: the highest priority, by weight
+    // Blend each combination of the switches' ends as animations that are not easing: the highest priority, by weight
     float fTotal = 0.0f;
     for (unsigned int uiEnds = 0; uiEnds < (1u << uiSwitches); ++uiEnds)
     {

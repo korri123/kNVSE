@@ -24,7 +24,7 @@ extern thread_local PluginGlobalData g_globals;
 
 namespace LoopingReloadPauseFix
 {
-    // A sequence with a blendToReloadLoop text key, by name
+    // Registers the name of a sequence that has a blendToReloadLoop text key.
     void Add(std::string_view sequenceName);
 }
 
@@ -32,8 +32,9 @@ void WriteDelayedHooks();
 
 namespace AllowAttackKey
 {
-    // Whether the actor's attack would start now if attack were pressed: the checks of PlayerCharacter::Update and
-    // Actor::FiresWeapon, with the allowAttack/interruptLoop text keys and Stewie's Tweaks bFireWhileAiming
+    // Returns true if the actor's attack would start now if attack were pressed. Mirrors the checks in
+    // PlayerCharacter::Update and Actor::FiresWeapon, including the allowAttack/interruptLoop text keys and Stewie's
+    // Tweaks bFireWhileAiming.
     bool CanFireWeapon(Actor* actor);
 }
 

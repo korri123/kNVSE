@@ -102,9 +102,10 @@ namespace
 		Script* script;
 		NVSEArrayVarInterface::Element value;
 	};
-	// A handful per frame: searched in order, kept allocated across frames. By the script itself, not its compiled code:
-	// code refers to forms by an index into the script's own list, so conditions naming different forms compile alike
-	// (CompileConditionScript already gives every condition text one script)
+	// Results are searched in order and the vector stays allocated across frames (a handful per frame). Entries are keyed
+	// by the script itself rather than its compiled code: compiled code refers to forms by index into the script's own
+	// list, so conditions naming different forms compile to identical code. CompileConditionScript already gives every
+	// condition text its own script.
 	thread_local std::vector<ScriptResult> t_scriptResults;
 }
 
@@ -123,8 +124,8 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 				return true;
 			}
 		}
-		// Before the call: a condition that asks about the actor's animations can look its own set up again, which
-		// answers false here instead of calling the script without end
+		// Set before the call. A condition that asks about the actor's animations can re-enter this function; the
+		// re-entrant call answers false instead of recursing forever.
 		cacheIndex = t_scriptResults.size();
 		t_scriptResults.push_back({ callingObj, funcScript, NVSEArrayVarInterface::Element{} });
 	}
@@ -138,7 +139,7 @@ bool CallFunction(Script* funcScript, TESObjectREFR* callingObj, TESObjectREFR* 
 		0
 	);
 	g_globals.isInConditionFunction = wasInConditionFunction;
-	// by index: calls made by the script may have added results
+	// Index into the vector, because calls made by the script may have added results.
 	if (useCache && cacheIndex < t_scriptResults.size())
 		t_scriptResults[cacheIndex].value = *result;
 	return success;
@@ -173,7 +174,7 @@ void HandleCustomTextKeys()
 		BSAnimGroupSequence* anim = animTime.anim;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
 
-		// ~AnimTime eases the animation out: part of the Animation's current switch, once the Animation is known
+		// ~AnimTime eases the animation out as part of the Animation's current switch, once the Animation is known.
 		AnimData* animDataOfEase = nullptr;
 		const auto erase = [&]
 		{
@@ -247,11 +248,11 @@ void HandleCustomTextKeys()
 				}
 				respectEndKeyData.anim3rdCounterpart = anim3rd;
 			}
-			// in 3rd person nothing applies them: RespectEndKey::EndFrame gives the sequence its own times back
+			// In 3rd person nothing applies the times; RespectEndKey::EndFrame gives the sequence its own times back.
 			if (!g_thePlayer->IsThirdPerson())
 			{
-				// one that has ended keeps its times on the 3rd person sequence until that changes, but does not take them
-				// back from another 1st person animation of the group that started since
+				// A sequence that has ended keeps its times on the 3rd person sequence until that changes, but does not
+				// take them back from another 1st person animation of the group that started since.
 				if (anim->m_eState != kAnimState_Inactive)
 					RespectEndKey::Apply(respectEndKeyData.anim3rdCounterpart, anim);
 				else
@@ -263,8 +264,8 @@ void HandleCustomTextKeys()
 			++it;
 			continue; // we don't want text keys to apply on the pollCondition anim here but we need to track it until 3rd person has changed anim
 		}
-		// An aim transition played back (AimTransitions): its time runs backwards, which the keys below would take for
-		// the animation starting over on every frame, each of them acting again
+		// An aim transition plays backwards. Its time would look like the animation restarting on every frame, so the
+		// keys below would fire again each frame.
 		const bool bTimedKeys = !AimTransitions::IsPlayedBack(anim);
 		if (bTimedKeys && animTime.callbacks.Exists())
 		{
@@ -393,7 +394,7 @@ bool IsGodMode()
 
 bool IsDemigodMode()
 {
-	// g_bIsDemigodMode, or the bSetDemigodMode:GamePlay game setting's value
+	// g_bIsDemigodMode or the bSetDemigodMode:GamePlay game setting
 	return *reinterpret_cast<bool*>(0x11E07BB) || *reinterpret_cast<bool*>(0x11E0898);
 }
 
@@ -549,8 +550,8 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	DebugTools::HandleMessage(msg->type);
 	if (msg->type == NVSEMessagingInterface::kMessage_PostPostLoad)
 	{
-		// after every plugin's load (Stewie's Tweaks patches the start menu's calls there), before the start menu
-		// builds its lists
+		// After every plugin has loaded (Stewie's Tweaks patches the start menu's calls there) and before the start menu
+		// builds its lists.
 		KnvseMenu::WriteHooks();
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_DeferredInit)
@@ -564,9 +565,9 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{
-		// condition results are kept for a frame, in menus too
+		// Condition results are cached for one frame, in menus too.
 		ClearResultCaches();
-		// text conditions are compiled here, on the main thread, as soon as the files are registered
+		// Text conditions are compiled here on the main thread as soon as the files are registered.
 		if (FileAnimations::CheckLoaded())
 		{
 			Overrides::CompileConditions();

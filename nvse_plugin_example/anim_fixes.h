@@ -16,7 +16,7 @@ namespace AnimFixes
     void FixWrongPrnKey(BSAnimGroupSequence* anim);
     void FixMissingPrnKey(BSAnimGroupSequence* anim, const char* filePath);
     void AddNoBlendSmoothingKeys(BSAnimGroupSequence* anim);
-    // Blend keys of a walk or run below the game's default blend: raised to it in the text keys, before they are parsed
+    // Raises the blend keys of a walk or run that are below the game's default blend; runs before the keys are parsed.
     void FixShortGaitBlend(BSAnimGroupSequence* anim, const char* filePath);
 
     void ApplyHooks();

@@ -39,7 +39,7 @@ struct BurstFireData
 	std::vector<NiTextKey*> ejectKeys;
 	std::size_t ejectIdx = 0;
 	bool reloading = false;
-	// the Animation the sequence plays on: what the entry goes with (Animation::~Animation)
+	// The Animation the sequence plays on. The entry is released with it (Animation::~Animation).
 	AnimData* animData = nullptr;
 };
 
@@ -236,7 +236,7 @@ public:
 struct AnimTime
 {
 	UInt32 actorId = 0;
-	// the Animation the sequence plays on: what the entry goes with (Animation::~Animation)
+	// The Animation the sequence plays on. The entry is released with it (Animation::~Animation).
 	AnimData* animData = nullptr;
 	NiPointer<BSAnimGroupSequence> anim = nullptr;
 	float lastNiTime = -FLT_MAX;
@@ -252,7 +252,7 @@ struct AnimTime
 	using TimedCallbacks = TimedExecution<std::function<void()>>;
 	std::optional<TimedCallbacks> callbacksBase;
 	TimedCallbacks::Context callbacks;
-	// the sequence has spawn:/despawn: keys (SpawnKeys, in its SequenceExtraData)
+	// True if the sequence has spawn:/despawn: keys (SpawnKeys, in its SequenceExtraData).
 	bool hasSpawnKeys = false;
 
 	bool hasCustomAnimGroups = false;
@@ -265,7 +265,7 @@ struct AnimTime
 
 	struct RespectEndKeyData
 	{
-		// the player's 3rd person sequence that takes this animation's times in 1st person (RespectEndKey)
+		// The player's 3rd person sequence whose times this animation takes in 1st person (RespectEndKey).
 		NiPointer<BSAnimGroupSequence> anim3rdCounterpart;
 	};
 	RespectEndKeyData respectEndKeyData;
@@ -445,9 +445,11 @@ bool IsAnimGroupMovement(UInt8 animGroupId);
 
 bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod);
 
-// The KF as a sequence of the Animation: one it has by that name, else loaded as an override animation (Overrides::Load)
+// Returns the KF as a sequence of the Animation: the one it already has under that name, otherwise the KF loaded as an
+// override animation (Overrides::Load).
 BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path);
-// The full ID of the anim group a KF is of, by its file name or else its contents. Overrides::kInvalidGroupId if neither tells
+// Returns the full ID of the anim group a KF is of, from its file name or else its contents. Returns
+// Overrides::kInvalidGroupId if neither identifies it.
 UInt16 GetAnimGroupId(std::string_view path);
 
 int GetWeaponInfoClipSize(Actor* actor);
@@ -489,20 +491,20 @@ UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId);
 float GetIniFloat(UInt32 addr);
 NiControllerSequence::InterpArrayItem* FindAnimInterp(BSAnimGroupSequence* anim, const char* interpName);
 
-// Whether this thread keeps the results of condition scripts for the frame (CallFunction)
+// True if this thread caches the results of condition scripts for the frame (CallFunction).
 extern thread_local bool g_isThreadCacheEnabled;
 
 std::string_view GetBaseAnimGroupName(std::string_view name);
 
 AnimGroupID GroupNameToId(std::string_view name);
-// The group of a name cut at its first '_' (as KFModel::InitSequence names a sequence)
+// The group for a name cut at its first '_', the way KFModel::InitSequence names a sequence.
 AnimGroupID SimpleGroupNameToId(std::string_view name);
 
 extern std::recursive_mutex g_animTimeMutex;
 
-// kNVSEReset: registers the override files anew (sets registered by scripts are gone), and reads every KF from the
-// disk again when it next plays; the player's animations start over if an override played. Main thread, while the
-// other threads do not pick animations (console, menus)
+// kNVSEReset: registers the override files again (sets registered by scripts are dropped) and re-reads every KF from
+// disk when it next plays. The player's animations restart if an override was playing. Main thread, and only while the
+// other threads are not picking animations (console, menus).
 void ReloadOverrideFiles();
 
 extern "C" { 

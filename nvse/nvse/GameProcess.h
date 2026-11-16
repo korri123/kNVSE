@@ -214,7 +214,7 @@ struct AnimData
 		ThisStdCall(0x4994F0, this, sequenceId, bChar);
 	}
 
-	// Animation::GetDelta: the actor's movement in this update, the accum root's translation delta
+	// Animation::GetDelta: the actor's movement in this update (the accum root's translation delta)
 	bool GetDelta(NiPoint3* delta, TESObjectREFR* ref, bool bRotation, bool bNoHeight)
 	{
 		return ThisStdCall<bool>(0x494390, this, delta, ref, bRotation, bNoHeight);
@@ -269,7 +269,7 @@ public:
 
 		bool HasWeaponMod(WeaponModFlags mod) const;
 
-		// ItemChange::HasWeaponMod: an attached mod has this effect (TESObjectWEAP::kWeaponModEffect_*)
+		// ItemChange::HasWeaponMod: true if an attached mod has this effect (TESObjectWEAP::kWeaponModEffect_*)
 		bool HasModEffect(UInt32 effect) const
 		{
 			return ThisStdCall<bool>(0x4BDA70, this, effect);

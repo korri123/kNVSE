@@ -11,30 +11,33 @@ class kBlendInterpolatorExtraData;
 struct kBlendInterpItem;
 
 // Third person aiming up and down without aimup/aimdown animations. The game weights a weapon group's up and down
-// variants by the actor's pitch (MiddleHighProcess::UpdateAimSequences: Actor::GetLooking + the aim chase angle, all of
-// the up variant at -fAimUpDegrees, 90 by default); the vanilla rifle ones (2haaimup, 2hraimup, ...) turn Bip01 Spine,
-// Spine1 and Spine2 by 30 degrees each and nothing else.
+// variants by the actor's pitch (MiddleHighProcess::UpdateAimSequences: Actor::GetLooking plus the aim chase angle;
+// the up variant is fully weighted at -fAimUpDegrees, 90 by default). The vanilla rifle variants only turn
+// Bip01 Spine, Spine1 and Spine2 by 30 degrees each.
 //
-// An "aimPitch" text key on a KF does that in code: its pose of the spine bones is turned by the pitch, about the axis
-// that points to the actor's right, so whatever the animation points forward points where the actor looks. Without
-// arguments the pitch is split evenly over Bip01 Spine, Spine1 and Spine2; "aimPitch: <bone> <share>, <bone> <share>, ..."
-// names the bones and their share instead (shares below a total of 1 turn the upper body less than the pitch).
-// The turn is part of the animation's own pose, so it blends in and out with the animation's weight on each bone. While
-// weight 0. Third person skeletons only (first person turns the camera); needs bBlendSmoothing. Aim transitions
-// (AimTransitions) turn as with the key without arguments unless they have one.
+// An "aimPitch" text key on a KF does the same in code: the sequence's pose of the spine bones is rotated by the
+// pitch about the actor's right axis, so whatever the animation points forward points where the actor looks.
+// Without arguments the pitch is split evenly over Bip01 Spine, Spine1 and Spine2.
+// "aimPitch: <bone> <share>, <bone> <share>, ..." names the bones and their shares instead (shares totalling less
+// than 1 turn the upper body less than the pitch).
+// The rotation is part of the sequence's pose, so it fades with the sequence's weight on each bone.
+// Third person skeletons only (first person turns the camera). Requires bBlendSmoothing. Aim transitions
+// (AimTransitions) behave like the key without arguments unless they have their own key.
 namespace AimPitch
 {
+    // Returns true if the sequence has an aimPitch key.
     bool HasKey(const NiControllerSequence& sequence);
-    // Whether the sequence turns by the pitch: it has the key or is an aim transition
+    // Returns true if the sequence is rotated by the pitch: it has the key or is an aim transition.
     bool Applies(const NiControllerSequence& sequence);
 
-    // The shares an aimPitch key gives the bones of a sequence, parsed once per AttachInterpolators. Views into the
-    // sequence's text key: valid while the sequence is.
+    // The shares an aimPitch key gives the bones of a sequence, parsed once per AttachInterpolators. Holds views into
+    // the sequence's text key, so it is valid only as long as the sequence.
     class Shares
     {
     public:
         explicit Shares(const NiControllerSequence& sequence);
-        // empty: 0. Pass a NiFixedString directly: its string_view conversion maps null to empty
+        // Returns the bone's share, 0 if it has none. Pass a NiFixedString directly (its string_view conversion maps
+        // null to empty).
         float Get(std::string_view bone) const;
 
     private:
@@ -49,11 +52,12 @@ namespace AimPitch
         bool m_default = false;
     };
 
-    // Before the actor's bones are blended (Animation::UpdateMovementNoWorldUpdate, from Actor::UpdateAnimationMovement
-    // for the player, Actor::UpdateAnimMovement for the others): stores the pitch for its skeleton
+    // Stores the pitch for the actor's skeleton. Runs before the bones are blended
+    // (Animation::UpdateMovementNoWorldUpdate, called from Actor::UpdateAnimationMovement for the player and
+    // Actor::UpdateAnimMovement for other actors).
     void Update(AnimData* animData, Actor* actor);
 
-    // Turns an item's pose of its bone by its share of the pitch. Before the item is blended
+    // Rotates an item's pose of its bone by the bone's share of the pitch. Runs before the item is blended.
     void Apply(const kBlendInterpolatorExtraData* extraData, const kBlendInterpItem* extraItem, NiObjectNET* target,
         NiQuatTransform& kTransform);
 

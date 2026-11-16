@@ -14,31 +14,33 @@ struct NiQuatTransform;
 struct kBlendInterpItem;
 class kBlendInterpolatorExtraData;
 
-// The Weapon node is always parented to Bip01 R Hand. Animators who want the weapon held by the left hand counter-animate
-// the Weapon track against the right hand and bake densely so that the two cancel out. Two things break that cancellation:
-// blending local transforms during transitions, and interpolating between sparse keys, where the weapon's keys (relative
-// to the right hand) and the left hand's keys follow different paths. Either way the weapon swims away from its hand.
+// The Weapon node is always parented to Bip01 R Hand. To have the left hand hold the weapon, animators counter-animate
+// the Weapon track against the right hand and bake it densely so the two cancel out. Two things break that
+// cancellation: blending local transforms during transitions, and interpolating between sparse keys, where the
+// weapon's keys (relative to the right hand) and the left hand's keys follow different paths. In both cases the weapon
+// drifts away from its hand.
 //
-// Each animation places the weapon exactly relative to the right hand, the left hand and the body (the hands' closest
-// common ancestor) at once; the space the weapon lives in only decides which relation to keep. This module measures, per
-// animation and time, which hands the weapon is held by (rigid to, and for the left hand also touching), or reads it from
-// "weaponSpace: right|left|body|auto" text keys. It then
+// Each animation places the weapon consistently relative to the right hand, the left hand and the body (the hands'
+// closest common ancestor). This module measures, per animation and time, which hands hold the weapon (rigid to, and
+// for the left hand also touching), or reads it from "weaponSpace: right|left|body|auto" text keys. It then:
 // - blends the weapon relative to the hand that every blended animation accepts: the right hand (the regular blend) if
-//   they all accept it, otherwise the left hand; where they disagree, relative to the body, which moves it smoothly
-//   between the animations' poses;
+//   they all accept it, otherwise the left hand. Where they disagree it blends relative to the body, which moves the
+//   weapon smoothly between the animations' poses.
 // - for left hand stretches, interpolates the weapon relative to the left hand between keys instead of relative to the
-//   right hand, so sparse keys no longer make it swim.
-// "weaponSpace: off" opts an animation out: its share of the blend weight keeps the regular blend.
-// Where the weapon stays on the right hand and the blended animations hold it with the left hand as well (two-handed aim
-// and aimIS), the left hand is kept on it during blends (bKeepLeftHandOnWeapon): each arm is blended joint by joint, so the
-// hand drifted off the weapon between two poses that both hold it. That error, measured on the Weapon node's animations
-// weighted as each arm bone's own blend weighs them, is taken off the arm's hand by two-bone IK on upper arm and forearm
-// while the Weapon node is evaluated, and only on a skeleton whose updates blend those bones before the Weapon node.
+//   right hand, so sparse keys do not make it drift.
+// "weaponSpace: off" opts an animation out: its share of the blend weight uses the regular blend.
+//
+// When the weapon stays on the right hand and the blended animations also hold it with the left hand (two-handed aim
+// and aimIS), the left hand is kept on it during blends (bKeepLeftHandOnWeapon). Each arm is blended joint by joint,
+// so the hand can drift off the weapon between two poses that both hold it. That error is measured using the Weapon
+// node's animations weighted as each arm bone's own blend weights them, and removed from the hand with two-bone IK on
+// the upper arm and forearm while the Weapon node is evaluated. It applies only on skeletons whose updates blend those
+// bones before the Weapon node.
 namespace WeaponHandBlend
 {
     constexpr unsigned int kMaxChainLength = 8;
 
-    // Nodes from just below the closest common ancestor of both hands down to each hand, top first.
+    // Nodes from just below the closest common ancestor of both hands down to each hand, top first
     struct HandChains
     {
         NiAVObject* right[kMaxChainLength] = {};
@@ -66,13 +68,14 @@ namespace WeaponHandBlend
         NiTransform left[kMaxChainLength];
     };
 
-    // What a detached item (sequence deactivated, weight still fading out under blend smoothing) contributes: it no longer
-    // has its sequence and its update time stopped advancing on detach, so this is captured once on detach. Also kept for
-    // items the Weapon node drops at once (no weight there) while the arms still fade the sequence out (SequenceInfo::fading).
+    // What a detached item contributes to the blend. A detached item (sequence deactivated, weight still fading out
+    // under blend smoothing) has no sequence and its update time no longer advances, so its pose is captured once on
+    // detach. Also kept for items the Weapon node drops at once while the arms still fade the sequence out
+    // (SequenceInfo::fading).
     struct ItemPose
     {
         Acceptance acceptance;
-        // the sequence's arms
+        // the sequence's arm chains
         ChainLocals locals;
         // the sequence's Weapon track, as the Weapon node's blend evaluated it
         NiQuatTransform weapon;
@@ -97,47 +100,47 @@ namespace WeaponHandBlend
         float scale;
     };
 
-    // A sequence that animates the Weapon node, keyed by its Weapon interpolator. The references keep these addresses from
-    // being reused by another sequence while the entry lives; entries are dropped once nothing else holds any of them: the
-    // sequence is gone, and so are its items in the blends (the arms' may fade out after the Weapon node's).
+    // A sequence that animates the Weapon node, keyed by its Weapon interpolator. The interpolator references keep the
+    // addresses from being reused by another sequence while the entry lives. An entry is dropped once nothing else holds
+    // any of them: the sequence is gone and so are its items in the blends (the arms' items may outlive the Weapon node's).
     struct SequenceInfo
     {
         NiPointer<NiInterpolator> weaponInterpolator = nullptr;
-        // the sequence's hand chain interpolators, null where it does not animate a node. Held, as a detached item's are
-        // looked up by address in the arms' blends while it fades out (HoldLeftHand), when its sequence may be gone.
+        // The sequence's hand chain interpolators, null where it does not animate a node. Held because a detached item's
+        // are looked up by address in the arms' blends while it fades out (HoldLeftHand), when its sequence may be gone.
         NiPointer<NiInterpolator> rightInterpolators[kMaxChainLength];
         NiPointer<NiInterpolator> leftInterpolators[kMaxChainLength];
-        // acceptance sampled over the key time range; empty: the right hand only throughout
+        // Acceptance sampled over the key time range. Empty means the right hand only throughout.
         float beginTime = 0.0f;
         float step = 0.0f;
         std::vector<Acceptance> acceptance;
-        // The weapon relative to the left hand at the key times of the weapon and hand tracks, for sequences that hold it in
-        // the left hand and have keys sparse enough to swim; empty otherwise.
+        // The weapon relative to the left hand at the key times of the weapon and hand tracks. Filled for sequences that
+        // hold it in the left hand and have keys sparse enough to drift; empty otherwise.
         std::vector<LeftSpaceKey> leftSpaceKeys;
         // "weaponSpace: off" stretches, sorted
         std::vector<TimeRange> offRanges;
-        // the weapon model under the Weapon node when measured, compared by identity only: the left hand contact test
-        // depends on the model, so another one is measured again
+        // The weapon model under the Weapon node when measured. Compared by identity only: the left hand contact test
+        // depends on the model, so a different one is measured again.
         const NiAVObject* weaponModel = nullptr;
         bool hasDetachedPose = false;
         ItemPose detachedPose;
-        // whether a detached item is opted out, captured on detach like detachedPose but for every sequence
+        // Whether a detached item is opted out. Captured on detach like detachedPose, but for every sequence.
         bool detachedOff = false;
-        // Detached, and its items on the arms may still be fading out after the Weapon node's item is gone: the left hand's
-        // correction keeps it in its model of the arms (with detachedPose) until their blends no longer have it. Cleared
-        // when it attaches again, or when an evaluation that measured the arms' weights found none.
+        // Detached, while its items on the arms may still be fading out after the Weapon node's item is gone. The left
+        // hand correction keeps it (with detachedPose) in its model of the arms until their blends no longer have it.
+        // Cleared when it attaches again, or when an evaluation that measured the arms' weights found none.
         bool fading = false;
 
         Acceptance Sample(float fTime) const;
         bool IsOff(float fTime) const;
-        // Catmull-Rom through leftSpaceKeys; false if there are none
+        // Catmull-Rom through leftSpaceKeys. Returns false if there are none.
         bool SampleLeftSpace(float fTime, NiTransform& relativeToLeft) const;
     };
 
     // What keeping the left hand on the weapon last did to the left arm (upper arm, forearm, hand): the rotations their
-    // blends had given the bones, and the ones they were given instead. A bone that still has the latter has not been
-    // blended since (bone LOD, an update of the Weapon node alone) and gets the former back before the arm is read again:
-    // the hand's correction is a step from where the arm is, and would be added to itself.
+    // blends gave the bones and the rotations they were given instead. A bone that still has the latter has not been
+    // blended since (bone LOD, an update of the Weapon node alone), so it gets the former back before the arm is read
+    // again. Otherwise the hand's correction, a step from where the arm is, would be added to itself.
     struct ArmReach
     {
         bool applied = false;
@@ -160,43 +163,44 @@ namespace WeaponHandBlend
 #endif
     };
 
-    // The weapon model's bounding sphere in Weapon node space; radius 0 when there is no model
+    // The weapon model's bounding sphere in Weapon node space. Radius is 0 when there is no model.
     struct WeaponBound
     {
         NiPoint3 center = NiPoint3::ZERO;
         float radius = 0.0f;
     };
 
-    // Lives for one evaluation of the Weapon node's blend interpolator.
+    // Lives for one evaluation of the Weapon node's blend interpolator
     class Context
     {
     public:
         Context(NiObjectNET* target, kBlendInterpolatorExtraData* extraData);
         explicit operator bool() const { return m_weapon != nullptr; }
 
-        // Collects one blended item; key identifies it for the weight setters. fTime is the update time of the
+        // Collects one blended item. key identifies it for the weight setters. fTime is the update time of the
         // interpolator that produced kTransform (sequence-local time). Weights start at 0.
         void AddItem(const void* key, kBlendInterpItem* extraItem, float fTime, const NiQuatTransform& kTransform);
         void SetTranslateWeight(const void* key, float fWeight);
         void SetRotateWeight(const void* key, float fWeight);
 
         // Replaces kValue's valid translation and rotation with the blend of the collected items relative to the hand
-        // they agree on. Leaves kValue alone when every item accepts the right hand: the regular blend already keeps the
-        // weapon on it. Then turns the left arm so that its hand stays where the items holding the weapon with it hold it.
+        // they agree on. Leaves kValue alone when every item accepts the right hand, since the regular blend already
+        // keeps the weapon on it. Then rotates the left arm so its hand stays where the items holding the weapon with
+        // it hold it.
         void Blend(NiQuatTransform& kValue);
 
-        // A lone item, weighted 1.
+        // Blends a lone item, weighted 1
         void BlendSingle(kBlendInterpItem* extraItem, float fTime, NiQuatTransform& kValue);
 
-        // The sequence detaches the item from the Weapon node while it keeps fading out; fTime is the item's update time,
-        // which stops advancing from now on. Keeps the pose the item is blended with until it is removed.
+        // Called when the sequence detaches the item from the Weapon node while it keeps fading out. fTime is the
+        // item's update time, which stops advancing from now on. Keeps the pose the item is blended with until removed.
         void CacheDetachedPose(const kBlendInterpItem& extraItem, const NiControllerSequence& sequence, float fTime);
 
     private:
         bool EnsureChains();
         WeaponBound GetWeaponBound() const;
         const NiAVObject* GetWeaponModel() const;
-        // indices into NodeData::sequences, -1 if none; measuring a new sequence may reallocate the vector
+        // Indices into NodeData::sequences, -1 if none. Measuring a new sequence may reallocate the vector.
         int FindSequence(const NiInterpolator* weaponInterpolator) const;
         int FindOrMeasureSequence(NiInterpolator* weaponInterpolator, const NiControllerSequence& sequence);
 

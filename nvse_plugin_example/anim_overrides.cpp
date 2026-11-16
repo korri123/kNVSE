@@ -23,8 +23,8 @@ namespace
 {
 	struct SetStack
 	{
-		// the set tried last first: by the rank of their origins, then in the order they were registered (or registered
-		// again: on top)
+		// Ordered with the set tried last first, so the top of the stack is at the back: by the rank of their origins,
+		// then by registration order (registering a set again moves it up).
 		std::vector<std::unique_ptr<SavedAnims>> sets;
 	};
 
@@ -37,33 +37,33 @@ namespace
 
 	constexpr auto kForms = 0;
 	constexpr auto kModIndices = 1;
-	// [first person][kForms / kModIndices]
+	// Indexed [first person][kForms / kModIndices].
 	OverrideMap s_maps[2][2];
 	std::shared_mutex s_mutex;
 	std::atomic<UInt32> s_generation = 1;
-	// a bit per full group ID, set under the lock and never cleared but by Clear
+	// One bit per full group ID. Set under the lock and only cleared by Clear.
 	std::atomic<UInt32> s_groups[2][0x10000 / 32];
-	// sets replaced by one with another condition (the same files registered again): threads that pick animations may
-	// still have them
+	// Sets replaced by a copy with another condition (the same files registered again). Kept alive because threads that
+	// pick animations may still hold pointers to them.
 	std::vector<std::unique_ptr<SavedAnims>> s_retiredSets;
-	// base path -> pooled paths
+	// Base path to pooled paths of the custom anim group files.
 	std::unordered_map<std::string, std::vector<std::string_view>, transparent_string_hash, std::equal_to<>> s_customGroupPaths;
-	// every origin made, never freed: sets point to them, and the user's choices are by origin
+	// Every origin created. Never freed: sets point to them, and the user's choices are keyed by origin.
 	std::vector<std::unique_ptr<OverrideOrigin>> s_origins;
-	// by lower case name
+	// Keyed by lower case name.
 	std::unordered_map<std::string, OverrideOrigin*> s_originsByName;
-	// counts registrations: SavedAnims::sequence
+	// Registration counter, stored in SavedAnims::sequence.
 	UInt32 s_sequence = 0;
 
 	std::mutex s_problemsMutex;
 	std::vector<Overrides::Problem> s_problems;
 
-	// one thread compiles at a time (CompileConditionScript keeps the scripts by their text)
+	// One thread compiles at a time (CompileConditionScript caches the scripts by their text).
 	std::mutex s_compileMutex;
 	std::atomic<bool> s_conditionsWaiting = false;
 
-	// where the set is tried in its stack, before the order of registration: its origin's place in its form's order,
-	// then in the default order
+	// Where the set is tried in its stack, before the registration order: its origin's position in its form's order,
+	// then in the default order.
 	std::pair<int, int> RankOf(const SavedAnims& set)
 	{
 		return { set.formRank, set.origin ? set.origin->rank : 0 };
@@ -81,7 +81,7 @@ namespace
 		std::ranges::sort(stack.sets, [](const auto& set, const auto& other) { return IsTriedBefore(other, set); });
 	}
 
-	// Whether the set would be tried first of the sets of its rank or below: registering it again moves nothing
+	// True if the set would be tried first of the sets of its rank or below, so registering it again moves nothing.
 	bool IsOnTopOfItsRank(const SetStack& stack, const SavedAnims& set)
 	{
 		const auto rank = RankOf(set);
@@ -101,7 +101,7 @@ namespace
 		set.numFilesDisabled.store(numDisabled, std::memory_order_relaxed);
 	}
 
-	// form: the choices for the form the set is registered for, null without any
+	// form: the choices for the form the set is registered for, or null if there are none.
 	void ApplyFormPrefs(SavedAnims& set, const OverridePrefs::FormPrefs* form)
 	{
 		if (!form || !set.origin)
@@ -156,7 +156,7 @@ namespace
 		return true;
 	}
 
-	// What the names of a set's files say, once the set has all of them
+	// Fills in what the names of a set's files say, once the set has all of them.
 	void Complete(SavedAnims& set)
 	{
 		for (auto& anim : set.anims)
@@ -188,14 +188,15 @@ namespace
 		set.numFilesDisabled.store(numDisabled, std::memory_order_relaxed);
 	}
 
-	// A set gets its script once: at registration, or when its text is compiled
+	// A set gets its script once: at registration, or when its text is compiled.
 	void SetCondition(SavedAnims& set, Script* script)
 	{
 		set.conditionContext = script;
 		set.conditionScript.store(script, std::memory_order_release);
 	}
 
-	// Whether the set plays under the source's condition. A text decides by itself (its script is compiled from it)
+	// True if the set plays under the source's condition. A condition text decides by itself, since its script is
+	// compiled from it.
 	bool HasCondition(const SavedAnims& set, const Overrides::Source& source)
 	{
 		if (!set.conditionScriptText.empty() || !source.conditionText.empty())
@@ -203,7 +204,7 @@ namespace
 		return set.conditionScript.load(std::memory_order_relaxed) == source.conditionScript;
 	}
 
-	// The same files, played the same way: a copy of the set with another condition
+	// True if the files are the same and play the same way, so that one set is a copy of the other with another condition.
 	bool IsCopyOf(const SavedAnims& copy, const SavedAnims& set)
 	{
 		return copy.additiveAnimPath.data() == set.additiveAnimPath.data() && copy.folderCondition == set.folderCondition
@@ -212,9 +213,9 @@ namespace
 				[](const AnimPath& animPath) { return animPath.path.data(); });
 	}
 
-	// The set with another condition, in its place in the stack. A copy retired before with that condition comes back:
-	// the same files registered by turns with conditions that differ (a lambda is a script per calling reference) would
-	// otherwise retire a set on every call
+	// Replaces the set with a copy that has another condition, in the same place in the stack. A copy retired earlier with
+	// that condition is reused. Otherwise files registered alternately with different conditions (a lambda is a different
+	// script for each calling reference) would retire a set on every call.
 	void ReplaceCondition(std::unique_ptr<SavedAnims>& set, const Overrides::Source& source)
 	{
 		std::unique_ptr<SavedAnims> replacement;
@@ -242,7 +243,7 @@ namespace
 			if (source.conditionScript)
 				SetCondition(*replacement, source.conditionScript);
 		}
-		// in the set's place, with what the user chose for it
+		// The copy takes the original's place, with the user's choices for it.
 		replacement->origin = set->origin;
 		replacement->sequence = set->sequence;
 		replacement->formRank = set->formRank;
@@ -270,7 +271,7 @@ namespace
 		auto* script = CompileConditionScript(set.conditionScriptText);
 		if (!script)
 		{
-			// once per condition: a mod's JSON gives the same one to every folder
+			// Logged once per condition, because a mod's JSON gives the same one to every folder.
 			ERROR_LOG_ONCE(FormatString("Condition '%s' failed to compile (see the console for the error): the animations of the sets that have it are disabled",
 				set.conditionScriptText.data()));
 			Overrides::ReportProblem(Overrides::Problem::Kind::Condition, std::string(set.conditionScriptText));
@@ -282,7 +283,7 @@ namespace
 		return script;
 	}
 
-	// Every stack with what it is registered under. Under the lock
+	// Calls f for every stack with what it is registered under. Under the lock.
 	template <typename F>
 	void ForEachStack(F&& f)
 	{
@@ -332,7 +333,7 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 		UInt16 groupId;
 		bool firstPerson;
 	};
-	// before the lock: a file whose name does not say its group is loaded for it
+	// Resolved before taking the lock, because a file whose name does not say its group is loaded to find out.
 	std::vector<Entry> entries;
 	entries.reserve(files.size());
 	for (const auto& file : files)
@@ -347,7 +348,7 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 		entries.push_back({ path, groupId, file.firstPerson });
 	}
 
-	// the set this batch made last for a group
+	// The set this batch created last for a group.
 	struct OpenSet
 	{
 		bool firstPerson;
@@ -356,11 +357,11 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 	};
 	std::vector<OpenSet> openSets;
 	std::vector<SavedAnims*> newSets;
-	// stacks with a set added or moved: put in order at the end
+	// Stacks with a set added or moved. They are put in order at the end.
 	std::vector<SetStack*> touchedStacks;
 	size_t applied = 0;
 	bool changed = false;
-	// the user's choices for the source's form: the key needs the mod's name, made only once there are any
+	// The user's choices for the source's form. Looked up only if there are any, because the key needs the mod's name.
 	OverridePrefs::FormPrefs formPrefs;
 	if (OverridePrefs::HasFormPrefs())
 		formPrefs = OverridePrefs::GetForm(FormKey(source.identifier, source.isModIndex));
@@ -370,7 +371,7 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 	{
 		auto& map = s_maps[firstPerson][source.isModIndex ? kModIndices : kForms];
 		auto* stack = FindStack(map, source.identifier, groupId);
-		// the set that has the file, as one of its animations or as its additive animation
+		// The set that has the file, either as one of its animations or as its additive animation.
 		const auto existing = stack ? std::ranges::find_if(stack->sets, [&](const std::unique_ptr<SavedAnims>& set)
 		{
 			return set->additiveAnimPath.data() == path.data()
@@ -389,9 +390,9 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 		}
 		if (exists)
 		{
-			// Registered again. Only what changes bumps the generation, which every actor's state and the player's
-			// preload start over from: a script may register its files on every frame.
-			// Hot reload: a set does not change once it is published, so another takes its place
+			// Registered again. Only an actual change bumps the generation, which resets every actor's state and the
+			// player's preload, since a script may register its files every frame.
+			// A set does not change once it is published, so a different condition replaces the set with a copy.
 			if (!source.keepCondition && !HasCondition(**existing, source))
 			{
 				ReplaceCondition(*existing, source);
@@ -399,7 +400,7 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 			}
 			if ((*existing)->disabled.exchange(false, std::memory_order_relaxed))
 				changed = true;
-			// on top of the sets of its origin's rank
+			// Moves it on top of the sets of its origin's rank.
 			(*existing)->sequence = ++s_sequence;
 			if (!IsOnTopOfItsRank(*stack, **existing))
 			{
@@ -409,7 +410,7 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 			++applied;
 			continue;
 		}
-		// not part of any set, or they would play as the group's animation
+		// Custom group files belong to no set. Otherwise they would play as the group's animation.
 		if (RegisterCustomGroupPath(path))
 		{
 			++applied;
@@ -501,7 +502,7 @@ bool Overrides::DisableForm(UInt32 formId)
 
 bool Overrides::CopyForm(UInt32 fromFormId, UInt32 toFormId)
 {
-	// a set of the form as one batch for the other: its files stay the variants of one set
+	// A set of the form is registered as one batch for the other, so its files stay the variants of one set.
 	struct Batch
 	{
 		Source source;
@@ -577,7 +578,7 @@ const OverrideOrigin* Overrides::GetOrigin(OverrideOrigin::Kind kind, std::strin
 	origin->userDisabled = OverridePrefs::IsOriginDisabled(name);
 	origin->rank = OverridePrefs::GetRank(OverridePrefs::Get().order, name);
 	std::unique_lock lock(s_mutex);
-	// another thread may have made it meanwhile
+	// Another thread may have created it in the meantime.
 	const auto [iter, inserted] = s_originsByName.try_emplace(std::move(key), origin.get());
 	if (inserted)
 		s_origins.push_back(std::move(origin));
@@ -603,7 +604,7 @@ void Overrides::ApplyPrefs()
 		origin->userDisabled.store(prefs.disabledOrigins.contains(ToLower(origin->name)), std::memory_order_relaxed);
 		origin->rank = OverridePrefs::GetRank(prefs.order, origin->name);
 	}
-	// the stacks of one identifier come one after another per map: its form's choices looked up once per run
+	// The stacks of one identifier come one after another per map, so the form's choices are looked up once per run.
 	std::pair<UInt32, bool> lastForm{ 0, false };
 	const OverridePrefs::FormPrefs* form = nullptr;
 	bool lookedUp = false;
@@ -638,7 +639,7 @@ std::string Overrides::FormKey(UInt32 identifier, bool isModIndex)
 		return *modName ? ToLower(modName) : std::format("{:02x}", identifier);
 	}
 	const auto modIndex = identifier >> 24;
-	// a form made at run time has no plugin
+	// A form created at run time has no plugin.
 	const char* modName = modIndex != kEveryone ? DataHandler::Get()->GetNthModName(modIndex) : "";
 	if (!*modName)
 		return std::format("{:08x}", identifier);
@@ -698,8 +699,8 @@ Overrides::Identity Overrides::GetIdentity(Actor* actor)
 void Overrides::CollectCandidates(const Identity& identity, bool firstPerson, UInt16 groupId, std::vector<SavedAnims*>& out)
 {
 	const UInt32 formIds[] = { identity.actor, identity.weapon, identity.baseForm, identity.race, identity.actorBase };
-	// a form's sets come before those of any mod, a mod's before everyone's: collected in that order, each identifier
-	// once (an NPC's base form is its actor base; a reference made at run time has everyone's "mod index")
+	// A form's sets come before those of any mod, and a mod's before everyone's. Each identifier is collected once
+	// (an NPC's base form is its actor base, and a reference created at run time has everyone's "mod index").
 	UInt32 tried[std::size(formIds)];
 	size_t numTried = 0;
 	UInt8 modIndices[std::size(formIds) + 1];
@@ -743,7 +744,7 @@ void Overrides::CollectFormPaths(UInt32 formId, bool firstPerson, const Actor* a
 		{
 			if (!set->IsEnabled() || set->conditionFailed.load(std::memory_order_relaxed))
 				continue;
-			// the weapon's mods can change while it is equipped, the actor's sex and kind do not
+			// The weapon's mods can change while it is equipped. The actor's sex and kind do not.
 			const auto condition = set->folderCondition;
 			if ((condition == FolderCondition::Male || condition == FolderCondition::Female || condition == FolderCondition::Human)
 				&& !set->MatchesFolderCondition(actor))

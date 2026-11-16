@@ -21,10 +21,10 @@ namespace
         { "blendCurve", Direction::Both }, { "blendInCurve", Direction::In }, { "blendOutCurve", Direction::Out },
     };
 
-    // Bisection steps: 2^-24 of the range, below a float's resolution near 1
+    // Number of bisection steps; the final interval, 2^-24 of the range, is below float resolution near 1
     constexpr int kSteps = 24;
 
-    // Where in 0..1 a function that never decreases reaches the value
+    // Finds by bisection where a non-decreasing function on 0..1 reaches the value
     template <typename F>
     float FindWhere(F&& function, float fValue)
     {
@@ -38,7 +38,7 @@ namespace
         return (fLow + fHigh) * 0.5f;
     }
 
-    // Set once a sequence with curve keys joined a manager: until then every ease takes the default curve
+    // Set once a sequence with curve keys has joined a manager. Until then every ease uses the default curve.
     std::atomic<bool> g_anyKeys = false;
 
     void LogOnce(const std::string& message)
@@ -51,7 +51,7 @@ namespace
         return x * x * (3.0f - 2.0f * x);
     }
 
-    // A family's In form: slow at the start, fast at the end
+    // The In form of a curve family: slow at the start, fast at the end
     float EaseIn(BlendCurve::Type type, float x)
     {
         switch (type)
@@ -66,7 +66,7 @@ namespace
             return x * x * x * x;
         case BlendCurve::Type::Expo:
         {
-            // 2^(10x - 10) starts at 2^-10: shifted and scaled to start at 0
+            // 2^(10x - 10) starts at 2^-10, so shift and scale it to start at 0
             constexpr float kStart = 1.0f / 1024.0f;
             return (std::exp2(10.0f * x - 10.0f) - kStart) / (1.0f - kStart);
         }
@@ -77,7 +77,7 @@ namespace
         }
     }
 
-    // A coordinate of the cubic Bezier from 0 to 1 with control values p1, p2
+    // Evaluates one coordinate of the cubic Bezier from 0 to 1 with control values p1 and p2
     float Bezier(float t, float p1, float p2)
     {
         const float s = 1.0f - t;
@@ -107,8 +107,8 @@ namespace
         return keys;
     }
 
-    // The key for the direction in effect at the time: the latest at or before it, a directional one over a blendCurve at
-    // the same time
+    // Returns the key in effect for the direction at the time: the latest at or before it. A directional key wins over
+    // a blendCurve key at the same time.
     const BlendCurve* FindKey(const BlendCurves::Keys& keys, Direction direction, float fTime)
     {
         const BlendCurves::Key* found = nullptr;
@@ -124,12 +124,12 @@ namespace
         return found ? &found->curve : nullptr;
     }
 
-    // Resolves the curve of the ease's switch (just its own for an ease no switch declared) and gives it to every
+    // Resolves the curve of the ease's switch (just its own curve for an ease no switch declared) and gives it to every
     // sequence in the switch. Sequences keep joining a switch after its first ones were shaped (Animation::PlayGroup
-    // updates the bones after each group it starts: aim, then aim up and aim down; a gait after the idle of a stance
-    // change; BlendFixes' variants join from kMessage_MainGameLoop) and their keys count as well: each one new to it
-    // resolves it again, and Shape moves the eases already in it to the curve if that changed it. fScaledTime: the time
-    // the sequence is evaluated at
+    // updates the bones after each group it starts, e.g. aim, then aim up and aim down; BlendFixes' variants join from
+    // kMessage_MainGameLoop), and their keys count as well. Each sequence new to the switch resolves it again, and Shape
+    // moves the eases already in the switch to the new curve if it changed. fScaledTime is the time the sequence is
+    // evaluated at.
     void Resolve(const NiControllerSequence& sequence, const Ease& ease, kAnimationExtraData& nodeData, float fScaledTime)
     {
         const auto& keys = nodeData.sequenceKeys;
@@ -186,7 +186,7 @@ float BlendCurve::Evaluate(float fProgress) const
     case Type::Smooth:
         return Smoothstep(x);
     case Type::Bezier:
-        // with control points in 0..1 neither coordinate decreases: the parameter where x is reached
+        // With control points in 0..1 neither coordinate decreases, so find the parameter where x is reached
         return Bezier(FindWhere([&](float t) { return Bezier(t, fX1, fX2); }, x), fY1, fY2);
     default:
         switch (mode)
@@ -260,7 +260,7 @@ std::optional<BlendCurve> BlendCurve::Parse(std::string_view text)
             return curve;
         }
     }
-    // inOut before in: it starts with it
+    // inOut must come before in, because its name starts with it
     constexpr std::pair<std::string_view, Mode> kModes[] = {
         { "inOut", Mode::InOut }, { "in", Mode::In }, { "out", Mode::Out },
     };
@@ -304,10 +304,10 @@ float BlendCurves::Shape(NiControllerSequence& sequence, float fSpinner, float f
 {
     if (!Eases::IsEasing(sequence.m_eState))
         return fSpinner;
-    // No animation has named a curve: every ease is on the default one, the game's spinner (linear, point symmetric:
-    // 1 - curve(x) == curve(1 - x)). A cross fade's two spinners then add up to 1 and an ease turned around where it is
-    // (ActivateNoReset, DeactivateNoReset mirror its window) continues from the spinner it had. The same for a sequence
-    // kNVSE has no data of (no switch, no keys)
+    // If no animation has named a curve, every ease is on the default one: the game's spinner, which is linear and point
+    // symmetric (1 - curve(x) == curve(1 - x)). A cross fade's two spinners then add up to 1, and an ease turned around
+    // where it is (ActivateNoReset, DeactivateNoReset mirror its window) continues from the spinner it had. The same
+    // applies to a sequence kNVSE has no data for (no switch, no keys).
     auto* extraData = g_anyKeys.load(std::memory_order_relaxed) ? SequenceExtraDatas::Get(&sequence) : nullptr;
     if (!extraData)
         return fSpinner;
@@ -322,8 +322,8 @@ float BlendCurves::Shape(NiControllerSequence& sequence, float fSpinner, float f
         if (ease.switchCurve.IsNamed())
             nodeData.namedCurveEaseEnd = max(nodeData.namedCurveEaseEnd, sequence.m_fEndTime);
     }
-    // a sequence that joined the switch changed its curve, or this one is new to it: the curve it had ends with the weight
-    // last written
+    // A sequence joined the switch and changed its curve, or this ease is new to the switch. The old curve ends at the
+    // weight last written.
     if (ease.curve != ease.switchCurve)
         ease.SetCurve(ease.switchCurve, ease.fLastSpinner);
     ease.fLastSpinner = fSpinner;
@@ -334,7 +334,7 @@ bool BlendCurves::HasNamedCurve(const NiControllerSequence& sequence)
 {
     if (!g_anyKeys.load(std::memory_order_relaxed))
         return false;
-    // asked for every bone: most sequences are ruled out by their node's data alone, without looking up their own
+    // Asked for every bone. Most sequences are ruled out by their node's data alone, without looking up their own.
     const auto* manager = sequence.m_pkOwner;
     const auto* nodeData = manager && manager->m_pkTarget ? kAnimationExtraData::Get(manager->m_pkTarget) : nullptr;
     if (!nodeData || sequence.m_fEndTime > nodeData->namedCurveEaseEnd)

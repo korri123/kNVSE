@@ -14,7 +14,7 @@ namespace
         return result;
     }
 
-    // rotation matrices are orthonormal: the inverse is the transpose
+    // Rotation matrices are orthonormal, so the inverse is the transpose
     NiMatrix33 Transpose(const NiMatrix33& matrix)
     {
         NiMatrix33 result;
@@ -24,9 +24,9 @@ namespace
         return result;
     }
 
-    // The node's world rotation with every bone above it at the rotation of its computed weights: the node's world
-    // rotation turned by how the chain of local rotations differs, so the world transforms' age (Fire may run between a
-    // blend and the world update) does not matter. False if no bone differs
+    // Returns the node's world rotation with every bone above it at the rotation of its computed weights. This is the
+    // node's world rotation turned by how the chain of local rotations differs, so it does not depend on the age of
+    // the world transforms (Fire may run between a blend and the world update). Returns false if no bone differs.
     bool GetComputedWorldRotate(NiAVObject* node, NiMatrix33& kRotate)
     {
         constexpr unsigned int kMaxDepth = 64;
@@ -55,9 +55,9 @@ namespace
             const auto& kLocal = chain[i]->m_kLocal.m_Rotate;
             kShown = kShown * kLocal;
             if (const auto* extraData = recorded[i])
-                // the rotation of the bone's computed weights in place of what was written to it: whatever wrote to the
-                // bone after its blend (the ragdoll controller's foot and look IK, WeaponHandBlend reaching with the arm)
-                // stays
+                // Uses the rotation of the bone's computed weights in place of what was written to it. Anything that
+                // wrote to the bone after its blend (ragdoll controller foot and look IK, WeaponHandBlend reaching
+                // with the arm) is kept.
                 kComputed = kComputed * kLocal * Transpose(ToMatrix(extraData->writtenRotate))
                     * ToMatrix(extraData->computedRotate);
             else
@@ -67,12 +67,12 @@ namespace
         return true;
     }
 
-    // TESObjectWEAP::Fire, the call of NiAVObject::GetWorldTransform (0x5237EC) on the projectile node whose rotation the
-    // shot is aimed along (NiMatrix3::ToEulerAnglesZXY), for every shooter but the player in first person
+    // TESObjectWEAP::Fire's call of NiAVObject::GetWorldTransform (0x5237EC) on the projectile node whose rotation the
+    // shot is aimed along (NiMatrix3::ToEulerAnglesZXY), for every shooter except the player in first person
     const NiTransform* __fastcall ProjectileNodeTransformHook(NiAVObject* node)
     {
-        // Fire's actor (thiscall, the first stack argument). NPCs with a target aim at it, and their bones may be
-        // blended on another thread while they fire
+        // Fire's actor (thiscall, first stack argument). NPCs with a target aim at it, and their bones may be blended
+        // on another thread while they fire.
         if (GET_CALLER_VAR(TESObjectREFR*, 0x8) != g_thePlayer)
             return &node->m_kWorld;
         thread_local NiTransform kAimed;

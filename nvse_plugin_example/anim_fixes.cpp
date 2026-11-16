@@ -367,18 +367,18 @@ void AnimFixes::FixShortGaitBlend(BSAnimGroupSequence* anim, const char* filePat
 {
 	if (!g_pluginSettings.fixShortGaitBlend || HasNoFixTextKey(anim))
 		return;
-	// the anim group is not loaded yet; KFModel::InitSequence cuts the name at its first '_' before loading it
+	// The anim group is not loaded yet; KFModel::InitSequence cuts the name at its first '_' before loading it.
 	const auto groupId = SimpleGroupNameToId(anim->m_kName.CStr());
-	// start and stop animations set their own blends into and out of the walk
+	// Start and stop animations define their own blends into and out of the walk.
 	if (groupId == kAnimGroup_Invalid || !TransitionAnims::IsGait(groupId) ||
 		TransitionAnims::GetPathKind(filePath, groupId) != TransitionKind::None)
 		return;
-	// the game's default blend (fAnimationDefaultBlend 0.2 s), which the vanilla walks and runs keep to or exceed but
-	// for 1hpfastforward and 2hlfastforward in third person: Blend: 3, a weapon snapping into the run in a tenth of a
-	// second (half of that through the middle of the blend once priorities share it)
+	// Gait animations with a blend shorter than kMinFrames get raised to the game's default blend (fAnimationDefaultBlend,
+	// 0.2 s). The vanilla walks and runs meet or exceed it, but very short blends such as 3 frames make the weapon snap
+	// into the run.
 	constexpr int kMinFrames = 6;
-	// BSAnimGroupSequence::InitAnimGroup (0x5F3A20) reads each line of a text key: the prefix in any case, then atoi
-	// past at most one space. 0 is no blend key (the default blend)
+	// BSAnimGroupSequence::InitAnimGroup (0x5F3A20) reads each text key line: the prefix is matched case-insensitively,
+	// then atoi skips at most one space. A value of 0 means no blend key (the default blend).
 	constexpr std::array<std::string_view, 3> blendPrefixes = { "BlendIn:", "BlendOut:", "Blend:" };
 	for (auto& key : anim->m_spTextKeys->GetKeys())
 	{

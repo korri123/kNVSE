@@ -1495,7 +1495,7 @@ struct NiQuatTransform
 		return m_kTranslate;
 	}
 
-	// NiQuatTransform::HierApply: kChild, given relative to this transform, made relative to this one's parent
+	// NiQuatTransform::HierApply: converts kChild from relative to this transform into relative to this one's parent
 	NiQuatTransform HierApply(const NiQuatTransform& kChild) const
 	{
 		NiQuatTransform kResult;
@@ -2059,8 +2059,8 @@ public:
 		return m_fLastTime;
 	}
 
-	// The time the sequence is at as of its last update; its beginning when it is about to start over (m_fOffset is unset
-	// until the first update, and m_fLastScaledTime still the previous play's)
+	// Returns the time the sequence was at in its last update, or its begin key time if it is about to start over
+	// (m_fOffset is unset until the first update, and m_fLastScaledTime still holds the previous play's value).
 	float GetSequenceTime() const
 	{
 		if (m_fOffset == -NI_INFINITY || m_fLastScaledTime == -NI_INFINITY)
@@ -2068,15 +2068,16 @@ public:
 		return m_fLastScaledTime;
 	}
 
-	// The time in this sequence's cycle corresponding to pkSourceSequence's fSourceTime (unscaled, its owner time plus
-	// offset) at the m: keys both have
+	// Returns the time in this sequence's cycle that corresponds to pkSourceSequence's fSourceTime (unscaled: its owner
+	// time plus offset) at the m: keys both sequences have.
 	float FindCorrespondingMorphFrame(NiControllerSequence* pkSourceSequence, float fSourceTime) const;
 
-	// Stop taking the time from m_pkPartnerSequence (the source of a morph, or of a movement switch at m: keys, follows
-	// its destination's cycle) and continue on its own clock from where it is. fTime: its owner's animation time of the
-	// last evaluation or the next; NAN when unknown (the time then continues from the offset it had before following)
+	// Stops taking the time from m_pkPartnerSequence and continues on this sequence's own clock from where it is.
+	// A morph source, or a movement switch at m: keys, follows its destination's cycle through the partner.
+	// fTime is the owner's animation time of the last or next evaluation, or NAN if unknown (the time then continues
+	// from the offset the sequence had before it followed).
 	void StopFollowingPartner(float fTime);
-	// StopFollowingPartner for every sequence of the owner following this one
+	// Calls StopFollowingPartner for every sequence of the owner that follows this one.
 	void ReleaseFollowers(float fTime) const;
 
 	void SetInterpsWeightAndTime(float fWeight, float fEaseSpinner, float fTime);
@@ -2415,7 +2416,7 @@ public:
 
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget, NiQuatTransform& kValue);
 
-	// NiBlendAccumTransformInterpolator::CalculateValue: the item's delta since its last update
+	// NiBlendAccumTransformInterpolator::CalculateValue: computes the item's delta since its last update
 	void CalculateValue(UInt8 ucIndex, float fTime, NiObjectNET* pkInterpTarget)
 	{
 		ThisStdCall(0xA39F60, this, ucIndex, fTime, pkInterpTarget);
@@ -2457,7 +2458,7 @@ public:
 	bool BlendValues(float fTime, NiObjectNET* pkInterpTarget,
 					 NiQuatTransform& kValue);
 
-	// kComputedRotate: the rotation of the computed weights, before blend smoothing took any up (FireDirection)
+	// kComputedRotate receives the rotation of the computed weights before blend smoothing is applied (FireDirection).
 	bool BlendValuesFixFloatingPointError(float fTime, NiObjectNET* pkInterpTarget,
 		NiQuatTransform& kValue, NiQuaternion& kComputedRotate);
 
@@ -3095,18 +3096,18 @@ public:
 		return nullptr;
 	}
 
-	// The node kItem's blend interpolator animates: its slot in the multi-target controller, else the palette entry
+	// Returns the node that kItem's blend interpolator animates: its slot in the multi-target controller, else the palette entry.
 	NiAVObject* GetTarget(const NiControllerSequence::InterpArrayItem& kItem, const NiControllerSequence::IDTag& idTag);
 
 	NiDefaultAVObjectPalette* GetObjectPalette() const;
 	
 	NiMultiTargetTransformController* GetMultiTargetTransformController() const;
 
-	// The manager whose scene object hangs under (nearest ancestor that is its palette's scene), or null
+	// Returns the manager whose scene object is an ancestor of object (the nearest one that is its palette's scene), or null.
 	static NiControllerManager* FindForObject(const NiAVObject* object);
 
-	// Drops the palette entries and multi-target controller targets that point into object's subtree; call before the
-	// subtree leaves the scene graph, the engine only rebuilds both in Animation::ReloadTargets
+	// Drops the palette entries and multi-target controller targets that point into object's subtree. Call before the
+	// subtree leaves the scene graph; the engine only rebuilds both in Animation::ReloadTargets.
 	void ForgetObjectRecurse(NiAVObject* object) const;
 };
 static_assert(sizeof(NiControllerManager) == 0x7C);
@@ -3125,7 +3126,7 @@ enum eAnimSequence
 	kSequence_Death = 0x14,
 };
 
-// ANIM_GROUP_ACTION_TYPE: what Animation::Update does at a group's action keys (Hit, Attach, Eject, ...)
+// ANIM_GROUP_ACTION_TYPE: what Animation::Update does at a group's action keys (Hit, Attach, Eject, ...).
 enum AnimGroupActionType : UInt32
 {
 	kAnimGroupActionType_StartStop = 0x0,

@@ -11,11 +11,11 @@
 
 namespace
 {
-    // How long a jump (and with fBlendSmoothness, a blend in progress) takes to fade out: about a third of it is left
-    // after this time
+    // Time over which a jump (and, with fBlendSmoothness, a blend in progress) fades out. About a third of it is left
+    // after this time.
     constexpr float kFadeTime = 0.075f;
-    // Blends this short are cuts the animation asked for (attack blend-ins: 1 frame), not smoothed by fBlendSmoothness:
-    // the low pass over every blend (before 775a6df) delayed the start of a shot and cut its recoil by a third
+    // Blends shorter than this are cuts requested by the animation (such as the 1 frame attack blend-in) and are not
+    // smoothed by fBlendSmoothness, since smoothing them would delay the start of a shot and weaken its recoil.
     constexpr float kMinSmoothedBlendTime = 0.08f;
 }
 
@@ -57,7 +57,7 @@ kBlendInterpolatorExtraData* kBlendInterpolatorExtraData::Create()
     new(&extraData->items) std::vector<kBlendInterpItem>();
     new(&extraData->weaponHandBlend) std::unique_ptr<WeaponHandBlend::NodeData>();
     new(&extraData->parentSwitch) std::unique_ptr<WeaponParentSwitch::NodeState>();
-    // NiNew does not construct
+    // NiNew does not run constructors
     extraData->accumRootChild = false;
     extraData->hasComputedRotate = false;
     PopulateVtable(extraData);
@@ -107,7 +107,7 @@ kBlendInterpItem& kBlendInterpolatorExtraData::GetOrCreateItem(NiInterpolator* i
         freeItem->interpolator = interpolator;
         return *freeItem;
     }
-    // most bones have up to 4 items (aim, its up/down variants, a gait or attack): one allocation instead of four
+    // Most bones have up to 4 items (aim, its up/down variants, a gait or attack): one allocation instead of four
     if (items.empty() && items.capacity() == 0)
         items.reserve(4);
     return items.emplace_back(interpolator);
@@ -125,7 +125,7 @@ kBlendInterpItem* kBlendInterpolatorExtraData::GetItem(NiInterpolator* interpola
 
 float BlendSmoothing::GetElapsedTime(float fLastTime, float fTime)
 {
-    // not evaluated before, or the animation time went back: one frame
+    // Not evaluated before, or the animation time went back: assume one frame
     if (fLastTime == -NI_INFINITY || fTime < fLastTime)
         return g_timeGlobal->secondsPassed;
     return fTime - fLastTime;
@@ -134,11 +134,12 @@ float BlendSmoothing::GetElapsedTime(float fLastTime, float fTime)
 void BlendSmoothing::Step::AddItem(const NiBlendInterpolator::InterpArrayItem& item, kBlendInterpItem* extraItem,
     const NiQuatTransform& kTransform)
 {
-    // a detached item is only fading out: no sequence has it attached, nothing moves its weight or ease spinner
+    // A detached item is only fading out. No sequence has it attached, so nothing moves its weight or ease spinner.
     if (extraItem && extraItem->detached)
         return;
 
-    // the channels count too: each is blended from the items that have it. Summed, as the order of the items means nothing
+    // The valid channels are part of the signature, since each channel is blended from the items that have it. The
+    // terms are summed so that the order of the items does not matter.
     const UInt32 uiChannels = (kTransform.IsTranslateValid() ? 1 : 0) | (kTransform.IsRotateValid() ? 2 : 0)
         | (kTransform.IsScaleValid() ? 4 : 0);
     m_uiAttachedItems += (reinterpret_cast<UInt32>(item.m_spInterpolator.data) * 2654435761u)
@@ -158,12 +159,11 @@ void BlendSmoothing::Step::AddItem(const NiBlendInterpolator::InterpArrayItem& i
     extraItem->lastEaseSpinner = item.m_fEaseSpinner;
 }
 
-// The children of the accum root (Bip01 NonAccum) are posed relative to the actor, which the engine turns at once when it
-// sits down or stands up: the furniture enter and exit animations are made for the way the actor faces after the turn,
-// which comes with the switch of sequences, without a blend. The actor's angle is set before the evaluation that blends
-// the switch, its 3D is turned after it, before the frame is drawn. Whatever weight smoothing took up from that switch
-// posed the node relative to the old facing, turned with the actor: the body flipped around and turned back over
-// kFadeTime.
+// The children of the accum root (Bip01 NonAccum) are posed relative to the actor. The engine turns the actor at once
+// when it sits down or stands up, and the furniture animations are authored for the facing after the turn. The turn
+// comes with the switch of sequences, without a blend: the actor's angle is set before the evaluation that blends the
+// switch, and its 3D is turned after it. Smoothing that switch would pose the node relative to the old facing, so the
+// body would flip around and turn back over kFadeTime. Returns true in that case.
 static bool ActorTurnsAtOnce(const kBlendInterpolatorExtraData* extraData)
 {
     NiAVObject* target = extraData->target;
@@ -172,8 +172,8 @@ static bool ActorTurnsAtOnce(const kBlendInterpolatorExtraData* extraData)
     auto* actor = TESObjectREFR::FindReferenceFor3D(target->m_pkParent);
     if (!actor || !actor->IsActor())
         return false;
-    // the facing of the 3D the node is posed in, against the actor's angle: turning while walking or in place stays well
-    // below this per frame, the engine turns actors onto furniture by multiples of 90 degrees
+    // Compares the facing of the 3D the node is posed in with the actor's angle. Walking or turning in place stays well
+    // below this per frame, while the engine turns actors onto furniture by multiples of 90 degrees.
     constexpr float MIN_COS_TURN = 0.70710678f; // 45 degrees
     const NiMatrix33& kRotate = target->m_pkParent->m_kWorld.m_Rotate;
     const float fForwardX = kRotate.m_pEntry[0][1];
@@ -190,12 +190,12 @@ void BlendSmoothing::Step::End(kBlendInterpolatorExtraData* extraData)
     bItemsChanged = extraData->attachedItems != m_uiAttachedItems;
     extraData->attachedItems = m_uiAttachedItems;
 
-    // noSmoothing is asked for from attach to detach, whether or not the item is blended this time
+    // noSmoothing applies from attach to detach, whether or not the item is blended this time
     bDisabled = ra::any_of(extraData->items, [](const kBlendInterpItem& item) { return item.noSmoothing && !item.detached; })
         || ActorTurnsAtOnce(extraData);
     if (bDisabled)
     {
-        // items still fading out are cut (DetachZeroWeightItems), and smoothing starts over once it is back
+        // Items still fading out are cut (DetachZeroWeightItems) and smoothing starts over once it is enabled again
         for (auto& item : extraData->items)
         {
             item.translateWeight.ClearValues();
@@ -203,25 +203,25 @@ void BlendSmoothing::Step::End(kBlendInterpolatorExtraData* extraData)
             item.scaleWeight.ClearValues();
         }
     }
-    // an ease spinner moves 1 over the blend's time (a transition's moves the weight instead)
+    // An ease spinner moves by 1 over the blend's time (a transition moves the weight instead)
     bSmoothBlend = g_pluginSettings.blendSmoothness > 0.0f && !m_bNamedCurve
         && fInputChange * kMinSmoothedBlendTime <= fDeltaTime;
 }
 
-// A blend in progress moves the normalized weights about as far as the ease spinner or sequence weight driving it, and
-// is left alone: it keeps its timing (fBlendSmoothness takes up that share of it, below). The weights jump when
+// Smooths jumps in the normalized weights of a blend interpolator. A blend in progress moves the weights about as far
+// as the ease spinner or sequence weight driving it. It is left alone, and keeps its timing, except for the share
+// fBlendSmoothness takes up (see below). The weights jump when
 // - items come and go: ComputeNormalizedWeights only blends the two highest priorities, so with a third one an item
-//   attached at no weight can take a bone over at once, and one detached at no weight can hand it over at once; and
-//   sequences are switched without a blend (jump loop to landing) or dropped in the middle of one;
-// - it divides one vanishing sum by another: the highest priority still easing in while the next has all but eased
-//   out swings the weights between the two many times faster than either spinner moves, whatever is below them.
-// A jump is taken up by the items' offsets instead: each keeps the weight it was last blended with, and the offsets
-// decay from there, so the pose the jump left behind fades out over kFadeTime.
-// fBlendSmoothness (0..1) takes up that share of every other change of the weights the same way: at 1 the bone follows
-// the computed weights through a low pass of kFadeTime, so blends slow down into the new pose and end later than the
-// animations say, as kNVSE's blend smoothing did before 775a6df; in between, a mix of that and the computed weights.
-// Linear in the weights, so they still add up to what was computed. Only the weights the bone is blended with change:
-// the sequences' states and times stay the engine's
+//   attached at no weight can take a bone over at once, and one detached at no weight can hand it over at once;
+//   sequences can also be switched without a blend (jump loop to landing) or dropped in the middle of one;
+// - one vanishing sum is divided by another: while the highest priority eases in and the next has all but eased out,
+//   the weights swing between the two far faster than either spinner moves.
+// Each item's offset absorbs a jump: the item keeps the weight it was last blended with and the offset decays from
+// there, so the pose left behind fades out over kFadeTime.
+// fBlendSmoothness (0..1) absorbs that share of every other change of the weights in the same way. At 1 the bone
+// follows the computed weights through a low pass of kFadeTime, so blends slow down into the new pose and end later
+// than the animations specify. Values in between mix that with the computed weights. The change is linear in the
+// weights, so they still sum to what was computed. Only the blended weights change, not the sequences' states or times.
 void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items, kWeightType type,
     const Step& step)
@@ -252,23 +252,23 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
         return;
     }
 
-    // weights below this are not blended
+    // Weights below this are not blended
     constexpr float MIN_WEIGHT = 0.001f;
-    // a change of the weights this small is not worth taking up, however fast
+    // Weight changes below this are not worth absorbing, however fast
     constexpr float MIN_JUMP = 0.02f;
-    // one sequence easing in over another moves the weights up to 1.5 times as far as its ease spinner (sequences
-    // easing together count once: step.fInputChange is the item that moved most); from here on it is
-    // ComputeNormalizedWeights swinging by itself
+    // A sequence easing in over another moves the weights up to 1.5 times as far as its ease spinner (sequences easing
+    // together count once: step.fInputChange is the item that moved most). Above this gain, the change comes from
+    // ComputeNormalizedWeights swinging by itself.
     constexpr float MAX_GAIN = 3.0f;
 
-    // an item not blended before had no weight
+    // An item that was not blended before had no weight
     const auto getLastWeight = [](const kWeightState& weightState)
     {
         return weightState.calculatedNormalizedWeight == -NI_INFINITY ? 0.0f : weightState.calculatedNormalizedWeight;
     };
 
-    // how much of the weight changed hands since the last evaluation (1: all of it), and how much of that evaluation's
-    // weight the items still here held
+    // fWeightChange: fraction of the weight that changed hands since the last evaluation (1: all of it).
+    // fLastTotal: how much of that evaluation's weight the remaining items held.
     float fWeightChange = 0.0f;
     float fLastTotal = 0.0f;
     for (const auto& pair : items)
@@ -282,10 +282,10 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     }
     fWeightChange *= 0.5f;
 
-    // nothing was blended before (first evaluation, after ReloadTargets or noBlendSmoothing): nothing to continue from
+    // Nothing was blended before (first evaluation, after ReloadTargets or noBlendSmoothing), so there is nothing to continue
     const bool bJump = fLastTotal >= MIN_WEIGHT
         && (step.bItemsChanged || (fWeightChange > MIN_JUMP && fWeightChange > MAX_GAIN * step.fInputChange));
-    // the share of this evaluation's change the offsets take up
+    // Share of this evaluation's change that the offsets absorb
     float fTakeUp = 0.0f;
     if (bJump)
         fTakeUp = 1.0f;
@@ -307,7 +307,7 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
         if (std::abs(fOffset) < MIN_WEIGHT)
             fOffset = 0.0f;
 
-        // an item still easing out may be computed less weight than a jump took from it
+        // An item still easing out can be computed less weight than a jump took from it
         float fSmoothedWeight = max(fWeight + fOffset, 0.0f);
         if (fSmoothedWeight < MIN_WEIGHT)
             fSmoothedWeight = 0.0f;
@@ -319,7 +319,7 @@ void BlendSmoothing::ApplyForItems(kBlendInterpolatorExtraData* extraData,
     }
 }
 
-// Detached items stay in the blend until they have faded out
+// Detached items stay in the blend until they have faded out, then this removes them
 void BlendSmoothing::DetachZeroWeightItems(kBlendInterpolatorExtraData* extraData, NiBlendInterpolator* blendInterp)
 {
     if (!extraData || !g_pluginSettings.blendSmoothing)
@@ -342,7 +342,7 @@ namespace
     thread_local std::vector<NiControllerSequence*> g_activeSequences;
     void __fastcall HandleReloadTargets(NiControllerManager* manager)
     {
-        // the palette was just refilled from the scene graph; every sequence is bound to it again below
+        // The palette was just refilled from the scene graph. Every sequence is bound to it again below.
         SkeletonNodes::Restore(manager);
 
         if (manager->m_spObjectPalette)

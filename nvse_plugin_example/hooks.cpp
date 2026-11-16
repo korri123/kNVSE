@@ -38,7 +38,7 @@
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
 
-// QueueNextAnim: the sequence that plays in place of the group's next animation
+// Returns and removes the sequence queued by QueueNextAnim for the group, which plays in place of the group's next animation.
 BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroupId)
 {
 	auto* state = ActorOverrides::Peek(animData);
@@ -47,7 +47,7 @@ BSAnimGroupSequence* GetQueuedAnim(AnimData* animData, FullAnimGroupID animGroup
 	const auto iter = ra::find(state->queued, animGroupId, &ActorOverrides::Queued::groupId);
 	if (iter == state->queued.end())
 		return nullptr;
-	// still referenced by its controller manager
+	// The controller manager still holds a reference to the sequence.
 	BSAnimGroupSequence* anim = iter->sequence;
 	state->queued.erase(iter);
 	return anim;
@@ -114,7 +114,7 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 		auto* aimTransition = AimTransitions::Switch(animData, destAnim);
 		if (aimTransition || BlendFixes::ApplyAimBlendFix(animData, destAnim) == BlendFixes::SKIP)
 		{
-			// an aim transition plays instead of the aim the engine asked for, under that aim's group
+			// An aim transition plays instead of the requested aim, under that aim's group.
 			auto* played = aimTransition ? aimTransition : destAnim;
 			const UInt16 playedGroupId = aimTransition ? animGroupId : destAnim->animGroup->groupID;
 			if (auto* idle = animData->animSequence[kSequence_Idle]; idle && idle->m_eState == NiControllerSequence::ANIMATING)
@@ -146,10 +146,10 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	if (g_pluginSettings.blendSmoothing && destAnimGroup && destAnimGroup->GetSequenceType() == kSequence_Movement)
 	{
-		// JIP's handlers were called for the group when its start animation began
+		// JIP's handlers already ran for the group when its start animation began.
 		const bool bContinuesStart = MovementTransitions::ContinuesStart(animData, animGroupId);
 		result = destAnim = MovementTransitions::PlayMovementAnim(animData, destAnim, animGroupId);
-		// after the section's group and sequence are written, as JIP's hook in StartGroup (0x494E19) does
+		// Runs after the section's group and sequence are written, like JIP's hook in StartGroup (0x494E19).
 		if (!bContinuesStart)
 			JIPFixes::CallSetAnimGroupEvent(animData, static_cast<AnimGroupID>(destAnimGroup->groupID));
 	}
@@ -180,7 +180,7 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 	if (textKeys->FindFirstByName("noBlend"))
 		animData->noBlend120 = true;
 	else
-		// before StartGroup, so the 3rd person sequence blends in with the 1st person blend times
+		// Applied before StartGroup so the 3rd person sequence blends in with the 1st person blend times.
 		RespectEndKey::Apply(anim3rd, anim1st);
 }
 
@@ -237,13 +237,13 @@ UInt16 __fastcall LoopingReloadFixHook(AnimData* animData, void*, UInt16 groupID
 	return fullGroupId;
 }
 
-// Actor::HandlePostAnimationActions, next round of a looping reload (AnimData::PlayAnimGroup)
-// - rigs GetCurrentAmmoRounds to add 1 to the result while the player's next round's anim is started: the player's
-//   round is loaded by the queued equip, after this. NPCs have theirs loaded already (npc_looping_reload_fix.cpp).
-// - the engine records the reload loop action with the current weapon sequence, then plays the next round's group,
-//   picked from the current stance. Sneaking or standing up mid-reload picks the other variant (sneak2hrreloadz <->
-//   2hrreloadz): the action kept the sequence that was cut, the engine dropped the action once that one had faded out
-//   and the new variant played to its end without loading a round. The action now follows the sequence that plays.
+// Hook for the next round of a looping reload in Actor::HandlePostAnimationActions (AnimData::PlayAnimGroup).
+// - For the player, GetCurrentAmmoRounds returns one more than usual while the next round's anim starts, because the
+//   player's round is loaded by the queued equip afterwards. NPCs already have theirs loaded (npc_looping_reload_fix.cpp).
+// - The engine records the reload loop action together with the current weapon sequence, then plays the next round's
+//   group, chosen from the current stance. Sneaking or standing up mid-reload selects the other variant (sneak2hrreloadz
+//   vs 2hrreloadz), so the recorded sequence is the one that was cut off and the action is dropped once it fades out.
+//   The action is therefore re-recorded with the sequence that actually plays.
 void __fastcall ReloadLoopNextRoundHook(AnimData* animData, void*, UInt16 groupId, int flags, int queuedState, eAnimSequence sequenceId)
 {
 	auto* actor = GET_CALLER_VAR(Actor*, -0xA0);
@@ -259,10 +259,10 @@ void __fastcall ReloadLoopNextRoundHook(AnimData* animData, void*, UInt16 groupI
 		actor->SetAnimAction(Decoding::kAnimAction_ReloadLoop, playing);
 }
 
-// The engine picks the reload path (looping or not) by TESObjectWEAP::IsReloadLoop (0x4938C0), set from the base
-// reload anim alone, but plays the mod reload anim when the weapon has an Increase Clip Capacity mod
-// (TESObjectWEAP::GetReloadAnimGroup 0x51E2A0). Looping base, non-looping mod anim: the looping path asked for
-// "ReloadM - 23", no such group, no reload. Non-looping base, looping mod anim: the loop played once as a plain reload.
+// The engine chooses the looping or non-looping reload path with TESObjectWEAP::IsReloadLoop (0x4938C0), which looks at
+// the base reload anim only. It plays the mod reload anim when the weapon has an Increase Clip Capacity mod
+// (TESObjectWEAP::GetReloadAnimGroup 0x51E2A0). When the two disagree, the looping path asks for a group that does not
+// exist, or a looping mod anim plays once as a plain reload. These hooks pass the clip mod state to IsReloadLoop.
 namespace ModReloadAnimFix
 {
 	bool HasClipMod(const BaseProcess::WeaponInfo* weaponInfo)
@@ -275,27 +275,27 @@ namespace ModReloadAnimFix
 		return weapon && weapon->HasLoopingReloadAnim(hasClipMod);
 	}
 
-	// PlayerCharacter::ReloadAlt, Actor::Reload: their clip mod argument
+	// PlayerCharacter::ReloadAlt and Actor::Reload: uses their clip mod argument.
 	bool __fastcall IsReloadLoopClipModArgHook(const TESObjectWEAP* weapon)
 	{
 		return IsLoopingReload(weapon, GET_CALLER_VAR(bool, 0x10));
 	}
 
-	// Animation::Update starting the queued reload group, picks the anim action. Delayed: Stewie's Tweaks replaces this
-	// call in its NVSEPlugin_Load (IsReloadLoopNullCheck, kept in IsLoopingReload)
+	// Animation::Update, when it starts the queued reload group and picks the anim action. Written in WriteDelayedHooks
+	// because Stewie's Tweaks replaces this call in its NVSEPlugin_Load (IsReloadLoopNullCheck, handled by IsLoopingReload).
 	bool __fastcall IsReloadLoopQueuedReloadHook(const TESObjectWEAP* weapon)
 	{
 		const auto* actor = GET_CALLER_VAR(const Actor*, -0x6C);
 		return IsLoopingReload(weapon, HasClipMod(actor->baseProcess->GetWeaponInfo()));
 	}
 
-	// InventoryMenu::DoClick reloading after the player picked ammo
+	// InventoryMenu::DoClick, when reloading after the player picked ammo.
 	bool __fastcall IsReloadLoopPlayerHook(const TESObjectWEAP* weapon)
 	{
 		return IsLoopingReload(weapon, HasClipMod(g_thePlayer->baseProcess->GetWeaponInfo()));
 	}
 
-	// Actor::HandlePostAnimationActions after a round of a looping reload passes no clip mod
+	// Actor::HandlePostAnimationActions after a round of a looping reload; the engine passes no clip mod there.
 	template <int WeaponInfoOffset>
 	UInt32 __fastcall GetReloadAnimGroupHook(const TESObjectWEAP* weapon, void*, bool)
 	{
@@ -329,7 +329,7 @@ bool __fastcall IsCustomAnimKey(const char* key)
 		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion", "noBlendSmoothing",
 		"allowFirstPerson"
 	};
-	// keys with arguments, matched as their features read them (TextKeys::GetArguments)
+	// Keys with arguments, matched the way their features read them (TextKeys::GetArguments).
 	const static auto argumentKeys = { "aimPitch", "weaponSpace", "spawn", "despawn", "blendCurve", "blendInCurve", "blendOutCurve" };
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)))
 		|| ra::any_of(argumentKeys, _L(const char* name, TextKeys::GetArguments(key, name).has_value()));
@@ -374,8 +374,8 @@ void __fastcall FixBlendMult(BSAnimGroupSequence* anim, void*, float fTime, bool
 	ThisStdCall(0xA328B0, anim, fTime, bUpdateInterpolators);
 }
 
-// The override animation the actor plays next for the group, loaded: what the engine's lookups of a group in the
-// Animation's map are answered with
+// Returns the override animation the actor plays next for the group, loaded. Used to answer the engine's lookups of a
+// group in the Animation's map.
 bool LookupCustomAnim(FullAnimGroupID groupId, AnimSequenceBase** base, AnimData* animData)
 {
 	if (auto* set = Overrides::Find(groupId, animData))
@@ -451,9 +451,9 @@ bool __fastcall OverrideWithCustomAnimHook(NiTPointerMap<AnimSequenceBase*>* ani
 	return false;
 }
 
-// Animation::GroupLoaded: whether the Animation has the group, as one of its own or as an override. Asked every frame
-// for every actor (Actor::UpdateAnimation, PickAnimations, ...), and only a yes or no: the Animation's own map first,
-// and an override is not loaded for the answer
+// Animation::GroupLoaded: returns whether the Animation has the group, either as its own or as an override. The engine
+// calls it every frame for every actor (Actor::UpdateAnimation, PickAnimations, ...) and only uses the yes/no answer, so
+// the Animation's own map is checked first and overrides are not loaded here.
 template <int AnimDataOffset>
 bool __fastcall GroupLoadedHook(NiTPointerMap<AnimSequenceBase*>* animMap, void*, UInt16 groupId, AnimSequenceBase** base)
 {
@@ -496,8 +496,8 @@ void RemoveDuplicateAnimsHook() {
 
 namespace LoopingReloadPauseFix
 {
-	// names of the sequences with a blendToReloadLoop text key, pooled. Added where animations start (any thread that
-	// picks them), asked in Animation::Update
+	// Names of the sequences with a blendToReloadLoop text key (pooled strings). Added wherever animations start, on any
+	// thread that picks them, and queried in Animation::Update.
 	std::unordered_set<std::string_view> g_reloadStartBlendFixes;
 	std::shared_mutex g_reloadStartBlendFixesMutex;
 
@@ -672,9 +672,9 @@ namespace AllowAttackKey
 		WriteRelCall(0x893E42, ReloadAnimActionHook<&g_reloadAnimActionAddr2>, &g_reloadAnimActionAddr2);
 	}
 
-	// Stewie's Tweaks bFireWhileAiming replaces the TESAnimGroup::IsAimAnim call at 0x894375 in Actor::FiresWeapon: outside
-	// VATS the player fires while the aim sequences still blend in, except with two-handle weapons that use reload G
-	// (grenade launchers). Its hook reads the caller's frame, so it can't be called from here.
+	// Stewie's Tweaks bFireWhileAiming replaces the TESAnimGroup::IsAimAnim call at 0x894375 in Actor::FiresWeapon.
+	// Outside VATS the player can fire while the aim sequences still blend in, except with two-handle weapons that use
+	// reload G (grenade launchers). Its hook reads the caller's frame, so it cannot be called from here.
 	bool FireWhileAimingTweakApplies(const TESObjectWEAP* weapon)
 	{
 		constexpr UInt32 isAimAnimCall = 0x894375;
@@ -685,10 +685,11 @@ namespace AllowAttackKey
 			&& !(weapon->eWeaponType == TESObjectWEAP::kWeapType_TwoHandHandle && weapon->reloadAnim == TESObjectWEAP::eReload_G);
 	}
 
-	// Out of ammo as Actor::FiresWeapon (0x893A40) decides it: it clicks instead of attacking. Stewie's Tweaks replaces two
-	// jumps of that check with hooks that read its frame, so their rules are repeated here while their jumps are in place:
-	// bClipSizeMatters (0x893C13): outside VATS the player needs a whole shot's ammo in the clip, any round left won't do;
-	// its god mode fix (0x893C37, always on): the player fires without ammo in god mode, unless demigod mode is on.
+	// Returns false when Actor::FiresWeapon (0x893A40) treats the actor as out of ammo (it clicks instead of attacking).
+	// Stewie's Tweaks replaces two jumps in that check with hooks that read its frame, so their rules are repeated here
+	// when those jumps are in place:
+	// - bClipSizeMatters (0x893C13): outside VATS the player needs a whole shot's ammo in the clip.
+	// - god mode fix (0x893C37, always on): the player fires without ammo in god mode unless demigod mode is on.
 	bool HasAmmoToFire(Actor* actor, TESObjectWEAP* weapon)
 	{
 		const auto isJumpAt = [](UInt32 address) { return *reinterpret_cast<UInt8*>(address) == 0xE9; };
@@ -715,7 +716,7 @@ namespace AllowAttackKey
 			return false;
 		const auto isPlayer = actor == g_thePlayer;
 
-		// PlayerCharacter::Update only reads the attack control when these pass (0x941E64-0x9420F7)
+		// PlayerCharacter::Update only reads the attack control when these checks pass (0x941E64-0x9420F7).
 		if (isPlayer)
 		{
 			if (Interface::IsInMenuMode())
@@ -731,7 +732,7 @@ namespace AllowAttackKey
 			|| process->GetCurrentAnimAction() == kAnimAction_Stagger || process->GetSitSleepState() != 0)
 			return false;
 
-		// Actor::FiresWeapon, through the calls kNVSE (allowAttack, interruptLoop) and Stewie's Tweaks patch
+		// Actor::FiresWeapon checks, including the calls patched by kNVSE (allowAttack, interruptLoop) and Stewie's Tweaks.
 		auto* weaponInfo = process->GetWeaponInfo();
 		auto* weapon = weaponInfo ? weaponInfo->weapon : nullptr;
 		if (weapon && !HasAmmoToFire(actor, weapon))
@@ -752,7 +753,7 @@ namespace AllowAttackKey
 		auto* group = sequence->animGroup.data;
 		if (group->IsAim() && !(isPlayer && FireWhileAimingTweakApplies(weapon)))
 		{
-			// an aim transition (AimTransitions) counts as still easing in
+			// An aim transition (AimTransitions) counts as still easing in.
 			if (sequence->m_eState != NiControllerSequence::ANIMATING || AimTransitions::HoldsFire(sequence))
 				return false;
 			for (const auto sequenceId : { kSequence_WeaponUp, kSequence_WeaponDown })
@@ -775,7 +776,7 @@ namespace AllowAttackKey
 			case kAnimGroupActionType_Loop:
 			case kAnimGroupActionType_AttackSpin:
 				break;
-			case kAnimGroupActionType_Attack: // the next attack starts once the group action reaches AGA_ATTACK_STOP (3)
+			case kAnimGroupActionType_Attack: // The next attack starts once the group action reaches AGA_ATTACK_STOP (3).
 				if (animData->sequenceState1[kSequence_Weapon] != kSeqState_Unk3)
 					return false;
 				break;
@@ -919,9 +920,9 @@ void ApplyHooks()
 		AimPitch::WriteHooks();
 	}
 	
-	// these check their setting each time they run: the menu switches them both ways
+	// These check their setting each time they run, because the menu can switch them on and off.
 	WriteRelCall(0x8BABCA, LoopingReloadFixHook);
-	WriteRelCall(0x948CEC, LoopingReloadFixHook); // part of cancelling looping reload after shooting
+	WriteRelCall(0x948CEC, LoopingReloadFixHook); // part of cancelling a looping reload after shooting
 	AccumBlendFix::WriteHooks();
 	FireDirection::WriteHooks();
 	WriteRelCall(0x4951D2, FixBlendMult);
@@ -966,7 +967,7 @@ void ApplyHooks()
 	// WriteRelCall(0x97F36D, NonExistingAnimHook<-0xC>);
 	// WriteRelCall(0x8B7985, NonExistingAnimHook<-0x14>);
 	// WriteRelCall(0x495630, NonExistingAnimHook<-0x14>);
-	// 0x493DC0 (Animation::InitGroupSpeed) is hooked by Overrides::WriteHooks
+	// 0x493DC0 (Animation::InitGroupSpeed) is hooked in Overrides::WriteHooks
 	// WriteRelCall(0x493115, NonExistingAnimHook<-0x18C>);
 	// WriteRelCall(0x490626, NonExistingAnimHook<-0x90>);
 	// WriteRelCall(0x49022F, NonExistingAnimHook<-0x54>);
@@ -987,8 +988,8 @@ void ApplyHooks()
 
 		// hooked call
 		ThisStdCall(0x48FF50, animData);
-		// after the idles are freed (anything that still looks an animation up has its state), before the sequences
-		// leave the controller manager
+		// Runs after the idles are freed, so anything that still looks up an animation has its state, and before the
+		// sequences leave the controller manager.
 		Overrides::OnAnimDataDelete(animData);
 	}));
 
@@ -1015,8 +1016,8 @@ void ApplyHooks()
 	WriteRelCall(0x490A35, RemoveDuplicateAnimsHook);
 
 	// AnimData::GetNextWeaponSequenceKey
-	// fixes respectEndKey not working for a: keys: the player's 3rd person sequence that has a 1st person animation's
-	// times (RespectEndKey) takes its a: keys from that animation too
+	// Fixes respectEndKey not applying to a: keys. A player 3rd person sequence that takes its times from a 1st person
+	// animation (RespectEndKey) also takes its a: keys from that animation.
 	WriteRelCall(0x495E6C, INLINE_HOOK(NiTextKeyExtraData*, __fastcall, BSAnimGroupSequence* sequence)
 	{
 		if (const auto* anim1st = RespectEndKey::TimesSource(sequence))
@@ -1030,9 +1031,9 @@ void ApplyHooks()
 		// hooked call
 		*reinterpret_cast<UInt32*>(anim) = kVtbl_NiControllerSequence;
 		auto* retnAddr = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
-		// sequence extra data is dropped when the sequence leaves its manager (SequenceExtraDatas::WriteHooks)
+		// Sequence extra data is released when the sequence leaves its manager (SequenceExtraDatas::WriteHooks).
 		// EraseTimeTrackedAnim(anim); we do store a smart pointer to the anim in g_timeTrackedAnims
-		// detaching also clears the blend items' pointers to this sequence (kBlendInterpItem::sequence)
+		// Deactivating also clears the blend items' pointers to this sequence (kBlendInterpItem::sequence).
 		if (anim->m_eState != NiControllerSequence::INACTIVE)
 			anim->Deactivate(0.0f, false);
 		*retnAddr = 0xA3565E;
@@ -1290,7 +1291,7 @@ void ApplyHooks()
 		return ThisStdCall<double>(0x646020, weap, hasMod);
 	}), &uiGetAttackSpeedMultGetAnimAttackMultAddr);
 
-	// NiControllerManager::DeactivateSequence in Animation::ClearGroup: the Animation at [ebp-8], the section at [ebp-4]
+	// NiControllerManager::DeactivateSequence in Animation::ClearGroup (Animation at [ebp-8], section at [ebp-4]).
 	WriteRelCall(0x496208, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, BSAnimGroupSequence* pkSequence, float fEaseOut)
 	{
 		auto* animData = GET_CALLER_VAR_LAMBDA(AnimData*, -0x8);
@@ -1299,9 +1300,9 @@ void ApplyHooks()
 		if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixBlendFromPose)
 			PoseBlendFixes::RecordHardCut(animData, pkSequence, fEaseOut);
 		const auto animSwitch = AnimSwitch::Current(animData);
-		// a variant BlendFixes cross faded in (TransitionToVariant) that the engine ends while it eases in, e.g. an
-		// unequip that ends during a stance switch: Deactivate would ease it out from a full weight, the body jumped
-		// half way to the stance of the variant in a frame
+		// A variant that BlendFixes cross faded in (TransitionToVariant) can be ended by the engine while it is still
+		// easing in, for example an unequip that ends during a stance switch. Deactivate would ease it out from full
+		// weight and the pose would jump toward the variant's stance, so the switch eases it out from its current weight.
 		if (pkSequence->m_eState == NiControllerSequence::EASEIN && fEaseOut > 0.0f
 			&& ((g_pluginSettings.blendSmoothing && pkSequence->animGroup->GetSequenceType() == kSequence_Movement)
 				|| BlendFixes::ContinuesVariant(*pkSequence)))
@@ -1320,7 +1321,7 @@ void ApplyHooks()
 		return result;
 	}));
 
-	// the same call in Animation::ClearGroup for the section's linked sequence
+	// Same call in Animation::ClearGroup, for the section's linked sequence.
 	WriteRelCall(0x4961DE, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, NiControllerSequence* pkSequence, float fEaseOut)
 	{
 		auto* animData = GET_CALLER_VAR_LAMBDA(AnimData*, -0x8);
@@ -1494,11 +1495,11 @@ void ApplyHooks()
 
 namespace
 {
-	// NiControllerSequence::GetState of a section's current sequence in Animation::Update (Animation at [ebp-0x18C], the
-	// update's time step at [ebp-0x5C]), deciding whether its clock runs at the group's speed. The engine asks once per
-	// update for each section that has a group and a sequence and that it does not hold (Animation::cSkipUpdate), after
-	// adding the step to the Animation's time: where the features that run clocks of their own do. Otherwise the
-	// answer of BlendFixes, whose hook on this call it replaces
+	// NiControllerSequence::GetState of a section's current sequence in Animation::Update (Animation at [ebp-0x18C], time
+	// step at [ebp-0x5C]). The result decides whether the sequence's clock runs at the group's speed. The engine calls it
+	// once per update for each section that has a group and sequence and is not held (Animation::cSkipUpdate), after the
+	// step is added to the Animation's time. Features that run their own clocks do so here; otherwise it returns the
+	// answer of the BlendFixes hook that this one replaces.
 	NiControllerSequence::AnimState __fastcall SectionClockHook(NiControllerSequence* sequence)
 	{
 		auto* animData = GET_CALLER_VAR(AnimData*, -0x18C);
@@ -1526,17 +1527,16 @@ void WriteDelayedHooks()
 		MovementTransitions::WriteDelayedHooks();
 		if (g_pluginSettings.fixSpineBlendBug)
 			AimTransitions::WriteDelayedHooks();
-		// Animation::Update, over the hook BlendFixes::WriteDelayedHooks wrote there
+		// Animation::Update, over the hook written by BlendFixes::WriteDelayedHooks
 		WriteRelCall(0x491B1B, SectionClockHook);
 	}
 
-	// The two below: NVAC replaces these calls with the getter's body once the plugins have loaded (its lists of calls to
-	// BSAnimGroupSequence::GetCycleType and GetState, every one that still has a call opcode), so written at load they
-	// were gone with it installed: Clamp start and stop animations failed to load, a looping stop animation was cut as
-	// soon as it had blended in and its movement dropped, and the walk ended on every draw and holster
+	// The two hooks below are written late because NVAC replaces these getter calls with the getter's body once the
+	// plugins have loaded (it patches every remaining call to BSAnimGroupSequence::GetCycleType and GetState). A hook
+	// written at load time would be overwritten.
 
 	// BSAnimGroupSequence::GetCycleType
-	// stop dumb limitation on CLAMP sequences not being allowed to locomotion; start and stop animations play once
+	// Lets CLAMP sequences be used in locomotion (start and stop animations play once).
 	WriteRelCall(0x4909BC, INLINE_HOOK(UInt32, __fastcall, BSAnimGroupSequence* anim)
 	{
 		const static NiFixedString key = "allowClampInLocomotion";
@@ -1546,34 +1546,33 @@ void WriteDelayedHooks()
 		return anim->m_eCycleType;
 	}));
 
-	// NiControllerSequence::GetState of the movement sequence in Actor::PickAnimations, deciding whether to BlendOut the
-	// movement section because the group picked this update belongs to another section ([ebp-0x40], its base group)
+	// NiControllerSequence::GetState of the movement sequence in Actor::PickAnimations. The result decides whether the
+	// movement section is blended out because the group picked in this update ([ebp-0x40], base group) belongs to
+	// another section.
 	WriteRelCall(0x897712, INLINE_HOOK(NiControllerSequence::AnimState, __fastcall, BSAnimGroupSequence* anim)
 	{
-		// INACTIVE -> do not end movement
-		// ANIMATING -> end movement
-		// Equip/Unequip are picked on the update they start, the next one picks the movement group again from the move
-		// flags: ending the movement there restarted it (from a frozen pose, BlendFromPose, with the gait at its first
-		// frame) on every draw and holster while moving. Their legs are below the movement's priority anyway.
+		// INACTIVE keeps the movement, ANIMATING ends it.
+		// Equip and Unequip are picked on the update they start, and the next update picks the movement group again from
+		// the move flags. Ending the movement there would restart it on every draw and holster while moving. Their legs
+		// are below the movement's priority anyway.
 		const auto pickedGroup = GET_CALLER_VAR_LAMBDA(UInt32, -0x40) & 0xFF;
 		if (pickedGroup == kAnimGroup_Equip || pickedGroup == kAnimGroup_Unequip)
 			return NiControllerSequence::INACTIVE;
 		if (anim->animGroup->GetBaseGroupID() == kAnimGroup_JumpLand)
 			return anim->m_fLastScaledTime >= anim->m_fEndKeyTime ? NiControllerSequence::ANIMATING : NiControllerSequence::INACTIVE;
-		// a stop animation plays to its End key, where Animation::Update blends the section out
+		// A stop animation plays to its End key, where Animation::Update blends the section out.
 		if (MovementTransitions::Of(anim) == TransitionKind::Stop) [[msvc::noinline_calls]]
 			return NiControllerSequence::INACTIVE;
-		// stop game from not ending move anims immediately
+		// End movement animations immediately.
 		return NiControllerSequence::ANIMATING;
 	}));
 
-	// Actor::PickAnimations picks the jump loop of an actor in the air only while its anim action is None, Attack,
-	// Attack_Follow_Through or Wait_For_Lower_Body_Anim (the switch at 0x89676B, on the action + 1 through this byte
-	// table). Attack_Eject, between Attack and Attack_Follow_Through, is not among them: the update that starts with it
-	// picks the weapon's group, which blends the movement section out (0x897735), and a falling actor's jump loop is not
-	// picked again until its fall time has passed. With no jump animation in the movement section,
-	// Actor::UpdateRagdollAnimState runs foot IK in the air, which pulls the pelvis down to the ground as it comes into
-	// reach: firing in mid-jump made the character dip up to 16 units for a few frames before landing
+	// Actor::PickAnimations picks the jump loop of an airborne actor only while its anim action is None, Attack,
+	// Attack_Follow_Through or Wait_For_Lower_Body_Anim (switch at 0x89676B, indexed by action + 1 through a byte table).
+	// Attack_Eject is not in that list. The update that starts with it picks the weapon's group, which blends the
+	// movement section out (0x897735), and the jump loop is not picked again until the fall time has passed. Without a
+	// jump animation in the movement section, Actor::UpdateRagdollAnimState runs foot IK in the air and pulls the pelvis
+	// toward the ground. The patch below gives Attack_Eject the same case as Attack.
 	constexpr UInt32 kJumpPickActionCases = 0x897818;
 	SafeWrite8(kJumpPickActionCases + Decoding::kAnimAction_Attack_Eject + 1,
 		*reinterpret_cast<UInt8*>(kJumpPickActionCases + Decoding::kAnimAction_Attack + 1));

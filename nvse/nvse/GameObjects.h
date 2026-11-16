@@ -391,7 +391,7 @@ struct PathingRequest
 	UInt8 byte099;
 	UInt8 byte09A;
 	UInt8 byte09B;
-	UInt8 bSoftGoalRadius;	// 09C: DetailedActorPathHandler goes on to 5 units from the goal
+	UInt8 bSoftGoalRadius;	// 09C: DetailedActorPathHandler continues to within 5 units of the goal
 	UInt8 byte09D;
 	UInt8 byte09E;
 	UInt8 byte09F;
@@ -464,7 +464,7 @@ struct DetailedActorPathHandler : ActorPathHandler
 	UInt32 unk58;
 	UInt32 unk5C;
 	UInt32 moveFlags60;
-	UInt32 currentNodeIndex;	// 64: heading for node currentNodeIndex + 1
+	UInt32 currentNodeIndex;	// 64: the actor is heading for node currentNodeIndex + 1
 	UInt32 unk68;
 	float fPathLength;			// 6C
 	UInt32 unk70;
@@ -533,7 +533,7 @@ public:
 	NiPoint3 overrideMovement;
 	PathingRequest* pathingRequest;
 	PathingSolution* pathingSolution;
-	DetailedActorPathHandler* pathHandler;	// or another ActorPathHandler: check the vtable
+	DetailedActorPathHandler* pathHandler;	// may be another ActorPathHandler type: check the vtable
 	Actor* actor;
 	UInt32 unk2C;
 	void* pathingMsgQueue;
@@ -551,7 +551,7 @@ public:
 	UInt8 byte75;
 	UInt8 byte76;
 	UInt8 isOverrideMovement;
-	UInt8 bStopCurrentMoveAnim;		// 78: the movement flags and delta are dropped while the walk still plays
+	UInt8 bStopCurrentMoveAnim;		// 78: movement flags and delta are dropped while the walk anim still plays
 	UInt8 gap79[3];
 
 	enum State : UInt32
@@ -559,7 +559,7 @@ public:
 		kState_Moving = 3,
 	};
 
-	// the path is done: the movement stops on the next update
+	// The path is done: the movement stops on the next update.
 	void StopMoving() { ThisStdCall(0x9DD0A0, this); }
 	UInt32 unk7C;
 	UInt32 unk80;
@@ -801,7 +801,7 @@ public:
 		return ThisStdCall<float>(0x884EB0, this);
 	}
 
-	// Actor::SetAnimAction: the action the actor's process is in and the sequence playing it
+	// Actor::SetAnimAction: sets the action the actor's process is in and the sequence that plays it.
 	void SetAnimAction(Decoding::AnimAction action, BSAnimGroupSequence* sequence)
 	{
 		ThisStdCall(0x8A73E0, this, action, sequence);

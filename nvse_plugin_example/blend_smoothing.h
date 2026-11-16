@@ -28,11 +28,11 @@ struct kAdditiveInterpMetadata
 
 struct kWeightState
 {
-    // the weight the item was blended with when its blend interpolator was last evaluated
+    // Weight the item was blended with when its blend interpolator was last evaluated
     float lastSmoothedWeight = -NI_INFINITY;
-    // the weight ComputeNormalizedWeights gave it then
+    // Weight ComputeNormalizedWeights computed at that evaluation
     float calculatedNormalizedWeight = -NI_INFINITY;
-    // what is left of the weight changes taken up so far (BlendSmoothing::ApplyForItems): added to the computed weight
+    // Remaining part of the weight changes absorbed so far (BlendSmoothing::ApplyForItems); added to the computed weight
     float offset = 0.0f;
 
     void ClearValues()
@@ -50,37 +50,36 @@ enum class kWeightType: UInt8
 
 struct kBlendInterpItem
 {
-    // Read for every item on every evaluation of its bone's blend (NiBlendTransformInterpolator, BlendSmoothing): kept
-    // together at the start, with the flags of the features below so that their data is only read for the items that
-    // have it
+    // Fields read for every item on every evaluation of the bone's blend (NiBlendTransformInterpolator,
+    // BlendSmoothing) come first, so they share a cache line. The flags of the optional features below guard their data.
     NiPointer<NiInterpolator> interpolator = nullptr;
-    // The sequence that has this item's interpolator attached; null once the sequence detaches it, including while a
-    // detached item is still fading out. Every path that removes or destroys a sequence detaches it first (retail
-    // NiControllerSequence::ClearTargets and the destructor hook both Deactivate), so this never points at a dead sequence.
+    // Sequence that has this item's interpolator attached. Null once the sequence detaches it, including while the
+    // detached item still fades out. Every path that removes or destroys a sequence detaches it first (retail
+    // NiControllerSequence::ClearTargets and the destructor hook both Deactivate), so it never dangles.
     NiControllerSequence* sequence = nullptr;
     kWeightState translateWeight;
     kWeightState rotateWeight;
     kWeightState scaleWeight;
-    // m_fWeight and m_fEaseSpinner of its blend item when the blend interpolator was last evaluated
+    // m_fWeight and m_fEaseSpinner of the blend item at the last evaluation of the blend interpolator
     float lastWeight = -NI_INFINITY;
     float lastEaseSpinner = -NI_INFINITY;
-    // its sequence has an aimPitch text key: the share of the actor's pitch its pose of the bone is turned by (AimPitch)
+    // Set if the sequence has an aimPitch text key: share of the actor's pitch applied to its pose of the bone (AimPitch)
     float aimPitchShare = 0.0f;
     bool detached = false;
-    // its sequence has a noBlendSmoothing or noBlend text key: while it is attached, the node is blended as computed
+    // Set if the sequence has a noBlendSmoothing or noBlend text key: while attached, the node is blended as computed
     bool noSmoothing = false;
-    // additiveMetadata is set
+    // additiveMetadata is in use
     bool isAdditive = false;
-    // parentSwitch is set
+    // parentSwitch is in use
     bool hasParentSwitch = false;
-    // Weapon node items: its Weapon track is relative to the right hand (WeaponParentSwitch::Counts)
+    // Weapon node items only: the Weapon track is relative to the right hand (WeaponParentSwitch::Counts)
     bool inHandSpace = false;
 
-    // Used when the item is attached and detached, or by few items
+    // Used when the item is attached or detached, or by few items
     NiBlendInterpolator* blendInterp = nullptr;
-    // its index in the blend interpolator while it is detached
+    // Index in the blend interpolator while the item is detached
     unsigned char blendIndex = INVALID_INDEX;
-    // diagnostics only: how the item got into its current state
+    // Diagnostics only: how the item reached its current state
     kInterpDebugState debugState = kInterpDebugState::NotSet;
     kAdditiveInterpMetadata additiveMetadata;
     // Weapon node items of equip/unequip animations: where the track switches parent space (WeaponParentSwitch)
@@ -128,7 +127,7 @@ struct kBlendInterpItem
     }
 };
 
-// what every evaluation reads fits a cache line
+// Everything read on every evaluation fits in one cache line
 static_assert(offsetof(kBlendInterpItem, blendInterp) <= 64);
 
 class kBlendInterpolatorExtraData : public NiExtraData
@@ -137,21 +136,21 @@ public:
     NiAVObject* target = nullptr;
     std::vector<kBlendInterpItem> items;
     NiControllerManager* owner = nullptr;
-    // set only while the engine snaps the bones bone LOD switched off to an ending (un)equip (UpdateLODBonesHook): their
-    // weights are taken as computed, and the smoothed state follows them
+    // Set only while the engine snaps the bones that bone LOD switched off to the end of an (un)equip animation
+    // (UpdateLODBonesHook). Their weights are used as computed and the smoothed state follows them.
     bool unsmoothedUpdate = false;
-    // which items were attached, at which priorities, when the blend interpolator was last evaluated (BlendSmoothing::Step)
+    // Items attached and their priorities at the last evaluation of the blend interpolator (BlendSmoothing::Step)
     UInt32 attachedItems = 0;
-    // the node is a child of its sequences' accum root (Bip01 NonAccum): it is posed relative to the actor. Set on attach,
-    // survives ClearValues like weaponHandBlend
+    // The node is a child of its sequences' accum root (Bip01 NonAccum), so it is posed relative to the actor.
+    // Set on attach; kept by ClearValues like weaponHandBlend.
     bool accumRootChild = false;
-    // Weapon nodes only; survives ClearValues, as it describes the skeleton and its sequences, not the current blend
+    // Weapon nodes only. Kept by ClearValues because it describes the skeleton and its sequences, not the current blend.
     std::unique_ptr<WeaponHandBlend::NodeData> weaponHandBlend;
-    // Weapon nodes only, created by the holster ease (WeaponParentSwitch::EaseHolster); survives ClearValues but for the
-    // ease in progress
+    // Weapon nodes only, created by the holster ease (WeaponParentSwitch::EaseHolster). Kept by ClearValues except
+    // for the ease in progress.
     std::unique_ptr<WeaponParentSwitch::NodeState> parentSwitch;
-    // the rotation of the node's computed weights (before blend smoothing) and the one written to it at its last
-    // evaluation, while the two differ (FireDirection: blend smoothing, additive animations, WeaponHandBlend)
+    // Rotation from the node's computed weights (before blend smoothing) and the rotation last written to it, valid
+    // while the two differ (FireDirection: blend smoothing, additive animations, WeaponHandBlend)
     bool hasComputedRotate = false;
     NiQuaternion computedRotate;
     NiQuaternion writtenRotate;
@@ -159,7 +158,7 @@ public:
     void ClearValues()
     {
         target = nullptr;
-        // capacity kept: every weapon attach clears every bone's items (ReloadTargets), which then fill again
+        // Capacity is kept: every weapon attach clears every bone's items (ReloadTargets) and they then refill
         items.clear();
         owner = nullptr;
         attachedItems = 0;
@@ -184,29 +183,29 @@ public:
 
 namespace BlendSmoothing
 {
-    // What changed since a blend interpolator's last evaluation: tells a jump of the normalized weights from a blend in
-    // progress (ApplyForItems)
+    // Describes what changed since a blend interpolator's last evaluation; separates a jump of the normalized weights
+    // from a blend in progress (ApplyForItems)
     class Step
     {
     public:
-        // fDeltaTime: animation time since the last evaluation (GetElapsedTime), not the frame time: bone LOD stops
-        // evaluating the bones of actors the camera can't see, and a jump taken up before must have faded by then
+        // fDeltaTime: animation time since the last evaluation (GetElapsedTime), not frame time. Bone LOD stops
+        // evaluating bones of actors the camera can't see, so a jump absorbed earlier must have faded by then.
         explicit Step(float fDeltaTime) : fDeltaTime(fDeltaTime) {}
 
-        // every item the evaluation blends, then End
+        // Call AddItem for every item the evaluation blends, then End
         void AddItem(const NiBlendInterpolator::InterpArrayItem& item, kBlendInterpItem* extraItem, const NiQuatTransform& kTransform);
         void End(kBlendInterpolatorExtraData* extraData);
 
         float fDeltaTime;
-        // how far the weight and ease spinner of the attached item that moved most have moved
+        // Largest change of weight or ease spinner among the attached items
         float fInputChange = 0.0f;
-        // other items are attached, or at other priorities
+        // Other items are attached, or items at other priorities
         bool bItemsChanged = false;
-        // an attached item wants no smoothing (kBlendInterpItem::noSmoothing), or the node is posed relative to an actor the
-        // engine is turning at once: nothing is taken up, and what was is dropped
+        // An attached item disables smoothing (kBlendInterpItem::noSmoothing), or the node is posed relative to an actor
+        // the engine turns instantly. Nothing is absorbed and existing offsets are dropped.
         bool bDisabled = false;
-        // fBlendSmoothness takes up this evaluation's blend in progress: none of its items is in an ease with a named
-        // curve, and nothing moved faster than a blend of kMinSmoothedBlendTime would
+        // fBlendSmoothness absorbs this evaluation's blend in progress: no item is in an ease with a named curve and
+        // nothing moved faster than a blend of kMinSmoothedBlendTime
         bool bSmoothBlend = false;
     private:
         UInt32 m_uiAttachedItems = 0;

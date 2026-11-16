@@ -12,7 +12,7 @@
 struct KFLoader::PreloadBatch
 {
 	std::vector<const char*> paths;
-	// the worker's: what it has a use of
+	// The worker's list of KFs it holds a use of.
 	std::vector<const char*> loaded;
 	std::atomic<bool> dropped = false;
 };
@@ -25,7 +25,7 @@ namespace
 		bool drop;
 	};
 
-	// Never destroyed: its thread runs until the process ends, past the DLL's static destructors
+	// Never destroyed: its thread runs until the process ends, past the DLL's static destructors.
 	struct Worker
 	{
 		std::mutex mutex;
@@ -58,7 +58,7 @@ namespace
 					{
 						if (batch.dropped.load(std::memory_order_relaxed))
 							break;
-						// one file per lock: an animation thread waits for at most the file being read
+						// One file per lock, so an animation thread waits for at most the file being read.
 						if (KFLoader::Acquire(path))
 							batch.loaded.push_back(path);
 					}
@@ -95,7 +95,7 @@ namespace
 		return *s_worker;
 	}
 
-	// pooled paths, with the mutex held
+	// Pooled paths. Access requires the mutex.
 	std::unordered_set<const char*>& Pinned()
 	{
 		static auto* s_pinned = new std::unordered_set<const char*>;
@@ -138,7 +138,7 @@ KFModel* KFLoader::Pin(const char* pooledPath)
 	auto* model = AcquireLocked(pooledPath);
 	if (!model)
 		return nullptr;
-	// pinned before: its use stays, this one goes back
+	// Already pinned: that use stays and this one is given back.
 	if (!Pinned().insert(pooledPath).second)
 		ReleaseLocked(pooledPath);
 	return model;
@@ -159,7 +159,7 @@ void KFLoader::DropPreload(Preload& preload)
 	if (!preload)
 		return;
 	preload->dropped.store(true, std::memory_order_relaxed);
-	// released by the worker, after anything of the batch it is still loading
+	// The worker releases it after finishing whatever part of the batch it is still loading.
 	GetWorker().Add({ std::move(preload), true });
 	preload.reset();
 }

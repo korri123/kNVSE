@@ -38,30 +38,31 @@ namespace
 		int loadPriority;
 		bool pollCondition;
 		bool matchBaseGroupId;
-		// the JSON file's name
+		// The JSON file's name.
 		std::string jsonFile;
 	};
 
-	// One KF of an AnimGroupOverride folder
+	// One KF of an AnimGroupOverride folder.
 	struct FolderFile
 	{
-		// relative to Data\Meshes
+		// Relative to Data\Meshes.
 		std::string path;
 		bool firstPerson;
 	};
 
-	// What a load has read of the folders: a JSON file names the same folder for several forms (one of the NVAO folders
-	// for 33), and each used to be read from the disk again
+	// Caches what has been read of the folders. A JSON file can name the same folder for several forms (one of the NVAO
+	// folders for 33), and the cache avoids reading it from disk for each.
 	struct FolderCache
 	{
-		// by path as given
+		// Keyed by path as given.
 		std::unordered_map<std::string, std::vector<FolderFile>> looseFiles;
-		// by folder name, lower case: the KFs archives have of the folder
+		// Keyed by lower case folder name: the KFs that archives have of the folder.
 		std::unordered_map<std::string, std::vector<FolderFile>> archiveFiles;
 	};
 
-	// The game opens files by their ANSI path: a name the code page lacks would not load. path::string() throws for
-	// such a name, here it comes out with a default character and fails to load (logged) like any missing file
+	// The game opens files by their ANSI path, so a name the code page cannot represent would not load. path::string()
+	// throws for such a name. This version substitutes a default character, so the load fails and is logged like any
+	// missing file.
 	std::string ToAnsi(const fs::path& path)
 	{
 		const auto& wide = path.native();
@@ -73,8 +74,8 @@ namespace
 		return result;
 	}
 
-	// A directory's entries in the order NTFS lists them (by upper case name), whatever the file system (a virtual one
-	// need not sort): which of two sets ends up on top of a stack depends on the order they are registered in
+	// Lists a directory's entries in the order NTFS lists them (by upper case name), whatever the file system (a virtual
+	// one need not sort). The registration order decides which of two sets ends up on top of a stack.
 	std::vector<fs::directory_entry> GetSortedEntries(const fs::path& directory)
 	{
 		std::vector<fs::directory_entry> entries;
@@ -117,7 +118,7 @@ namespace
 		}
 	}
 
-	// The KFs of the folder's _male and _1stperson subfolders. folder: starts with Data\Meshes
+	// The KFs of the folder's _male and _1stperson subfolders. folder starts with Data\Meshes.
 	const std::vector<FolderFile>& GetLooseFiles(const fs::path& folder, FolderCache& cache)
 	{
 		const auto [iter, isNew] = cache.looseFiles.try_emplace(ToAnsi(folder));
@@ -134,10 +135,10 @@ namespace
 				continue;
 			std::vector<fs::path> kfPaths;
 			CollectKFs(entry.path(), kfPaths);
-			// Files directly in the folder first: a set registered later goes above them on its group's stack, so the
-			// conditional subfolder variants (mod1, hurt, male, ...) are checked before the base set. In directory order
-			// the base file came after a subfolder whose name sorts before it (_male\mod1\ before
-			// _male\sneak2hrreloadp.kf) and always won.
+			// Files directly in the folder come first. A set registered later goes above earlier ones on its group's
+			// stack, so the conditional subfolder variants (mod1, hurt, male, ...) are checked before the base set. In
+			// directory order a subfolder whose name sorts before the base file (_male\mod1\ before
+			// _male\sneak2hrreloadp.kf) would come first and the base file would always win.
 			std::ranges::stable_partition(kfPaths, [&](const fs::path& kfPath) { return kfPath.parent_path() == entry.path(); });
 			for (const auto& kfPath : kfPaths)
 			{
@@ -151,7 +152,7 @@ namespace
 	}
 
 	// The KFs that the loaded archives have of the folder's _male and _1stperson subfolders and the condition folders
-	// in them. Their paths are as the archives list them
+	// in them. Paths are as the archives list them.
 	const std::vector<FolderFile>& GetArchiveFiles(const std::string& folderName, FolderCache& cache)
 	{
 		const auto [iter, isNew] = cache.archiveFiles.try_emplace(ToLower(folderName));
@@ -201,7 +202,7 @@ namespace
 		return source;
 	}
 
-	// Registers what register_ finds for the form, or for each form of a form list
+	// Registers what register_ finds for the form, or for each form of a form list.
 	template <typename F>
 	size_t ForEachForm(const TESForm* form, F&& register_)
 	{
@@ -313,7 +314,7 @@ namespace
 					}
 					auto folder = elem["folder"].get<std::string>();
 					ra::replace(folder, '/', '\\');
-					// relative to AnimGroupOverride: a path joined with one that starts at the root would be the root's
+					// Relative to AnimGroupOverride. A path joined with one that starts at the root would resolve to the root.
 					folder.erase(0, folder.find_first_not_of('\\'));
 					std::vector<int> formIds;
 					auto* formElem = elem.contains("form") ? &elem["form"] : nullptr;
@@ -376,7 +377,7 @@ namespace
 		}
 	}
 
-	// The KFs under meshes\animgroupoverride of a BSA that lies in the AnimGroupOverride folder
+	// The KFs under meshes\animgroupoverride of a BSA that lies in the AnimGroupOverride folder.
 	void LoadAnimPathsFromBSA(const fs::path& path, std::vector<std::string>& animPaths)
 	{
 		const auto pathString = ToAnsi(path);
@@ -409,7 +410,7 @@ namespace
 	}
 
 	// A JSON entry's animations: those of the BSAs in the AnimGroupOverride folder, of the loaded archives and the
-	// loose files, each as a batch of its own and in that order (loose files end up on top)
+	// loose files. Each is registered as its own batch in that order, so loose files end up on top.
 	void LoadJsonEntry(const JSONEntry& entry, const std::vector<std::string>& bsaAnimPaths, FolderCache& cache)
 	{
 		if (entry.form)
@@ -450,8 +451,8 @@ namespace
 	std::thread s_loadThread;
 	std::atomic<bool> s_loadFinished = false;
 
-	// A thread that is still joinable when the DLL's statics are destroyed (the game closed before anything looked an
-	// animation up) would end the process through std::terminate
+	// A thread that is still joinable when the DLL's statics are destroyed (the game closed before anything looked up an
+	// animation) would end the process through std::terminate.
 	struct LoadThreadDetacher
 	{
 		~LoadThreadDetacher()
@@ -466,7 +467,7 @@ void LoadFileAnimPaths()
 {
 	ScopedTimer timer("Loaded AnimGroupOverride");
 	LOG("Loading file anims");
-	// before the first set is made: each takes the user's choices for its files when it is made
+	// Before the first set is made: each set takes the user's choices for its files when it is created.
 	OverridePrefs::Load();
 
 	const fs::path dir = R"(Data\Meshes\AnimGroupOverride)";
@@ -479,7 +480,7 @@ void LoadFileAnimPaths()
 	FolderCache cache;
 	std::vector<std::string> bsaAnimPaths;
 	std::vector<JSONEntry> jsonEntries;
-	// one folder or file that fails does not take the others with it
+	// A folder or file that fails does not stop the others.
 	const auto guarded = [](const std::string& what, auto&& f)
 	{
 		try
@@ -515,12 +516,12 @@ void LoadFileAnimPaths()
 				LoadAnimPathsFromBSA(path, bsaAnimPaths);
 		});
 	}
-	// entries of the same priority stay in the order they were read in (a sort that is not stable left which of two
-	// such entries ends up on top to the implementation)
+	// Entries of the same priority keep the order they were read in. A sort that is not stable would leave the winner
+	// to the implementation.
 	std::ranges::stable_sort(jsonEntries, {}, &JSONEntry::loadPriority);
 	for (const auto& entry : jsonEntries)
 		guarded(entry.folderName, [&] { LoadJsonEntry(entry, bsaAnimPaths, cache); });
-	// the user's order of the origins, once they all exist
+	// Apply the user's order of the origins, once they all exist.
 	Overrides::ApplyPrefs();
 }
 

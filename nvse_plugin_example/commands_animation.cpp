@@ -100,21 +100,21 @@ BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID)
 	return nullptr;
 }
 
-// The KF's own sequence, as loaded: what every Animation's clone of it is made from, and shares its text keys with.
-// For script commands that change it: the KF stays loaded for the session, or the changes would be gone once the last
-// Animation that has it is
+// Returns the KF's own sequence as loaded. Every Animation's clone of it is made from this sequence and shares its
+// text keys. Used by script commands that modify it. The KF is pinned for the session, because the changes would be
+// lost once the last Animation that uses it is destroyed.
 BSAnimGroupSequence* GetAnimationByPath(const char* path)
 {
 	const auto* kfModel = KFLoader::Pin(AddStringToPool(ToLower(path)).data());
 	return kfModel ? kfModel->controllerSequence : nullptr;
 }
 
-// Animation::~Animation: the text key tracking of its sequences goes. Not by the actor: the Animation of a deleted
-// reference is destroyed after its actor was freed (by the garbage collector on the main thread), and what
-// animData->actor then points at is not an actor
+// Called from Animation::~Animation. Removes the text key tracking of its sequences. The actor is not used, because the
+// Animation of a deleted reference is destroyed after its actor was freed (by the garbage collector on the main
+// thread), so animData->actor no longer points at an actor.
 void HandleOnAnimDataDelete(AnimData* animData)
 {
-	// its sequences are still in its controller manager here, and go with it
+	// Its sequences are still in its controller manager here and are removed with it.
 	if (g_lastLoopSequence && animData->controllerManager && g_lastLoopSequence->m_pkOwner == animData->controllerManager)
 		g_lastLoopSequence = nullptr;
 	std::unique_lock lock(g_animTimeMutex);
@@ -136,9 +136,9 @@ AnimTime::~AnimTime()
 
 std::list<BurstFireData> g_burstFireQueue;
 
-// A sequence started partway, continuing another variant of its group (BlendFixes' TransitionToVariant): the burst's
-// shots and ejects before its time were the other variant's. HandleBurstFire handles one passed key per frame, so they
-// would all be fired again, one a frame
+// For a sequence started partway that continues another variant of its group (BlendFixes' TransitionToVariant). The
+// burst's shots and ejects before its start time belong to the other variant. HandleBurstFire handles one passed key
+// per frame, so without this they would all fire again, one per frame.
 void SkipPassedBurstFireKeys(const BSAnimGroupSequence* anim)
 {
 	const auto time = anim->m_fLastScaledTime;
@@ -169,9 +169,8 @@ enum class KeyCheckType
 	KeyEquals, KeyStartsWith
 };
 
-// The Script: and scriptLine: keys of a KF, parsed once. By the KF's path, which every sequence made from it has as its
-// name (they were kept by the KF model's own sequence, looked up with a load that counted a use of the model on every
-// play and never gave one back)
+// The Script: and scriptLine: keys of a KF, parsed once. Keyed by the KF's path, which every sequence made from it has
+// as its name.
 struct FixedStringHash
 {
 	size_t operator()(const NiFixedString& string) const { return std::hash<const char*>()(string.CStr()); }
@@ -266,13 +265,13 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 	if (animData == g_thePlayer->firstPersonAnimData && anim->animGroup && hasRespectEndKey)
 	{
 		auto& animTime = getAnimTimeStruct();
-		// looked up again: the 3rd person sequence of this play
+		// Reset so that it is looked up again: the 3rd person sequence of this play.
 		animTime.respectEndKeyData = {};
 		animTime.respectEndKey = true;
 	}
 	const auto baseGroupID = anim->animGroup ? anim->animGroup->GetBaseGroupID() : kAnimGroup_Invalid;
 
-	// DecreaseAttackTimer reads it for the player only: another actor's would replace the player's
+	// DecreaseAttackTimer reads it for the player only, and another actor's sequence would replace the player's.
 	if (hasKey({"interruptLoop"}) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS)
 		&& animData->actor == g_thePlayer)
 	{
@@ -373,8 +372,9 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 		animTime.allowAttack = true;
 		animTime.allowAttackTime = time;
 	}
-	// its spawn:/despawn: keys were kept when it joined the manager (SpawnKeys::OnSequenceJoin, the player's sequences).
-	// Applied: the AnimTime is only tracked with its actor set, AnimGroupOverride plays don't ask for one without keys
+	// The spawn:/despawn: keys were recorded when the sequence joined the manager (SpawnKeys::OnSequenceJoin, for the
+	// player's sequences). Apply them here: the AnimTime is only tracked with its actor set, and AnimGroupOverride plays
+	// do not ask for one when there are no keys.
 	if (SpawnKeys::Has(*anim))
 	{
 		getAnimTimeStruct().hasSpawnKeys = true;
@@ -447,8 +447,8 @@ std::string_view GetBaseAnimGroupName(const std::string_view name)
 
 AnimGroupID GroupNameToId(std::string_view name)
 {
-	// Filled once and only read from then on: file names are resolved on the thread that registers the override files
-	// while KFs load on others (AnimFixes)
+	// Filled once and only read afterwards: file names are resolved on the thread that registers the override files
+	// while KFs load on other threads (AnimFixes).
 	static const auto s_animGroupNameToIDMap = []
 	{
 		std::unordered_map<std::string_view, AnimGroupID, CaseInsensitiveHash, CaseInsensitiveEqual> map;
@@ -510,7 +510,7 @@ UInt16 GetAnimGroupId(std::string_view path)
 	if (const auto id = SimpleGroupNameToId(baseName); id != kAnimGroup_Invalid)
 		return toFullId(id);
 	
-	// The file name does not tell: the KF does, which is slower. Loaded for that alone, so it is given back
+	// The file name does not tell, so read the KF, which is slower. The KF is loaded for that alone and given back.
 	auto groupId = Overrides::kInvalidGroupId;
 	if (const auto* kfModel = KFLoader::Acquire(path.data()))
 	{
@@ -761,14 +761,14 @@ ScopedList<char> GetDirectoryAnimPaths(std::string_view path)
 	return FileFinder::FindFiles(searchPath.c_str(), renamePath.c_str(), ARCHIVE_TYPE_MESHES);
 }
 
-// The origin of what a script registers: the script's mod
+// The origin of what a script registers: the script's mod.
 const OverrideOrigin* GetScriptOrigin(Script* script)
 {
 	const char* modName = script ? GetModName(script) : nullptr;
 	return Overrides::GetOrigin(OverrideOrigin::Kind::Script, FormatString("script: %s", modName && *modName ? modName : "console"));
 }
 
-// A file, or the KFs of a folder as one batch: those of the same group are the variants of one set
+// Registers a file, or the KFs of a folder, as one batch. Those of the same group become the variants of one set.
 bool OverrideAnimsFromScript(const char* path, const Overrides::Source& source, bool firstPerson, bool enable)
 {
 	const std::string_view pathStr(path);
@@ -959,7 +959,7 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 
 void ReloadOverrideFiles()
 {
-	// the player's animations start over if one of them was an override
+	// The player's animations restart if one of them was an override.
 	bool refresh = false;
 	for (auto* animData : { g_thePlayer->firstPersonAnimData, g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr })
 	{
@@ -978,7 +978,7 @@ void ReloadOverrideFiles()
 		g_scriptCallExecutions.clear();
 		g_scriptLineExecutions.clear();
 	}
-	// every Animation gives up its override sequences and what it knew of the sets, the KFs their last uses
+	// Every Animation releases its override sequences and its references to sets, and the KFs lose their last uses.
 	Overrides::UnloadAll();
 	KFLoader::ReleaseAll();
 	Overrides::Clear();
@@ -989,8 +989,8 @@ void ReloadOverrideFiles()
 		g_thePlayer->RestartAnims();
 }
 
-// Registers the override files anew, and reads every KF from the disk again when it next plays (for animators: files
-// changed while the game runs). Main thread, from the console: the other threads must not be picking animations
+// Registers the override files again and re-reads every KF from disk when it next plays (for animators: files changed
+// while the game runs). Main thread, from the console. The other threads must not be picking animations.
 bool Cmd_kNVSEReset_Execute(COMMAND_ARGS)
 {
 	ReloadOverrideFiles();
@@ -1241,7 +1241,7 @@ float AnimData::GetBlendTime() const
 {
 	if (noBlend120)
 		return 0.0f;
-	// fAnimationDefaultBlend is in seconds (Animation::StartGroup uses it as is; only Blend text keys are in frames)
+	// fAnimationDefaultBlend is in seconds (Animation::StartGroup uses it as is). Only Blend text keys are in frames.
 	return GetDefaultBlendTime() / GetDefaultAnimMult();
 }
 
@@ -1250,7 +1250,7 @@ float GetDefaultBlendOutTime(const BSAnimGroupSequence* destSequence)
 	const static auto sNoBlend = NiFixedString("noBlend");
 	if (destSequence->m_spTextKeys->FindFirstByName(sNoBlend))
 		return 0.0f;
-	// the engine divides every blend by fAnimationMult, the default included (Animation::StartGroup)
+	// The engine divides every blend by fAnimationMult, including the default (Animation::StartGroup).
 	const auto blendMult = GetDefaultAnimMult();
 	const auto defaultBlend = GetDefaultBlendTime() / blendMult;
 	if (!destSequence->animGroup)
@@ -2079,7 +2079,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			firstPerson = IsPlayerInFirstPerson(actor);
 		const auto actorId = actor->refID;
 		const auto sAnimPath = std::string(animPath);
-		// on the thread that picks the actor's animations: the queue is part of its Animation's state
+		// Runs on the thread that picks the actor's animations, because the queue is part of its Animation's state.
 		QueueScriptAnimOperation(actor, result, [actorId, firstPerson, sAnimPath]
 		{
 			auto* actor = static_cast<Actor*>(LookupFormByID(actorId));

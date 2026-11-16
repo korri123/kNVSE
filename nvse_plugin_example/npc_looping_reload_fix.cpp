@@ -51,8 +51,8 @@ namespace NPCLoopingReloadFix
 			}
 		};
 
-		// Actor::Reload's reload type: 0 fills the clip at once (equipping, loading), 1 reloads an empty clip (after the
-		// last shot), 2 reloads now if the clip isn't full
+		// Actor::Reload's reload type: 0 fills the clip at once (equipping, loading), 1 reloads an empty clip (after
+		// the last shot), 2 reloads now if the clip isn't full
 		constexpr UInt32 kReloadType_Instant = 0;
 
 		constexpr UInt32 kLoopStartOffset = kAnimGroup_ReloadW - kAnimGroup_ReloadWStart;
@@ -60,9 +60,9 @@ namespace NPCLoopingReloadFix
 		bool g_enabled = false;
 		bool g_modReloadAnimsFixed = false;
 
-		// Whether Actor::Reload plays a looping reload for this NPC: the engine's looping path (Actor::Reload 0x8A8716,
-		// with bFixModReloadAnims the reload anim that plays) with a looping anim, and the actor has its start anim.
-		// Without it nothing plays and the clip is filled at once, as before.
+		// Returns true if Actor::Reload plays a looping reload for this NPC: the engine's looping path (Actor::Reload
+		// 0x8A8716, with bFixModReloadAnims the reload anim that plays) with a looping anim, and the actor has its
+		// start anim. Otherwise nothing plays and the clip is filled at once.
 		bool PlaysLoopingReload(Actor* actor, const TESObjectWEAP* weapon, bool hasClipMod)
 		{
 			if (actor == g_thePlayer || !weapon || !weapon->HasLoopingReloadAnim(hasClipMod))
@@ -80,8 +80,8 @@ namespace NPCLoopingReloadFix
 		UInt32 GetReloadType(void* addressOfReturnAddress) { return GetVariableOfCallerStack<UInt32>(addressOfReturnAddress, 0xC); }
 		bool GetReloadClipMod(void* addressOfReturnAddress) { return GetVariableOfCallerStack<bool>(addressOfReturnAddress, 0x10); }
 
-		// Actor::Reload, reload type 2: does the clip need a reload? A looping reload in progress counts as full: the AI
-		// asks every update while in cover, and every call would start it over.
+		// Actor::Reload, reload type 2: does the clip need a reload? A looping reload in progress counts as full,
+		// because the AI asks every update while in cover and every call would start it over.
 		UInt32 __fastcall ReloadNowClipRoundsHook(const TESObjectWEAP* weapon, void*, bool hasClipMod)
 		{
 			auto* retAddr = _AddressOfReturnAddress();
@@ -91,7 +91,7 @@ namespace NPCLoopingReloadFix
 			return ThisStdCall<UInt32>(0x4FE160, weapon, hasClipMod); // TESObjectWEAP::GetClipRounds
 		}
 
-		// Actor::Reload, reload type 2: the group it plays at once, ReloadX for a loop; the player plays ReloadXStart
+		// Actor::Reload, reload type 2: the group it plays at once. ReloadX for a loop (the player plays ReloadXStart)
 		UInt32 __fastcall ReloadNowGroupHook(const TESObjectWEAP* weapon, void*, bool hasClipMod)
 		{
 			const auto group = ThisStdCall<UInt32>(0x51E2A0, weapon, hasClipMod); // TESObjectWEAP::GetReloadAnimGroup
@@ -99,7 +99,7 @@ namespace NPCLoopingReloadFix
 		}
 
 		// Actor::Reload playing the reload at once (type 2, or type 1 with an automatic weapon) records it as a plain
-		// reload, which never continues to the loop
+		// reload, which never continues to the loop. Records it as a looping reload for NPCs instead.
 		template <int GroupOffset>
 		void __fastcall ReloadNowActionHook(Actor* actor, void*, SInt32 action, BSAnimGroupSequence* sequence)
 		{
@@ -109,8 +109,8 @@ namespace NPCLoopingReloadFix
 			ThisStdCall(0x8A73E0, actor, action, sequence); // Actor::SetAnimAction
 		}
 
-		// Actor::Reload filling the clip (BSTasklet::SetData on the current ammo): a looping reload keeps the rounds and
-		// remembers what it loads up to
+		// Actor::Reload filling the clip (BSTasklet::SetData on the current ammo). A looping reload keeps the rounds
+		// and remembers what it loads up to.
 		void __fastcall ClipFillHook(BaseProcess::AmmoInfo* ammo, void*, SInt32 rounds)
 		{
 			auto* retAddr = _AddressOfReturnAddress();
@@ -123,9 +123,9 @@ namespace NPCLoopingReloadFix
 			ThisStdCall(0x6ECD40, ammo, rounds);
 		}
 
-		// Actor::UseAmmo after the last round reloaded: the clip is empty while a looping reload loads it, which is not
-		// running out of ammo (unequipping it, CombatController::Disarmed, the follower's out of ammo line). Delayed:
-		// NVAC replaces this call.
+		// Actor::UseAmmo after the last round reloaded. The clip is empty while a looping reload loads it, which is not
+		// running out of ammo (unequipping the weapon, CombatController::Disarmed, the follower's out of ammo line).
+		// Delayed because NVAC replaces this call.
 		UInt32 g_useAmmoRoundsGetter = 0x726070;
 		SInt32 __fastcall UseAmmoReloadedRoundsHook(BaseProcess::AmmoInfo* ammo)
 		{
@@ -139,7 +139,8 @@ namespace NPCLoopingReloadFix
 		thread_local SInt32 t_ammoCarried = 0;
 
 		// Actor::HandlePostAnimationActions after a round: the ammo the loop may load. An NPC loads up to the reload's
-		// target (an NPC whose weapon uses no ammo the whole clip, as Actor::Reload fills it), dropped with the last round.
+		// target (the whole clip, as Actor::Reload fills it, for a weapon that uses no ammo). The target is dropped with
+		// the last round.
 		SInt32 __fastcall RoundAmmoAvailableHook(void* inventoryChanges, void*, TESForm* ammoForm)
 		{
 			const auto carried = ThisStdCall<SInt32>(0x4C8F30, inventoryChanges, ammoForm); // InventoryChanges::GetObjectCount
@@ -160,7 +161,7 @@ namespace NPCLoopingReloadFix
 		}
 
 		// Actor::HandlePostAnimationActions loading a round with QueueEquipObject, which doesn't change an NPC's clip.
-		// Delayed: Stewie's Tweaks replaces this call (RememberWeaponAmmos), its hook is called first.
+		// Delayed because Stewie's Tweaks replaces this call (RememberWeaponAmmos) and its hook must be called first.
 		UInt32 g_loadRoundEquip = 0x88C650;
 		void __fastcall LoadRoundHook(Actor* actor, void*, TESForm* ammoForm, SInt32 rounds, ExtraDataList* xData, UInt32 applyEnchantment, UInt32 noUnequip, UInt32 noMessage)
 		{
@@ -171,9 +172,9 @@ namespace NPCLoopingReloadFix
 				ammo->count = rounds;
 		}
 
-		// Actor::HandlePostAnimationActions after the last round plays the idle in the weapon section, then for an NPC
-		// the round's animation again from its start as a plain reload: a round more on screen (1.7 s with the Cowboy
-		// Repeater). The NPC plays the last round's animation to its end instead, as a plain reload.
+		// Actor::HandlePostAnimationActions after the last round plays the idle in the weapon section. For an NPC it
+		// would then play the round's animation again from its start as a plain reload, showing one round more. This
+		// plays the last round's animation to its end instead, as a plain reload.
 		void __fastcall LoopEndIdleHook(AnimData* animData, void*, UInt16 groupId, int flags, int loopCount, eAnimSequence sequenceId)
 		{
 			auto* actor = GET_CALLER_VAR(Actor*, -0xA0);
@@ -184,7 +185,7 @@ namespace NPCLoopingReloadFix
 				if (roundGroup >= kAnimGroup_ReloadW && roundGroup <= kAnimGroup_ReloadZ)
 				{
 					actor->SetAnimAction(Decoding::kAnimAction_Reload, round);
-					*static_cast<UInt32*>(_AddressOfReturnAddress()) = 0x8BACD2; // skip the replay
+					*static_cast<UInt32*>(_AddressOfReturnAddress()) = 0x8BACD2; // Skips the replay
 					return;
 				}
 			}

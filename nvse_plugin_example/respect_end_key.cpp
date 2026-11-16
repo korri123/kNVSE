@@ -14,16 +14,17 @@ namespace
 	struct Swap
 	{
 		NiPointer<BSAnimGroupSequence> anim3rd;
-		// whose times the copy has; its text keys answer the a: key lookup (AnimData::GetNextWeaponSequenceKey hook)
+		// The 1st person animation whose times the copy has. Its text keys answer the a: key lookup
+		// (AnimData::GetNextWeaponSequenceKey hook).
 		NiPointer<BSAnimGroupSequence> anim1st;
 		NiPointer<TESAnimGroup> original;
 		NiPointer<TESAnimGroup> copy;
-		// applied or kept since the last EndFrame
+		// Applied or kept since the last EndFrame
 		bool bClaimed = false;
 	};
 
-	// The player's 3rd person sequences that have a copy: one or two at a time. Changed on the main thread, read by
-	// Animation::AddAnimation (any Animation, on AI and loader threads too) and the a: key lookup
+	// The player's 3rd person sequences that have a copy (one or two at a time). Changed on the main thread, read by
+	// Animation::AddAnimation (any Animation, including AI and loader threads) and the a: key lookup.
 	std::vector<Swap> g_swaps;
 	std::mutex g_mutex;
 	std::atomic<bool> g_bAnySwaps = false;
@@ -46,9 +47,10 @@ namespace
 		to.blendOut = from.blendOut;
 	}
 
-	// A copy of original with the times of times. The game's TESAnimGroup has no copy constructor: its fields as they
-	// are (vtable, group ID, move vector, the prn: node name, which points into the KF's text keys and is not freed by
-	// ~TESAnimGroup), its own key time and sound arrays, which ~TESAnimGroup frees
+	// Returns a copy of original with the times of `times`. The game's TESAnimGroup has no copy constructor, so the
+	// fields are copied as they are (vtable, group ID, move vector, the prn: node name, which points into the KF's text
+	// keys and is not freed by ~TESAnimGroup). The key time and sound arrays are the copy's own and ~TESAnimGroup frees
+	// them.
 	TESAnimGroup* MakeCopy(const TESAnimGroup& original, const TESAnimGroup& times)
 	{
 		auto* copy = NiNew<TESAnimGroup>();
@@ -62,8 +64,9 @@ namespace
 		return copy;
 	}
 
-	// Animation::AddAnimation takes a KF it already has when its sequence's anim group is the KF model's
-	// (BSAnimGroupSequence::GetAnimGroup at 0x490768): compare the group before a copy, or it would replace the sequence
+	// Animation::AddAnimation reuses a KF it already has when its sequence's anim group is the KF model's
+	// (BSAnimGroupSequence::GetAnimGroup at 0x490768). Returns the original group, so the check still matches while
+	// a copy is applied and doesn't replace the sequence.
 	TESAnimGroup* __fastcall GetLoadedSequenceGroupHook(BSAnimGroupSequence* sequence)
 	{
 		return RespectEndKey::OriginalGroup(sequence);
@@ -80,7 +83,7 @@ void RespectEndKey::Apply(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* ani
 	Swap* swap = Find(anim3rd);
 	if (swap && current == swap->copy)
 	{
-		// the copy is this sequence's alone: changed in place, so no code of the engine's is left with a freed group
+		// The copy belongs to this sequence alone and is changed in place, so no engine code is left with a freed group
 		if (swap->anim1st != anim1st)
 		{
 			CopyTimes(*swap->copy, *times);
@@ -89,7 +92,7 @@ void RespectEndKey::Apply(BSAnimGroupSequence* anim3rd, BSAnimGroupSequence* ani
 		swap->bClaimed = true;
 		return;
 	}
-	// a group given to the sequence since (SetAnimTextKeys) is its own one now
+	// A group given to the sequence since then (SetAnimTextKeys) is its own now
 	const NiPointer<TESAnimGroup> original = current;
 	const NiPointer<TESAnimGroup> copy = MakeCopy(*original, *times);
 	if (!swap)

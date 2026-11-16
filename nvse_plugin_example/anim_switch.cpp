@@ -6,7 +6,8 @@
 
 namespace
 {
-    // When the ease the sequence is in ends, in its owner's time: until its first update the window is the duration alone
+    // Returns when the ease the sequence is in ends, in its owner's time. Until its first update the window is the
+    // duration alone.
     float GetEaseEnd(const NiControllerSequence& sequence, float fTime)
     {
         return sequence.m_fStartTime == -NI_INFINITY ? fTime + sequence.m_fEndTime : sequence.m_fEndTime;
@@ -40,7 +41,7 @@ bool AnimSwitch::EaseOut(NiControllerSequence* sequence, float fDuration) const
         return true;
     case NiControllerSequence::EASEIN:
     {
-        // the switch that was easing it in, asked before its ease turns around
+        // The switch that was easing it in; asked before its ease turns around
         const UInt32 uiEasedInBy = Of(sequence);
         if (fDuration > 0.0f && sequence->DeactivateNoReset(fDuration, false, m_fTime))
         {
@@ -87,7 +88,7 @@ void AnimSwitch::Add(NiControllerSequence* sequence) const
 
 bool AnimSwitch::Join(NiControllerSequence* sequence) const
 {
-    // ids count per scene root: a sequence of another manager has its own
+    // IDs count per scene root, so a sequence of another manager has its own
     if (!m_uiID || !sequence || sequence->m_pkOwner != m_pkManager)
         return false;
     const auto eState = sequence->m_eState;
@@ -116,11 +117,9 @@ void AnimSwitch::TakeOver(NiControllerSequence* sequence, UInt32 uiEasedInBy) co
         Ease* ease = other ? Eases::Find(*other) : nullptr;
         if (!ease || ease->uiSwitch != uiEasedInBy)
             continue;
-        // all of them: a cross fade split over two switches is blended as two eases that have nothing to do with each
-        // other (BlendTransitions). Its ease-outs keep their windows: stretched as well, they stood still at the turn
-        // (attack -> attackIS cut by the attack's end: the rest of the attack's ease-out went at a fifth of its speed
-        // over aimIS's ease-in, the weapon stopped from 190 units/s), and the sequence turned around covers the bone
-        // until the ease-ins are in.
+        // Takes over every member of that switch. A cross fade split over two switches would otherwise be blended as
+        // two unrelated eases (BlendTransitions). The ease-outs keep their windows, which are stretched as well, since
+        // they stood still at the turn. The sequence turned around covers the bone until the ease-ins are in.
         if (ease->uiSwitch != m_uiID)
         {
             ease->uiSwitch = m_uiID;
@@ -149,14 +148,14 @@ void AnimSwitch::CoverEaseIns() const
             continue;
         if (sequence->m_fStartTime == -NI_INFINITY)
         {
-            // not updated since it was eased out: the window is still its length
+            // Not updated since it was eased out, so the window is still its length
             sequence->m_fEndTime = fLastEaseInEnd - m_fTime;
             continue;
         }
         const float fSpinner = Eases::GetSpinner(*sequence, m_fTime);
         if (fSpinner <= 0.0f)
             continue;
-        // the spinner stays where it is, and reaches 0 at the new end
+        // The spinner stays where it is and reaches 0 at the new end
         sequence->m_fEndTime = fLastEaseInEnd;
         sequence->m_fStartTime = fLastEaseInEnd - (fLastEaseInEnd - m_fTime) / fSpinner;
     }
@@ -168,12 +167,12 @@ UInt32 AnimSwitch::Of(const NiControllerSequence* sequence)
     return ease ? ease->uiSwitch : 0;
 }
 
-// The engine's own eases. Animation::StartGroup (0x4949A0) keeps its Animation at [ebp-0x5C]; the sequences
-// Animation::ClearGroup eases out are declared by its hooks in hooks.cpp, the sequence StartGroup starts from a pose
-// by PoseBlendFixes
+// Hooks for the engine's own eases. Animation::StartGroup (0x4949A0) keeps its Animation at [ebp-0x5C]. The sequences
+// Animation::ClearGroup eases out are declared by its hooks in hooks.cpp, and the sequence StartGroup starts from a
+// pose is handled by PoseBlendFixes.
 void AnimSwitch::WriteHooks()
 {
-    // NiControllerManager::CrossFade in Animation::StartGroup, its only caller: the section's sequence for the new one
+    // NiControllerManager::CrossFade in Animation::StartGroup (its only caller): replaces the section's sequence
     WriteRelCall(0x4952F8, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, NiControllerSequence* pkSource,
         NiControllerSequence* pkDest, float fDuration, int iPriority, bool bStartOver, float fWeight,
         NiControllerSequence* pkTimeSyncSeq)
@@ -190,8 +189,8 @@ void AnimSwitch::WriteHooks()
         return bResult;
     }));
 
-    // NiControllerManager::ActivateSequence in Animation::StartGroup for an aim up or down section with nothing playing:
-    // the one of its three that eases in
+    // NiControllerManager::ActivateSequence in Animation::StartGroup for an aim up or down section with nothing playing.
+    // It is the one of the three aim sequences that eases in.
     WriteRelCall(0x495216, INLINE_HOOK(bool, __fastcall, NiControllerManager* manager, void*, NiControllerSequence* pkSequence,
         int iPriority, bool bStartOver, float fWeight, float fEaseInTime, NiControllerSequence* pkTimeSyncSeq)
     {

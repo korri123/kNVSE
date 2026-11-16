@@ -6,22 +6,23 @@
 #include <unordered_set>
 #include <vector>
 
-// The user's choices about AnimGroupOverride animations, made in the kNVSE menu and kept in
-// Data\NVSE\Plugins\kNVSE_overrides.json: origins (OverrideOrigin: a folder, a script's mod) and files that are
-// disabled, the default order of the origins, and per form (what a set is registered for: a weapon, an actor, a race,
-// a mod's actors, everyone; by Overrides::FormKey) the order of the origins that animate it and the ones disabled for
-// it. Kept apart from what scripts enable and disable (SavedAnims::disabled), which a mod's script may do every frame.
-// The registry applies them (Overrides::ApplyPrefs, and to every set it makes).
-// Any thread; one lock of its own, never held while it calls out
+// The user's choices about AnimGroupOverride animations, made in the kNVSE menu and stored in
+// Data\NVSE\Plugins\kNVSE_overrides.json:
+//  - origins (OverrideOrigin: a folder, a script's mod) and files that are disabled, and the default order of origins
+//  - per form (what a set is registered for: a weapon, an actor, a race, a mod's actors or everyone, identified by
+//    Overrides::FormKey): the order of the origins that animate it and the origins disabled for it
+// Kept separate from what scripts enable and disable (SavedAnims::disabled), which a mod's script may change every
+// frame. The registry applies these choices (Overrides::ApplyPrefs, and to every set it creates).
+// Callable from any thread. Uses its own lock, which is never held while calling out.
 namespace OverridePrefs
 {
-	// The choices for one form
+	// The choices for one form.
 	struct FormPrefs
 	{
-		// origin names, lower case, the one tried first first. Empty while the user has not ordered them for the form:
-		// the default order (Prefs::order) decides
+		// Origin names, lower case, the one tried first listed first. Empty if the user has not ordered the origins for
+		// this form, in which case the default order (Prefs::order) applies.
 		std::vector<std::string> order;
-		// origin names, lower case
+		// Origin names, lower case.
 		std::unordered_set<std::string> disabledOrigins;
 
 		bool IsEmpty() const { return order.empty() && disabledOrigins.empty(); }
@@ -29,41 +30,41 @@ namespace OverridePrefs
 
 	struct Prefs
 	{
-		// lower case
+		// Origin names, lower case.
 		std::unordered_set<std::string> disabledOrigins;
-		// lower case, relative to Data\Meshes
+		// Lower case, relative to Data\Meshes.
 		std::unordered_set<std::string> disabledFiles;
-		// origin names, lower case, the one tried first first. Empty while the user has not ordered them
+		// Origin names, lower case, the one tried first listed first. Empty if the user has not ordered them.
 		std::vector<std::string> order;
-		// by Overrides::FormKey; no empty entries
+		// Keyed by Overrides::FormKey. No empty entries.
 		std::unordered_map<std::string, FormPrefs> forms;
 	};
 
-	// Reads the file, unless choices were made since the last Save (they are newer). Before the files are registered
+	// Reads the file, unless choices were made since the last Save (they are newer). Call before the files are registered.
 	void Load();
-	// Writes the file. Whether it succeeded
+	// Writes the file. Returns true on success.
 	bool Save();
-	// Whether anything changed since the last Load or Save
+	// True if anything changed since the last Load or Save.
 	bool HasChanges();
 
 	Prefs Get();
 	bool IsOriginDisabled(std::string_view name);
 	bool IsFileDisabled(std::string_view path);
-	// Whether any form has choices of its own: until then nothing needs a form's key
+	// True if any form has choices of its own. Until then nothing needs a form's key.
 	bool HasFormPrefs();
-	// The choices for the form (Overrides::FormKey); empty if it has none
+	// The choices for the form (Overrides::FormKey), or an empty FormPrefs if it has none.
 	FormPrefs GetForm(std::string_view formKey);
-	// The rank of an origin in an order (higher: tried first): above every origin in it when it is not, and equal for
-	// all while the order is empty
+	// The rank of an origin in an order (higher is tried first). An origin not in the order ranks above every origin in
+	// it. All origins rank equal while the order is empty.
 	int GetRank(const std::vector<std::string>& order, std::string_view name);
 
 	void SetOriginDisabled(std::string_view name, bool disabled);
 	void SetFileDisabled(std::string_view path, bool disabled);
-	// The origins' names, the one tried first first. Empty: the order they were registered in
+	// Sets the origins' order, the one tried first listed first. Empty means the order they were registered in.
 	void SetOrder(std::vector<std::string> order);
-	// The same for one form. Empty: the default order
+	// Same for one form. Empty means the default order.
 	void SetFormOrder(std::string_view formKey, std::vector<std::string> order);
 	void SetFormOriginDisabled(std::string_view formKey, std::string_view name, bool disabled);
-	// Drops the form's choices: the default order, every origin enabled for it
+	// Drops the form's choices: default order, every origin enabled for it.
 	void ResetForm(std::string_view formKey);
 }

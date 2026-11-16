@@ -229,7 +229,7 @@ void NiMultiTargetTransformController::_Update(float fTime, bool bSelective)
     if (!GetActive() || !m_usNumInterps)
         return;
 
-    // the weapon is blended after the arms so WeaponHandBlend sees this frame's hand transforms
+    // The weapon is blended after the arms so WeaponHandBlend sees this frame's hand transforms
     unsigned short usWeaponIndex = m_usNumInterps;
     for (unsigned short us = 0; us < m_usNumInterps; us++)
     {
@@ -269,7 +269,7 @@ void NiMultiTargetTransformController::UpdateHooked(NiUpdateData* pkUpdateData)
         return;
 
     const float fTime = pkUpdateData->fTime;
-    // the weapon is blended after the arms so WeaponHandBlend sees this frame's hand transforms
+    // The weapon is blended after the arms so WeaponHandBlend sees this frame's hand transforms
     unsigned short usWeaponIndex = m_usNumInterps;
     for (unsigned short us = 0; us < m_usNumInterps; us++)
     {
@@ -494,7 +494,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
         NiQuaternion rotation;
         InterpArrayItem* item;
         kBlendInterpItem* extraItem;
-        // the item's weight as computed, before blend smoothing took any up (FireDirection)
+        // The item's weight as computed, before blend smoothing absorbed part of it (FireDirection)
         float computedWeight = 0.0f;
     };
     thread_local std::vector<ValidRotation> validRotations;
@@ -509,11 +509,11 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     thread_local std::vector<ValidScale> validScales;
     validScales.clear();
 
-    // m_fLastTime is still this blend's previous evaluation (UpdateHooked sets it afterwards)
+    // m_fLastTime still holds this blend's previous evaluation (UpdateHooked sets it afterwards)
     BlendSmoothing::Step smoothingStep(BlendSmoothing::GetElapsedTime(m_fLastTime, fTime));
     for (auto& item : interpItems)
     {
-        // GetUpdateTimeForItem replaces the time with the item's own (its sequence's); fTime stays the blend's
+        // GetUpdateTimeForItem replaces fUpdateTime with the item's own time (its sequence's); fTime stays the blend's
         float fUpdateTime = fTime;
         if (!item.m_spInterpolator || !GetUpdateTimeForItem(fUpdateTime, item))
             continue;
@@ -526,7 +526,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
                 item.m_fNormalizedWeight = 0.0f;
             if (!WeaponParentSwitch::Counts(extraItem, pkInterpTarget))
             {
-                // holding the weapon while it is in its holster: no weight, so that it goes once detached
+                // The weapon is held in its holster: give it no weight, so that it is removed once detached
                 // (DetachZeroWeightItems) and fades in from nothing if the weapon is drawn again while it plays
                 item.m_fNormalizedWeight = 0.0f;
                 extraItem->translateWeight.lastSmoothedWeight = 0.0f;
@@ -652,7 +652,7 @@ bool NiBlendTransformInterpolator::BlendValuesFixFloatingPointError(float fTime,
     }
 
     kComputedRotate = kValue.IsRotateValid() ? kValue.GetRotate() : NiQuatTransform::INVALID_ROTATE;
-    // smoothing took some of the weights up: the rotation as computed, blended as above
+    // If smoothing changed the weights, blend the rotation as computed in the same way
     bool bRotateSmoothed = false;
     for (const auto& rotation : validRotations)
         bRotateSmoothed |= rotation.item->m_fNormalizedWeight != rotation.computedWeight;
@@ -708,7 +708,7 @@ bool NiBlendTransformInterpolator::UpdateHooked(float fTime, NiObjectNET* pkInte
 {
     bool bReturnValue = false;
     auto* kExtraData = kBlendInterpolatorExtraData::GetExtraData(pkInterpTarget);
-    // the rotation of the bone's computed weights, without what kNVSE adds after them (FireDirection)
+    // Rotation from the bone's computed weights, without what kNVSE adds after them (FireDirection)
     NiQuaternion kComputedRotate = NiQuatTransform::INVALID_ROTATE;
     if (m_ucInterpCount == 1)
     {
@@ -966,8 +966,8 @@ void NiBlendInterpolator::ComputeNormalizedWeights()
     }
 }
 
-// Gamebryo's blend of the two highest priorities, with kNVSE's cross fade rule for the highest one's ease spinner, and
-// below a next priority that is fading out, the priorities down to the one easing in
+// Gamebryo's blend of the two highest priorities, with kNVSE's cross fade rule for the ease spinner of the highest one.
+// Below a next priority that is fading out, the priorities down to the one easing in are included.
 static void ComputeNormalizedWeightsOfHighestPriorities(
     const std::vector<std::pair<NiBlendInterpolator::InterpArrayItem*, kBlendInterpItem*>>& items)
 {
@@ -976,9 +976,9 @@ static void ComputeNormalizedWeightsOfHighestPriorities(
         return item.second && item.second->detached;
     };
     // Items at weight 0 contribute nothing: they take no priority, and neither their ease spinner nor their blend curve
-    // counts (as in BlendTransitions). Gamebryo ranks them too: in third person the aimIS up/down variants (weight 0 at
-    // level pitch) key Weapon at 45, between aimIS (50) and aim (35), so aimIS -> aim kept the weapon at the aimIS pose
-    // until aimIS was gone while the arms blended to aim.
+    // counts (as in BlendTransitions). Gamebryo ranks them too. For example, in third person the aimIS up/down
+    // variants (weight 0 at level pitch) key Weapon at priority 45, between aimIS (50) and aim (35), so an aimIS -> aim
+    // blend would keep the weapon at the aimIS pose until aimIS was gone while the arms blended to aim.
     const auto isWeighted = [&](auto& item)
     {
         return item.first->m_spInterpolator != nullptr && !isDetached(item) && item.first->m_fWeight > 0.0f;
@@ -1005,7 +1005,7 @@ static void ComputeNormalizedWeightsOfHighestPriorities(
         }
     }
 
-    // whether a weighted item at the priority is in the state, and whether all of them are
+    // Whether a weighted item at the priority is in the state, and whether all of them are
     const auto anyInState = [&](char cPriority, NiControllerSequence::AnimState eState)
     {
         return std::ranges::any_of(items, [&](auto& item)
@@ -1020,18 +1020,19 @@ static void ComputeNormalizedWeightsOfHighestPriorities(
             return isWeighted(item) && item.first->m_cPriority == cPriority && stateOf(item) != eState;
         });
     };
-    // Gamebryo gives the next priority all that the highest leaves, normalized by its own weights, however far it has
-    // faded. Where it is easing out and something below eases in, that hid the incoming animation: a switch that took over
-    // an earlier one (AnimSwitch) eases out sequences of several priorities until its last ease in ends (Caravan Shotgun,
-    // 1st person: attack 57 and attackIS 55 easing out, aimIS 54 or aim 45 easing in), and the weapon stood at the
-    // attackIS pose for the whole blend, then jumped. So while the lowest priority taken is all easing out and a lower
-    // one has a sequence easing in, the next lower priority is taken too, and each priority below the highest takes its
-    // own ease spinner's share of what is left (Gamebryo's rule against everything below it), the lowest the rest. Only
-    // where something eases in below: under an easing out next priority with nothing easing in below (aim -> attack,
-    // mtidle below), the next priority keeps it all as in Gamebryo, which is what a cross fade over two priorities needs.
-    // And not while the highest priority has a sequence easing in: the next priority fading out under it is the other
-    // side of such a cross fade (first person aim 45 -> aimIS 54), and the two keep the bone between them whatever
-    // starts below in the same update (a stance change, a gait).
+    // Gamebryo gives the next priority everything the highest leaves, normalized by its own weights, however far it
+    // has faded. When it is easing out and something below eases in, that hides the incoming animation. For example, a
+    // switch that took over an earlier one (AnimSwitch) eases out sequences of several priorities until its last ease
+    // in ends (1st person: attack 57 and attackIS 55 easing out, aimIS 54 or aim 45 easing in), and the weapon would
+    // stay at the attackIS pose for the whole blend and then jump. So:
+    // - While the lowest priority taken is all easing out and a lower priority has a sequence easing in, that lower
+    //   priority is taken too. Each priority below the highest takes its own ease spinner's share of what is left
+    //   (Gamebryo's rule against everything below it), and the lowest takes the rest.
+    // - If nothing eases in below an easing out next priority (aim -> attack, mtidle below), the next priority keeps
+    //   everything as in Gamebryo, which a cross fade over two priorities needs.
+    // - Nothing changes while the highest priority has a sequence easing in. The next priority fading out under it is
+    //   the other side of such a cross fade (1st person aim 45 -> aimIS 54), and the two keep the bone between them
+    //   whatever starts below in the same update (a stance change, a gait).
     constexpr int kMaxLevels = 8;
     char levels[kMaxLevels];
     int levelCount = 0;
@@ -1073,13 +1074,14 @@ static void ComputeNormalizedWeightsOfHighestPriorities(
         return -1;
     };
 
-    // real weights and the largest ease spinner of each level
+    // Sum of real weights and the largest ease spinner of each level
     float afSumOfWeights[kMaxLevels] = {};
     float afEaseSpinner[kMaxLevels] = {};
-    // The highest priority's ease spinner is the share of the bone it takes from the next priority. Gamebryo uses the
-    // largest of its items': two sequences cross fading at one priority (NiControllerManager::CrossFade and the movement
-    // blends ease one out while the other eases in) hand half of the bone to the next priority halfway through. The
-    // largest spinner easing out and the largest of the others are added instead, so a cross fade keeps the bone
+    // The ease spinner of the highest priority is the share of the bone it takes from the next priority. Gamebryo uses
+    // the largest spinner among its items, so two sequences cross fading at one priority (NiControllerManager::CrossFade
+    // and the movement blends ease one out while the other eases in) would hand half of the bone to the next priority
+    // halfway through. Here the largest spinner among the easing out items and the largest among the others are added
+    // instead, so a cross fade does not hand the bone down.
     float fHighEaseSpinner = 0.0f;
     float fHighEaseOutSpinner = 0.0f;
     for (auto& item : items)
@@ -1112,11 +1114,11 @@ static void ComputeNormalizedWeightsOfHighestPriorities(
     float fOneOverTotalSumOfWeights =
         (fTotalSumOfWeights > 0.0f) ? (1.0f / fTotalSumOfWeights) : 0.0f;
 
-    // A blend curve an animation named (BlendCurves) is what the bone shows: the highest priority takes exactly its ease
-    // spinner, the next one the rest, each shared by real weight. The single normalization above weighs the spinner in
-    // twice, giving a higher priority easing in over a lower one about s^2 / (s^2 + 1 - s)
+    // When an animation names a blend curve (BlendCurves), the highest priority takes exactly its ease spinner, the next
+    // one takes the rest, and each share is split by real weight. The single normalization above weighs the spinner in
+    // twice, so a higher priority easing in over a lower one would get about s^2 / (s^2 + 1 - s) instead of s.
     float fOneOverHighSumOfWeights = fOneOverTotalSumOfWeights;
-    // the share of the bone the levels below the highest priority get
+    // Share of the bone that the levels below the highest priority get
     float fBelowShare = fOneMinusHighEaseSpinner * fBelowSumOfWeights * fOneOverTotalSumOfWeights;
     if (fHighEaseSpinner < 1.0f && fHighSumOfWeights > 0.0f && fBelowSumOfWeights > 0.0f)
     {
@@ -1134,8 +1136,8 @@ static void ComputeNormalizedWeightsOfHighestPriorities(
         }
     }
 
-    // each level below the highest: its ease spinner's share of what is left against the levels under it, the lowest
-    // the rest; per real weight within a level
+    // Each level below the highest takes its ease spinner's share of what is left against the levels under it, and the
+    // lowest takes the rest. Within a level the share is split by real weight.
     float afPerRealWeight[kMaxLevels] = {};
     float fLeft = fBelowShare;
     for (int i = 1; i < levelCount; ++i)
@@ -1333,7 +1335,7 @@ void NiControllerSequence::AttachInterpolators(char cPriority)
 void NiControllerSequence::AttachInterpolatorsHooked(char cPriority)
 {
     auto* sequenceExtraData = SequenceExtraDatas::Get(this);
-    // activated (Activate, StartBlend, StartMorph): whatever ease it was last in is over
+    // Activating the sequence (Activate, StartBlend, StartMorph) ends whatever ease it was last in
     if (sequenceExtraData)
         sequenceExtraData->ease = Ease();
 
@@ -1521,14 +1523,14 @@ bool NiControllerSequence::ActivateNoReset(float fEaseInTime, bool bTransition, 
         return false;
     }
 
-    // eased back in: its own cycle again, not the one of the sequence it followed while easing out
+    // Easing back in: the sequence follows its own cycle again, not that of the sequence it followed while easing out
     StopFollowingPartner(fTime);
 
-    // fTime is the owner's animation time: m_fLastTime - m_fOffset is not, as Update clamps the time it stores to a
-    // start time still ahead, which then carried every later NoReset window further into the future
+    // fTime is the owner's animation time. m_fLastTime - m_fOffset is not usable here: Update clamps the stored time to
+    // a start time that is still ahead, which would push every later NoReset window further into the future.
     const auto fCurrentEaseTime = m_fEndTime - m_fStartTime;
 
-    // m_fStartTime unset: deactivated but not yet updated, nothing has eased out
+    // m_fStartTime unset: deactivated but not yet updated, so nothing has eased out
     auto fAnimTime = m_fStartTime == -NI_INFINITY ? 0.0f : fTime - m_fStartTime;
     fAnimTime = min(max(fAnimTime, 0.0f), fCurrentEaseTime); // floating point inaccuracy fix
     const auto fEaseOutProgress = fAnimTime / fCurrentEaseTime;
@@ -1831,8 +1833,8 @@ void NiControllerSequence::StopFollowingPartner(float fTime)
     m_pkPartnerSequence = nullptr;
     if (m_fLastTime == -NI_INFINITY || std::isnan(fTime))
         return;
-    // ComputeScaledTime adds the time since m_fLastTime to m_fWeightedLastTime, the time the partner gave it: restart the
-    // accumulation on an offset that continues from there (as Deactivate rebases its offset)
+    // ComputeScaledTime adds the time since m_fLastTime to m_fWeightedLastTime, which the partner set. Restart the
+    // accumulation from an offset that continues from there (as Deactivate rebases its offset).
     m_fOffset = m_fWeightedLastTime / m_fFrequency - fTime;
     m_fLastTime = -NI_INFINITY;
 }
@@ -1841,7 +1843,7 @@ void NiControllerSequence::ReleaseFollowers(float fTime) const
 {
     if (!m_pkOwner)
         return;
-    // only active sequences follow: Deactivate drops the partner
+    // Only active sequences follow a partner: Deactivate drops it
     for (auto* sequence : m_pkOwner->m_kActiveSequences)
     {
         if (sequence && sequence->m_pkPartnerSequence == this)
@@ -1849,11 +1851,11 @@ void NiControllerSequence::ReleaseFollowers(float fTime) const
     }
 }
 
-// The call in NiControllerSequence::Update (0xA34E7B), the engine's only one: every blend item's ease spinner comes from
-// here, shaped by its blend curve (BlendCurves)
+// The call in NiControllerSequence::Update (0xA34E7B), the engine's only one. Every blend item's ease spinner comes
+// from here, shaped by its blend curve (BlendCurves).
 void NiControllerSequence::SetInterpsWeightAndTime(float fWeight, float fEaseSpinner, float fTime)
 {
-    // a transition's spinner arrives multiplied into the weight, an ease's as the ease spinner; the other one is 1
+    // A transition's spinner arrives multiplied into the weight and an ease's arrives as the ease spinner. The other is 1.
     if (m_eState == TRANSSOURCE || m_eState == TRANSDEST)
     {
         if (m_fSeqWeight > 0.0f)
@@ -1990,8 +1992,8 @@ NiAVObject* NiControllerManager::GetTarget(const NiControllerSequence::InterpArr
     auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller);
     if (multiTarget && kItem.m_pkBlendInterp)
     {
-        // the controller writes slot i's blend interpolator into slot i's target; the palette only maps names and can hold
-        // another node of the same name or, after a biped part was removed, a freed one
+        // The controller writes blend interpolator i into target i. The palette only maps names: it can hold another
+        // node of the same name or, after a biped part was removed, a freed one.
         const auto blendInterps = multiTarget->GetBlendInterps();
         const auto offset = reinterpret_cast<UInt32>(kItem.m_pkBlendInterp) - reinterpret_cast<UInt32>(blendInterps.data());
         if (offset < blendInterps.size_bytes() && offset % sizeof(NiBlendTransformInterpolator) == 0)
@@ -2046,7 +2048,7 @@ NiMultiTargetTransformController* NiControllerManager::GetMultiTargetTransformCo
 
 NiControllerManager* NiControllerManager::FindForObject(const NiAVObject* object)
 {
-    // start above object: a biped part can carry a controller manager of its own (JohnnyGuitar keeps them)
+    // Starts above the object, since a biped part can carry a controller manager of its own
     for (auto* node = object->m_pkParent; node; node = node->m_pkParent)
     {
         auto* manager = static_cast<NiControllerManager*>(node->GetController(NiControllerManager::ms_RTTI));
@@ -2062,13 +2064,13 @@ void NiControllerManager::ForgetObjectRecurse(NiAVObject* object) const
     auto* multiTarget = GetMultiTargetTransformController();
     const auto forget = [&](NiAVObject* node)
     {
-        // only entries pointing at this very node: a skeleton node of the same name stays
+        // Only entries pointing at this very node: a skeleton node of the same name stays
         NiAVObject* entry;
         if (palette && node->m_pcName.data && palette->m_kHash.GetAt(node->m_pcName, entry) && entry == node)
             palette->m_kHash.RemoveAt(node->m_pcName);
         if (multiTarget)
         {
-            // NiMultiTargetTransformController::RemoveNodeRecurse clears the slot the same way, the slots keep their indices
+            // Clears the slot like NiMultiTargetTransformController::RemoveNodeRecurse. The slot indices stay valid.
             for (auto*& target : multiTarget->GetTargets())
             {
                 if (target == node)
@@ -2135,7 +2137,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
             DebugAssert(blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator
                 && extraInterpItem.interpolator == kItem.m_spInterpolator && kItem.m_spInterpolator != nullptr);
 
-            // also for an item removed at once (no weight on the Weapon node): the arms may still fade its sequence out
+            // Also done for an item that is removed at once (no weight on the Weapon node), since the arms may still fade its sequence out
             if (blendIndex != INVALID_INDEX)
                 if (WeaponHandBlend::Context weaponHandBlend(target, extraData); weaponHandBlend)
                     weaponHandBlend.CacheDetachedPose(extraInterpItem, *this, blendInterp->m_pkInterpArray[blendIndex].m_fUpdateTime);
@@ -2158,7 +2160,7 @@ void NiControllerSequence::DetachInterpolatorsHooked()
                     blendInterp->m_pkInterpArray[blendIndex].m_spInterpolator == kItem.m_spInterpolator &&
                     kItem.m_spInterpolator != nullptr);
                 extraInterpItem.debugState = kInterpDebugState::DetachedButSmoothing;
-                // the sequence may be removed and destroyed while this item fades out
+                // The sequence can be removed and destroyed while this item fades out
                 extraInterpItem.sequence = nullptr;
             }
             kItem.m_ucBlendIdx = INVALID_INDEX;
@@ -2242,7 +2244,7 @@ bool NiControllerSequence::DeactivateNoReset(float fEaseOutTime, bool bTransitio
     // fTime is the owner's animation time (see ActivateNoReset)
     const float fCurrentTime = fTime;
 
-    // m_fStartTime unset: activated but not yet updated, nothing has eased in
+    // m_fStartTime unset: activated but not yet updated, so nothing has eased in
     float fAnimTime = m_fStartTime == -NI_INFINITY ? 0.0f : fCurrentTime - m_fStartTime;
     fAnimTime = min(max(fAnimTime, 0.0f), m_fEndTime - m_fStartTime);
     // Calculate current ease level if we were easing in
@@ -2291,9 +2293,9 @@ __declspec(naked) void PoseSequenceIDTagHook()
     }
 }
 
-// BipedAnim::RemovePart (0x4AB020) calls this first, before it detaches the part now or queues the detach. Armor, gloves
-// and the Pip-Boy enter the palette (and the multi-target controller once a KF names one of their nodes) whenever
-// Animation::ReloadTargets runs while they are worn, yet the part is freed without either being told
+// BipedAnim::RemovePart (0x4AB020) calls this first, before it detaches the part now or queues the detach. Armor,
+// gloves and the Pip-Boy enter the palette (and the multi-target controller once a KF names one of their nodes) when
+// Animation::ReloadTargets runs while they are worn, but the engine frees the part without telling either of them.
 void __fastcall RemoveBipedPartHook(void* biped, void*, NiAVObject* part)
 {
     if (auto* manager = NiControllerManager::FindForObject(part))
@@ -2301,16 +2303,17 @@ void __fastcall RemoveBipedPartHook(void* biped, void*, NiAVObject* part)
     ThisStdCall(0x4AB130, biped, part); // BipedAnim::RemoveDecalPlacementVectors
 }
 
-// NiNode::~NiNode (0xA5E930) releases the children before ~NiObjectNET releases the extra data and then the controllers.
-// A NiControllerManager on the node dies last (one owned by its scene alone, e.g. the gore effect FXGorePopHead01), and
-// ~NiControllerSequence would deactivate its active sequences then, with the palette and the multi-target controller
-// pointing at freed nodes. Making that same call here, before anything is released, runs it on a whole scene
+// NiNode::~NiNode (0xA5E930) releases the children before ~NiObjectNET releases the extra data and then the
+// controllers. A NiControllerManager on the node therefore dies last (for example one owned by its scene alone, like
+// the gore effect FXGorePopHead01), and ~NiControllerSequence would deactivate its active sequences when the palette
+// and the multi-target controller already point at freed nodes. This hook deactivates them first, before anything is
+// released, which also covers a whole scene.
 void __fastcall DeactivateSequencesOfDyingNode(NiNode* node)
 {
     auto* manager = static_cast<NiControllerManager*>(node->GetController(NiControllerManager::ms_RTTI));
     if (!manager)
         return;
-    // Deactivate leaves the set as it is (NiControllerManager::Update drops inactive sequences later)
+    // Deactivate leaves the set unchanged (NiControllerManager::Update drops inactive sequences later)
     for (auto* sequence : manager->m_kActiveSequences.ToSpan())
     {
         if (sequence && sequence->m_eState != NiControllerSequence::INACTIVE)
@@ -2335,10 +2338,11 @@ __declspec(naked) void NiNodeDestructorHook()
     }
 }
 
-// BSAnimGroupSequence::Deactivate (0x4EFDC0): when a holster, equip or unequip ends on an actor whose bone LOD has switched
-// bones off (actors the camera can't see), the engine updates just those bones once, at the sequence's last time, so they
-// take its final pose: the Weapon bone its holster. They were not evaluated while it played, so their smoothed weights
-// still favoured the animations from before it; smoothing this update left the holstered weapon partway to the hand
+// BSAnimGroupSequence::Deactivate (0x4EFDC0): when a holster, equip or unequip ends on an actor whose bone LOD has
+// switched bones off (actors the camera can't see), the engine updates just those bones once, at the sequence's last
+// time, so they take its final pose (the Weapon bone its holster). They were not evaluated while the sequence played,
+// so their smoothed weights still favour the earlier animations. Smoothing this update would leave the holstered
+// weapon partway to the hand, so it is disabled for it.
 static UInt32 uiUpdateLODBonesAddr;
 void __fastcall UpdateLODBonesHook(NiMultiTargetTransformController* controller, void*, float fTime, bool bSelective)
 {
@@ -2366,7 +2370,7 @@ namespace NiHooks
         WriteRelJump(0xA30900, &NiControllerSequence::AttachInterpolatorsHooked);
         WriteRelJump(0xA30540, &NiControllerSequence::DetachInterpolatorsHooked);
         ReplaceVTableEntry(0x1097598, &NiBlendTransformInterpolator::UpdateHooked);
-        ReplaceVTableEntry(0x10964D8, &NiMultiTargetTransformController::UpdateHooked); // blend the weapon after the arms
+        ReplaceVTableEntry(0x10964D8, &NiMultiTargetTransformController::UpdateHooked); // blends the weapon after the arms
         WriteRelCall(0xA34E7B, &NiControllerSequence::SetInterpsWeightAndTime); // make it also update values even if single interpolator
         WriteRelCall(0x4AB03A, &RemoveBipedPartHook);
         WriteRelJump(0xA5E930, &NiNodeDestructorHook);
@@ -2389,7 +2393,7 @@ namespace NiHooks
     // override stewie's tweaks
     void WriteDelayedHooks()
     {
-        // after Stewie's NVAC, which replaces this call with its own controller update
+        // Written after Stewie's NVAC, which replaces this call with its own controller update
         WriteRelCall(0x4EFE53, &UpdateLODBonesHook, &uiUpdateLODBonesAddr);
 #if _DEBUG
         WriteRelCall(0x4F0087, &NiMultiTargetTransformController::_Update);

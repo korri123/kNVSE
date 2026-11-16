@@ -18,13 +18,13 @@
 
 namespace
 {
-	// The Animations that have a state, and those of them with polled sets: for the main thread to go through
+	// Every Animation that has a state, and those with polled sets. The main thread walks these lists.
 	std::mutex s_statesMutex;
 	std::vector<ActorOverrides*> s_states;
 	std::vector<ActorOverrides*> s_polledStates;
 
-	// The AnimSequenceSingle of the KF being loaded, for Animation::InitGroupSpeed: it looks the group up in the
-	// Animation's map, which an override is never in
+	// The AnimSequenceSingle of the KF being loaded, read by the Animation::InitGroupSpeed lookup hook. The group is
+	// not in the Animation's map, because an override never is.
 	thread_local AnimSequenceBase* t_loadingBase = nullptr;
 
 	bool __fastcall InitGroupSpeedLookupHook(NiTPointerMap<AnimSequenceBase*>* map, void*, UInt16 groupId, AnimSequenceBase** base)
@@ -37,18 +37,19 @@ namespace
 		return GameFuncs::NiTPointerMap_Lookup(map, groupId, base);
 	}
 
-	// Animation::GroupLoaded where the engine decides whether to load the KFs of a weapon type for an actor (attaching
-	// a weapon while its 3D loads on a task thread, queueing an item's files): asked of the Animation's own map only.
-	// An override of the weapon's Equip counted as "loaded", and the actor never got the type's other animations
+	// Animation::GroupLoaded for the places where the engine decides whether to load the KFs of a weapon type for an
+	// actor (attaching a weapon while its 3D loads on a task thread, queueing an item's files). Only the Animation's own
+	// map counts. If an override of the weapon's Equip counted as loaded, the actor would never get the other
+	// animations of that weapon type.
 	bool __fastcall VanillaGroupLoaded(AnimData* animData, void*, UInt16 groupId)
 	{
 		AnimSequenceBase* base = nullptr;
 		return GameFuncs::NiTPointerMap_Lookup(animData->mapAnimSequenceBase, groupId, &base);
 	}
 
-	// The threads that load in the background: IOManager's task threads and ModelLoader's clone thread. An actor's 3D is
-	// built there (QueuedReference::BackgroundClone -> Actor::Load3D), which asks about its animations while the main
-	// thread runs the game
+	// True on the background loading threads: IOManager's task threads and ModelLoader's clone thread. An actor's 3D is
+	// built there (QueuedReference::BackgroundClone, Actor::Load3D) and asks about its animations while the main thread
+	// runs the game.
 	bool IsLoaderThread()
 	{
 		thread_local int t_kind = 0;
@@ -71,9 +72,9 @@ namespace
 		return t_kind == 2;
 	}
 
-	// Special and dynamic idles (TESIdleForm, hit reactions, Pip-Boy) all share one anim group: an override replaces only
-	// the idle whose KF has its file name. Animation::SpecialIdlePlay adds the idle's sequence to the map before playing
-	// the group.
+	// Special and dynamic idles (TESIdleForm, hit reactions, Pip-Boy) share one anim group. An override replaces only
+	// the idle whose KF has the override's file name. Animation::SpecialIdlePlay adds the idle's sequence to the map
+	// before playing the group.
 	std::optional<std::string_view> GetPlayingIdleFileStem(AnimData* animData, UInt16 groupId)
 	{
 		if (groupId != kAnimGroup_DynamicIdle && groupId != kAnimGroup_SpecialIdle)
@@ -90,8 +91,8 @@ namespace
 		return sv::equals_ci(sv::get_file_stem(animPath.path), idleFileStem);
 	}
 
-	// Aim, AimUp and AimDown (and their IS groups, the attacks, the throws) are three groups in a row that play together:
-	// the first of each three
+	// Aim, AimUp and AimDown (and their IS variants, the attacks and the throws) are three consecutive groups that play
+	// together. Returns the first group of the three.
 	std::optional<UInt32> GetTripleBase(UInt16 groupId)
 	{
 		const UInt32 baseGroupId = groupId & 0xFF;
@@ -104,7 +105,7 @@ namespace
 		return std::nullopt;
 	}
 
-	// Which of a set's files can play for the group now
+	// Decides which of a set's files can play for the group right now.
 	struct PathFilter
 	{
 		const SavedAnims& set;
@@ -128,7 +129,7 @@ namespace
 
 		bool operator()(const AnimPath& animPath) const
 		{
-			// start and stop animations only play through MovementTransitions and AimTransitions
+			// Start and stop animations only play through MovementTransitions and AimTransitions.
 			if (animPath.isStartAnim || animPath.isStopAnim || !set.IsFileEnabled(animPath))
 				return false;
 			if (idleFileStem && !IsIdleFileStem(animPath, *idleFileStem))
@@ -154,7 +155,7 @@ namespace
 	Choice ChoosePath(SavedAnims& set, UInt16 groupId, AnimData* animData, ActorOverrides* state)
 	{
 		const PathFilter filter(set, groupId, animData, state);
-		// a set of one file plays it, whatever the reload's kind
+		// A set with one file always plays it, whatever the reload's kind.
 		if (set.anims.size() == 1 && !filter.idleFileStem && !set.hasTransitionAnims) [[likely]]
 			return { (state && state->HasFailed(set.anims[0].path.data())) || !set.IsFileEnabled(set.anims[0]) ? nullptr : &set.anims[0] };
 
@@ -176,7 +177,7 @@ namespace
 			return { nth(set.hasOrder ? 0 : GetRandomUInt(count)) };
 
 		const auto tripleBase = set.hasOrder ? std::nullopt : GetTripleBase(groupId);
-		// the up and down groups follow the variant their aim (attack) played
+		// The up and down groups follow the variant that their aim (attack) group played.
 		if (tripleBase && ((groupId & 0xFF) - *tripleBase) % 3 != 0 && state->tripleIndex < count)
 			return { nth(state->tripleIndex), nullptr, state->tripleIndex };
 
@@ -190,7 +191,7 @@ namespace
 		return { variant->next, &*variant, variant->nextIndex };
 	}
 
-	// The chosen file plays: the next play chooses again
+	// Marks the chosen file as played, so the next play chooses again.
 	void Consume(const Choice& choice, UInt16 groupId, ActorOverrides* state)
 	{
 		if (!state)
@@ -204,11 +205,13 @@ namespace
 		}
 	}
 
-	// What Animation::AddAnimation (0x490500) does with a KF, but for its entry in the Animation's map of groups: the
-	// sequence is the KF model's own while nothing else refers to it, else a clone; an AnimSequenceSingle holds it (and
-	// the use of the KF model that loading counted); it joins the controller manager; the group's speed is taken from
-	// its root motion. kNVSE used to call AddAnimation with the Animation's map swapped for an empty one, under a lock
-	// that kept other kNVSE loads out but not the engine.
+	// Does what Animation::AddAnimation (0x490500) does with a KF, except for the entry in the Animation's map of
+	// groups:
+	//  - the sequence is the KF model's own while nothing else refers to it, otherwise a clone
+	//  - an AnimSequenceSingle holds it, together with the KF model use counted by loading
+	//  - it joins the controller manager
+	//  - the group's speed is taken from its root motion
+	// Safe to call from several threads, unlike calling AddAnimation with a swapped map.
 	Overrides::LoadedAnim CreateSequence(const char* path, AnimData* animData)
 	{
 		auto* manager = animData->controllerManager;
@@ -216,7 +219,7 @@ namespace
 		AnimSequenceBase* base;
 		TESAnimGroup* animGroup;
 		{
-			// one thread at a time decides who has the KF model's own sequence
+			// One thread at a time decides who gets the KF model's own sequence.
 			std::scoped_lock lock(KFLoader::Mutex());
 			auto* kfModel = KFLoader::AcquireLocked(path);
 			const auto fail = [&](const std::string& reason) -> Overrides::LoadedAnim
@@ -233,7 +236,7 @@ namespace
 			const auto baseGroupId = animGroup->groupID & 0xFF;
 			if (baseGroupId == kAnimGroup_Invalid)
 				return fail(FormatString("Failed to load anim %s: its sequence name is not an anim group", path));
-			// the engine has no Clamp animations in locomotion; start and stop animations play once
+			// The engine does not support Clamp animations in locomotion. Start and stop animations play once.
 			if (baseGroupId >= kAnimGroup_Forward && baseGroupId <= kAnimGroup_TurnRight && source->m_eCycleType == NiControllerSequence::CLAMP)
 			{
 				const static NiFixedString kAllowClamp = "allowClampInLocomotion";
@@ -244,8 +247,8 @@ namespace
 			if (IS_TYPE(source, BSAnimGroupSequence) && source->m_uiRefCount == 1)
 			{
 				sequence = source;
-				// nothing but the KF model refers to it, so no manager has it: not one that was removed without its
-				// owner being cleared either
+				// Only the KF model refers to it, so no manager has it. That includes a manager that removed it without
+				// clearing its owner.
 				sequence->m_pkOwner = nullptr;
 			}
 			else
@@ -297,7 +300,7 @@ ActorOverrides* ActorOverrides::Get(AnimData* animData)
 	auto& state = kAnimationExtraData::GetOrCreate(manager->m_pkTarget)->overrides;
 	if (state.animData != animData) [[unlikely]]
 	{
-		// the node had another Animation: what is kept is of that one's controller manager
+		// The node had another Animation, so the stored state belongs to that Animation's controller manager.
 		if (state.animData)
 			state.Release();
 		state.animData = animData;
@@ -323,10 +326,10 @@ void ActorOverrides::Release()
 		std::scoped_lock lock(KFLoader::Mutex());
 		for (auto& entry : loaded)
 		{
-			// read for the player's attack loops (DecreaseAttackTimer): its sequence may be freed below
+			// Read by the player's attack loops (DecreaseAttackTimer), and the sequence may be freed below.
 			if (g_lastLoopSequence == entry.sequence.data)
 				g_lastLoopSequence = nullptr;
-			// ~AnimSequenceSingle: releases the sequence and the use of its KF model
+			// ~AnimSequenceSingle releases the sequence and the KF model use.
 			entry.base->Destroy(true);
 			entry.sequence = nullptr;
 		}
@@ -356,8 +359,8 @@ void ActorOverrides::Unload()
 	for (auto& entry : loaded)
 	{
 		BSAnimGroupSequence* sequence = entry.sequence;
-		// The sections keep their sequence after it stopped playing, and pLastMovementSequence the one ClearGroup
-		// deactivated: once Release frees the sequence, Animation::Update would read it
+		// The sections keep their sequence after it stops playing, and pLastMovementSequence keeps the one that ClearGroup
+		// deactivated. Clear both before Release frees the sequence, or Animation::Update would read freed memory.
 		for (auto section = 0; section < static_cast<int>(std::size(animData->animSequence)); ++section)
 		{
 			if (animData->animSequence[section] == sequence)
@@ -373,8 +376,8 @@ void ActorOverrides::Unload()
 			NiUpdateData updateData{};
 			manager->Update(&updateData);
 		}
-		// NiControllerManager::RemoveSequence: its targets are cleared, followers released and kNVSE's data of it dropped
-		// (SequenceExtraDatas' hook there)
+		// NiControllerManager::RemoveSequence clears the sequence's targets, releases followers and drops kNVSE's data
+		// for it (SequenceExtraDatas' hook there).
 		GameFuncs::NiControllerManager_RemoveSequence(manager, sequence);
 	}
 	Release();
@@ -402,10 +405,10 @@ void ActorOverrides::Refresh(Actor* actor, bool firstPerson)
 	memoGroups.clear();
 	memos.clear();
 	candidates.clear();
-	// The player's weapon, or the sets registered for it, changed: its KFs are read ahead by a worker thread, so
-	// that the first draw, aim, shot and reload do not each read a file on the main thread. Other actors' load
-	// when they first play, as they share most of them and hold few weapons for long. The new batch is queued
-	// before the old one is dropped: what both have stays loaded
+	// The player's weapon, or the sets registered for it, changed. A worker thread reads its KFs ahead of time so the
+	// first draw, aim, shot and reload do not each read a file on the main thread. Other actors load KFs on first play,
+	// since they share most of them and hold few weapons for long. The new batch is queued before the old one is
+	// dropped, so files in both stay loaded.
 	if (actor == g_thePlayer)
 	{
 		std::vector<const char*> paths;
@@ -459,7 +462,7 @@ void ActorOverrides::UpdatePolled()
 		polled.clear();
 		return;
 	}
-	// playing a group below tracks its polled sets again: what stays is tracked again too
+	// Playing a group below tracks its polled sets again, so sets that stay are tracked again too.
 	polledScratch.clear();
 	std::swap(polled, polledScratch);
 	for (const auto [set, groupId] : polledScratch)
@@ -471,14 +474,14 @@ void ActorOverrides::UpdatePolled()
 		auto* curAnim = animData->animSequence[animInfo->sequenceType];
 		if (!curAnim || !curAnim->animGroup)
 			continue;
-		// only while the group is the one playing in its section
+		// Only while the group is the one playing in its section.
 		const UInt16 currentGroupId = curAnim->animGroup->groupID;
 		if ((currentGroupId & 0xFF) != (groupId & 0xFF) || !AnimGroup::FallbacksTo(animData, groupId, currentGroupId))
 			continue;
-		// a start or stop animation of the group plays (TransitionAnims), which can come from another set than the
-		// group's animation (one with only those): playing the group for this set would start it over on every frame
-		// (a walk easing out and the player moving on for as long, an aim transition asked to turn around). The
-		// condition picks the animation it goes on to
+		// A start or stop animation of the group is playing (TransitionAnims). It can come from a different set than the
+		// group's own animation (a set with only those), and playing the group for this set would restart it on every
+		// frame, for example a walk easing out while the player keeps moving, or an aim transition being turned around.
+		// The condition decides which animation it continues with.
 		if (TransitionAnims::Of(curAnim) != TransitionKind::None)
 		{
 			Track(*set, groupId);
@@ -501,14 +504,14 @@ void ActorOverrides::UpdatePolled()
 			if (result)
 				Track(*set, groupId);
 			else
-				// the set's animation plays and its condition no longer holds: play what the group has now (which tracks
-				// this set again if it is tried)
+				// The set's animation is playing and its condition no longer holds. Play what the group resolves to now
+				// (which tracks this set again if it is tried).
 				playGroup();
 			continue;
 		}
 		Track(*set, groupId);
-		// Another animation plays and the condition holds now: play the group, if that picks this set. A set above it
-		// whose conditions hold too keeps playing (the group used to be played again every frame for as long)
+		// Another animation is playing and the condition holds now. Play the group if that picks this set. If a set above
+		// it also passes, it keeps playing, so the group is not replayed every frame.
 		if (result && Overrides::Find(groupId, animData) == set)
 			playGroup();
 	}
@@ -517,8 +520,8 @@ void ActorOverrides::UpdatePolled()
 
 namespace
 {
-	// What Overrides::Find makes of one candidate set. Runs its condition script; with trackFor, a set with
-	// pollCondition is tracked for the group
+	// Decides whether Overrides::Find can use one candidate set. Runs its condition script. With trackFor, a set with
+	// pollCondition is tracked for the group.
 	Overrides::Verdict Judge(SavedAnims& set, Actor* actor, UInt16 groupId, TransitionKind transition,
 		const std::optional<std::string_view>& idleFileStem, ActorOverrides* trackFor)
 	{
@@ -544,8 +547,8 @@ namespace
 			auto* conditionScript = Overrides::GetCondition(set);
 			if (!conditionScript)
 				return ConditionFailed;
-			// start and stop animations are looked up when one is due: the poll plays the set's group.
-			// Tracked whether or not the condition holds, so that it can come to hold
+			// Start and stop animations are looked up when one is due, and the poll plays the set's group.
+			// Tracked whether or not the condition holds, so that it can start to hold.
 			if (set.pollCondition && transition == TransitionKind::None && trackFor)
 				trackFor->Track(set, groupId);
 			NVSEArrayVarInterface::Element result;
@@ -568,9 +571,9 @@ SavedAnims* Overrides::Find(UInt16 groupId, AnimData* animData, TransitionKind t
 
 	auto* actor = animData->actor;
 	auto* state = ActorOverrides::Get(animData);
-	// A copy: a condition script may ask about the actor's animations, which can move the state's. On the stack for up to
-	// 128 sets (512 bytes): Idle on a third person skeleton with Idle Variety's global conditional sets has ~41, looked up
-	// several times per frame
+	// Copies the candidates, because a condition script may ask about the actor's animations, which can change the
+	// state's list. The copy lives on the stack for up to 128 sets (512 bytes). It is looked up several times per frame
+	// and Idle on a third person skeleton can have around 40 global conditional sets.
 	constexpr size_t kInline = 128;
 	SavedAnims* inlineSets[kInline];
 	std::vector<SavedAnims*> moreSets;
@@ -631,9 +634,9 @@ Overrides::LoadedAnim Overrides::Load(std::string_view path, AnimData* animData)
 		auto* manager = animData->controllerManager;
 		if (sequence->m_pkOwner == manager)
 			return { sequence, entry->base };
-		// The engine removed the sequence from the manager: Animation::AnimIdleFree removes the sequence a special or
-		// dynamic idle played, which is this one when it replaced the idle's KF. Started without an owner it would never
-		// update, and the idle that plays it would never end
+		// The engine removed the sequence from the manager: Animation::AnimIdleFree removes the sequence that a special
+		// or dynamic idle played, which is this one when it replaced the idle's KF. Without an owner it would never
+		// update, and the idle playing it would never end.
 		if (!sequence->m_pkOwner && manager->AddSequence(sequence, NiFixedString(), true))
 			return { sequence, entry->base };
 		ERROR_LOG(FormatString("Failed to add anim %s back to the controller manager of actor %X", path.data(),
@@ -670,7 +673,7 @@ const AnimPath* Overrides::GetNextPath(SavedAnims& set, UInt16 groupId, AnimData
 Overrides::LoadedAnim Overrides::LoadNext(SavedAnims& set, UInt16 groupId, AnimData* animData)
 {
 	auto* state = ActorOverrides::Get(animData);
-	// a file that does not load is passed over from then on: the next one is chosen
+	// A file that does not load is skipped from then on, so the next one is chosen.
 	for (auto attempts = set.anims.size(); attempts; --attempts)
 	{
 		const auto choice = ChoosePath(set, groupId, animData, state);
@@ -734,7 +737,7 @@ void Overrides::OnAnimDataDelete(AnimData* animData)
 
 void Overrides::UpdatePolled()
 {
-	// the states can list themselves while a group plays
+	// States can list themselves while a group plays, so iterate over a copy.
 	static std::vector<ActorOverrides*> s_updating;
 	{
 		std::scoped_lock lock(s_statesMutex);

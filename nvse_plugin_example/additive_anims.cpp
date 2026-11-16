@@ -98,7 +98,7 @@ void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSeque
 
     auto* sequenceExtraData = SequenceExtraDatas::GetOrCreate(additiveSequence);
     if (!sequenceExtraData)
-        return; // removed from its manager (kNVSE's anim cache can still hold it), so it can't be activated either
+        return; // The sequence was removed from its manager (kNVSE's anim cache can still hold it), so it can't be activated
 
     if (sequenceExtraData->additiveMetadata == metadata)
         return;

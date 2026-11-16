@@ -44,7 +44,7 @@ namespace
         return reinterpret_cast<size_t>(hJIP) + aiAddress - 0x10000000;
     }
     
-    // JIP's ReloadBipedAnim detaches the parts itself instead of through BipedAnim::RemovePart
+    // JIP's ReloadBipedAnim detaches the parts itself instead of using BipedAnim::RemovePart.
     template <UInt32 ReturnAddress>
     void __fastcall DetachChildHook(NiNode* pNode, void*, NiAVObject* pObject)
     {
@@ -83,9 +83,9 @@ namespace
         return opcode != 0x66;
     }
     
-    // based on 0x10008EE0, JIP's hook at 0x494E19 in Animation::StartGroup, for the plays kNVSE does without StartGroup.
-    // JIP keys and passes the base group (StartGroup's TESAnimGroup::GetType(aeGroup), [ebp-0x28]): AnimGroupID is a
-    // UInt8, so callers' casts of a full group ID drop the weapon type / sneak bits
+    // Based on the JIP function at 0x10008EE0, which JIP calls from its hook at 0x494E19 in Animation::StartGroup. Used for plays
+    // that kNVSE does without StartGroup. JIP keys on the base group (StartGroup's TESAnimGroup::GetType(aeGroup),
+    // [ebp-0x28]). AnimGroupID is a UInt8, so casting a full group ID drops the weapon type and sneak bits.
     void SetAnimGroupEventHook(const AnimData* animData, AnimGroupID animGroupId)
     {
         if (!hJIP || !IsAnimGroupEventLoaded() || animData == g_thePlayer->firstPersonAnimData)

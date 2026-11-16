@@ -12,16 +12,16 @@ struct AnimData;
 // reload, a tool in the hand, ...):
 //   "spawn: <bone>, <mesh>[, <parent>]"   from this key on, a copy of <mesh> is shown at <bone>
 //   "despawn: <bone>"                     from this key on, it isn't
-// <mesh> is a NIF under Data\Meshes ("Weapons\2HandAutomatic\ServiceRifle.nif"), or the name of a node of the actor's 3D
-// to copy ("##Clip", the Service Rifle's magazine, ...). <bone> is a node kNVSE adds to the skeleton, as a child of
-// <parent> (default "Weapon"), when the animation is added to it (its first play): the KF animates it by that name like
-// any bone, relative to <parent>, so in the rig it is a bone of that name under <parent> with the mesh on it at no
-// offset (the mesh's origin is the bone). Without a track for <bone> in the KF the mesh sits at <parent>'s origin.
-// <bone> can also be a node the skeleton already has ("Bip01 L Hand"): then nothing is added and the mesh is attached to
-// that node. What is shown follows the animation's time: the latest of the bone's spawn/despawn keys at or before it,
-// nothing before the first. So loops and restarts show it again, and it goes away when the animation stops or is
-// interrupted. Player only (first and third person skeletons): other actors play the animation without the mesh.
-// Node names in the copy get "<bone>:" in front, so they never shadow the names the KFs and the engine look up.
+// <mesh> is a NIF under Data\Meshes ("Weapons\2HandAutomatic\ServiceRifle.nif"), or the name of a node in the actor's
+// 3D to copy (for example "##Clip", a weapon's magazine).
+// <bone> is a node that kNVSE adds to the skeleton as a child of <parent> (default "Weapon") when the animation is
+// first added to it. The KF animates it by name like any bone, relative to <parent>, and the mesh sits at the bone's
+// origin. Without a track for <bone> in the KF, the mesh sits at <parent>'s origin. <bone> can also be a node the
+// skeleton already has ("Bip01 L Hand"); then nothing is added and the mesh is attached to that node.
+// What is shown follows the animation time: the latest spawn/despawn key of the bone at or before it, nothing before
+// the first. Loops and restarts show it again, and it disappears when the animation stops or is interrupted.
+// Player only (first and third person skeletons); other actors play the animation without the mesh.
+// Node names in the copy get a "<bone>:" prefix so they never shadow names the KFs and the engine look up.
 //
 // The bone is in the skeleton before the engine binds the KF (NiControllerSequence::StoreTargets), so the engine animates
 // it like any other: SkeletonNodes adds it and keeps it through target reloads. The keys are parsed once, into the

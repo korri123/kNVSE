@@ -16,7 +16,7 @@ namespace KnvseMenu
 {
 	namespace
 	{
-		// unused by the game (its default case of MenuManager::CreateMenuByClass), and by Stewie's Tweaks (1069)
+		// An ID not used by the game (the default case of MenuManager::CreateMenuByClass) or by Stewie's Tweaks (1069).
 		constexpr UInt32 kMenuId = 1072;
 		constexpr auto kXmlPath = R"(Data\Menus\kNVSE\knvse_menu.xml)";
 		constexpr int kNumPages = 5;
@@ -129,7 +129,7 @@ namespace KnvseMenu
 				pages[4] = MakeProblemsPage();
 			}
 
-			// The game destroys the menu once it has faded out, however it was closed: the pages keep their changes
+			// The game destroys the menu after it fades out, however it was closed. Pages keep their changes.
 			void Destructor(bool free) override
 			{
 				if (s_open == this)

@@ -12,8 +12,8 @@
 
 namespace
 {
-    // The player's adds and target rebuilds were all on the main thread in the paths measured (equip, unequip, an
-    // override's first play); not every path was
+    // Only valid for the player's skeletons, whose node adds and target rebuilds run on the main thread (equip,
+    // unequip, an override's first play).
     bool CanAdd(const NiObjectNET* root)
     {
         if (!SkeletonNodes::IsPlayerSkeleton(root))

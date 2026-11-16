@@ -34,11 +34,11 @@ namespace sv
 
     inline bool equals_ci(std::string_view left, std::string_view right)
     {
-        // views need not be null terminated: compare exactly their characters
+        // Views need not be null terminated, so compare exactly their characters.
         return left.size() == right.size() && _strnicmp(left.data(), right.data(), left.size()) == 0;
     }
 
-    // without leading and trailing spaces and tabs
+    // Returns the view without leading and trailing spaces and tabs.
     inline std::string_view trim(std::string_view text)
     {
         const auto first = text.find_first_not_of(" \t");

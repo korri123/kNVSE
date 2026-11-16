@@ -46,7 +46,7 @@ namespace OverridePrefs
 				s_changed = true;
 		}
 
-		// The form's entry is dropped once it holds no choice. Under the lock
+		// Drops the form's entry once it holds no choices. Called under the lock.
 		template <typename F>
 		void ChangeForm(std::string_view formKey, F&& change)
 		{
@@ -94,7 +94,8 @@ namespace OverridePrefs
 			ERROR_LOG(FormatString("%s could not be read, the AnimGroupOverride choices made in the kNVSE menu are not applied: %s", kPath, e.what()));
 		}
 		std::scoped_lock lock(s_mutex);
-		// choices made in the menu and not saved yet (it is open: kNVSEReset from its Reload button) are newer
+		// Choices made in the menu and not saved yet are newer. This happens when kNVSEReset is called from the menu's
+		// Reload button.
 		if (s_changed)
 			return;
 		s_prefs = std::move(prefs);

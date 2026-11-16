@@ -3,13 +3,13 @@
 #include <atomic>
 #include <string_view>
 
-// Registers the animations of Data\Meshes\AnimGroupOverride (folders named after mods, JSON files, BSAs)
+// Registers the animations of Data\Meshes\AnimGroupOverride (folders named after mods, JSON files, BSAs).
 void LoadFileAnimPaths();
-// The string in the game's global string table (NiGlobalStringTable), never released
+// Returns the string in the game's global string table (NiGlobalStringTable). It is never released.
 std::string_view AddStringToPool(std::string_view str);
 
-// The files are registered by a thread of their own while the game goes on loading to the main menu. Whoever needs
-// the override sets before it is done waits for it
+// The files are registered by a dedicated thread while the game continues loading to the main menu. Anything that
+// needs the override sets before that finishes waits for it.
 namespace FileAnimations
 {
 	extern std::atomic<bool> g_loaded;
@@ -19,10 +19,10 @@ namespace FileAnimations
 		return g_loaded.load(std::memory_order_acquire);
 	}
 
-	// Main thread, once the forms are loaded
+	// Main thread, once the forms are loaded.
 	void StartLoading();
-	// Any thread
+	// Any thread.
 	void WaitUntilLoaded();
-	// Whether the files are registered, without waiting. Main thread
+	// True if the files are registered. Does not wait. Main thread.
 	bool CheckLoaded();
 }

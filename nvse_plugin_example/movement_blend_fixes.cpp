@@ -30,8 +30,8 @@ void FixJumpLoopMovementSpeed(AnimData* animData, BSAnimGroupSequence* pkSequenc
 
 namespace
 {
-	// Walk and run cycles (3rd person): the movement groups whose variants (weapon type, sneak, power armor: the group ID's
-	// high byte) are the same alternating steps
+	// Returns true for walk and run cycles (3rd person). Weapon type, sneak and power armor variants (the group ID's
+	// high byte) of a movement group alternate steps in the same way.
 	bool IsGaitCycle(const BSAnimGroupSequence* sequence)
 	{
 		if (!sequence->animGroup || sequence->m_eCycleType != NiControllerSequence::LOOP ||
@@ -45,7 +45,7 @@ namespace
 	constexpr unsigned int kLegBones = 3;
 	using Legs = std::array<std::array<NiAVObject*, kLegBones>, 2>;
 	using LegInterpolators = std::array<std::array<NiInterpolator*, kLegBones>, 2>;
-	// both feet relative to their own mean over the cycle, in the thighs' parent space
+	// Both feet relative to their own mean over the cycle, in the thighs' parent space
 	using FeetCycle = std::array<std::array<NiPoint3, 2>, kGaitSamples>;
 
 	bool GetLegs(AnimData* animData, Legs& legs)
@@ -79,8 +79,8 @@ namespace
 		return true;
 	}
 
-	// Interpolators are shared by every clone of a KF and cache their last evaluation by time: sampling other times must
-	// not leave that cache claiming them (as WeaponHandBlend does)
+	// Interpolators are shared by every clone of a KF and cache their last evaluation time. Sampling other times must
+	// not leave a stale cache behind (WeaponHandBlend does the same).
 	void ResetLastTimes(const LegInterpolators& interpolators)
 	{
 		for (const auto& legInterpolators : interpolators)
@@ -88,7 +88,8 @@ namespace
 				interpolator->m_fLastTime = -NI_INFINITY;
 	}
 
-	// A node's local transform as the interpolator animates it at fTime; channels it does not animate keep the node's
+	// Returns a node's local transform as the interpolator animates it at fTime. Channels the interpolator doesn't
+	// animate keep the node's current value.
 	NiTransform SampleLocal(NiInterpolator* interpolator, NiAVObject* node, float fTime)
 	{
 		NiTransform result = node->m_kLocal;
@@ -130,7 +131,7 @@ namespace
 		});
 	}
 
-	// The left foot relative to the right one: where the feet are in the step, whatever the pelvis does
+	// The left foot relative to the right one: where the feet are in the step, independent of the pelvis
 	NiPoint3 GetStride(const std::array<NiPoint3, 2>& feet)
 	{
 		return feet[0] - feet[1];
@@ -164,8 +165,8 @@ namespace
 		return true;
 	}
 
-	// The fraction of a cycle of the lowest of costs sampled evenly over it, between samples: the vertex of the parabola
-	// through the lowest sample and its neighbours
+	// Returns the fraction of a cycle at which the evenly sampled costs are lowest, interpolated between samples with
+	// the vertex of the parabola through the lowest sample and its neighbours.
 	float FindCyclicMinimum(const std::array<float, kGaitSamples>& costs)
 	{
 		const auto best = static_cast<unsigned int>(std::ranges::min_element(costs) - costs.begin());
@@ -177,9 +178,9 @@ namespace
 		return fFraction - std::floor(fFraction);
 	}
 
-	// The fraction of a cycle by which the destination's steps lag the source's: where the feet of both cycles match
-	// best. Variants of a gait don't share where their cycle starts (h2hforward, sneakmtforward and 2hhbackward are half
-	// a cycle from mtforward/mtbackward) nor how their footstep text keys are placed.
+	// Returns the fraction of a cycle by which the destination's steps lag the source's, i.e. where the feet of both
+	// cycles match best. Gait variants don't share where their cycle starts (h2hforward, sneakmtforward and
+	// 2hhbackward are half a cycle from mtforward/mtbackward) or how their footstep text keys are placed.
 	float FindCycleOffset(const FeetCycle& source, const FeetCycle& dest)
 	{
 		std::array<float, kGaitSamples> costs{};
@@ -197,14 +198,14 @@ namespace
 		return FindCyclicMinimum(costs);
 	}
 
-	// The time in pkDest's cycle at which its steps match where pkSource is in its cycle, or NAN when either is not a
-	// variant of the same walk/run cycle with leg tracks
+	// Returns the time in pkDest's cycle at which its steps match where pkSource is in its cycle. Returns NAN if either
+	// is not a variant of the same walk/run cycle, or lacks leg tracks.
 	float FindMatchingGaitTime(AnimData* animData, const BSAnimGroupSequence* pkSource, const BSAnimGroupSequence* pkDest)
 	{
 		if (!IsGaitCycle(pkSource) || !IsGaitCycle(pkDest) || pkSource->animGroup->GetBaseGroupID() != pkDest->animGroup->GetBaseGroupID())
 			return NAN;
 		if (pkSource->m_fLastTime == -NI_INFINITY)
-			return NAN; // not evaluated since it was started: no time of its own yet
+			return NAN; // Not evaluated since it started, so it has no time of its own yet
 		Legs legs;
 		FeetCycle source, dest;
 		if (!GetLegs(animData, legs) || !SampleFeet(pkSource, legs, source) || !SampleFeet(pkDest, legs, dest))
@@ -216,8 +217,8 @@ namespace
 		return pkDest->m_fBeginKeyTime + fPhase * (pkDest->m_fEndKeyTime - pkDest->m_fBeginKeyTime);
 	}
 
-	// The time in the gait's cycle whose stride matches the skeleton's pose best, or NAN without leg tracks. For a gait
-	// following a start or stop animation: those are no cycle to line up with, only a pose to continue from
+	// Returns the time in the gait's cycle whose stride best matches the skeleton's pose, or NAN without leg tracks.
+	// Used after a start or stop animation, which is a pose to continue from, not a cycle to line up with.
 	float FindGaitTimeMatchingPose(AnimData* animData, const BSAnimGroupSequence* gait)
 	{
 		Legs legs;
@@ -243,15 +244,15 @@ namespace
 		return extraData && !extraData->bAimTransition && extraData->transition != TransitionKind::None;
 	}
 
-	// m: text keys (the engine's morph tag, NiControllerSequence::pMorphTag): whole keys starting with "m:" in any case,
-	// points authored to match across movement cycles (m:L / m:R where a foot is planted). Key texts are never null here:
-	// AnimFixes::EraseNullTextKeys drops those when the KF loads (KFModel::InitSequence), before it gets an anim group
+	// "m:" text keys (the engine's morph tag, NiControllerSequence::pMorphTag): keys starting with "m:" in any case.
+	// They are authored to match points across movement cycles (m:L / m:R where a foot is planted). Key texts are
+	// never null here because AnimFixes::EraseNullTextKeys drops those when the KF loads (KFModel::InitSequence).
 	bool IsMorphKey(const NiTextKey& key)
 	{
 		return _strnicmp(key.m_kText, "m:", 2) == 0;
 	}
 
-	// A looping cycle with m: keys: FindCorrespondingMorphFrame maps between such cycles
+	// Returns true for a looping cycle with m: keys, which FindCorrespondingMorphFrame can map between
 	bool IsMorphCycle(const NiControllerSequence* sequence)
 	{
 		return sequence->m_spTextKeys && sequence->m_eCycleType == NiControllerSequence::LOOP &&
@@ -259,7 +260,7 @@ namespace
 			std::ranges::any_of(sequence->m_spTextKeys->GetKeys(), IsMorphKey);
 	}
 
-	// Every m: key of from has a key of the same text (case-sensitive, as the engine compares them) in to
+	// Returns true if every m: key of `from` has a key with the same text in `to` (case-sensitive, as in the engine)
 	bool HasMorphKeysOf(const NiControllerSequence* to, const NiControllerSequence* from)
 	{
 		const auto toKeys = to->m_spTextKeys->GetKeys();
@@ -272,11 +273,11 @@ namespace
 		});
 	}
 
-	// Whether pkDest can start at pkSource's point between their m: keys and pkSource then follow it: both have the same
-	// set of m: keys (NiControllerSequence::VerifyMatchingMorphKeys) and pkSource runs on a clock of its own. The game
-	// (Animation::StartGroup) also requires the same number of controlled bones and the same character after the first
-	// m: key's "m:" (TESAnimGroup's morph type, set in BSAnimGroupSequence::InitAnimGroup), which lets few authored pairs
-	// through: vanilla mtfastforward starts with m:R, mtbackward with m:L
+	// Returns true if pkDest can start at pkSource's point between their m: keys and pkSource can then follow it. Both
+	// need the same set of m: keys (NiControllerSequence::VerifyMatchingMorphKeys) and pkSource must run on its own
+	// clock. The game (Animation::StartGroup) additionally requires the same number of controlled bones and the same
+	// character after the first m: key's "m:" (TESAnimGroup's morph type, set in BSAnimGroupSequence::InitAnimGroup).
+	// Few authored pairs pass that: vanilla mtfastforward starts with m:R and mtbackward with m:L.
 	bool CanFollowMorphKeys(const NiControllerSequence* pkSource, const NiControllerSequence* pkDest)
 	{
 		if (pkSource->m_fLastTime == -NI_INFINITY || pkSource->m_fDestFrame != -NI_INFINITY || pkSource->m_pkPartnerSequence)
@@ -302,14 +303,16 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	}
 
 	const float fTime = animData->timePassed;
-	// started again or eased back in: sequences still following its cycle from an earlier switch would jump with it
+	// A sequence that is started again or eased back in would take sequences still following its cycle with it
 	if (pkSequence->m_eState == NiControllerSequence::INACTIVE || pkSequence->m_eState == NiControllerSequence::EASEOUT)
 		pkSequence->ReleaseFollowers(fTime);
 
-	// a sequence started from inactive cross fades from the point the playing one is at: between their m: keys where
-	// both have the same, else for a variant of the gait playing (weapon type switched at an equip's Attach or unequip's
-	// Detach key, sneaking, ...) at the same step, and after a start or stop animation at the step the legs are at. Start
-	// and stop animations themselves play from their beginning
+	// A sequence started from inactive cross fades from the point the playing one is at:
+	// - between their m: keys if both have the same ones
+	// - at the same step for a variant of the playing gait (weapon type switched at an equip's Attach or unequip's
+	//   Detach key, sneaking, ...)
+	// - at the step the legs are at after a start or stop animation
+	// Start and stop animations themselves play from their beginning.
 	float fStartTime = NAN;
 	bool bFollowMorphKeys = false;
 	if (currentMoveAnim && currentMoveAnim != pkSequence && pkSequence->m_eState == NiControllerSequence::INACTIVE &&
@@ -322,10 +325,10 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		}
 		else if (g_pluginSettings.fixMovementMorphKeys && CanFollowMorphKeys(currentMoveAnim, pkSequence))
 		{
-			// as the engine's morph does (NiControllerSequence::Update, MORPHSOURCE)
+			// As the engine's morph does (NiControllerSequence::Update, MORPHSOURCE)
 			fStartTime = pkSequence->FindCorrespondingMorphFrame(currentMoveAnim, currentMoveAnim->m_fOffset + fTime);
 			bFollowMorphKeys = true;
-			// it will follow pkSequence: the sequences following it would read a clock it no longer shows
+			// The sequences following currentMoveAnim would read a clock it no longer shows once it follows pkSequence
 			currentMoveAnim->ReleaseFollowers(fTime);
 		}
 		else if (g_pluginSettings.fixGaitSwitch)
@@ -339,11 +342,12 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 		animSwitch.EaseOut(currentMoveAnim, fDuration);
 	if (!animSwitch.EaseIn(pkSequence, fDuration))
 		return pkSequence;
-	// only set for a sequence started from inactive
+	// Only set for a sequence started from inactive
 	if (!std::isnan(fStartTime))
 		pkSequence->m_fOffset = fStartTime / pkSequence->m_fFrequency - fTime;
-	// the old sequence takes its time from the new one's at their m: keys while it fades out (NiControllerSequence::Update),
-	// as the source of the engine's morph: both stay in step however long their cycles are. Deactivate drops the partner
+	// While it fades out, the old sequence takes its time from the new one at their m: keys
+	// (NiControllerSequence::Update), like the source of the engine's morph, so both stay in step whatever their cycle
+	// lengths. Deactivate drops the partner.
 	if (bFollowMorphKeys && currentMoveAnim->m_eState == NiControllerSequence::EASEOUT)
 		currentMoveAnim->m_pkPartnerSequence = pkSequence;
 
@@ -351,19 +355,20 @@ BSAnimGroupSequence* MovementBlendFixes::PlayMovementAnim(AnimData* animData, BS
 	return pkSequence;
 }
 
-// when a sequence's ease-out ends, in its owner's animation time
+// Returns the time at which a sequence's ease-out ends, in its owner's animation time
 static float GetEaseOutEndTime(const NiControllerSequence* sequence, float fTime)
 {
-	// Deactivate leaves the duration in m_fEndTime until the next update turns it into a time
+	// Deactivate leaves the duration in m_fEndTime until the next update converts it to a time
 	return sequence->m_fStartTime == -NI_INFINITY ? fTime + sequence->m_fEndTime : sequence->m_fEndTime;
 }
 
-// Animation::ClearGroup (0x496080) remembers the movement sequence it deactivates (animSeq100), and while that one eases
+// Animation::ClearGroup (0x496080) remembers the movement sequence it deactivates (animSeq100). While that one eases
 // out with no movement group playing, Animation::Update (0x491180) drops the movement delta. PlayMovementAnim's cross
-// fade leaves the previous movement sequence easing out as well: when the remembered one ended first (a stop within
-// half the blend, as on every analog stick release: run -> walk -> stop), the other's root motion moved the actor
-// until its ease-out ended, a lunge at the animation's unscaled speed.
-// ClearGroup copies animSequence[kSequence_Movement] right after deactivating it: leave the one that ends last there.
+// fade leaves the previous movement sequence easing out as well. If the remembered one ends first (a stop within half
+// the blend, e.g. an analog stick release: run -> walk -> stop), the other's root motion moves the actor at the
+// animation's unscaled speed until its ease-out ends.
+// ClearGroup copies animSequence[kSequence_Movement] right after deactivating it, so this leaves the sequence that
+// ends last there.
 void MovementBlendFixes::TrackLastEaseOut(AnimData* animData)
 {
 	BSAnimGroupSequence* last = nullptr;

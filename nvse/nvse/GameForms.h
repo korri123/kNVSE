@@ -820,7 +820,7 @@ public:
 
 	TESForm* ammo; // 04	either TESAmmo or BGSListForm
 
-	// the ammo form is a list whose first entry isn't ammo (the Rock-It Launcher's junk list)
+	// True if the ammo form is a list whose first entry is not ammo (the Rock-It Launcher's junk list).
 	bool IsRockItLauncher() const
 	{
 		return ThisStdCall<bool>(0x474A80, this);
@@ -2868,7 +2868,8 @@ public:
 	float GetItemModValue1(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value1Mod[which]; }
 	float GetItemModValue2(UInt8 which)		{ which -= 1; ASSERT(which < 3); return value2Mod[which]; }
 
-	// the reload anim the engine plays: modReloadAnim with an Increase Clip Capacity mod (TESObjectWEAP::GetReloadAnimGroup 0x51E2A0)
+	// The reload anim the engine plays: modReloadAnim if the weapon has an Increase Clip Capacity mod, else reloadAnim
+	// (TESObjectWEAP::GetReloadAnimGroup 0x51E2A0).
 	UInt8 GetReloadAnim(bool hasClipMod) const
 	{
 		return hasClipMod && modReloadAnim != 0xFF ? modReloadAnim : reloadAnim;
@@ -2886,7 +2887,7 @@ public:
 		return 1.0f / (attackMultipler * fireRate);
 	}
 
-	// the actor's loaded ammo, else the weapon's default ammo
+	// The actor's loaded ammo, or the weapon's default ammo if none is loaded.
 	TESAmmo* GetEquippedAmmo(Actor* actor) const
 	{
 		return ThisStdCall<TESAmmo*>(0x525980, this, actor);

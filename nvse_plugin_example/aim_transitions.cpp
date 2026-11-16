@@ -11,7 +11,7 @@
 
 namespace
 {
-	// how close to the end it heads for an aim transition counts as there
+	// How close to the end it heads for an aim transition counts as being there
 	constexpr float kEndTolerance = 1e-4f;
 
 	bool IsEnabled()
@@ -19,16 +19,17 @@ namespace
 		return g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug && g_pluginSettings.aimTransitions;
 	}
 
-	// How AimTransitions plays a sequence (a clip); none for any other sequence. A copy of what its SequenceExtraData
-	// says: that only stays where it is until another sequence of the skeleton gets data (the eases of a switch)
+	// How AimTransitions plays a sequence (a clip). None for any other sequence. This is a copy of what the
+	// SequenceExtraData says, because that data only stays until another sequence of the skeleton gets data (the
+	// eases of a switch).
 	struct Playback
 	{
 		TransitionKind kind = TransitionKind::None;
-		// its time runs backwards
+		// Its time runs backwards
 		bool bReversed = false;
 
 		explicit operator bool() const { return kind != TransitionKind::None; }
-		// Whether it takes the weapon to the sights: a start animation played forward, a stop animation back
+		// Returns true if it takes the weapon to the sights: a start animation played forward, or a stop animation back
 		bool HeadsToSights() const { return (kind == TransitionKind::Start) != bReversed; }
 	};
 
@@ -40,15 +41,15 @@ namespace
 		return { extraData->transition, extraData->bAimReversed };
 	}
 
-	// Where Animation::Update ends the clip: its End key (TransitionAnims::Prepare made it valid)
+	// Returns where Animation::Update ends the clip: its End key (TransitionAnims::Prepare made it valid)
 	float GetEndTime(const BSAnimGroupSequence* clip)
 	{
 		const auto& keyTimes = clip->animGroup->keyTimes;
 		return keyTimes.Size() >= 2 ? keyTimes[1] : clip->m_fEndKeyTime;
 	}
 
-	// The clip's time as Animation::Update counts it (Animation::GetDuration: offset + the Animation's time), which decides
-	// where it ends. Its sequence time is the same (SetTime, a frequency of 1), except past either end, where that holds
+	// Returns the clip's time as Animation::Update counts it (Animation::GetDuration: offset + the Animation's time),
+	// which decides where it ends. The sequence time is the same (SetTime, frequency 1) except past either end.
 	float GetTime(const AnimData* animData, const BSAnimGroupSequence* clip)
 	{
 		if (clip->m_fOffset == -NI_INFINITY)
@@ -56,13 +57,13 @@ namespace
 		return clip->m_fOffset + animData->timePassed;
 	}
 
-	// The clip's time within its length: held at an end, its time ran on past it
+	// Returns the clip's time within its length (held at an end, its time runs on past it)
 	float GetClampedTime(const AnimData* animData, const BSAnimGroupSequence* clip)
 	{
 		return std::clamp(GetTime(animData, clip), clip->m_fBeginKeyTime, GetEndTime(clip));
 	}
 
-	// How far towards the sights the clip has taken the weapon, from 0 (hip) to 1
+	// Returns how far towards the sights the clip has taken the weapon, from 0 (hip) to 1
 	float GetSightsProgress(const AnimData* animData, const BSAnimGroupSequence* clip, Playback playback)
 	{
 		const float fBegin = clip->m_fBeginKeyTime;
@@ -71,16 +72,16 @@ namespace
 		return playback.kind == TransitionKind::Start ? fFraction : 1.0f - fFraction;
 	}
 
-	// Whether the clip got to the end it heads for: its End key, or its beginning played back
+	// Returns true if the clip reached the end it heads for: its End key, or its beginning when played back
 	bool IsAtEnd(const AnimData* animData, const BSAnimGroupSequence* clip, Playback playback)
 	{
 		const float fTime = GetTime(animData, clip);
 		return playback.bReversed ? fTime <= clip->m_fBeginKeyTime + kEndTolerance : fTime >= GetEndTime(clip) - kEndTolerance;
 	}
 
-	// Puts the clip at fTime as of the Animation's time, its next update going on from there: Animation::Update counts its
-	// time by the offset (GetTime), NiControllerSequence::ComputeScaledTime by the weighted time it reached and the change
-	// of the offset time since its last update
+	// Puts the clip at fTime in the Animation's time, so its next update continues from there. Animation::Update
+	// counts time by the offset (GetTime). NiControllerSequence::ComputeScaledTime uses the weighted time it reached
+	// and the change of the offset time since its last update.
 	void SetTime(const AnimData* animData, BSAnimGroupSequence* clip, float fTime)
 	{
 		clip->m_fOffset = fTime - animData->timePassed;
@@ -89,13 +90,13 @@ namespace
 		clip->m_fLastScaledTime = fTime;
 	}
 
-	// Makes the sequence the weapon section's under groupId
+	// Makes the sequence the weapon section's current one under groupId
 	void MakeCurrent(AnimData* animData, BSAnimGroupSequence* sequence, UInt16 groupId)
 	{
 		animData->animSequence[kSequence_Weapon] = sequence;
 		animData->groupIDs[kSequence_Weapon] = groupId;
 		animData->sequenceState1[kSequence_Weapon] = 0;
-		// third person: the sequence the engine weights by the aim pitch with its up and down variants
+		// Third person: the sequence the engine weights by the aim pitch with its up and down variants
 		// (MiddleHighProcess::UpdateAimSequences; AimPitch holds those at 0 for an aim transition)
 		if (animData != g_thePlayer->firstPersonAnimData)
 		{
@@ -104,7 +105,7 @@ namespace
 		}
 	}
 
-	// One of the aimIS group's aim transitions of the kind at random
+	// Picks one of the aimIS group's aim transitions of the kind at random
 	BSAnimGroupSequence* Pick(AnimData* animData, UInt16 aimISGroupId, TransitionKind kind)
 	{
 		auto* set = TransitionAnims::FindSet(animData, aimISGroupId, kind);
@@ -121,10 +122,10 @@ namespace
 		return nullptr;
 	}
 
-	// Whether the aim is easing in from the aim of the other base group (aim from aimIS or the reverse, switched to
-	// without an aim transition): the weapon is on its way between the sights and the hip by that ease. Easing in from
-	// anything else (an attack, the draw, the other stance, an aim transition at its end) the weapon is where this aim
-	// has it
+	// Returns true if the aim is easing in from the aim of the other base group (aim from aimIS or the reverse, switched
+	// to without an aim transition). The weapon is then on its way between the sights and the hip by that ease. When
+	// easing in from anything else (an attack, the draw, the other stance, an aim transition at its end), the weapon is
+	// where this aim has it.
 	bool IsEasingInFromAim(const BSAnimGroupSequence* aim, UInt32 otherBaseGroupId)
 	{
 		const UInt32 uiSwitch = aim->m_eState == NiControllerSequence::EASEIN ? AnimSwitch::Of(aim) : 0;
@@ -141,15 +142,14 @@ namespace
 		return false;
 	}
 
-	// Plays the clip in the weapon section under groupId, from fFraction of its length, cross fading from the sequence
+	// Plays the clip in the weapon section under groupId from fFraction of its length, cross fading from the sequence
 	// that plays there over its blend in. A clip still fading out (switched away from moments ago) eases back in from
-	// the weight and time it has, forward: moved to fFraction, the weight it still had showed the jump (the weapon moved
-	// up to 710 units/s for a frame on aim pressed and released twice within its blend). False, with nothing changed, if
-	// it cannot start
+	// the weight and time it has, forward. Moving it to fFraction would show a jump from the weight it still has.
+	// Returns false, with nothing changed, if it cannot start.
 	bool Play(AnimData* animData, BSAnimGroupSequence* clip, TransitionKind kind, BSAnimGroupSequence* from,
 		float fFraction, UInt16 groupId)
 	{
-		// what AnimSwitch::EaseIn starts
+		// What AnimSwitch::EaseIn starts
 		const bool bResume = clip->m_eState == NiControllerSequence::EASEOUT;
 		if (!bResume && clip->m_eState != NiControllerSequence::INACTIVE)
 			return false;
@@ -158,7 +158,7 @@ namespace
 			return false;
 		const float fBegin = clip->m_fBeginKeyTime;
 		const float fTime = bResume ? GetClampedTime(animData, clip) : fBegin + fFraction * (GetEndTime(clip) - fBegin);
-		// before it attaches its interpolators: AimPitch gives its spine bones their shares then
+		// Set before the clip attaches its interpolators: AimPitch gives its spine bones their shares then
 		extraData->transition = kind;
 		extraData->bAimTransition = true;
 		extraData->bAimReversed = false;
@@ -168,7 +168,7 @@ namespace
 		if (!animSwitch.EaseIn(clip, fBlend))
 			return false;
 		SetTime(animData, clip, fTime);
-		// its text keys act from that time on: those before it are behind it
+		// Its text keys act from that time on, those before it are behind it
 		HandleExtraOperations(animData, clip);
 		MakeCurrent(animData, clip, groupId);
 		return true;
@@ -183,20 +183,20 @@ namespace
 		const bool bReversed = !extraData->bAimReversed;
 		extraData->bAimReversed = bReversed;
 		SetTime(animData, clip, GetClampedTime(animData, clip));
-		// forward again, its text keys act from that time on (played back they don't: IsPlayedBack)
+		// Forward again: its text keys act from that time on (played back they don't, see IsPlayedBack)
 		if (!bReversed)
 			HandleExtraOperations(animData, clip);
 		animData->groupIDs[kSequence_Weapon] = groupId;
 	}
 
-	// Has the clip head for the sights or the hip under groupId, the aim the engine asked for: one that heads there
-	// plays on, else the aim transition of that way plays from the point the weapon has reached, or the clip plays back
-	// when there is none. Returns the one that plays
+	// Makes the clip head for the sights or the hip under groupId, the aim the engine asked for. A clip that already
+	// heads there plays on. Otherwise the aim transition for that way plays from the point the weapon has reached, or
+	// the clip plays back when there is none. Returns the sequence that plays.
 	BSAnimGroupSequence* Steer(AnimData* animData, BSAnimGroupSequence* clip, Playback playback, bool bToSights, UInt16 groupId)
 	{
 		if (playback.HeadsToSights() == bToSights)
 		{
-			// the aim asked for can be another than the one it started under (the other stance's)
+			// The aim asked for can differ from the one the clip started under (the other stance's)
 			animData->groupIDs[kSequence_Weapon] = groupId;
 			return clip;
 		}
@@ -211,7 +211,7 @@ namespace
 		return clip;
 	}
 
-	// The player's skeleton the manager animates
+	// Returns the player's skeleton that the manager animates
 	AnimData* GetPlayerAnimData(const NiControllerManager* manager)
 	{
 		if (!manager)
@@ -224,10 +224,11 @@ namespace
 		return nullptr;
 	}
 
-	// AnimSequenceMultiple::GetCorrespondingSequence in Animation::StartGroup (0x4948C0) and Animation::SyncSequences: the
-	// up or down variant of a group that has several KFs is the one named after the weapon section's sequence (2haaim.kf:
-	// 2haaimup.kf). An aim transition stands in for the aim the engine plays (the section's group): without its variants,
-	// releasing aim during a start animation left the third person aim without up and down variants, for good
+	// AnimSequenceMultiple::GetCorrespondingSequence in Animation::StartGroup (0x4948C0) and Animation::SyncSequences.
+	// The up or down variant of a group that has several KFs is the one named after the weapon section's sequence
+	// (2haaim.kf: 2haaimup.kf). An aim transition stands in for the aim the engine plays (the section's group), so the
+	// variant is looked up from that aim. Otherwise releasing aim during a start animation would leave the third person
+	// aim without up and down variants.
 	BSAnimGroupSequence* __fastcall CorrespondingSequenceHook(void* group, void*, BSAnimGroupSequence* sequence, int eLayer)
 	{
 		if (GetPlayback(sequence))
@@ -242,10 +243,10 @@ namespace
 		return ThisStdCall<BSAnimGroupSequence*>(0x48F500, group, sequence, eLayer);
 	}
 
-	// NiControllerSequence::GetState of the weapon section's current sequence in Actor::FiresWeapon's check that aim and
-	// its up and down variants have blended in (Stewie's Tweaks bFireWhileAiming skips the check for the player outside
-	// VATS). The engine checks the player's third person skeleton (Actor::GetAnimation) also in first person, where the
-	// first person one shows the aim: the player's skeleton of the view decides
+	// NiControllerSequence::GetState of the weapon section's current sequence in Actor::FiresWeapon's check that the aim
+	// and its up and down variants have blended in (Stewie's Tweaks bFireWhileAiming skips the check for the player
+	// outside VATS). The engine checks the player's third person skeleton (Actor::GetAnimation) also in first person,
+	// where the first person one shows the aim, so this uses the player's skeleton of the view.
 	NiControllerSequence::AnimState __fastcall FireAimStateHook(const NiControllerSequence* sequence)
 	{
 		const NiControllerSequence* shown = sequence;
@@ -290,20 +291,20 @@ BSAnimGroupSequence* AimTransitions::Switch(AnimData* animData, BSAnimGroupSeque
 
 	if (const Playback playback = GetPlayback(from))
 	{
-		// at the end it headed for, in the pose of that aim: switched to it as from any other sequence
+		// At the end it headed for, in the pose of that aim: switch to it as from any other sequence
 		if (playback.HeadsToSights() == bToSights && IsAtEnd(animData, from, playback))
 			return nullptr;
 		return Steer(animData, from, playback, bToSights, groupId);
 	}
 
-	// from the other aim
+	// From the other aim
 	if (from->animGroup->GetBaseGroupID() != (bToSights ? kAnimGroup_Aim : kAnimGroup_AimIS))
 		return nullptr;
 	const auto kind = bToSights ? TransitionKind::Start : TransitionKind::Stop;
 	auto* clip = Pick(animData, bToSights ? groupId : from->animGroup->groupID, kind);
 	if (!clip)
 		return nullptr;
-	// an aim still easing in from the one asked for has taken the weapon only that far its way
+	// An aim still easing in from the one asked for has taken the weapon only that far along its way
 	const float fFraction = IsEasingInFromAim(from, toBaseGroupId) ? 1.0f - from->GetEaseSpinner() : 0.0f;
 	return Play(animData, clip, kind, from, fFraction, groupId) ? clip : nullptr;
 }
@@ -320,26 +321,28 @@ void AimTransitions::Update()
 		if (!playback || clip->m_eState == NiControllerSequence::INACTIVE || clip->m_eState == NiControllerSequence::EASEOUT)
 			continue;
 		// The engine asks for the aim it wants when that is not the group of the section's sequence
-		// (Actor::SetIronSights), and a clip is of the aimIS group whichever way it heads: aim pressed while one heads
-		// to the hip goes unasked. So does a clip played back to its beginning, in the pose of the aim it came from,
-		// where the engine ends one played forward at its End key (Animation::Update). Animation::BlendOut of the weapon
-		// section, as from either of those, has Actor::StartWeaponGroup play the aim the engine wants and its up and
-		// down variants at once, which comes to Switch
+		// (Actor::SetIronSights). A clip is of the aimIS group whichever way it heads, so the engine does not ask when:
+		// - aim is pressed while a clip heads to the hip
+		// - a clip played back reaches its beginning, in the pose of the aim it came from (a clip played forward is
+		//   ended by the engine at its End key in Animation::Update)
+		// Animation::BlendOut of the weapon section has Actor::StartWeaponGroup play the aim the engine wants and its up
+		// and down variants at once, which ends up in Switch.
 		if (playback.HeadsToSights() != bAiming || (playback.bReversed && IsAtEnd(animData, clip, playback)))
 			animData->BlendOut(kSequence_Weapon, false);
 	}
 }
 
-// The engine asks (SectionClockHook) after the step moved the Animation's time forward: twice that off the offset runs
-// the clip's time (GetTime) backwards at the speed it plays forward. Nothing else moves the offset: the aim groups are in
-// none of the ranges whose clock Animation::Update runs at a speed of the actor's (movement, equip, attack, reload).
-// It does not ask while it holds the weapon sections (Animation::cSkipUpdate: it takes the step off the section's
-// sequence itself, a clip fading out beside that one runs forward meanwhile)
+// The engine calls this (SectionClockHook) after the step moved the Animation's time forward. Subtracting twice the
+// step from the offset runs the clip's time (GetTime) backwards at the speed it plays forward. Nothing else moves the
+// offset: the aim groups are in none of the ranges whose clock Animation::Update runs at an actor speed (movement,
+// equip, attack, reload). Animation::Update doesn't call it while it holds the weapon sections
+// (Animation::cSkipUpdate): it then takes the step from the section's sequence itself, and a clip fading out beside
+// that one runs forward.
 void AimTransitions::RunClock(AnimData* animData, const NiControllerSequence* sequence, float fStep)
 {
 	if (!IsEnabled() || animData->actor != g_thePlayer || sequence != animData->animSequence[kSequence_Weapon] || !sequence->m_pkOwner)
 		return;
-	// those fading out too
+	// Includes clips that are fading out
 	for (auto* active : sequence->m_pkOwner->m_kActiveSequences)
 	{
 		if (active && active->m_fOffset != -NI_INFINITY && GetPlayback(active).bReversed)
@@ -349,7 +352,7 @@ void AimTransitions::RunClock(AnimData* animData, const NiControllerSequence* se
 
 void AimTransitions::WriteHooks()
 {
-	// Animation::StartGroup, Animation::SyncSequences: the two calls of 0x48F500, which UpDownVariantFix replaces
+	// Animation::StartGroup, Animation::SyncSequences: the two calls of 0x48F500, which UpDownVariantFix also replaces
 	WriteRelCall(0x49495D, CorrespondingSequenceHook);
 	WriteRelCall(0x495E0A, CorrespondingSequenceHook);
 }
