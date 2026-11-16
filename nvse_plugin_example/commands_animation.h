@@ -21,6 +21,7 @@
 #include "bethesda/bethesda_types.h"
 #include "anim_overrides.h"
 #include "actor_overrides.h"
+#include "ammo_keys.h"
 
 extern std::span<AnimGroupInfo> g_animGroupInfos;
 using FormID = UInt32;
@@ -246,6 +247,9 @@ struct AnimTime
 	TimedCallbacks::Context callbacks;
 	// True if the sequence has spawn:/despawn: keys (SpawnKeys, in its SequenceExtraData).
 	bool hasSpawnKeys = false;
+	// loadAmmo / unloadAmmo keys (AmmoKeys); they act only if ammoKeysAct
+	TimedExecution<AmmoKeys::Key>::Context ammoKeys;
+	bool ammoKeysAct = false;
 
 	bool hasCustomAnimGroups = false;
 	std::set<std::pair<Script*, std::string>> cleanUpScripts;

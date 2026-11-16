@@ -300,6 +300,8 @@ void HandleCustomTextKeys()
 			else
 				animTime.scriptLines.Update(time, animData, callback);	
 		}
+		if (bTimedKeys && animTime.ammoKeysAct && animTime.ammoKeys.Exists())
+			animTime.ammoKeys.Update(time, animData, [&](const AmmoKeys::Key& key) { AmmoKeys::Fire(key, anim); });
 
 		if (animTime.hasCustomAnimGroups)
 		{
@@ -562,6 +564,10 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		g_thePlayer = *reinterpret_cast<PlayerCharacter**>(0x011DEA3C);
 		FileAnimations::StartLoading();
 		CheckAndWarnForFixPack();
+	}
+	else if (msg->type == NVSEMessagingInterface::kMessage_PreLoadGame)
+	{
+		AmmoKeys::Reset();
 	}
 	else if (msg->type == NVSEMessagingInterface::kMessage_MainGameLoop)
 	{

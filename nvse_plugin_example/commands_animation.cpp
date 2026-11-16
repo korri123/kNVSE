@@ -372,6 +372,17 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 		animTime.allowAttack = true;
 		animTime.allowAttackTime = time;
 	}
+	if (actor == g_thePlayer)
+	{
+		const bool ammoKeysAct = AmmoKeys::OnSequenceStart(animData, anim);
+		if (auto* ammoKeys = AmmoKeys::Find(*anim))
+		{
+			auto& animTime = getAnimTimeStruct();
+			animTime.ammoKeys = ammoKeys->CreateContext(GetAnimTime(anim));
+			animTime.ammoKeysAct = ammoKeysAct;
+			applied = true;
+		}
+	}
 	// The spawn:/despawn: keys were recorded when the sequence joined the manager (SpawnKeys::OnSequenceJoin, for the
 	// player's sequences). Apply them here: the AnimTime is only tracked with its actor set, and AnimGroupOverride plays
 	// do not ask for one when there are no keys.

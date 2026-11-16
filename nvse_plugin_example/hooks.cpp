@@ -330,7 +330,8 @@ bool __fastcall IsCustomAnimKey(const char* key)
 		"allowFirstPerson"
 	};
 	// Keys with arguments, matched the way their features read them (TextKeys::GetArguments).
-	const static auto argumentKeys = { "aimPitch", "weaponSpace", "spawn", "despawn", "blendCurve", "blendInCurve", "blendOutCurve" };
+	const static auto argumentKeys = { "aimPitch", "weaponSpace", "spawn", "despawn", "blendCurve", "blendInCurve", "blendOutCurve",
+		"loadAmmo", "unloadAmmo" };
 	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)))
 		|| ra::any_of(argumentKeys, _L(const char* name, TextKeys::GetArguments(key, name).has_value()));
 }
@@ -1521,6 +1522,7 @@ void WriteDelayedHooks()
 	AllowAttackKey::ApplyHooks();
 	ModReloadAnimFix::WriteDelayedHooks();
 	NPCLoopingReloadFix::WriteDelayedHooks();
+	AmmoKeys::WriteDelayedHooks();
 	BlendFixes::WriteDelayedHooks();
 	RespectEndKey::WriteDelayedHooks();
 	if (g_pluginSettings.blendSmoothing)
