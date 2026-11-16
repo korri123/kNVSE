@@ -1,6 +1,4 @@
 #pragma once
-	// The model path of the base form (TESModel), relative to Data\Meshes; null if it has none
-	const char* GetModel() const { return ThisStdCall<const char*>(0x5715D0, this); }
 
 #include "GameForms.h"
 #include "GameBSExtraData.h"
@@ -176,6 +174,8 @@ public:
 	{
 		return CdeclCall<TESObjectREFR*>(0x56F930, apAVObjectIn);
 	}
+	// The model path of the base form (TESModel), relative to Data\Meshes; null if it has none
+	const char* GetModel() const { return ThisStdCall<const char*>(0x5715D0, this); }
 
 	MEMBER_FN_PREFIX(TESObjectREFR);
 #if RUNTIME
