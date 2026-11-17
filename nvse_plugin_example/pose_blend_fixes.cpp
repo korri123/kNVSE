@@ -47,6 +47,19 @@ namespace
             static_cast<Decoding::MiddleHighProcess*>(process)->knockedState != Decoding::MiddleHighProcess::kState_None;
     }
 
+    // The Pip-Boy KFs are timed for BlendFromPose: pipboy.kf's first frame already has the arm most of the way up, the
+    // blend to it is most of the raise and InterfaceManager::UpdatePipboy opens the menu at its Hit key. Eased in, the
+    // raise ran during the blend and the menu opened at 0.33 s instead of 0.6 s.
+    bool IsPipBoy(const NiControllerSequence* sequence)
+    {
+        // Animation::StartGroup only starts BSAnimGroupSequences
+        const TESAnimGroup* animGroup = static_cast<const BSAnimGroupSequence*>(sequence)->animGroup;
+        if (!animGroup)
+            return false;
+        const auto groupId = animGroup->GetBaseGroupID();
+        return groupId == kAnimGroup_PipBoy || groupId == kAnimGroup_PipBoyChild;
+    }
+
     // Brings a hard cut sequence back and fades it out from where the cut left it
     void FadeOut(const AnimSwitch& animSwitch, NiControllerManager* manager, const HardCut& cut, float fDuration)
     {
@@ -90,7 +103,7 @@ namespace
         const auto cuts = TakeHardCuts(animSwitch, manager);
         const bool bRestart = std::ranges::any_of(cuts, [&](const HardCut& cut) { return cut.sequence == sequence; });
         // A sequence cut to start over from its first frame has nothing of its own to fade out
-        if (bRestart || fDestFrame != 0.0f || pkSequenceToSynchronize || IsPosedByRagdoll(animData))
+        if (bRestart || fDestFrame != 0.0f || pkSequenceToSynchronize || IsPosedByRagdoll(animData) || IsPipBoy(sequence))
             return manager->BlendFromPose(sequence, fDestFrame, fDuration, iPriority, pkSequenceToSynchronize);
         // Ease in with the weight StartGroup gave the sequence (BlendFromPose replaces it with 1), at priority 0
         if (!animSwitch.EaseIn(sequence, fDuration))

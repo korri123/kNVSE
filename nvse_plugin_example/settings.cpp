@@ -71,7 +71,7 @@ namespace Settings
 			{ .section = "Blend Fixes", .key = "bFixBlendFromPose", .value = &s.fixBlendFromPose, .defaultValue = 1,
 				.label = "Ease in instead of a frozen pose", .category = kBlending, .apply = Apply::RestartToEnable, .requirements = { "bBlendSmoothing" },
 				.summary = "Draws, hit reactions and idles ease in instead of starting from a frozen pose.",
-				.description = "start animations that the game blends in from a frozen snapshot of the pose (drawing weapons, hit reactions, special idles, the Pip-Boy) with a normal ease-in instead: lower priority animations keep playing under them during the blend and they play from their start instead of holding their first frame, and the animations the game cut off for them fade out over the same time. Knocked down, ragdolled and dead actors keep the snapshot. Requires bBlendSmoothing." },
+				.description = "start animations that the game blends in from a frozen snapshot of the pose (drawing weapons, hit reactions, special idles) with a normal ease-in instead: lower priority animations keep playing under them during the blend and they play from their start instead of holding their first frame, and the animations the game cut off for them fade out over the same time. Knocked down, ragdolled and dead actors and the Pip-Boy (its animation is timed for the snapshot) keep the snapshot. Requires bBlendSmoothing." },
 			{ .section = "Blend Fixes", .key = "bFixWeaponParentSwitch", .value = &s.fixWeaponParentSwitch, .defaultValue = 1,
 				.label = "Fix weapon jump at draw/holster", .category = kBlending, .apply = Apply::Live, .requirements = { "bBlendSmoothing" },
 				.summary = "Stops the weapon jumping as it moves between hand and holster.",

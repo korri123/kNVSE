@@ -10,8 +10,8 @@
 // stops for the blend, the bones move on a straight path between two still poses, and the animation starts late and
 // abruptly.
 // PoseBlendFixes eases the sequence in instead, so lower priorities keep playing under it and it plays from its start,
-// and fades out the sequences ClearGroup cut off for it over the same time. Bones that the ragdoll poses keep the
-// snapshot.
+// and fades out the sequences ClearGroup cut off for it over the same time. Bones that the ragdoll poses and the Pip-Boy
+// (timed for the snapshot blend) keep the snapshot.
 namespace PoseBlendFixes
 {
     // Called before Animation::ClearGroup deactivates a sequence; records it if it is cut off without an ease-out
