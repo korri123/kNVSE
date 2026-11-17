@@ -9,48 +9,13 @@
 #include "SafeWrite.h"
 #include "game_types.h"
 #include "main.h"
+#include "reload_state.h"
 #include "utility.h"
 
 namespace NPCLoopingReloadFix
 {
 	namespace
 	{
-		// The rounds the clip holds once the running reload is done: what Actor::Reload would have filled at the start
-		class ReloadTarget : public PluginFormExtraData
-		{
-		public:
-			SInt32 rounds = 0;
-
-			static const NiFixedString& GetDataName()
-			{
-				static const NiFixedString name("kNVSE_NPCLoopingReload");
-				return name;
-			}
-
-			const NiFixedString& GetName() const override { return GetDataName(); }
-
-			static NiPointer<ReloadTarget> Get(const Actor* actor)
-			{
-				return static_cast<ReloadTarget*>(PluginFormExtraData::Get(g_nvseDataInterface, actor, GetDataName()));
-			}
-
-			static void Set(Actor* actor, SInt32 rounds)
-			{
-				NiPointer target = Get(actor);
-				if (!target)
-				{
-					target = new (New<ReloadTarget>()) ReloadTarget();
-					PluginFormExtraData::Add(g_nvseDataInterface, actor, target);
-				}
-				target->rounds = rounds;
-			}
-
-			static void Remove(Actor* actor)
-			{
-				PluginFormExtraData::Remove(g_nvseDataInterface, actor, GetDataName());
-			}
-		};
-
 		// Actor::Reload's reload type: 0 fills the clip at once (equipping, loading), 1 reloads an empty clip (after
 		// the last shot), 2 reloads now if the clip isn't full
 		constexpr UInt32 kReloadType_Instant = 0;
@@ -76,20 +41,7 @@ namespace NPCLoopingReloadFix
 
 		// Actor::Reload's frame
 		Actor* GetReloadingActor(void* addressOfReturnAddress) { return GetVariableOfCallerStack<Actor*>(addressOfReturnAddress, -0x58); }
-		const TESObjectWEAP* GetReloadWeapon(void* addressOfReturnAddress) { return GetVariableOfCallerStack<const TESObjectWEAP*>(addressOfReturnAddress, 0x8); }
-		UInt32 GetReloadType(void* addressOfReturnAddress) { return GetVariableOfCallerStack<UInt32>(addressOfReturnAddress, 0xC); }
 		bool GetReloadClipMod(void* addressOfReturnAddress) { return GetVariableOfCallerStack<bool>(addressOfReturnAddress, 0x10); }
-
-		// Actor::Reload, reload type 2: does the clip need a reload? A looping reload in progress counts as full,
-		// because the AI asks every update while in cover and every call would start it over.
-		UInt32 __fastcall ReloadNowClipRoundsHook(const TESObjectWEAP* weapon, void*, bool hasClipMod)
-		{
-			auto* retAddr = _AddressOfReturnAddress();
-			auto* actor = GetReloadingActor(retAddr);
-			if (actor->IsAnimActionReload() && PlaysLoopingReload(actor, weapon, GetReloadClipMod(retAddr)))
-				return GET_CALLER_VAR(BaseProcess::AmmoInfo*, -0x18)->count;
-			return ThisStdCall<UInt32>(0x4FE160, weapon, hasClipMod); // TESObjectWEAP::GetClipRounds
-		}
 
 		// Actor::Reload, reload type 2: the group it plays at once. ReloadX for a loop (the player plays ReloadXStart)
 		UInt32 __fastcall ReloadNowGroupHook(const TESObjectWEAP* weapon, void*, bool hasClipMod)
@@ -109,33 +61,6 @@ namespace NPCLoopingReloadFix
 			ThisStdCall(0x8A73E0, actor, action, sequence); // Actor::SetAnimAction
 		}
 
-		// Actor::Reload filling the clip (BSTasklet::SetData on the current ammo). A looping reload keeps the rounds
-		// and remembers what it loads up to.
-		void __fastcall ClipFillHook(BaseProcess::AmmoInfo* ammo, void*, SInt32 rounds)
-		{
-			auto* retAddr = _AddressOfReturnAddress();
-			auto* actor = GetReloadingActor(retAddr);
-			if (GetReloadType(retAddr) != kReloadType_Instant && PlaysLoopingReload(actor, GetReloadWeapon(retAddr), GetReloadClipMod(retAddr)))
-			{
-				ReloadTarget::Set(actor, rounds);
-				rounds = std::min<SInt32>(ammo->count, rounds);
-			}
-			ThisStdCall(0x6ECD40, ammo, rounds);
-		}
-
-		// Actor::UseAmmo after the last round reloaded. The clip is empty while a looping reload loads it, which is not
-		// running out of ammo (unequipping the weapon, CombatController::Disarmed, the follower's out of ammo line).
-		// Delayed because NVAC replaces this call.
-		UInt32 g_useAmmoRoundsGetter = 0x726070;
-		SInt32 __fastcall UseAmmoReloadedRoundsHook(BaseProcess::AmmoInfo* ammo)
-		{
-			const auto rounds = ThisStdCall<SInt32>(g_useAmmoRoundsGetter, ammo);
-			auto* actor = GET_CALLER_VAR(Actor*, -0x1C);
-			if (rounds == 0 && actor != g_thePlayer && ReloadTarget::Get(actor))
-				*static_cast<UInt32*>(_AddressOfReturnAddress()) = 0x8A8DBF;
-			return rounds;
-		}
-
 		thread_local SInt32 t_ammoCarried = 0;
 
 		// Actor::HandlePostAnimationActions after a round: the ammo the loop may load. An NPC loads up to the reload's
@@ -148,15 +73,17 @@ namespace NPCLoopingReloadFix
 			auto* actor = GET_CALLER_VAR(Actor*, -0xA0);
 			if (actor == g_thePlayer)
 				return carried;
-			const NiPointer target = ReloadTarget::Get(actor);
-			if (!target)
+			auto* state = ReloadState::Peek(actor);
+			if (!state || !state->loopTarget)
 				return carried;
 			const auto* ammo = GET_CALLER_VAR(BaseProcess::AmmoInfo*, -0x38);
 			const auto clipRounds = GET_CALLER_VAR(SInt32, -0x34);
-			const auto available = target->rounds;
-			const SInt32 nextRounds = ammo ? static_cast<SInt32>(ammo->count) + 1 : 1;
+			const auto available = state->loopTarget;
+			// The rounds after this round. Rounds that ammo keys loaded during it take the place of its load (AmmoKeys
+			// makes the engine's count getter, called next, return one less).
+			const SInt32 nextRounds = (ammo ? static_cast<SInt32>(ammo->count) : 0) + (state->keyLoads > 0 ? 0 : 1);
 			if (nextRounds >= available || nextRounds >= clipRounds)
-				ReloadTarget::Remove(actor);
+				state->loopTarget = 0;
 			return available;
 		}
 
@@ -193,20 +120,31 @@ namespace NPCLoopingReloadFix
 		}
 	}
 
+	SInt32 OnClipFill(Actor* actor, const TESObjectWEAP* weapon, UInt32 reloadType, bool hasClipMod, const BaseProcess::AmmoInfo& clip, SInt32 rounds)
+	{
+		if (!g_enabled || reloadType == kReloadType_Instant || !PlaysLoopingReload(actor, weapon, hasClipMod))
+			return rounds;
+		auto* state = ReloadState::Get(actor);
+		if (!state)
+			return rounds;
+		state->loopTarget = rounds;
+		return (std::min)(static_cast<SInt32>(clip.count), rounds);
+	}
+
+	bool PlaysLoop(Actor* actor, const TESObjectWEAP* weapon, bool hasClipMod)
+	{
+		return g_enabled && PlaysLoopingReload(actor, weapon, hasClipMod);
+	}
+
 	void ApplyHooks(bool modReloadAnimsFixed)
 	{
-		if (!PluginFormExtraData::IsAvailable(g_nvseDataInterface))
-		{
-			ERROR_LOG("bFixNPCLoopingReloads needs xNVSE 6.4.9 or newer (PluginFormExtraData), not applied");
-			return;
-		}
 		g_enabled = true;
 		g_modReloadAnimsFixed = modReloadAnimsFixed;
-		WriteRelCall(0x8A85D5, ReloadNowClipRoundsHook);
+		// 0x8A85D5 (Actor::Reload type 2: does the clip need a reload?) and the clip fill 0x8A86F4 are AmmoKeys' hooks,
+		// which ask PlaysLoop and OnClipFill
 		WriteRelCall(0x8A85FD, ReloadNowGroupHook);
 		WriteRelCall(0x8A8650, ReloadNowActionHook<-0x30>);
 		WriteRelCall(0x8A879D, ReloadNowActionHook<-0x3C>);
-		WriteRelCall(0x8A86F4, ClipFillHook);
 		WriteRelCall(0x8BAB0D, RoundAmmoAvailableHook);
 		WriteRelCall(0x8BABFB, LoopEndIdleHook);
 	}
@@ -215,7 +153,6 @@ namespace NPCLoopingReloadFix
 	{
 		if (!g_enabled)
 			return;
-		WriteRelCall(0x8A8C50, UseAmmoReloadedRoundsHook, &g_useAmmoRoundsGetter);
 		WriteRelCall(0x8BAB52, LoadRoundHook, &g_loadRoundEquip);
 	}
 }

@@ -7,6 +7,9 @@
 #include "GameAPI.h"
 #include "SafeWrite.h"
 #include "spawn_keys.h"
+#include "GameObjects.h"
+#include "GameProcess.h"
+#include "game_types.h"
 #include "utility.h"
 
 namespace
@@ -130,10 +133,40 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
     extraData->namedCurveEaseEnd = -NI_INFINITY;
     new(&extraData->addedNodes) std::vector<SkeletonNodes::Node>();
     new(&extraData->overrides) ActorOverrides();
+    new(&extraData->reload) ReloadState();
     PopulateVtable(extraData);
     extraData->m_kName = ExtraDataName();
     obj->AddExtraData(extraData);
     return extraData;
+}
+
+namespace
+{
+    kAnimationExtraData* GetActorNodeData(const Actor* actor, bool create)
+    {
+        auto* animData = actor && actor->baseProcess ? actor->baseProcess->GetAnimData() : nullptr;
+        auto* manager = animData ? animData->controllerManager : nullptr;
+        if (!manager || !manager->m_pkTarget)
+            return nullptr;
+        return create ? kAnimationExtraData::GetOrCreate(manager->m_pkTarget) : kAnimationExtraData::Get(manager->m_pkTarget);
+    }
+}
+
+ReloadState* ReloadState::Get(Actor* actor)
+{
+    auto* nodeData = GetActorNodeData(actor, true);
+    if (!nodeData)
+        return nullptr;
+    const auto* animData = actor->baseProcess->GetAnimData();
+    if (nodeData->reload.animData != animData) [[unlikely]]
+        nodeData->reload = ReloadState{ .animData = animData };
+    return &nodeData->reload;
+}
+
+ReloadState* ReloadState::Peek(const Actor* actor)
+{
+    auto* nodeData = GetActorNodeData(actor, false);
+    return nodeData && nodeData->reload.animData == actor->baseProcess->GetAnimData() ? &nodeData->reload : nullptr;
 }
 
 SequenceExtraData* SequenceExtraDatas::Get(const NiControllerSequence* sequence)

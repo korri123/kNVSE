@@ -301,7 +301,7 @@ void HandleCustomTextKeys()
 				animTime.scriptLines.Update(time, animData, callback);	
 		}
 		if (bTimedKeys && animTime.ammoKeysAct && animTime.ammoKeys.Exists())
-			animTime.ammoKeys.Update(time, animData, [&](const AmmoKeys::Key& key) { AmmoKeys::Fire(key, anim); });
+			animTime.ammoKeys.Update(time, animData, [&](const AmmoKeys::Key& key) { AmmoKeys::Fire(actor, key, anim); });
 
 		if (animTime.hasCustomAnimGroups)
 		{

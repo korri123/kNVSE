@@ -372,7 +372,6 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, b
 		animTime.allowAttack = true;
 		animTime.allowAttackTime = time;
 	}
-	if (actor == g_thePlayer)
 	{
 		const bool ammoKeysAct = AmmoKeys::OnSequenceStart(animData, anim);
 		if (auto* ammoKeys = AmmoKeys::Find(*anim))

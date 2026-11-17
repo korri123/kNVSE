@@ -233,6 +233,7 @@
     <ClInclude Include="aim_pitch.h" />
     <ClInclude Include="aim_transitions.h" />
     <ClInclude Include="ammo_keys.h" />
+    <ClInclude Include="reload_state.h" />
     <ClInclude Include="anchor.h" />
     <ClInclude Include="bone_evaluation.h" />
     <ClInclude Include="transform_math.h" />

@@ -155,7 +155,7 @@ namespace Settings
 			{ .section = "Engine Fixes", .key = "bFixNPCLoopingReloads", .value = &s.fixNPCLoopingReloads, .defaultValue = 1,
 				.label = "NPCs load one round per loop", .category = kGameFixes, .apply = Apply::Restart,
 				.summary = "NPCs load looping reloads one round at a time, like the player.",
-				.description = "fix NPCs loading the whole clip of a weapon with a looping reload (Cowboy Repeater, lever-action shotgun, ...) in one round: they load one round per loop, like the player. Needs xNVSE 6.4.9 or newer." },
+				.description = "fix NPCs loading the whole clip of a weapon with a looping reload (Cowboy Repeater, lever-action shotgun, ...) in one round: they load one round per loop, like the player." },
 			{ .section = "Engine Fixes", .key = "bFixAccumRootBlend", .value = &s.fixAccumRootBlend, .defaultValue = 1,
 				.label = "Fix root motion at blends", .category = kGameFixes, .apply = Apply::Live,
 				.summary = "Fixes actors stalling for a frame when root motion blends start or end.",

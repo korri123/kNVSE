@@ -9,6 +9,7 @@
 #include "anchor.h"
 #include "blend_curves.h"
 #include "ease.h"
+#include "reload_state.h"
 #include "skeleton_nodes.h"
 #include "spawn_keys.h"
 #include "transition_anims.h"
@@ -105,6 +106,8 @@ public:
     const Anchors::RestPose* restPose = nullptr;
     // The override animations of the Animation whose controller manager animates this node (ActorOverrides)
     ActorOverrides overrides;
+    // The reload of the actor this is the 3rd person Animation of (AmmoKeys, NPCLoopingReloadFix)
+    ReloadState reload;
 
     NiNewRTTI(kAnimationExtraData, NiExtraData)
 
