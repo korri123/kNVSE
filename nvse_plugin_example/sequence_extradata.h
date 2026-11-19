@@ -13,6 +13,7 @@
 #include "skeleton_nodes.h"
 #include "spawn_keys.h"
 #include "transition_anims.h"
+#include "weapon_fire.h"
 
 class SequenceExtraData
 {
@@ -108,6 +109,8 @@ public:
     ActorOverrides overrides;
     // The reload of the actor this is the 3rd person Animation of (AmmoKeys, NPCLoopingReloadFix)
     ReloadState reload;
+    // The shots of the actor this is the 3rd person Animation of (WeaponFire)
+    FireState fire;
 
     NiNewRTTI(kAnimationExtraData, NiExtraData)
 

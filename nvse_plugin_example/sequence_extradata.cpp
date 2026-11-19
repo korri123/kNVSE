@@ -134,6 +134,7 @@ kAnimationExtraData* kAnimationExtraData::GetOrCreate(NiObjectNET* obj)
     new(&extraData->addedNodes) std::vector<SkeletonNodes::Node>();
     new(&extraData->overrides) ActorOverrides();
     new(&extraData->reload) ReloadState();
+    new(&extraData->fire) FireState();
     PopulateVtable(extraData);
     extraData->m_kName = ExtraDataName();
     obj->AddExtraData(extraData);
@@ -167,6 +168,23 @@ ReloadState* ReloadState::Peek(const Actor* actor)
 {
     auto* nodeData = GetActorNodeData(actor, false);
     return nodeData && nodeData->reload.animData == actor->baseProcess->GetAnimData() ? &nodeData->reload : nullptr;
+}
+
+FireState* FireState::Get(Actor* actor)
+{
+    auto* nodeData = GetActorNodeData(actor, true);
+    if (!nodeData)
+        return nullptr;
+    const auto* animData = actor->baseProcess->GetAnimData();
+    if (nodeData->fire.animData != animData) [[unlikely]]
+        nodeData->fire = FireState{ .animData = animData };
+    return &nodeData->fire;
+}
+
+FireState* FireState::Peek(const Actor* actor)
+{
+    auto* nodeData = GetActorNodeData(actor, false);
+    return nodeData && nodeData->fire.animData == actor->baseProcess->GetAnimData() ? &nodeData->fire : nullptr;
 }
 
 SequenceExtraData* SequenceExtraDatas::Get(const NiControllerSequence* sequence)

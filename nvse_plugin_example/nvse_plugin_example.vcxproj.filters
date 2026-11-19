@@ -96,6 +96,7 @@
     <ClCompile Include="aim_pitch.cpp" />
     <ClCompile Include="aim_transitions.cpp" />
     <ClCompile Include="ammo_keys.cpp" />
+    <ClCompile Include="weapon_fire.cpp" />
     <ClCompile Include="anchor.cpp" />
     <ClCompile Include="bone_evaluation.cpp" />
     <ClCompile Include="transition_anims.cpp" />
@@ -233,6 +234,7 @@
     <ClInclude Include="aim_pitch.h" />
     <ClInclude Include="aim_transitions.h" />
     <ClInclude Include="ammo_keys.h" />
+    <ClInclude Include="weapon_fire.h" />
     <ClInclude Include="reload_state.h" />
     <ClInclude Include="anchor.h" />
     <ClInclude Include="bone_evaluation.h" />

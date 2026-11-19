@@ -34,6 +34,7 @@
 #include "text_key_arguments.h"
 #include "up_down_variant_fix.h"
 #include "weapon_hand_blend.h"
+#include "weapon_fire.h"
 
 bool g_startedAnimation = false;
 BSAnimGroupSequence* g_lastLoopSequence = nullptr;
@@ -187,6 +188,9 @@ void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequenc
 void DecreaseAttackTimer()
 {
 	*static_cast<UInt32*>(_AddressOfReturnAddress()) = 0x941E64;
+	// Attack was released before the Hit key of an open bolt attack loop: it runs on until its shot
+	if (WeaponFire::ReleasedPlayerAttack())
+		return;
 	auto* baseProcess = g_thePlayer->baseProcess;
 	const bool isFirstPerson = !g_thePlayer->IsThirdPerson();
 	const auto* animData = g_thePlayer->GetAnimData(isFirstPerson);
@@ -1523,6 +1527,7 @@ void WriteDelayedHooks()
 	ModReloadAnimFix::WriteDelayedHooks();
 	NPCLoopingReloadFix::WriteDelayedHooks();
 	AmmoKeys::WriteDelayedHooks();
+	WeaponFire::WriteHooks();
 	BlendFixes::WriteDelayedHooks();
 	RespectEndKey::WriteDelayedHooks();
 	if (g_pluginSettings.blendSmoothing)

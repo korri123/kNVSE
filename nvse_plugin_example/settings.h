@@ -45,6 +45,7 @@ struct PluginINISettings
     bool fixAimUpDownVariants{};
     bool fixIdleStrafing{};
     bool fixBlendAnimMultipliers{};
+    bool jamAfterShot{};
 
     // not in the INI
     bool fixDeactivateControllerManagers = true;

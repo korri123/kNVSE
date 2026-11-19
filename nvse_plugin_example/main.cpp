@@ -35,6 +35,7 @@
 #include "spawn_keys.h"
 #include "debug_tools.h"
 #include "gamebryo/NiStream.h"
+#include "weapon_fire.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
 #define REG_CMD_TYPED(name, type) 	nvse->RegisterTypedCommand(&kCommandInfo_ ##name, type)
@@ -589,6 +590,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 				lateHooksWritten = true;
 				AmmoKeys::WriteLateHooks();
 			}
+			WeaponFire::Update();
 			HandleBurstFire();
 			HandleAnimTimes();
 			HandleMisc();
