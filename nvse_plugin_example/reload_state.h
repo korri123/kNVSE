@@ -49,6 +49,8 @@ struct ReloadState
 	// Rounds loaded by ammo keys since the actor's weapon section started its sequence or the engine last loaded a round
 	// of a looping reload (AmmoKeys)
 	SInt32 keyLoads = 0;
+	// The engine's last load of a looping reload round added nothing: keys had loaded the round (AmmoKeys)
+	bool roundLoadedByKeys = false;
 
 	// Attacking ended the player's looping reload, which loaded the round in the hand: the rest of this round's
 	// animation (on the skeleton of the view) loads nothing more, until it starts again. Compared by address only

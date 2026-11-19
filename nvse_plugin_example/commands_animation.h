@@ -206,6 +206,8 @@ public:
 			if (f2(key.m_kText.CStr(), t))
 				items.emplace_back(t, key.m_fTime);
 		}
+		// Hand-edited KFs can list keys out of order; the contexts walk them by time
+		std::ranges::stable_sort(items, {}, &std::pair<T, float>::second);
 		init = true;
 	}
 

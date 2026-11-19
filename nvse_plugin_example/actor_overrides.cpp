@@ -487,6 +487,15 @@ void ActorOverrides::UpdatePolled()
 			Track(*set, groupId);
 			continue;
 		}
+		// A reload is not restarted: its rounds change while it plays (ammo keys, Prevent Reload Cancelling's count at
+		// 70 %), so a condition on the clip changed halfway through the reload of an empty clip, and replaying the group
+		// started a new round on top of it, whose loads the engine counted again. The condition picks the next reload,
+		// and the next round of a looping one, as it is then.
+		if (curAnim->animGroup->IsReload())
+		{
+			Track(*set, groupId);
+			continue;
+		}
 		NVSEArrayVarInterface::Element arrResult;
 		if (!CallFunction(conditionScript, actor, nullptr, &arrResult))
 		{

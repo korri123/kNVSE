@@ -314,11 +314,27 @@ namespace AmmoKeys
 				}
 				const auto rounds = ThisStdCall<SInt32>(roundsGetter, clip);
 				const auto keyLoads = state ? std::exchange(state->keyLoads, 0) : 0;
-				return keyLoads > 0 && rounds > 0 ? rounds - 1 : rounds;
+				const bool byKeys = keyLoads > 0 && rounds > 0;
+				if (state)
+					state->roundLoadedByKeys = byKeys;
+				return byKeys ? rounds - 1 : rounds;
 			}
 		};
 		using NextRoundLoad = RoundLoad<-0xA0, false>;
 		using AttackRoundLoad = RoundLoad<-0x9C, true>;
+
+		// HUDMainMenu::UpdateAmmoLabel reading the rounds in the player's clip. Prevent Reload Cancelling (Stewie's
+		// Tweaks with PreventReloadCancelling.dll, or the DLL alone) replaces this call: it shows the rounds from before
+		// a reload until 70 % of it. With a held fill the keys decide when the clip changes, so the counter shows the
+		// clip as it is: an unloadAmmo key earlier than 70 % showed only at 70 %, for the frames before a loadAmmo key
+		// after it (a flicker).
+		UInt32 g_hudRoundsGetter = 0x726070;
+		SInt32 __fastcall HUDRoundsHook(BaseProcess::AmmoInfo* clip)
+		{
+			if (const auto* state = ReloadState::Peek(g_thePlayer); state && IsHolding(g_thePlayer, *state))
+				return static_cast<SInt32>(clip->count);
+			return ThisStdCall<SInt32>(g_hudRoundsGetter, clip);
+		}
 	}
 
 	TimedExecution<Key>* Find(const BSAnimGroupSequence& sequence)
@@ -412,6 +428,12 @@ namespace AmmoKeys
 			*state = ReloadState{ .animData = state->animData };
 	}
 
+	bool EngineLoadsRound(const Actor* actor)
+	{
+		const auto* state = ReloadState::Peek(actor);
+		return !state || !state->roundLoadedByKeys;
+	}
+
 	void WriteDelayedHooks()
 	{
 		// Stewie's Tweaks detours the first (Prevent Reload Cancelling, bRememberWeaponAmmos) and replaces the second
@@ -424,5 +446,15 @@ namespace AmmoKeys
 		WriteRelCall(0x8BAB1E, NextRoundLoad::Hook, &NextRoundLoad::roundsGetter);
 		WriteRelCall(0x948C52, AttackRoundLoad::Hook, &AttackRoundLoad::roundsGetter);
 		WriteRelCall(0x8A8C50, UseAmmoReloadedRoundsHook, &g_useAmmoRoundsGetter);
+	}
+
+	void WriteLateHooks()
+	{
+		// Only where something replaced the getter call (Prevent Reload Cancelling, written from Stewie's Tweaks'
+		// deferred init in the main loop). NVAC inlines the getter at this site otherwise.
+		constexpr UInt32 kHudRoundsCall = 0x77244F;
+		if (*reinterpret_cast<UInt8*>(kHudRoundsCall) != 0xE8 || GetRelJumpAddr(kHudRoundsCall) == 0x726070)
+			return;
+		WriteRelCall(kHudRoundsCall, HUDRoundsHook, &g_hudRoundsGetter);
 	}
 }

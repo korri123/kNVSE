@@ -1611,7 +1611,8 @@ void WriteDelayedHooks()
 		cmdGetCurrentAmmoRounds->execute = [](COMMAND_ARGS) -> bool
 		{
 			defaultExec(PASS_COMMAND_ARGS);
-			if (g_globals.isInLoopingReloadPlayAnim && g_globals.isInConditionFunction)
+			// The round is loaded by the queued equip after the next round starts, unless keys loaded it already
+			if (g_globals.isInLoopingReloadPlayAnim && g_globals.isInConditionFunction && AmmoKeys::EngineLoadsRound(g_thePlayer))
 				*result = *result + 1;
 			return true;
 		};

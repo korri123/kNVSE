@@ -581,6 +581,14 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		}
 		if (!Interface::IsInMenuMode())
 		{
+			// The first frame of play: Stewie's Tweaks runs its deferred init from the main loop once the menus exist,
+			// after kNVSE's first kMessage_MainGameLoop, and the main menu is over before anything plays.
+			static bool lateHooksWritten = false;
+			if (!lateHooksWritten)
+			{
+				lateHooksWritten = true;
+				AmmoKeys::WriteLateHooks();
+			}
 			HandleBurstFire();
 			HandleAnimTimes();
 			HandleMisc();

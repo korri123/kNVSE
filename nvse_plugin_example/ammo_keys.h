@@ -25,8 +25,9 @@ class TimedExecution;
 // in), and the rest of that round's animation loads nothing more. So "loadAmmo: 3" makes each shell 3 rounds, for a
 // weapon whose Ammo Use (rounds per shot, which Actor::UseAmmo takes from the clip) is 3. NPCs loop with
 // bFixNPCLoopingReloads; without it they play one round as a plain reload, which fills the clip at once as before.
-// Prevent Reload Cancelling (Stewie's Tweaks with PreventReloadCancelling.dll) holds the clip back until 70 % of every
-// reload in the ammo counter's update, so by its source a loadAmmo key earlier than that shows only then (not tested).
+// Prevent Reload Cancelling (Stewie's Tweaks with PreventReloadCancelling.dll) shows the rounds from before a reload in
+// the ammo counter until 70 % of it; during a reload whose fill is held the counter shows the clip (WriteLateHooks).
+// A polled AnimGroupOverride set does not restart a reload whose keys change the clip (ActorOverrides::UpdatePolled).
 namespace AmmoKeys
 {
     struct Key
@@ -47,5 +48,9 @@ namespace AmmoKeys
 
     // A save is loading: the player's reload state is the save's (NPCs' Animations are made again)
     void Reset();
+    // Whether the engine's load of the looping reload round now ending adds a round: not if keys loaded the round
+    bool EngineLoadsRound(const Actor* actor);
     void WriteDelayedHooks();
+    // Once, at the first frame of play: after other plugins' deferred init hooks
+    void WriteLateHooks();
 }
