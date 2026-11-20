@@ -701,7 +701,15 @@ public:
 	virtual void		Unk_129(void);
 	virtual void		Unk_12A(void);
 	virtual void		Unk_12B(void);
-	virtual void		Unk_12C(void);
+	// Animation::PlayGroup's action flags
+	enum ActionFlags : UInt32
+	{
+		kActionFlag_Normal			= 0,
+		kActionFlag_ImmediateStart	= 1,
+		kActionFlag_ImmediateLoop	= 2,
+	};
+	// 12C: plays the group on the player's 1st person skeleton too (PlayerCharacter 0x9520F0); a no-op for other actors
+	virtual void		StartAnimOn1stPerson(UInt16 animGroup, ActionFlags flags);
 	virtual void		Unk_12D(void);
 	virtual void		Unk_12E(void);
 	virtual void		Unk_12F(void);

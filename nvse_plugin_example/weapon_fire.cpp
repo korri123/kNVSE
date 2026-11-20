@@ -24,7 +24,6 @@ namespace WeaponFire
 		constexpr UInt32 kSetQueuedIdleFlagsSlot = 0x614 / 4; // BaseProcess vtable
 		constexpr UInt32 kSetSustainedFireSlot = 0x6E0 / 4; // BaseProcess vtable
 		constexpr UInt32 kGetSustainedFireSlot = 0x6DC / 4; // BaseProcess vtable
-		constexpr UInt32 kStartAnimOn1stPersonSlot = 0x4B0 / 4; // PlayerCharacter vtable
 		// A burst begins when the actor has not fired for this many shot intervals
 		constexpr float kBurstGapIntervals = 1.5f;
 		// A rolled jam is dropped when no shot follows within this long (the Animation's time)
@@ -319,7 +318,7 @@ namespace WeaponFire
 			ThisStdCall(0x8B28C0, actor, group, animData); // Actor::StartWeaponGroup
 			actor->SetAnimAction(Decoding::kAnimAction_Reload, animData->animSequence[kSequence_Weapon]);
 			if (actor == g_thePlayer)
-				ThisStdCall((*reinterpret_cast<UInt32**>(actor))[kStartAnimOn1stPersonSlot], actor, static_cast<UInt32>(fullGroup), 1);
+				actor->StartAnimOn1stPerson(fullGroup, Actor::kActionFlag_ImmediateStart);
 			// The burst ends: no more shots, and the next attack is the first of a burst again (rolls a jam; the game
 			// clears this when attack is released during an attack group, not during the jam)
 			process->ResetAttackLoopTimer(false);
