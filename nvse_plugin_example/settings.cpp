@@ -174,8 +174,8 @@ namespace Settings
 				.description = "fix blend times not being affected by animation multipliers (fixes animations playing twice in 1st person when an anim multiplier is big)" },
 			{ .section = "Engine Fixes", .key = "bJamAfterShot", .value = &s.jamAfterShot, .defaultValue = 0,
 				.label = "Weapons jam after the shot", .category = kGameFixes, .apply = Apply::Live,
-				.summary = "A jamming weapon fires first, then plays the jam.",
-				.description = "a weapon that jams (fWeaponConditionJam1-10, by its condition) fires its shot first and then plays the jam animation, which ends an automatic burst. The game rolls the jam when the attack starts and plays the jam instead of the attack, so a worn weapon could jam several times without firing. A shot that empties the clip does not jam. The player and NPCs." },
+				.summary = "A jamming weapon fires and finishes the attack, then plays the jam.",
+				.description = "a weapon that jams (fWeaponConditionJam1-10, by its condition) fires its shot, plays the attack animation to its end (an attack loop: to the end of its cycle, no more shots) and then plays the jam animation, which ends an automatic burst; attacking again before that plays the jam at once. The game rolls the jam when the attack starts and plays the jam instead of the attack, so a worn weapon could jam several times without firing. A shot that empties the clip does not jam. The player and NPCs." },
 		};
 
 		constexpr size_t kNumSettings = std::size(s_settings);
