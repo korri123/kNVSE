@@ -51,18 +51,9 @@ jobs:
       - name: Package Artifacts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-
-          # Lay the archive out like the game's Data folder: the DLL and the menu's XML (data\menus).
+          # Laid out like the game's Data folder (NVSE\Plugins, menus): scripts\package.ps1
           foreach ($config in 'Release', 'Debug') {
-            $staging = "staging\$config"
-            New-Item -ItemType Directory -Force -Path "$staging\NVSE\Plugins" | Out-Null
-            Copy-Item "nvse_plugin_example\$config\kNVSE.dll", "nvse_plugin_example\$config\kNVSE.pdb" "$staging\NVSE\Plugins"
-            Copy-Item -Recurse data\menus "$staging\menus"
-            Compress-Archive `
-              -Path "$staging\*" `
-              -DestinationPath "artifacts\kNVSE-$config-${{ env.artifact_timestamp }}.zip" `
-              -Force
+            scripts\package.ps1 -Configuration $config -Output "artifacts\kNVSE-$config-${{ env.artifact_timestamp }}.zip"
           }
 
       - name: Publish Zipped Artifacts
