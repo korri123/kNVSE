@@ -6,7 +6,9 @@
 #include <new>
 #include <vector>
 
+#include "bethesda/bethesda_types.h"
 #include "GameAPI.h"
+#include "game_types.h"
 #include "menu_engine.h"
 #include "menu_page.h"
 #include "Utilities.h"
@@ -524,8 +526,22 @@ namespace KnvseMenu
 
 		Menu* Menu::s_open = nullptr;
 
+		// Logged, and shown in a message box: the console can't be seen from the start menu
+		void ReportError(const std::string& message)
+		{
+			ERROR_LOG(message);
+			ShowMessageBox(message.c_str(), 0, 0, nullptr, 0, 0x17, 0.0f, 0.0f, "OK", nullptr);
+		}
+
 		void Open()
 		{
+			// With UI Organizer a missing file crashes Tile::ReadFile: its parse hook (0xA01B87) returns no data, which
+			// ReadFile dereferences. Users who copy only the DLL have no XML.
+			if (!FileFinder::Exists(kXmlPath, ARCHIVE_TYPE_MISC))
+			{
+				ReportError(FormatString("kNVSE: %s is missing. Install the whole kNVSE archive (its menus folder), not only the DLL.", kXmlPath));
+				return;
+			}
 			static bool s_registered = false;
 			if (!s_registered)
 			{
@@ -539,14 +555,14 @@ namespace KnvseMenu
 			auto* menu = tile ? reinterpret_cast<MenuEngine::Menu*>(static_cast<TileMenu*>(tile)->menu) : nullptr;
 			if (!menu || menu->GetID() != kMenuId)
 			{
-				Console_Print("kNVSE: the menu could not be loaded from %s", kXmlPath);
+				ReportError(FormatString("kNVSE: the menu could not be loaded from %s", kXmlPath));
 				return;
 			}
 			auto* knvseMenu = static_cast<Menu*>(menu);
 			knvseMenu->SetMenuTile(tile);
 			if (!knvseMenu->Init(tile))
 			{
-				Console_Print("kNVSE: %s lacks tiles the menu needs", kXmlPath);
+				ReportError(FormatString("kNVSE: %s lacks tiles the menu needs. Install the menus folder of the same kNVSE version.", kXmlPath));
 				knvseMenu->Close();
 				return;
 			}
