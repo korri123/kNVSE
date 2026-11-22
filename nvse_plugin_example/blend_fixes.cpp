@@ -244,8 +244,8 @@ namespace
 		targetSeq->Update(fTime, true);
 
 		Overrides::Played(animData, targetSeq);
+		// Its keys before its time belong to the variant it continues: the play's timed keys start from that time
 		HandleExtraOperations(animData, targetSeq);
-		SkipPassedBurstFireKeys(targetSeq);
 		HandleSoundPathMismatch(animData, sourceSeq, targetSeq);
 
 		animData->SetCurrentSequence(targetSeq, false);

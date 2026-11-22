@@ -97,6 +97,9 @@ namespace BlendCurves
 
     // Called when a sequence joins a controller manager (from SequenceExtraDatas' hook); keeps its curve keys with it
     void OnSequenceJoin(NiControllerSequence& sequence);
+    // SetAnimTextKeys replaced the keys of the sequence's KF (every clone of it shares them): each sequence reads its
+    // curve keys again when it next resolves a curve
+    void OnTextKeysChanged(const NiControllerSequence& sequence);
 
     // Shapes the spinner of the sequence's evaluation at the scaled time (ease, or transition: the weight divided by
     // the sequence weight) with the curve of its ease (see ease.h)

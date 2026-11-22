@@ -267,27 +267,55 @@ void SpawnKeys::EndFrame()
     ++g_frame;
 }
 
+namespace
+{
+    // Gives the player's skeleton the bones of the sequence's keys and keeps the keys with the sequence, or drops the keys
+    // it no longer has
+    void ReadKeys(NiControllerSequence& sequence)
+    {
+        auto keys = SpawnKeys::Parse(sequence);
+        if (!keys)
+        {
+            if (auto* extraData = SequenceExtraDatas::Get(&sequence))
+                extraData->spawnKeys.reset();
+            return;
+        }
+        auto* manager = sequence.m_pkOwner;
+        auto* root = static_cast<NiNode*>(manager->m_pkTarget);
+        const char* kf = sequence.m_kName.CStr();
+        for (const auto& bone : keys->bones)
+        {
+            if (SkeletonNodes::Require(manager, bone.name, bone.parent))
+                continue;
+            if (root->GetObjectByName(bone.name))
+                LogOnce(FormatString("%s: \"%s\" names a mesh of the skeleton, not a node; use another bone name", kf,
+                    bone.name.CStr()));
+            else if (!SkeletonNodes::Find(root, bone.parent))
+                LogOnce(FormatString("%s: the parent \"%s\" of \"%s\" is not a node of the skeleton", kf, bone.parent.CStr(),
+                    bone.name.CStr()));
+        }
+        if (auto* extraData = SequenceExtraDatas::GetOrCreate(&sequence))
+            extraData->spawnKeys = std::move(*keys);
+    }
+}
+
 void SpawnKeys::OnSequenceJoin(NiControllerSequence& sequence)
 {
-    auto* manager = sequence.m_pkOwner;
-    if (!sequence.m_spTextKeys || !SkeletonNodes::IsPlayerSkeleton(manager->m_pkTarget))
-        return;
-    auto keys = Parse(sequence);
-    if (!keys)
-        return;
-    auto* root = static_cast<NiNode*>(manager->m_pkTarget);
-    const char* kf = sequence.m_kName.CStr();
-    for (const auto& bone : keys->bones)
+    if (sequence.m_spTextKeys && SkeletonNodes::IsPlayerSkeleton(sequence.m_pkOwner->m_pkTarget))
+        ReadKeys(sequence);
+}
+
+void SpawnKeys::OnTextKeysChanged(const NiControllerSequence& sequence)
+{
+    for (auto* animData : { g_thePlayer->firstPersonAnimData, g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr })
     {
-        if (SkeletonNodes::Require(manager, bone.name, bone.parent))
+        auto* manager = animData ? animData->controllerManager : nullptr;
+        if (!manager || !manager->m_pkTarget)
             continue;
-        if (root->GetObjectByName(bone.name))
-            LogOnce(FormatString("%s: \"%s\" names a mesh of the skeleton, not a node; use another bone name", kf,
-                bone.name.CStr()));
-        else if (!SkeletonNodes::Find(root, bone.parent))
-            LogOnce(FormatString("%s: the parent \"%s\" of \"%s\" is not a node of the skeleton", kf, bone.parent.CStr(),
-                bone.name.CStr()));
+        for (auto& other : manager->sequences)
+        {
+            if (other && other->m_spTextKeys == sequence.m_spTextKeys)
+                ReadKeys(*other);
+        }
     }
-    if (auto* extraData = SequenceExtraDatas::GetOrCreate(&sequence))
-        extraData->spawnKeys = std::move(*keys);
 }

@@ -33,10 +33,13 @@ public:
     // A stop animation's total root motion at scale 1 (MovementTransitions' arrivals), once sampled
     float fRootDistance = NAN;
     std::optional<AdditiveSequenceMetadata> additiveMetadata;
-    // The sequence's spawn:/despawn: keys (SpawnKeys), parsed when it joined the manager. Player sequences only
+    // The sequence's spawn:/despawn: keys (SpawnKeys), parsed when it joined the manager or its KF's keys were replaced.
+    // Player sequences only
     std::optional<SpawnKeys::Keys> spawnKeys;
-    // The sequence's blendCurve/blendInCurve/blendOutCurve keys (BlendCurves), parsed when it joined the manager
+    // The sequence's blendCurve/blendInCurve/blendOutCurve keys (BlendCurves), parsed when it joined the manager, and
+    // again when it resolves a curve after any KF's keys were replaced (blendCurveKeysGeneration)
     BlendCurves::Keys blendCurveKeys;
+    UInt32 blendCurveKeysGeneration = 0;
     // The ease the sequence is in or was last in (see Eases::Find)
     Ease ease;
 };

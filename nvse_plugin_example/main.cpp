@@ -35,6 +35,7 @@
 #include "spawn_keys.h"
 #include "debug_tools.h"
 #include "gamebryo/NiStream.h"
+#include "burst_fire.h"
 #include "weapon_fire.h"
 
 #define REG_CMD(name) 	nvse->RegisterCommand(&kCommandInfo_ ##name)
@@ -164,10 +165,120 @@ struct SetThisAnimScriptPath
 	}
 };
 
+namespace
+{
+	// Whether whoever started the sequence still plays it
+	bool IsPlaying(const AnimTime& animTime, const AnimGroupInfo* groupInfo)
+	{
+		const auto* anim = animTime.anim.data;
+		if (anim->m_eState == kAnimState_Inactive)
+			return false;
+		// A group's sequence plays until another takes its section
+		return animTime.player != AnimTime::Player::Group || !groupInfo || animTime.animData->animSequence[groupInfo->sequenceType] == anim;
+	}
+
+	// respectEndKey: the player's 1st person sequence gives its times to the 3rd person sequence of the play. False once
+	// it has ended and the 3rd person sequence changed, or has no 3rd person sequence.
+	bool UpdateRespectEndKey(AnimTime& animTime, const AnimGroupInfo* groupInfo)
+	{
+		auto* anim = animTime.anim.data;
+		const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
+		auto& respectEndKeyData = animTime.respectEndKeyData;
+		if (current3rdPersonAnim != respectEndKeyData.anim3rdCounterpart && anim->m_eState == kAnimState_Inactive)
+			return false;
+		if (!respectEndKeyData.anim3rdCounterpart)
+		{
+			const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
+			auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
+			if (!anim3rd || !anim3rd->animGroup || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
+				anim3rd = anim->Get3rdPersonCounterpart();
+			if (!anim3rd || !anim3rd->animGroup)
+				return false;
+			respectEndKeyData.anim3rdCounterpart = anim3rd;
+		}
+		// In 3rd person nothing applies the times; RespectEndKey::EndFrame gives the sequence its own times back.
+		if (!g_thePlayer->IsThirdPerson())
+		{
+			// A sequence that has ended keeps its times on the 3rd person sequence until that changes, but does not
+			// take them back from another 1st person animation of the group that started since.
+			if (anim->m_eState != kAnimState_Inactive)
+				RespectEndKey::Apply(respectEndKeyData.anim3rdCounterpart, anim);
+			else
+				RespectEndKey::Keep(respectEndKeyData.anim3rdCounterpart);
+		}
+		return true;
+	}
+
+	// Acts on the keys of the play that the time has passed
+	void FireTimedKeys(AnimTime& animTime, Actor* actor, float time)
+	{
+		auto* animData = animTime.animData;
+		auto* anim = animTime.anim.data;
+		animTime.scriptCalls.Update(time, [&](Script* script) { g_script->CallFunction(script, actor, nullptr, nullptr, 0); });
+		animTime.soundKeys.Update(time, [&](UInt32 index)
+		{
+			if (index < animTime.sounds.size() && !animTime.sounds[index].failed && !IsPlayersOtherAnimData(animData))
+				animTime.sounds[index].Play(actor, animData != g_thePlayer->firstPersonAnimData);
+		});
+		const auto runScriptLine = [&](Script* script) { ThisStdCall<bool>(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, true); };
+		if (animTime.useLegacyTime) // prevent getting stuck in b42 interact
+			animTime.scriptLines.UpdateLegacy(time, runScriptLine);
+		else
+			animTime.scriptLines.Update(time, runScriptLine);
+		if (animTime.ammoKeysAct)
+			animTime.ammoKeys.Update(time, [&](const AmmoKeys::Key& key) { AmmoKeys::Fire(actor, key, anim); });
+		if (animTime.burstKeys.Exists())
+		{
+			// Started over: the clip is the one it has now
+			if (time < animTime.burstKeys.lastTime - 0.01f)
+				BurstFire::Start(actor, animTime.burst);
+			animTime.burstKeys.Update(time, [&](const BurstFire::Key& key) { BurstFire::Fire(actor, animData, anim, key, animTime.burst); });
+		}
+	}
+
+	// The scripts of the custom anim groups (SetCustomAnimGroupScript) the sequence's KF is in, every frame
+	void RunCustomAnimGroupScripts(AnimTime& animTime, Actor* actor)
+	{
+		const auto basePath = GetAnimBasePath(animTime.anim->m_kName.Str());
+		// pooled paths
+		for (const std::string_view animPath : Overrides::GetCustomGroupPaths(basePath))
+		{
+			const auto name = ExtractCustomAnimGroupName(animPath);
+			if (name.empty())
+				continue;
+			const auto scriptsIter = g_customAnimGroups.find(ToLower(name));
+			if (scriptsIter == g_customAnimGroups.end())
+				continue;
+			for (auto& script : scriptsIter->second)
+			{
+				g_script->CallFunctionAlt(*script.script, actor, 2, animPath.data(), animTime.firstPerson);
+				if (*script.cleanUpScript)
+					animTime.cleanUpScripts.emplace(std::make_pair(*script.cleanUpScript, std::string(animPath)));
+			}
+		}
+	}
+
+	// AdditiveOverlay: its reference group left the weapon section; over an attack loop also attack released or the
+	// clip empty
+	bool HasOverlayEnded(const AnimTime& animTime, Actor* actor)
+	{
+		const auto refGroupId = animTime.referenceAnimGroupId;
+		const auto* currentAnim = animTime.animData->animSequence[kSequence_Weapon];
+		if (!currentAnim || !currentAnim->animGroup || currentAnim->animGroup->groupID != refGroupId)
+			return true;
+		const auto baseGroupId = static_cast<AnimGroupID>(refGroupId);
+		if (baseGroupId != kAnimGroup_AttackLoop && baseGroupId != kAnimGroup_AttackLoopIS)
+			return false;
+		if (!GameFuncs::GetControlState(ControlCode::Attack, Decoding::IsDXKeyState::IsHeld))
+			return true;
+		const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
+		return !IsGodMode() && (!ammoInfo || ammoInfo->count == 0);
+	}
+}
+
 void HandleCustomTextKeys()
 {
-	// std::unique_lock lock(g_animTimeMutex);
-	// not needed since this runs on MainGameLoop event which is before any threads are active
+	// No lock: this runs on MainGameLoop event which is before any threads are active
 	DebugAssert(!AILinearTaskManager::ShouldQueue3DTask());
 	for (auto it = g_timeTrackedAnims.begin(); it != g_timeTrackedAnims.end();)
 	{
@@ -175,20 +286,19 @@ void HandleCustomTextKeys()
 		BSAnimGroupSequence* anim = animTime.anim;
 		auto* actor = DYNAMIC_CAST(LookupFormByRefID(animTime.actorId), TESForm, Actor);
 
-		// ~AnimTime eases the animation out as part of the Animation's current switch, once the Animation is known.
+		// The Animation the play is on, once the actor is known to be valid
 		AnimData* animDataOfEase = nullptr;
 		const auto erase = [&]
 		{
-			if (!animTime.cleanUpScripts.empty())
-			{
-				for (const auto& [cleanUpScript, path] : animTime.cleanUpScripts)
-				{
-					g_script->CallFunctionAlt(cleanUpScript, actor, 2, path.c_str(), animTime.firstPerson);
-				}
-			}
+			for (const auto& [cleanUpScript, path] : animTime.cleanUpScripts)
+				g_script->CallFunctionAlt(cleanUpScript, actor, 2, path.c_str(), animTime.firstPerson);
 			const NiPointer<BSAnimGroupSequence> endedAnim = anim;
+			const auto stateBefore = anim ? anim->m_eState : NiControllerSequence::INACTIVE;
 			it = g_timeTrackedAnims.erase(it);
-			if (animDataOfEase && endedAnim)
+			// ~AnimTime eased it out (a play it owns to its end): part of the Animation's current switch. An ease that
+			// was in progress belongs to the switch that started it, which can be an earlier one (the menus pause
+			// tracking, not the Animations).
+			if (animDataOfEase && endedAnim && endedAnim->m_eState != stateBefore)
 				AnimSwitch::Current(animDataOfEase).Add(endedAnim);
 		};
 
@@ -198,179 +308,48 @@ void HandleCustomTextKeys()
 			continue;
 		}
 		SetThisAnimScriptPath setThisAnimScriptPath(anim);
-		auto* groupInfo = anim->animGroup ? GetGroupInfo(static_cast<AnimGroupID>(anim->animGroup->groupID)) : nullptr;
-#if _DEBUG
-		auto animTimeDupl = TempObject(animTime); // see vals in debugger after erase
-#endif
-		if (!actor || !actor->baseProcess || !actor->Get3D())
+		if (IsActorInvalid(actor))
 		{
 			erase();
 			continue;
 		}
-		auto* animData = animTime.GetAnimData(actor);
-
-		const auto isAnimPlaying = [&]
-		{
-			if (groupInfo && animTime.endIfSequenceTypeChanges)
-				return anim->m_eState != kAnimState_Inactive && animData->animSequence[groupInfo->sequenceType] == anim;
-			return anim->m_eState != kAnimState_Inactive;
-		};
-		
-		if (IsActorInvalid(actor) || !animData)
-		{
-			erase();
-			continue;
-		}
+		auto* animData = animTime.animData;
 		animDataOfEase = animData;
-
+		auto* groupInfo = anim->animGroup ? GetGroupInfo(static_cast<AnimGroupID>(anim->animGroup->groupID)) : nullptr;
 		const auto time = animTime.useLegacyTime ? GetAnimTimeLegacy(animData, anim) : GetAnimTime(anim);
-	
-		if (animTime.respectEndKey && anim->animGroup)
+
+		if (animTime.respectEndKey && anim->animGroup && !UpdateRespectEndKey(animTime, groupInfo))
 		{
-			const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
-			auto& respectEndKeyData = animTime.respectEndKeyData;
-			if (current3rdPersonAnim != respectEndKeyData.anim3rdCounterpart && anim->m_eState == kAnimState_Inactive)
-			{
-				erase();
-				continue;
-			}
-			if (!respectEndKeyData.anim3rdCounterpart)
-			{
-				const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
-				auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
-				if (!anim3rd || !anim3rd->animGroup || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
-				{
-					anim3rd = anim->Get3rdPersonCounterpart();
-				}
-				if (!anim3rd || !anim3rd->animGroup)
-				{
-					erase();
-					continue;
-				}
-				respectEndKeyData.anim3rdCounterpart = anim3rd;
-			}
-			// In 3rd person nothing applies the times; RespectEndKey::EndFrame gives the sequence its own times back.
-			if (!g_thePlayer->IsThirdPerson())
-			{
-				// A sequence that has ended keeps its times on the 3rd person sequence until that changes, but does not
-				// take them back from another 1st person animation of the group that started since.
-				if (anim->m_eState != kAnimState_Inactive)
-					RespectEndKey::Apply(respectEndKeyData.anim3rdCounterpart, anim);
-				else
-					RespectEndKey::Keep(respectEndKeyData.anim3rdCounterpart);
-			}
+			erase();
+			continue;
 		}
-		if (!isAnimPlaying() && animTime.respectEndKey)
+		// Tracked until the 3rd person sequence changes, without acting on keys (the pollCondition anim)
+		if (animTime.respectEndKey && !IsPlaying(animTime, groupInfo))
 		{
 			++it;
-			continue; // we don't want text keys to apply on the pollCondition anim here but we need to track it until 3rd person has changed anim
+			continue;
 		}
 		// An aim transition plays backwards. Its time would look like the animation restarting on every frame, so the
-		// keys below would fire again each frame.
-		const bool bTimedKeys = !AimTransitions::IsPlayedBack(anim);
-		if (bTimedKeys && animTime.callbacks.Exists())
-		{
-			animTime.callbacks.Update(time, animData, [](const std::function<void()>& callback)
-			{
-				callback();
-			});
-		}
-		if (bTimedKeys && animTime.scriptCalls.Exists())
-		{
-			animTime.scriptCalls.Update(time, animData, _L(Script* script, g_script->CallFunction(script, actor, nullptr, nullptr, 0)));
-		}
-		if (bTimedKeys && animTime.soundPaths.Exists())
-		{
-			animTime.soundPaths.Update(time, animData, [&](Sounds& sound)
-			{
-				if (!IsPlayersOtherAnimData(animData))
-				{
-					const auto is3D = animData != g_thePlayer->firstPersonAnimData;
-					sound.Play(actor, is3D);
-				}
-			});
-		}
-		if (bTimedKeys && animTime.scriptLines.Exists())
-		{
-			const auto callback = [&](Script* script)
-			{
-				ThisStdCall<bool>(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, true);
-			};
-			if (animTime.useLegacyTime) // prevent getting stuck in b42 interact 
-				animTime.scriptLines.UpdateLegacy(time, animData, callback);	
-			else
-				animTime.scriptLines.Update(time, animData, callback);	
-		}
-		if (bTimedKeys && animTime.ammoKeysAct && animTime.ammoKeys.Exists())
-			animTime.ammoKeys.Update(time, animData, [&](const AmmoKeys::Key& key) { AmmoKeys::Fire(actor, key, anim); });
-
+		// keys would fire again each frame.
+		if (!AimTransitions::IsPlayedBack(anim))
+			FireTimedKeys(animTime, actor, time);
 		if (animTime.hasCustomAnimGroups)
-		{
-			const auto basePath = GetAnimBasePath(animTime.anim->m_kName.Str());
-			{
-				// pooled paths
-				for (const std::string_view animPath : Overrides::GetCustomGroupPaths(basePath))
-				{
-					const auto name = ExtractCustomAnimGroupName(animPath);
-					if (name.empty())
-						continue;
-					if (auto scriptsIter = g_customAnimGroups.find(ToLower(name)); scriptsIter != g_customAnimGroups.end())
-					{
-						auto& scripts = scriptsIter->second;
-						for (auto& script : scripts)
-						{
-							g_script->CallFunctionAlt(*script.script, actor, 2, animPath.data(), animTime.firstPerson);
-							if (*script.cleanUpScript)
-							{
-								animTime.cleanUpScripts.emplace(std::make_pair(*script.cleanUpScript, std::string(animPath)));
-							}
-						}
-					}
-				}
-			}
-		}
+			RunCustomAnimGroupScripts(animTime, actor);
 
-		if (animTime.isOverlayAdditiveAnim)
-		{
-			const auto refGroupId = animTime.referenceAnimGroupId;
-			auto* currentAnim = animData->animSequence[kSequence_Weapon];
-			if (!currentAnim || !currentAnim->animGroup || currentAnim->animGroup->groupID != refGroupId)
-			{
-				erase();
-				continue;
-			}
-			const auto baseGroupId = static_cast<AnimGroupID>(refGroupId);
-			if (baseGroupId == kAnimGroup_AttackLoop || baseGroupId == kAnimGroup_AttackLoopIS)
-			{
-				if (!GameFuncs::GetControlState(ControlCode::Attack, Decoding::IsDXKeyState::IsHeld))
-				{
-					erase();
-					continue;
-				}
-
-				const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
-				if (!ammoInfo && !IsGodMode())
-				{
-					erase();
-					continue;
-				}
-
-				if (ammoInfo && ammoInfo->count == 0 && !IsGodMode())
-				{
-					erase();
-					continue;
-				}
-			}
-		}
-		
-		// respectEndKey has a special case for calling erase() so rapidly firing variants where 1st person anim is shorter than 3rdp will work
-		// moved below so that keys on end frame are handled correctly (functional backpack by mrshersh)
-		if (!animTime.respectEndKey && !isAnimPlaying())
+		if (animTime.player == AnimTime::Player::AdditiveOverlay && HasOverlayEnded(animTime, actor))
 		{
 			erase();
 			continue;
 		}
-		if (animTime.trackEndTime && time >= animTime.anim->m_fEndKeyTime && anim->m_eState != NiControllerSequence::EASEIN && anim->m_eState != NiControllerSequence::TRANSDEST)
+		// After the keys, so that keys on the end frame act (Functional Backpack by mrshersh). respectEndKey plays end
+		// above, so rapidly firing variants whose 1st person anim is shorter than the 3rd person one work.
+		if (!animTime.respectEndKey && !IsPlaying(animTime, groupInfo))
+		{
+			erase();
+			continue;
+		}
+		if (animTime.player == AnimTime::Player::ScriptToEnd && time >= anim->m_fEndKeyTime
+			&& anim->m_eState != NiControllerSequence::EASEIN && anim->m_eState != NiControllerSequence::TRANSDEST)
 		{
 			erase();
 			continue;
@@ -399,99 +378,6 @@ bool IsDemigodMode()
 {
 	// g_bIsDemigodMode or the bSetDemigodMode:GamePlay game setting
 	return *reinterpret_cast<bool*>(0x11E07BB) || *reinterpret_cast<bool*>(0x11E0898);
-}
-
-void HandleBurstFire()
-{
-	auto iter = g_burstFireQueue.begin();
-	while (iter != g_burstFireQueue.end())
-	{
-		auto& [firstPerson, anim, index, hitKeys, _, shouldEject, lastNiTime, actorId, ejectKeys, ejectIdx, reloading, burstAnimData] = *iter;
-		const auto erase = [&]()
-		{
-			iter = g_burstFireQueue.erase(iter);
-		};
-		auto* actor = DYNAMIC_CAST(LookupFormByRefID(actorId), TESForm, Actor);
-		if (!actor || actor->IsDeleted() || actor->IsDead(true) || !anim || !anim->animGroup || anim->m_fLastScaledTime - lastNiTime < -0.01f && anim->m_eCycleType != NiControllerSequence::LOOP)
-		{
-			erase();
-			continue;
-		}
-		auto* animData = firstPerson ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
-		if (!animData)
-		{
-			erase();
-			continue;
-		}
-		lastNiTime = anim->m_fLastScaledTime;
-		auto* currentAnim = animData->animSequence[kSequence_Weapon];
-		auto* weapon = actor->GetWeaponForm();
-		if (currentAnim != anim)
-		{
-			erase();
-			continue;
-		}
-		//timePassed += GetTimePassed(animData, anim->animGroup->groupID);
-		const auto timePassed = anim->m_fLastScaledTime;
-		if (timePassed <= anim->animGroup->keyTimes[kSeqState_HitOrDetach])
-		{
-			// first hit handled by engine
-			// don't want duplicated shootings
-			++iter;
-			continue;
-		}
-		const auto passedHitKey = index < hitKeys.size() && timePassed > hitKeys.at(index)->m_fTime;
-		const auto passedEjectKey = ejectIdx < ejectKeys.size() && !ejectKeys.empty() && ejectIdx < ejectKeys.size() && timePassed > ejectKeys.at(ejectIdx)->m_fTime;
-		if (passedHitKey || passedEjectKey)
-		{
-			if (auto* ammoInfo = actor->baseProcess->GetAmmoInfo()) // static_cast<Decoding::MiddleHighProcess*>(animData->actor->baseProcess)->ammoInfo
-			{
-				if (!IsGodMode())
-				{
-					if (ammoInfo->count == 0 || actor->IsAnimActionReload())
-					{
-						// reloaded
-						reloading = true;
-					}
-#if 0
-					const auto ammoCount = ammoInfo->countDelta;
-					if (weapon && (ammoCount == 0 || ammoCount == clipSize))
-					{
-						erase();
-						continue;
-					}
-#endif
-				}
-			}
-			if (passedHitKey)
-				++index;
-			if (!IsPlayersOtherAnimData(animData))
-			{
-				bool ejected = false;
-				if (passedHitKey)
-				{
-					if (!reloading)
-						actor->FireWeapon();
-					if (!passedEjectKey && ejectKeys.empty() || ejectIdx == ejectKeys.size())
-					{
-						if (!reloading)
-							actor->EjectFromWeapon(weapon);
-						ejected = true;
-					}
-				}
-				if (!ejected && passedEjectKey)
-				{
-					actor->EjectFromWeapon(weapon);
-					++ejectIdx;
-				}
-			}
-		}
-		
-		if (index < hitKeys.size() || !ejectKeys.empty() && ejectIdx < ejectKeys.size())
-			++iter;
-		else
-			erase();
-	}
 }
 
 void HandleSynchronizedExecutionQueue()
@@ -585,7 +471,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 				AmmoKeys::WriteLateHooks();
 			}
 			WeaponFire::Update();
-			HandleBurstFire();
 			HandleAnimTimes();
 #if 1 // experimental fixes
 			if (g_pluginSettings.fixAttackISTransition)

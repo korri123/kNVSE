@@ -32,7 +32,7 @@
 #include "reload_kinds.h"
 #include "respect_end_key.h"
 #include "sequence_extradata.h"
-#include "text_key_arguments.h"
+#include "text_keys.h"
 #include "up_down_variant_fix.h"
 #include "weapon_hand_blend.h"
 #include "weapon_fire.h"
@@ -329,16 +329,7 @@ namespace ModReloadAnimFix
 
 bool __fastcall IsCustomAnimKey(const char* key)
 {
-	const static auto customKeys = {
-		"noBlend", "respectEndKey", "Script:", "interruptLoop", "burstFire", "respectTextKeys", "SoundPath:",
-		"blendToReloadLoop", "scriptLine:", "allowAttack", "noFix", "allowClampInLocomotion", "noBlendSmoothing",
-		"allowFirstPerson"
-	};
-	// Keys with arguments, matched the way their features read them (TextKeys::GetArguments).
-	const static auto argumentKeys = { "aimPitch", "weaponSpace", "spawn", "despawn", "blendCurve", "blendInCurve", "blendOutCurve",
-		"loadAmmo", "unloadAmmo" };
-	return ra::any_of(customKeys, _L(const char* key2, StartsWith(key, key2)))
-		|| ra::any_of(argumentKeys, _L(const char* name, TextKeys::GetArguments(key, name).has_value()));
+	return TextKeys::IsKnvseKey(key);
 }
 
 __declspec(naked) void KeyStringCrashFixHook()
@@ -1020,7 +1011,7 @@ void ApplyHooks()
 		*reinterpret_cast<UInt32*>(anim) = kVtbl_NiControllerSequence;
 		auto* retnAddr = GetLambdaAddrOfRetnAddr(_AddressOfReturnAddress());
 		// Sequence extra data is released when the sequence leaves its manager (SequenceExtraDatas::WriteHooks).
-		// EraseTimeTrackedAnim(anim); we do store a smart pointer to the anim in g_timeTrackedAnims
+		// No AnimTime outlives the sequence: g_timeTrackedAnims holds a reference to it.
 		// Deactivating also clears the blend items' pointers to this sequence (kBlendInterpItem::sequence).
 		if (anim->m_eState != NiControllerSequence::INACTIVE)
 			anim->Deactivate(0.0f, false);

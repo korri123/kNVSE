@@ -397,6 +397,8 @@ xcopy /Y /S /I /Q "$(SolutionDir)..\data" "$(FalloutNVPath)\Data"</Command>
     <ClCompile Include="aim_transitions.cpp" />
     <ClCompile Include="ammo_keys.cpp" />
     <ClCompile Include="weapon_fire.cpp" />
+    <ClCompile Include="burst_fire.cpp" />
+    <ClCompile Include="text_keys.cpp" />
     <ClCompile Include="anchor.cpp" />
     <ClCompile Include="bone_evaluation.cpp" />
     <ClCompile Include="transition_anims.cpp" />
@@ -498,6 +500,9 @@ xcopy /Y /S /I /Q "$(SolutionDir)..\data" "$(FalloutNVPath)\Data"</Command>
     <ClInclude Include="aim_transitions.h" />
     <ClInclude Include="ammo_keys.h" />
     <ClInclude Include="weapon_fire.h" />
+    <ClInclude Include="burst_fire.h" />
+    <ClInclude Include="text_keys.h" />
+    <ClInclude Include="timed_execution.h" />
     <ClInclude Include="reload_state.h" />
     <ClInclude Include="reload_kinds.h" />
     <ClInclude Include="anchor.h" />

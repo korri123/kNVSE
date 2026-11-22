@@ -40,6 +40,9 @@ namespace
 
     // Set once a sequence with curve keys has joined a manager. Until then every ease uses the default curve.
     std::atomic<bool> g_anyKeys = false;
+    // Counts the KFs whose keys were replaced (OnTextKeysChanged): a sequence whose keys were read at another count reads
+    // them again
+    std::atomic<UInt32> g_keysGeneration = 0;
 
     void LogOnce(const std::string& message)
     {
@@ -107,6 +110,19 @@ namespace
         return keys;
     }
 
+    // The sequence's curve keys, read again if a KF's keys were replaced since they were read. Not knowing which KF, every
+    // sequence reads its keys once after a replacement, when it next resolves a curve.
+    const BlendCurves::Keys& CurrentKeys(SequenceExtraData& data, const NiControllerSequence& sequence)
+    {
+        const UInt32 generation = g_keysGeneration.load(std::memory_order_relaxed);
+        if (data.blendCurveKeysGeneration != generation)
+        {
+            data.blendCurveKeys = sequence.m_spTextKeys ? ParseKeys(sequence) : BlendCurves::Keys();
+            data.blendCurveKeysGeneration = generation;
+        }
+        return data.blendCurveKeys;
+    }
+
     // Returns the key in effect for the direction at the time: the latest at or before it. A directional key wins over
     // a blendCurve key at the same time.
     const BlendCurve* FindKey(const BlendCurves::Keys& keys, Direction direction, float fTime)
@@ -145,13 +161,16 @@ namespace
         {
             for (size_t i = 0; i < keys.size(); ++i)
             {
-                if (data[i].blendCurveKeys.empty() || !memberEase(i))
+                if (!memberEase(i))
+                    continue;
+                const auto& curveKeys = CurrentKeys(data[i], *keys[i].sequence);
+                if (curveKeys.empty())
                     continue;
                 const NiControllerSequence* member = keys[i].sequence;
                 if (Eases::IsRising(member->m_eState) != (direction == Direction::In))
                     continue;
                 const float fTime = member == &sequence ? fScaledTime : member->GetSequenceTime();
-                if (const auto* curve = FindKey(data[i].blendCurveKeys, direction, fTime))
+                if (const auto* curve = FindKey(curveKeys, direction, fTime))
                     return curve;
             }
             return nullptr;
@@ -296,8 +315,16 @@ void BlendCurves::OnSequenceJoin(NiControllerSequence& sequence)
     if (auto* extraData = SequenceExtraDatas::GetOrCreate(&sequence))
     {
         extraData->blendCurveKeys = std::move(keys);
+        extraData->blendCurveKeysGeneration = g_keysGeneration.load(std::memory_order_relaxed);
         g_anyKeys.store(true, std::memory_order_relaxed);
     }
+}
+
+void BlendCurves::OnTextKeysChanged(const NiControllerSequence& sequence)
+{
+    if (sequence.m_spTextKeys && !ParseKeys(sequence).empty())
+        g_anyKeys.store(true, std::memory_order_relaxed);
+    g_keysGeneration.fetch_add(1, std::memory_order_relaxed);
 }
 
 float BlendCurves::Shape(NiControllerSequence& sequence, float fSpinner, float fScaledTime)

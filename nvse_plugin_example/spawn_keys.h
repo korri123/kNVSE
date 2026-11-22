@@ -25,7 +25,8 @@ struct AnimData;
 //
 // The bone is in the skeleton before the engine binds the KF (NiControllerSequence::StoreTargets), so the engine animates
 // it like any other: SkeletonNodes adds it and keeps it through target reloads. The keys are parsed once, into the
-// sequence's SequenceExtraData.
+// sequence's SequenceExtraData, and again when SetAnimTextKeys replaces the KF's keys; a bone that adds is bound to the
+// KF's track for it only at the skeleton's next target reload (equipping a weapon), until then it sits at its parent.
 namespace SpawnKeys
 {
     struct Bone
@@ -55,6 +56,10 @@ namespace SpawnKeys
     // A sequence joins a controller manager, before it is bound to the skeleton's nodes (SequenceExtraDatas' hook): keeps
     // the keys of a sequence of the player with it and gives the skeleton their bones
     void OnSequenceJoin(NiControllerSequence& sequence);
+
+    // SetAnimTextKeys replaced the keys of the sequence's KF (every clone of it shares them): the player's sequences of
+    // the KF read them again. Main thread.
+    void OnTextKeysChanged(const NiControllerSequence& sequence);
 
     // Whether the sequence joined its manager with keys
     bool Has(const NiControllerSequence& sequence);

@@ -122,12 +122,8 @@ void AdditiveManager::PlayManagedAdditiveAnim(AnimData* animData, BSAnimGroupSeq
         easeInTime = GetDefaultBlendTime(additiveAnim, referenceAnim);
     if (additiveAnim->Activate(0, true, additiveAnim->m_fSeqWeight, easeInTime, nullptr, false))
     {
-        if (auto* animTime = HandleExtraOperations(animData, additiveAnim, true))
-        {
-            animTime->endIfSequenceTypeChanges = false;
-            animTime->isOverlayAdditiveAnim = true;
+        if (auto* animTime = HandleExtraOperations(animData, additiveAnim, AnimTime::Player::AdditiveOverlay))
             animTime->referenceAnimGroupId = referenceAnim->animGroup->groupID;
-        }
     }
 }
 

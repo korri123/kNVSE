@@ -2,8 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
-#include <mutex>
-#include <unordered_map>
+#include <optional>
 
 #include "GameExtraData.h"
 #include "GameObjects.h"
@@ -16,29 +15,14 @@
 #include "npc_looping_reload_fix.h"
 #include "reload_state.h"
 #include "text_key_arguments.h"
+#include "text_keys.h"
 #include "utility.h"
 
 namespace AmmoKeys
 {
 	namespace
 	{
-		struct ParsedKeys
-		{
-			TimedExecution<Key> keys;
-			bool loads = false;
-		};
-
-		struct FixedStringHash
-		{
-			size_t operator()(const NiFixedString& string) const { return std::hash<const char*>()(string.CStr()); }
-		};
-
-		// By KF path, which every sequence made from the KF has as its name. Nodes are never erased, so pointers to the
-		// values stay valid.
-		std::mutex g_parsedMutex;
-		std::unordered_map<NiFixedString, std::optional<ParsedKeys>, FixedStringHash> g_parsed;
-
-		std::optional<Key> ParseKey(const char* text, const BSAnimGroupSequence& sequence)
+		std::optional<Key> ParseKey(const char* text, const NiControllerSequence& sequence)
 		{
 			for (const bool load : { true, false })
 			{
@@ -116,12 +100,8 @@ namespace AmmoKeys
 
 		bool Loads(const BSAnimGroupSequence* sequence)
 		{
-			if (!sequence)
-				return false;
-			Find(*sequence);
-			std::unique_lock lock(g_parsedMutex);
-			const auto iter = g_parsed.find(sequence->m_kName);
-			return iter != g_parsed.end() && iter->second && iter->second->loads;
+			const auto* keys = sequence ? TextKeys::Find(*sequence) : nullptr;
+			return keys && std::ranges::any_of(keys->ammoKeys.items, [](const auto& item) { return item.first.load; });
 		}
 
 		// The skeleton whose keys act for the actor: the player's view, an NPC's own
@@ -337,25 +317,15 @@ namespace AmmoKeys
 		}
 	}
 
-	TimedExecution<Key>* Find(const BSAnimGroupSequence& sequence)
+	TimedExecution<Key> Parse(const NiControllerSequence& sequence)
 	{
-		std::unique_lock lock(g_parsedMutex);
-		auto [iter, inserted] = g_parsed.try_emplace(sequence.m_kName);
-		if (inserted && sequence.m_spTextKeys)
+		return TimedExecution<Key>(sequence.m_spTextKeys->GetKeys(), [&](const char* text, Key& key)
 		{
-			ParsedKeys parsed;
-			parsed.keys = TimedExecution<Key>(sequence.m_spTextKeys->GetKeys(), [&](const char* text, Key& key)
-			{
-				const auto parsedKey = ParseKey(text, sequence);
-				if (parsedKey)
-					key = *parsedKey;
-				return parsedKey.has_value();
-			});
-			parsed.loads = std::ranges::any_of(parsed.keys.items, [](const auto& item) { return item.first.load; });
-			if (!parsed.keys.items.empty())
-				iter->second = std::move(parsed);
-		}
-		return iter->second ? &iter->second->keys : nullptr;
+			const auto parsedKey = ParseKey(text, sequence);
+			if (parsedKey)
+				key = *parsedKey;
+			return parsedKey.has_value();
+		});
 	}
 
 	bool OnSequenceStart(AnimData* animData, BSAnimGroupSequence* sequence)

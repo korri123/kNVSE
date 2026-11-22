@@ -25,6 +25,7 @@
 #include "anim_fixes.h"
 #include "anim_switch.h"
 #include "blend_fixes.h"
+#include "text_keys.h"
 #include "transition_anims.h"
 #include "nihooks.h"
 #include "NiNodes.h"
@@ -119,307 +120,125 @@ void HandleOnAnimDataDelete(AnimData* animData)
 		g_lastLoopSequence = nullptr;
 	std::unique_lock lock(g_animTimeMutex);
 	std::erase_if(g_timeTrackedAnims, _L(auto& p, p.second->animData == animData));
-	std::erase_if(g_burstFireQueue, _L(auto& p, p.animData == animData));
 }
 
 AnimTime::~AnimTime()
 {
-	if ((this->trackEndTime || this->isOverlayAdditiveAnim) && this->anim->m_eState != NiControllerSequence::EASEOUT && this->anim->m_eState != NiControllerSequence::TRANSSOURCE)
-	{
-		if (this->trackEndTime && !this->isOverlayAdditiveAnim && AdditiveManager::IsAdditiveSequence(this->anim))
-			// PlayAnimationPath anims
-			AdditiveManager::RemoveAdditiveTransformsFlags(this->anim);
-		const auto easeOutTime = this->anim->GetEaseOutTime();
-		this->anim->Deactivate(easeOutTime, false);
-	}
-}
-
-std::list<BurstFireData> g_burstFireQueue;
-
-// For a sequence started partway that continues another variant of its group (BlendFixes' TransitionToVariant). The
-// burst's shots and ejects before its start time belong to the other variant. HandleBurstFire handles one passed key
-// per frame, so without this they would all fire again, one per frame.
-void SkipPassedBurstFireKeys(const BSAnimGroupSequence* anim)
-{
-	const auto time = anim->m_fLastScaledTime;
-	for (auto& burst : g_burstFireQueue)
-	{
-		if (burst.anim.data != anim)
-			continue;
-		while (burst.index < burst.hitKeys.size() && burst.hitKeys[burst.index]->m_fTime < time)
-			++burst.index;
-		while (burst.ejectIdx < burst.ejectKeys.size() && burst.ejectKeys[burst.ejectIdx]->m_fTime < time)
-			++burst.ejectIdx;
-	}
+	if ((player != Player::ScriptToEnd && player != Player::AdditiveOverlay)
+		|| anim->m_eState == NiControllerSequence::EASEOUT || anim->m_eState == NiControllerSequence::TRANSSOURCE)
+		return;
+	if (player == Player::ScriptToEnd && AdditiveManager::IsAdditiveSequence(anim))
+		AdditiveManager::RemoveAdditiveTransformsFlags(anim);
+	anim->Deactivate(anim->GetEaseOutTime(), false);
 }
 
 TimeTrackedAnimsMap g_timeTrackedAnims;
-
-void EraseTimeTrackedAnim(BSAnimGroupSequence* anim)
-{
-	std::unique_lock lock(g_animTimeMutex);
-	std::erase_if(g_timeTrackedAnims, [anim](const auto& p)
-	{
-		return p.second->anim == anim;
-	});
-}
-
-enum class KeyCheckType
-{
-	KeyEquals, KeyStartsWith
-};
-
-// The Script: and scriptLine: keys of a KF, parsed once. Keyed by the KF's path, which every sequence made from it has
-// as its name.
-struct FixedStringHash
-{
-	size_t operator()(const NiFixedString& string) const { return std::hash<const char*>()(string.CStr()); }
-};
-using TimedScriptsMap = std::unordered_map<NiFixedString, TimedExecution<Script*>, FixedStringHash>;
-TimedScriptsMap g_scriptLineExecutions;
-TimedScriptsMap g_scriptCallExecutions;
 std::recursive_mutex g_animTimeMutex;
 
-AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, bool createIfNoKeys)
+AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimTime::Player player)
 {
+	using enum TextKeys::Table::Flag;
 	std::unique_lock lock(g_animTimeMutex);
 	if (!anim)
 		return nullptr;
-	auto applied = false;
-	const auto textKeys = anim->m_spTextKeys->GetKeys();
 	auto* actor = animData->actor;
-	AnimTime* animTimePtr = nullptr;
-	const auto getAnimTimeStruct = [&]() -> AnimTime&
+	const auto* keys = TextKeys::Find(*anim);
+	const bool isAttack = anim->animGroup && anim->animGroup->IsAttack();
+	const float time = GetAnimTime(anim);
+	AnimTime* animTime = nullptr;
+	const auto track = [&]() -> AnimTime&
 	{
-		if (!animTimePtr)
+		if (!animTime)
 		{
-			const auto iter = g_timeTrackedAnims.emplace(anim, std::make_unique<AnimTime>(actor, animData, anim));
-			animTimePtr = iter.first->second.get();
+			auto& entry = g_timeTrackedAnims[anim];
+			if (!entry)
+				entry = std::make_unique<AnimTime>(actor, animData, anim);
+			animTime = entry.get();
 		}
-		return *animTimePtr;
-	};
-	const auto createTimedExecution = [&](TimedScriptsMap& map)
-	{
-		const auto iter = map.try_emplace(anim->m_kName);
-		auto* timedExecution = &iter.first->second;
-		const bool uninitialized = iter.second;
-		return std::make_pair(timedExecution, uninitialized);
-	};
-	const auto hasKey = [&](const std::initializer_list<const char*> keyTexts, KeyCheckType type = KeyCheckType::KeyEquals, float* time = nullptr)
-	{
-		auto iter = textKeys.end();
-		for (const char* keyText : keyTexts)
-		{
-			switch (type)
-			{
-			case KeyCheckType::KeyEquals:
-				iter = ra::find_if(textKeys, _L(NiTextKey &key, _stricmp(key.m_kText.CStr(), keyText) == 0));
-				break;
-			case KeyCheckType::KeyStartsWith:
-				iter = ra::find_if(textKeys, _L(NiTextKey &key, StartsWith(key.m_kText.CStr(), keyText)));
-				break;
-			}
-			if (iter != textKeys.end())
-				break;
-		}
-		if (iter != textKeys.end())
-		{
-			applied = true;
-			if (time)
-				*time = iter->m_fTime;
-			return true;
-		}
-		
-		return false;
+		return *animTime;
 	};
 
-	if (anim->animGroup && anim->animGroup->IsAttack() && hasKey({"burstFire"}))
+	if (keys)
 	{
-		std::vector<NiTextKey*> hitKeys;
-		std::vector<NiTextKey*> ejectKeys;
-		const auto parseForKeys = [&](const char* keyName, std::vector<NiTextKey*>& keys)
+		if (keys->NeedsTracking(isAttack))
+			track();
+		if (keys->Has(kRespectEndKey) && animData == g_thePlayer->firstPersonAnimData && anim->animGroup)
 		{
-			bool skippedFirst = false;
-			for (auto& key : textKeys)
-			{
-				if (_stricmp(key.m_kText.CStr(), keyName) == 0)
-				{
-					if (!skippedFirst)
-					{
-						// engine handles first key
-						skippedFirst = true;
-						continue;
-					}
-					keys.push_back(&key);
-				}
-			}
-		};
-		parseForKeys("hit", hitKeys);
-		parseForKeys("eject", ejectKeys);
-		if (!hitKeys.empty() || !ejectKeys.empty())
+			auto& entry = track();
+			// Reset so that it is looked up again: the 3rd person sequence of this play.
+			entry.respectEndKeyData = {};
+			entry.respectEndKey = true;
+		}
+		const auto baseGroupID = anim->animGroup ? anim->animGroup->GetBaseGroupID() : kAnimGroup_Invalid;
+		// DecreaseAttackTimer reads it for the player only, and another actor's sequence would replace the player's.
+		if (keys->Has(kInterruptLoop) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS)
+			&& actor == g_thePlayer)
 		{
-			g_burstFireQueue.emplace_back(animData == g_thePlayer->firstPersonAnimData, anim, 0, std::move(hitKeys), 0.0,false, -FLT_MAX, animData->actor->refID, std::move(ejectKeys), 0, false, animData);
+			// IS allowed so that anims can finish after releasing LMB (handled in hook)
+			if (animData == g_thePlayer->firstPersonAnimData)
+				g_thePlayer->baseProcess->GetAnimData()->groupIDs[kSequence_Weapon] = kAnimGroup_AttackLoopIS;
+			g_lastLoopSequence = anim;
+			g_startedAnimation = true;
+		}
+		if (keys->Has(kNoBlend))
+			animData->noBlend120 = true;
+		if (keys->Has(kScriptCall))
+			track().scriptCalls = keys->scriptCalls.CreateContext(time);
+		if (keys->Has(kSoundPath))
+		{
+			auto& entry = track();
+			const auto is3D = animData != g_thePlayer->firstPersonAnimData;
+			entry.sounds.clear();
+			for (const auto& path : keys->soundPaths)
+				entry.sounds.emplace_back(path, is3D);
+			entry.soundKeys = keys->soundKeys.CreateContext(time);
+		}
+		if (keys->Has(kBlendToReloadLoop))
+			LoopingReloadPauseFix::Add(anim->m_kName.Str());
+		if (keys->Has(kScriptLine))
+			track().scriptLines = keys->scriptLines.CreateContext(time);
+		if (keys->Has(kAllowAttack))
+		{
+			auto& entry = track();
+			entry.allowAttack = true;
+			entry.allowAttackTime = keys->allowAttackTime;
 		}
 	}
-	const auto hasRespectEndKey = hasKey({"respectEndKey", "respectTextKeys"});
-	if (animData == g_thePlayer->firstPersonAnimData && anim->animGroup && hasRespectEndKey)
+	const bool ammoKeysAct = AmmoKeys::OnSequenceStart(animData, anim);
+	if (keys && !keys->ammoKeys.items.empty())
 	{
-		auto& animTime = getAnimTimeStruct();
-		// Reset so that it is looked up again: the 3rd person sequence of this play.
-		animTime.respectEndKeyData = {};
-		animTime.respectEndKey = true;
+		auto& entry = track();
+		entry.ammoKeys = keys->ammoKeys.CreateContext(time);
+		entry.ammoKeysAct = ammoKeysAct;
 	}
-	const auto baseGroupID = anim->animGroup ? anim->animGroup->GetBaseGroupID() : kAnimGroup_Invalid;
-
-	// DecreaseAttackTimer reads it for the player only, and another actor's sequence would replace the player's.
-	if (hasKey({"interruptLoop"}) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS)
-		&& animData->actor == g_thePlayer)
+	if (keys && isAttack && !keys->burstKeys.items.empty())
 	{
-		// IS allowed so that anims can finish after releasing LMB (handled in hook)
-		// *reinterpret_cast<UInt8*>(g_animationHookContext.groupID) = kAnimGroup_AttackLoopIS;
-		if (animData == g_thePlayer->firstPersonAnimData)
-		{
-			g_thePlayer->baseProcess->GetAnimData()->groupIDs[kSequence_Weapon] = kAnimGroup_AttackLoopIS;
-		}
-		g_lastLoopSequence = anim;
-		g_startedAnimation = true;
-	}
-	if (hasKey({"noBlend"}))
-	{
-		animData->noBlend120 = true;
-	}
-	if (hasKey({"Script:"}, KeyCheckType::KeyStartsWith))
-	{
-		auto [scriptCallKeys, uninitialized] = createTimedExecution(g_scriptCallExecutions);
-		if (uninitialized)
-		{
-			*scriptCallKeys = TimedExecution<Script*>(textKeys, [&](const char* key, Script*& result)
-			{
-				if (!StartsWith(key, "Script:"))
-					return false;
-				const auto edid = GetTextAfterColon(key);
-				if (edid.empty())
-					return false;
-				auto* form = GetFormByID(edid.data());
-				if (!form || !IS_ID(form, Script))
-				{
-					ERROR_LOG(FormatString("Text key contains invalid script %s", edid.data()));
-					return false;
-				}
-				result = static_cast<Script*>(form);
-				return true;
-			});
-		}
-		auto& animTime = getAnimTimeStruct();
-		animTime.scriptCalls = scriptCallKeys->CreateContext(GetAnimTime(anim));
-	}
-	if (hasKey({"SoundPath:"}, KeyCheckType::KeyStartsWith))
-	{
-		auto& animTime = getAnimTimeStruct();
-
-		animTime.soundPathsBase = TimedExecution<Sounds>(textKeys, [&](const char* key, Sounds& result)
-		{
-			const auto sound = Sounds::FromTextKey(animData, key);
-			if (!sound)
-				return false;
-			result = *sound;
-			return true;
-		});
-		animTime.soundPaths = animTime.soundPathsBase->CreateContext(GetAnimTime(anim));
-	}
-	if (hasKey({"blendToReloadLoop"}))
-	{
-		LoopingReloadPauseFix::Add(anim->m_kName.Str());
-	}
-	if (hasKey({"scriptLine:" }, KeyCheckType::KeyStartsWith))
-	{
-		auto& animTime = getAnimTimeStruct();
-		auto [scriptLineKeys, uninitialized] = createTimedExecution(g_scriptLineExecutions);
-		if (uninitialized)
-		{
-			*scriptLineKeys = TimedExecution<Script*>(textKeys, [&](const char* key, Script*& result)
-			{
-				if (!StartsWith(key, "scriptLine:"))
-					return false;
-				static std::unordered_map<const char*, Script*> s_scriptLines;
-				auto& cached = s_scriptLines[key]; // by pointer value
-				if (cached)
-				{
-					result = cached;
-					return true;
-				}
-				const auto line = std::string(GetTextAfterColon(key));
-				if (line.empty())
-					return false;
-				auto formattedLine = line;
-				FormatScriptText(formattedLine);
-				result = Script::CompileFromText(formattedLine, "ScriptLineKey");
-				if (!result)
-				{
-					ERROR_LOG("Failed to compile script in scriptLine key: " + line + " for anim " + std::string(anim->m_kName.CStr()));
-					return false;
-				}
-				cached = result;
-				return true;
-			});
-		}
-		animTime.scriptLines = scriptLineKeys->CreateContext(GetAnimTime(anim));
-	}
-	float time;
-	if (hasKey({"allowAttack"}, KeyCheckType::KeyEquals, &time))
-	{
-		auto& animTime = getAnimTimeStruct();
-		animTime.allowAttack = true;
-		animTime.allowAttackTime = time;
-	}
-	{
-		const bool ammoKeysAct = AmmoKeys::OnSequenceStart(animData, anim);
-		if (auto* ammoKeys = AmmoKeys::Find(*anim))
-		{
-			auto& animTime = getAnimTimeStruct();
-			animTime.ammoKeys = ammoKeys->CreateContext(GetAnimTime(anim));
-			animTime.ammoKeysAct = ammoKeysAct;
-			applied = true;
-		}
+		auto& entry = track();
+		entry.burstKeys = keys->burstKeys.CreateContext(time);
+		BurstFire::Start(actor, entry.burst);
 	}
 	// The spawn:/despawn: keys were recorded when the sequence joined the manager (SpawnKeys::OnSequenceJoin, for the
-	// player's sequences). Apply them here: the AnimTime is only tracked with its actor set, and AnimGroupOverride plays
-	// do not ask for one when there are no keys.
+	// player's sequences). Apply them here: AnimGroupOverride plays do not ask for an AnimTime when there are no keys.
 	if (SpawnKeys::Has(*anim))
-	{
-		getAnimTimeStruct().hasSpawnKeys = true;
-		applied = true;
-	}
+		track().hasSpawnKeys = true;
 
 	const auto basePath = GetAnimBasePath(anim->m_kName.Str());
 	if (Overrides::HasCustomGroupPaths(basePath))
-	{
-		auto& animTime = getAnimTimeStruct();
-		animTime.hasCustomAnimGroups = true;
-	}
+		track().hasCustomAnimGroups = true;
 
-	std::string_view animName(anim->m_kName);
-
+	const std::string_view animName(anim->m_kName);
 	for (const auto& legacyPath : g_pluginSettings.legacyAnimTimePaths)
 	{
 		if (sv::contains_ci(animName, legacyPath))
 		{
-			auto& animTime = getAnimTimeStruct();
-			animTime.useLegacyTime = true;
+			track().useLegacyTime = true;
 			break;
 		}
 	}
-		
-	if (applied || createIfNoKeys)
-	{
-		auto& animTime = getAnimTimeStruct();
-		animTime.actorId = actor->refID;
-		animTime.lastNiTime = -FLT_MAX;
-		animTime.firstPerson = animData == g_thePlayer->firstPersonAnimData;
-		return &animTime;
-	}
-	
-	return nullptr;
+	// A play the engine's groups start again keeps who started it before
+	if (player != AnimTime::Player::Group)
+		track().player = player;
+	return animTime;
 }
 
 std::span<const char*> s_moveTypeNames{ reinterpret_cast<const char**>(0x1197798), 3 };
@@ -828,11 +647,8 @@ bool Cmd_PlayAnimationPath_Execute(COMMAND_ARGS)
 			{
 				AnimSwitch::Current(animData).Add(anim);
 				ApplyFootIK(actor);
-				if (auto* animTime = HandleExtraOperations(animData, anim, true); animTime && anim->m_eCycleType != NiControllerSequence::LOOP)
-				{
-					animTime->trackEndTime = true;
-					animTime->endIfSequenceTypeChanges = false;
-				}
+				// A looping one plays until something deactivates it
+				HandleExtraOperations(animData, anim, anim->m_eCycleType != NiControllerSequence::LOOP ? AnimTime::Player::ScriptToEnd : AnimTime::Player::Script);
 				if (auto* extraData = SequenceExtraDatas::GetOrCreate(anim))
 					extraData->startInReloadTargets = true;
 				return 1.0;
@@ -861,9 +677,7 @@ void ReloadOverrideFiles()
 	{
 		std::unique_lock lock(g_animTimeMutex);
 		g_timeTrackedAnims.clear();
-		g_burstFireQueue.clear();
-		g_scriptCallExecutions.clear();
-		g_scriptLineExecutions.clear();
+		TextKeys::ClearTables();
 	}
 	// Every Animation releases its override sequences and its references to sets, and the KFs lose their last uses.
 	Overrides::UnloadAll();
@@ -1392,10 +1206,18 @@ void CreateCommands(NVSECommandBuilder& builder)
 		}
 
 		NiFixedArray<NiTextKey> newKeyArray(textKeyVector);
+		// The keys are the KF's, shared by every clone of it: whatever read them reads them again
+		const auto keysReplaced = [anim]
+		{
+			TextKeys::Forget(*anim);
+			SpawnKeys::OnTextKeysChanged(*anim);
+			BlendCurves::OnTextKeysChanged(*anim);
+		};
 
 		if (!anim->animGroup) 
 		{
 			anim->m_spTextKeys->m_kKeyArray = std::move(newKeyArray);
+			keysReplaced();
 			*result = 1;
 			return true;
 		}
@@ -1422,6 +1244,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			return true;
 		}
 		anim->animGroup = animGroup;
+		keysReplaced();
 		*result = 1;
 		return true;
 	}, Cmd_Expression_Plugin_Parse);
@@ -1564,8 +1387,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 			const auto activateResult = manager->ActivateSequence(anim, priority, startOver, actualWeight, actualEaseInTime, timeSyncSeq);
 			AnimSwitch::Current(animData).Add(anim);
 			if (activateResult)
-				if (auto* animTime = HandleExtraOperations(animData, anim, true))
-					animTime->endIfSequenceTypeChanges = false;
+				HandleExtraOperations(animData, anim, AnimTime::Player::Script);
 			return activateResult;
 		});
 		return true;

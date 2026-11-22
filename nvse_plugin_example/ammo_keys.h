@@ -1,10 +1,9 @@
 #pragma once
 
 #include "NiNodes.h"
+#include "timed_execution.h"
 
 struct AnimData;
-template <typename T>
-class TimedExecution;
 
 // Text keys that set the rounds in an actor's weapon at a time in an animation:
 //   "loadAmmo"           fills the clip (the clip size, or the ammo carried if that is less and the weapon uses ammo)
@@ -37,8 +36,8 @@ namespace AmmoKeys
         SInt32 rounds = 0;
     };
 
-    // The parsed keys of the sequence's KF, nullptr without any. Kept per KF path for the session
-    TimedExecution<Key>* Find(const BSAnimGroupSequence& sequence);
+    // The keys among the sequence's text keys (TextKeys::Table reads them once per KF)
+    TimedExecution<Key> Parse(const NiControllerSequence& sequence);
 
     // A sequence starting on one of an actor's skeletons (HandleExtraOperations): whether its keys act
     bool OnSequenceStart(AnimData* animData, BSAnimGroupSequence* sequence);

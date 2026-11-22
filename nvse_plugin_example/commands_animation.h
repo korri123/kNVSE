@@ -22,29 +22,12 @@
 #include "anim_overrides.h"
 #include "actor_overrides.h"
 #include "ammo_keys.h"
+#include "burst_fire.h"
+#include "timed_execution.h"
 
 extern std::span<AnimGroupInfo> g_animGroupInfos;
 using FormID = UInt32;
 using GroupID = UInt16;
-
-struct BurstFireData
-{
-	bool firstPerson = false;
-	NiPointer<BSAnimGroupSequence> anim;
-	std::size_t index;
-	std::vector<NiTextKey*> hitKeys;
-	float timePassed;
-	bool shouldEject = false;
-	float lastNiTime = -FLT_MAX;
-	UInt32 actorId = 0;
-	std::vector<NiTextKey*> ejectKeys;
-	std::size_t ejectIdx = 0;
-	bool reloading = false;
-	// The Animation the sequence plays on. The entry is released with it (Animation::~Animation).
-	AnimData* animData = nullptr;
-};
-
-extern std::list<BurstFireData> g_burstFireQueue;
 
 enum class POVSwitchState
 {
@@ -124,143 +107,58 @@ struct Sounds
 	}
 };
 
-template <typename T>
-class TimedExecution
-{
-public:
-
-	class Context
-	{
-	public:
-		float lastTime = 0;
-		TimedExecution* execution = nullptr;
-		size_t index = 0;
-
-		explicit Context(TimedExecution<T>* execution)
-			: execution(execution)
-		{
-		}
-
-		bool Exists() { return execution != nullptr; }
-
-		Context() : execution(nullptr) {}
-
-		template <typename F>
-		void Update(float time, AnimData* animData, F&& f)
-		{
-			if (!execution || execution->items.empty())
-				return;
-			const auto fLastTime = this->lastTime;
-			this->lastTime = time;
-			if (time - fLastTime < -0.01f)
-				index = 0;
-			Fire(time, f);
-		}
-		
-		template <typename F>
-		void UpdateLegacy(float time, AnimData* animData, F&& f)
-		{
-			if (!execution || execution->items.empty())
-				return;
-			const auto lastTime = this->lastTime;
-			this->lastTime = time;
-			if (index >= execution->items.size())
-			{
-				if (time - lastTime < -0.01f)
-					// looping anim
-						index = 0;
-				else
-					return;
-			}
-			Fire(time, f);
-		}
-
-	private:
-		// Calls f for the items due by time. The context is advanced past them before the first call and not touched
-		// after: a callback may replace this context (a scriptLine key whose script activates its own animation again,
-		// ActivateAnim -> HandleExtraOperations -> CreateContext), and going on with the replaced one fired that key
-		// again at the same time, forever.
-		template <typename F>
-		void Fire(float time, F& f)
-		{
-			auto& items = execution->items;
-			const size_t first = index;
-			size_t end = first;
-			while (end < items.size() && time >= items[end].second)
-				++end;
-			index = end;
-			for (size_t i = first; i < end; ++i)
-				f(items[i].first);
-		}
-	};
-
-	std::vector<std::pair<T, float>> items;
-	bool init = false;
-
-	template <typename F2>
-	TimedExecution(const std::span<NiTextKey>& keys, F2&& f2)
-	{
-		for (auto& key : keys)
-		{
-			T t;
-			if (f2(key.m_kText.CStr(), t))
-				items.emplace_back(t, key.m_fTime);
-		}
-		// Hand-edited KFs can list keys out of order; the contexts walk them by time
-		std::ranges::stable_sort(items, {}, &std::pair<T, float>::second);
-		init = true;
-	}
-
-
-	TimedExecution() = default;
-
-	Context CreateContext(float fStartTime = 0.0f)
-	{
-		auto context = Context(this);
-		for (auto& item : items)
-		{
-			if (fStartTime > item.second)
-				++context.index;
-			else break;
-		}
-		context.lastTime = fStartTime;
-		return context;
-	}
-};
-
+// One play of a sequence whose keys kNVSE acts on (TextKeys::Table), or that a script started: kept in g_timeTrackedAnims
+// and updated every frame on the main thread (HandleCustomTextKeys) until the play ends.
 struct AnimTime
 {
+	// Who plays the sequence, which decides when the play ends (besides the sequence becoming inactive and the actor
+	// going away)
+	enum class Player : UInt8
+	{
+		// The engine's anim groups, or kNVSE in their place: until another sequence takes the section
+		Group,
+		// ActivateAnim: until it is inactive
+		Script,
+		// PlayAnimationPath, not looping: until its end key, then deactivated
+		ScriptToEnd,
+		// An additive played over a reference group (AdditiveManager): until the group leaves the weapon section, an
+		// attack loop also on releasing attack or running out of ammo; then deactivated
+		AdditiveOverlay,
+	};
+
 	UInt32 actorId = 0;
 	// The Animation the sequence plays on. The entry is released with it (Animation::~Animation).
 	AnimData* animData = nullptr;
 	NiPointer<BSAnimGroupSequence> anim = nullptr;
-	float lastNiTime = -FLT_MAX;
-	bool respectEndKey = false;
 	bool firstPerson = false;
+	Player player = Player::Group;
+	// AdditiveOverlay: the group it plays over
+	FullAnimGroupID referenceAnimGroupId = 0xFFFF;
+	// The KF is listed in sLegacyAnimTimePaths: its time is the Animation's, not the sequence's
+	bool useLegacyTime = false;
+
+	// Where this play is in the KF's timed keys
 	TimedExecution<Script*>::Context scriptLines;
 	TimedExecution<Script*>::Context scriptCalls;
-	std::optional<TimedExecution<Sounds>> soundPathsBase;
-	TimedExecution<Sounds>::Context soundPaths;
-	bool allowAttack = false;
-	float allowAttackTime = INVALID_TIME;
-
-	using TimedCallbacks = TimedExecution<std::function<void()>>;
-	std::optional<TimedCallbacks> callbacksBase;
-	TimedCallbacks::Context callbacks;
-	// True if the sequence has spawn:/despawn: keys (SpawnKeys, in its SequenceExtraData).
-	bool hasSpawnKeys = false;
+	TimedExecution<UInt32>::Context soundKeys;
+	// The sounds of the KF's SoundPath keys for this play, by TextKeys::Table::soundPaths index (a folder picks its file
+	// when the play starts)
+	std::vector<Sounds> sounds;
 	// loadAmmo / unloadAmmo keys (AmmoKeys); they act only if ammoKeysAct
 	TimedExecution<AmmoKeys::Key>::Context ammoKeys;
 	bool ammoKeysAct = false;
+	TimedExecution<BurstFire::Key>::Context burstKeys;
+	BurstFire::State burst;
 
+	bool allowAttack = false;
+	float allowAttackTime = INVALID_TIME;
+	// True if the sequence has spawn:/despawn: keys (SpawnKeys, in its SequenceExtraData).
+	bool hasSpawnKeys = false;
 	bool hasCustomAnimGroups = false;
 	std::set<std::pair<Script*, std::string>> cleanUpScripts;
-	bool trackEndTime = false;
-	bool endIfSequenceTypeChanges = true;
-	bool useLegacyTime = false;
-	bool isOverlayAdditiveAnim = false;
-	FullAnimGroupID referenceAnimGroupId = 0xFFFF;
 
+	// The player's 1st person sequence with a respectEndKey key
+	bool respectEndKey = false;
 	struct RespectEndKeyData
 	{
 		// The player's 3rd person sequence whose times this animation takes in 1st person (RespectEndKey).
@@ -268,25 +166,12 @@ struct AnimTime
 	};
 	RespectEndKeyData respectEndKeyData;
 
-	AnimData* GetAnimData(Actor* actor) const
-	{
-		if (!actor || !actor->baseProcess)
-			return nullptr;
-		if (firstPerson)
-			return g_thePlayer->firstPersonAnimData;
-		return actor->baseProcess->GetAnimData();
-	}
-
-	bool IsPlayer() const
-	{
-		return actorId == g_thePlayer->refID;
-	}
-
 	explicit AnimTime(Actor* actor, AnimData* animData, BSAnimGroupSequence* anim)
-		: actorId(actor->refID), animData(animData), anim(anim)
+		: actorId(actor->refID), animData(animData), anim(anim), firstPerson(animData == g_thePlayer->firstPersonAnimData)
 	{
 	}
 
+	// Deactivates the sequence if this play started it and owns it to its end (ScriptToEnd, AdditiveOverlay)
 	~AnimTime();
 };
 
@@ -309,7 +194,6 @@ enum AnimKeyTypes
 using GameAnimMap = NiTPointerMap<AnimSequenceBase*>;
 using TimeTrackedAnimsMap = std::unordered_map<BSAnimGroupSequence*, std::unique_ptr<AnimTime>>;
 extern TimeTrackedAnimsMap g_timeTrackedAnims;
-void EraseTimeTrackedAnim(BSAnimGroupSequence* anim);
 
 #define THISCALL(address, returnType, ...) reinterpret_cast<returnType(__thiscall*)(__VA_ARGS__)>(address)
 #define _CDECL(address, returnType, ...) reinterpret_cast<returnType(__cdecl*)(__VA_ARGS__)>(address)
@@ -430,8 +314,10 @@ DEFINE_COMMAND_PLUGIN(kNVSETest, "", false, 0, nullptr);
 float GetTimePassed(AnimData* animData, UInt8 animGroupID);
 
 BSAnimGroupSequence* GetGameAnimation(AnimData* animData, UInt16 groupID);
-AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, bool createIfNoKeys = false);
-void SkipPassedBurstFireKeys(const BSAnimGroupSequence* anim);
+// A sequence starts playing on the Animation (any caller that starts one, and after its time was set): acts on the
+// keys of its KF that act at the start, and tracks the play (AnimTime) if keys act later or a script started it
+// (player other than Group). Returns the play's AnimTime, nullptr if it is not tracked.
+AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, AnimTime::Player player = AnimTime::Player::Group);
 float GetAnimMult(const AnimData* animData, UInt8 animGroupID);
 bool IsAnimGroupReload(AnimGroupID animGroupId);
 bool IsAnimGroupReload(UInt8 animGroupId);
