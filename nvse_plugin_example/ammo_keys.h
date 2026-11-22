@@ -26,7 +26,8 @@ struct AnimData;
 // bFixNPCLoopingReloads; without it they play one round as a plain reload, which fills the clip at once as before.
 // Prevent Reload Cancelling (Stewie's Tweaks with PreventReloadCancelling.dll) shows the rounds from before a reload in
 // the ammo counter until 70 % of it; during a reload whose fill is held the counter shows the clip (WriteLateHooks).
-// A polled AnimGroupOverride set does not restart a reload whose keys change the clip (ActorOverrides::UpdatePolled).
+// A polled AnimGroupOverride set does not restart a reload whose keys change the clip: Overrides::Poll plays only
+// looping groups again.
 namespace AmmoKeys
 {
     struct Key

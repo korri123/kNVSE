@@ -363,12 +363,6 @@ void HandleCustomTextKeys()
 	RespectEndKey::EndFrame();
 }
 
-void HandleAnimTimes()
-{
-	HandleCustomTextKeys();
-	Overrides::UpdatePolled();
-}
-
 bool IsGodMode()
 {
 	const bool* godMode = reinterpret_cast<bool*>(0x11E07BA);
@@ -471,7 +465,7 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 				AmmoKeys::WriteLateHooks();
 			}
 			WeaponFire::Update();
-			HandleAnimTimes();
+			HandleCustomTextKeys();
 #if 1 // experimental fixes
 			if (g_pluginSettings.fixAttackISTransition)
 			{

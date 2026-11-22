@@ -75,19 +75,18 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 	BlendFixes::ApplyMissingUpDownAnims(animData);
 
+	// The set the group resolved to, for pollCondition (Overrides::OnGroupPlayed). Not when a script chose the animation.
+	SavedAnims* resolvedSet = nullptr;
+	bool pollable = true;
 	if (auto* queuedAnim = GetQueuedAnim(animData, animGroupId))
 	{
 		destAnim = queuedAnim;
+		pollable = false;
 		HandleExtraOperations(animData, queuedAnim);
 	}
-	else if (auto* baseSet = Overrides::Find(animGroupId & 0xFF, animData); baseSet && baseSet->matchBaseGroupId)
+	else if ((resolvedSet = Overrides::FindForGroup(animGroupId, animData)))
 	{
-		if (auto* newAnim = Overrides::Play(*baseSet, animGroupId, animData))
-			destAnim = newAnim;
-	}
-	else if (auto* set = Overrides::Find(animGroupId, animData))
-	{
-		if (auto* newAnim = Overrides::Play(*set, animGroupId, animData))
+		if (auto* newAnim = Overrides::Play(*resolvedSet, animGroupId, animData))
 			destAnim = newAnim;
 	}
 	else if (destAnim)
@@ -105,11 +104,13 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 	{
 		destAnim = interceptedAnim;
 		animGroupId = destAnim->animGroup->groupID;
+		pollable = false;
 	}
 	else if (bSkip)
 	{
 		return destAnim;
 	}
+	Overrides::OnGroupPlayed(animData, animGroupId, resolvedSet, pollable);
 
 	if (g_pluginSettings.blendSmoothing && g_pluginSettings.fixSpineBlendBug)
 	{
@@ -384,12 +385,6 @@ bool LookupCustomAnim(FullAnimGroupID groupId, AnimSequenceBase** base, AnimData
 			*base = loaded.base;
 			return true;
 		}
-	}
-	auto* player = PlayerCharacter::GetSingleton();
-	if (animData->actor == player && animData != player->firstPersonAnimData && groupId != GetActorRealAnimGroup(player, groupId))
-	{
-		// hack to allow pollCondition to work correctly in first person when groupid is decayed
-		Overrides::Find(groupId, player->firstPersonAnimData);
 	}
 	return false;
 }

@@ -168,6 +168,8 @@ namespace Overrides
 
 	// True if any set was ever registered for the group in that point of view. Lock-free.
 	bool HasGroup(bool firstPerson, UInt16 groupId);
+	// True if a set with pollCondition was ever registered. Lock-free.
+	bool HasPolledSets();
 	UInt32 Generation();
 
 	// A read-only view of a set as the registry holds it.

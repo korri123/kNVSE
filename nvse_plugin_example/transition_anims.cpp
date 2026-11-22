@@ -72,14 +72,8 @@ bool TransitionAnims::HasPaths(const SavedAnims& set, TransitionKind kind)
 
 SavedAnims* TransitionAnims::FindSet(AnimData* animData, UInt16 groupId, TransitionKind kind)
 {
-	const auto find = [&](TransitionKind ofKind) -> SavedAnims*
-	{
-		if (auto* baseSet = Overrides::Find(groupId & 0xFF, animData, ofKind); baseSet && baseSet->matchBaseGroupId)
-			return baseSet;
-		return Overrides::Find(groupId, animData, ofKind);
-	};
-	auto* set = find(kind);
-	if (set && HasPaths(*set, TransitionKind::None) && set != find(TransitionKind::None))
+	auto* set = Overrides::FindForGroup(groupId, animData, kind);
+	if (set && HasPaths(*set, TransitionKind::None) && set != Overrides::FindForGroup(groupId, animData))
 		return nullptr;
 	return set;
 }

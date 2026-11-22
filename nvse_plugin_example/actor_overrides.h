@@ -36,10 +36,19 @@ struct ActorOverrides
 		// How often the set has played (for ordered sets, the file's turn).
 		UInt32 played;
 	};
-	struct Polled
+	// A group started in its section while a set with pollCondition was among its candidates (Overrides::OnGroupPlayed):
+	// the set it was resolved to then (null: no override). Overrides::Poll plays the group again when a polled set's
+	// condition changes which set that is.
+	struct PolledPlay
 	{
 		SavedAnims* set;
 		UInt16 groupId;
+		UInt8 section;
+		// Poll played triedGroup for triedSet. Not asked for again while that is still the answer, in case the engine
+		// plays another variant.
+		bool tried = false;
+		UInt16 triedGroup = 0;
+		SavedAnims* triedSet = nullptr;
 	};
 	struct Queued
 	{
@@ -50,6 +59,8 @@ struct ActorOverrides
 	{
 		UInt32 begin;
 		UInt32 count;
+		// A candidate has pollCondition.
+		bool hasPolled;
 	};
 
 	AnimData* animData = nullptr;
@@ -69,10 +80,8 @@ struct ActorOverrides
 	std::vector<Variant> variants;
 	// The variant that the actor's aim (attack, throw) played last. Its up and down groups play the same one.
 	UInt32 tripleIndex = 0;
-	// Sets with pollCondition that were tried for the group playing in its section (Overrides::UpdatePolled).
-	std::vector<Polled> polled;
-	std::vector<Polled> polledScratch;
-	bool polledListed = false;
+	// The groups playing in their sections that Overrides::Poll watches, at most one per section.
+	std::vector<PolledPlay> polledPlays;
 	// Sequences queued by QueueNextAnim.
 	std::vector<Queued> queued;
 	// The KFs of the sets of the player's weapon, loaded ahead of their first play.
@@ -96,8 +105,8 @@ struct ActorOverrides
 	// reading the KFs of the player's weapon ahead of time.
 	void Refresh(Actor* actor, bool firstPerson);
 	std::span<SavedAnims* const> GetCandidates(Actor* actor, bool firstPerson, UInt16 groupId);
-	void Track(SavedAnims& set, UInt16 groupId);
-	void UpdatePolled();
+	// Whether a candidate set of the group has pollCondition.
+	bool HasPolledCandidates(Actor* actor, bool firstPerson, UInt16 groupId);
 };
 
 namespace Overrides
@@ -109,7 +118,11 @@ namespace Overrides
 	// On the background 3D-loading threads, sets with a script condition are skipped, because scripts only run where the
 	// engine itself runs conditions.
 	SavedAnims* Find(UInt16 groupId, AnimData* animData, TransitionKind transition = TransitionKind{});
-
+	// The set a play of the group takes its animation from: a set of the base group that applies to every variant of it
+	// (matchBaseGroupId), else Find's for the full group.
+	SavedAnims* FindForGroup(UInt16 groupId, AnimData* animData, TransitionKind transition = TransitionKind{});
+	// Whether Find could return this set for the group now (its own conditions only, not the sets above it).
+	bool Passes(SavedAnims& set, UInt16 groupId, AnimData* animData);
 	// What Find decides about a candidate set.
 	enum class Verdict : UInt8
 	{
@@ -158,8 +171,14 @@ namespace Overrides
 
 	// Called from Animation::~Animation.
 	void OnAnimDataDelete(AnimData* animData);
-	// Plays the groups whose polled sets' conditions changed. Main thread, before the AI threads start.
-	void UpdatePolled();
+	// Called when HandleAnimationChange starts a group, with the set FindForGroup resolved it to. pollable is false when
+	// a script chose the animation (QueueNextAnim, an InterceptPlayAnimGroup handler). Records the play for Poll if the
+	// group loops (idles, walks, turns, aims, ...) and a candidate set has pollCondition, else forgets the section's.
+	void OnGroupPlayed(AnimData* animData, UInt16 groupId, SavedAnims* set, bool pollable);
+	// Plays the recorded groups of the actor's Animations again whose polled sets' conditions changed which set they
+	// resolve to. Called after Actor::PickAnimations, on the thread that picks the actor's animations, so the conditions'
+	// results of the frame are already there.
+	void Poll(Actor* actor);
 	// kNVSEReset: every Animation releases its override sequences and its references to sets. Main thread.
 	void UnloadAll();
 	// Checks the player's weapon every frame so that its KFs are read while it is still holstered (or the Pip-Boy is

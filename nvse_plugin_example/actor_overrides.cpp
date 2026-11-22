@@ -19,10 +19,9 @@
 
 namespace
 {
-	// Every Animation that has a state, and those with polled sets. The main thread walks these lists.
+	// Every Animation that has a state. kNVSEReset walks this list.
 	std::mutex s_statesMutex;
 	std::vector<ActorOverrides*> s_states;
-	std::vector<ActorOverrides*> s_polledStates;
 
 	// The AnimSequenceSingle of the KF being loaded, read by the Animation::InitGroupSpeed lookup hook. The group is
 	// not in the Animation's map, because an override never is.
@@ -319,7 +318,6 @@ void ActorOverrides::Release()
 	{
 		std::scoped_lock lock(s_statesMutex);
 		Unlist(s_states, this);
-		Unlist(s_polledStates, this);
 	}
 	KFLoader::DropPreload(preload);
 	if (!loaded.empty())
@@ -341,9 +339,7 @@ void ActorOverrides::Release()
 	memos.clear();
 	candidates.clear();
 	variants.clear();
-	polled.clear();
-	polledScratch.clear();
-	polledListed = false;
+	polledPlays.clear();
 	queued.clear();
 	generation = 0;
 	identity = {};
@@ -433,107 +429,24 @@ std::span<SavedAnims* const> ActorOverrides::GetCandidates(Actor* actor, bool fi
 	const auto begin = static_cast<UInt32>(candidates.size());
 	Overrides::CollectCandidates(identity, firstPerson, groupId, candidates);
 	const auto count = static_cast<UInt32>(candidates.size()) - begin;
+	const std::span<SavedAnims* const> collected{ candidates.data() + begin, count };
 	memoGroups.push_back(groupId);
-	memos.push_back({ begin, count });
-	return { candidates.data() + begin, count };
+	memos.push_back({ begin, count, std::ranges::any_of(collected, &SavedAnims::pollCondition) });
+	return collected;
 }
 
-void ActorOverrides::Track(SavedAnims& set, UInt16 groupId)
+bool ActorOverrides::HasPolledCandidates(Actor* actor, bool firstPerson, UInt16 groupId)
 {
-	const auto iter = std::ranges::find(polled, &set, &Polled::set);
-	if (iter != polled.end())
-	{
-		iter->groupId = groupId;
-		return;
-	}
-	polled.push_back({ &set, groupId });
-	if (!polledListed)
-	{
-		polledListed = true;
-		std::scoped_lock lock(s_statesMutex);
-		s_polledStates.push_back(this);
-	}
-}
-
-void ActorOverrides::UpdatePolled()
-{
-	auto* actor = static_cast<Actor*>(LookupFormByRefID(actorId));
-	if (!animData || IsActorInvalid(actor))
-	{
-		polled.clear();
-		return;
-	}
-	// Playing a group below tracks its polled sets again, so sets that stay are tracked again too.
-	polledScratch.clear();
-	std::swap(polled, polledScratch);
-	for (const auto [set, groupId] : polledScratch)
-	{
-		auto* conditionScript = set->conditionScript.load(std::memory_order_acquire);
-		if (!conditionScript || !set->IsEnabled())
-			continue;
-		const auto* animInfo = GetGroupInfo(static_cast<AnimGroupID>(groupId));
-		auto* curAnim = animData->animSequence[animInfo->sequenceType];
-		if (!curAnim || !curAnim->animGroup)
-			continue;
-		// Only while the group is the one playing in its section.
-		const UInt16 currentGroupId = curAnim->animGroup->groupID;
-		if ((currentGroupId & 0xFF) != (groupId & 0xFF) || !AnimGroup::FallbacksTo(animData, groupId, currentGroupId))
-			continue;
-		// A start or stop animation of the group is playing (TransitionAnims). It can come from a different set than the
-		// group's own animation (a set with only those), and playing the group for this set would restart it on every
-		// frame, for example a walk easing out while the player keeps moving, or an aim transition being turned around.
-		// The condition decides which animation it continues with.
-		if (TransitionAnims::Of(curAnim) != TransitionKind::None)
-		{
-			Track(*set, groupId);
-			continue;
-		}
-		// A reload is not restarted: its rounds change while it plays (ammo keys, Prevent Reload Cancelling's count at
-		// 70 %), so a condition on the clip changed halfway through the reload of an empty clip, and replaying the group
-		// started a new round on top of it, whose loads the engine counted again. The condition picks the next reload,
-		// and the next round of a looping one, as it is then.
-		if (curAnim->animGroup->IsReload())
-		{
-			Track(*set, groupId);
-			continue;
-		}
-		NVSEArrayVarInterface::Element arrResult;
-		if (!CallFunction(conditionScript, actor, nullptr, &arrResult))
-		{
-			Track(*set, groupId);
-			continue;
-		}
-		const auto result = static_cast<bool>(arrResult.GetNumber());
-		const auto playGroup = [&]
-		{
-			const auto nextGroupId = GetNearestGroupID(animData, static_cast<AnimGroupID>(groupId & 0xFF));
-			GameFuncs::PlayAnimGroup(animData, nextGroupId, 1, -1, -1);
-		};
-		if (set->ContainsAnim(curAnim))
-		{
-			if (result)
-				Track(*set, groupId);
-			else
-				// The set's animation is playing and its condition no longer holds. Play what the group resolves to now
-				// (which tracks this set again if it is tried).
-				playGroup();
-			continue;
-		}
-		Track(*set, groupId);
-		// Another animation is playing and the condition holds now. Play the group if that picks this set. If a set above
-		// it also passes, it keeps playing, so the group is not replayed every frame.
-		if (result && Overrides::Find(groupId, animData) == set)
-			playGroup();
-	}
-	polledScratch.clear();
+	GetCandidates(actor, firstPerson, groupId);
+	const auto iter = std::ranges::find(memoGroups, groupId);
+	return memos[iter - memoGroups.begin()].hasPolled;
 }
 
 namespace
 {
-	// Decides whether Overrides::Find can use one candidate set. Runs its condition script. With trackFor, a set with
-	// pollCondition is tracked for the group.
+	// Decides whether Overrides::Find can use one candidate set. Runs its condition script.
 	Overrides::Verdict Judge(SavedAnims& set, Actor* actor, UInt16 groupId, TransitionKind transition,
-		const std::optional<std::string_view>& idleFileStem, ActorOverrides* trackFor)
+		const std::optional<std::string_view>& idleFileStem)
 	{
 		using enum Overrides::Verdict;
 		if (!set.IsEnabled())
@@ -557,10 +470,6 @@ namespace
 			auto* conditionScript = Overrides::GetCondition(set);
 			if (!conditionScript)
 				return ConditionFailed;
-			// Start and stop animations are looked up when one is due, and the poll plays the set's group.
-			// Tracked whether or not the condition holds, so that it can start to hold.
-			if (set.pollCondition && transition == TransitionKind::None && trackFor)
-				trackFor->Track(set, groupId);
 			NVSEArrayVarInterface::Element result;
 			if (!CallFunction(conditionScript, actor, nullptr, &result) || result.GetNumber() == 0.0)
 				return ConditionFalse;
@@ -613,10 +522,24 @@ SavedAnims* Overrides::Find(UInt16 groupId, AnimData* animData, TransitionKind t
 	const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
 	for (auto* set : candidates)
 	{
-		if (Judge(*set, actor, groupId, transition, idleFileStem, state) == Verdict::Plays)
+		if (Judge(*set, actor, groupId, transition, idleFileStem) == Verdict::Plays)
 			return set;
 	}
 	return nullptr;
+}
+
+SavedAnims* Overrides::FindForGroup(UInt16 groupId, AnimData* animData, TransitionKind transition)
+{
+	if (auto* baseSet = Find(groupId & 0xFF, animData, transition); baseSet && baseSet->matchBaseGroupId)
+		return baseSet;
+	return Find(groupId, animData, transition);
+}
+
+bool Overrides::Passes(SavedAnims& set, UInt16 groupId, AnimData* animData)
+{
+	if (!animData || !animData->actor)
+		return false;
+	return Judge(set, animData->actor, groupId, TransitionKind::None, GetPlayingIdleFileStem(animData, groupId)) == Verdict::Plays;
 }
 
 std::vector<Overrides::Candidate> Overrides::Explain(UInt16 groupId, AnimData* animData, TransitionKind transition)
@@ -629,7 +552,7 @@ std::vector<Overrides::Candidate> Overrides::Explain(UInt16 groupId, AnimData* a
 	CollectCandidates(GetIdentity(actor), animData == PlayerCharacter::GetSingleton()->firstPersonAnimData, groupId, candidates);
 	const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
 	for (auto* set : candidates)
-		explained.push_back({ set, Judge(*set, actor, groupId, transition, idleFileStem, nullptr) });
+		explained.push_back({ set, Judge(*set, actor, groupId, transition, idleFileStem) });
 	return explained;
 }
 
@@ -745,28 +668,6 @@ void Overrides::OnAnimDataDelete(AnimData* animData)
 		state->Release();
 }
 
-void Overrides::UpdatePolled()
-{
-	// States can list themselves while a group plays, so iterate over a copy.
-	static std::vector<ActorOverrides*> s_updating;
-	{
-		std::scoped_lock lock(s_statesMutex);
-		if (s_polledStates.empty())
-			return;
-		s_updating.assign(s_polledStates.begin(), s_polledStates.end());
-	}
-	for (auto* state : s_updating)
-	{
-		state->UpdatePolled();
-		if (state->polled.empty())
-		{
-			std::scoped_lock lock(s_statesMutex);
-			Unlist(s_polledStates, state);
-			state->polledListed = false;
-		}
-	}
-}
-
 void Overrides::UpdatePlayerPreload()
 {
 	auto* player = PlayerCharacter::GetSingleton();
@@ -792,10 +693,156 @@ void Overrides::UnloadAll()
 		state->Unload();
 }
 
+namespace
+{
+	// Groups whose animation plays on until something else is picked: idles, walks, runs, turns, jump loops, the block
+	// idle, hand grips and aims. Every other group plays once, so a changed condition applies when it plays next, and
+	// playing it again partway through would restart an attack, an equip, a landing or a reload. Attack loops fire and
+	// dynamic idles are special idles (AnimIdle keeps their sequence), so neither is played again either.
+	bool IsPolledGroup(UInt16 groupId)
+	{
+		const auto baseGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
+		if (baseGroupId >= g_animGroupInfos.size() || baseGroupId == kAnimGroup_DynamicIdle
+			|| (baseGroupId >= kAnimGroup_AttackLoop && baseGroupId <= kAnimGroup_AttackLoopISDown))
+			return false;
+		return GetGroupInfo(baseGroupId)->actionType == kAnimGroupActionType_Loop;
+	}
+
+	bool IsPlaying(const BSAnimGroupSequence* sequence)
+	{
+		const auto state = sequence->m_eState;
+		return state == NiControllerSequence::ANIMATING || state == NiControllerSequence::EASEIN
+			|| state == NiControllerSequence::TRANSDEST;
+	}
+
+	void PollAnimation(AnimData* animData)
+	{
+		auto* state = animData ? ActorOverrides::Peek(animData) : nullptr;
+		if (!state || state->polledPlays.empty())
+			return;
+		// Played after the loop: playing a group records it again (OnGroupPlayed), which changes the list.
+		UInt16 replays[std::size(animData->animSequence)];
+		size_t numReplays = 0;
+		auto& plays = state->polledPlays;
+		for (auto iter = plays.begin(); iter != plays.end();)
+		{
+			auto& play = *iter;
+			// Only while the group still plays in its section. A section keeps its last sequence after it stops.
+			const auto* current = animData->animSequence[play.section];
+			const auto baseGroupId = static_cast<AnimGroupID>(play.groupId & 0xFF);
+			if (!current || !current->animGroup || (current->animGroup->groupID & 0xFF) != baseGroupId || !IsPlaying(current))
+			{
+				iter = plays.erase(iter);
+				continue;
+			}
+			++iter;
+			// A start or stop animation of the group (TransitionAnims) can come from another set than the group's own
+			// animation. The set decides which animation it continues with when it ends.
+			if (TransitionAnims::Of(current) != TransitionKind::None)
+				continue;
+			// The group as the actor would play it now. It can be another variant than the one that plays: the first
+			// person skeleton plays the variant it has (1hpfastforward for a rifle, mtidle from a script's PlayGroup
+			// Idle), and an override whose condition holds now can add a more specific one.
+			const auto groupId = GetNearestGroupID(animData, baseGroupId);
+			if (groupId == Overrides::kInvalidGroupId)
+				continue;
+			auto* now = Overrides::FindForGroup(groupId, animData);
+			if (play.tried && (play.triedGroup != groupId || play.triedSet != now))
+				play.tried = false;
+			if (groupId == play.groupId && now == play.set)
+				continue;
+			// A polled set's condition started to hold and it is the one that plays now, or the polled set that played
+			// no longer applies. A set without pollCondition that starts to hold above the playing one waits for the
+			// group's next play.
+			const bool polledNow = now && now != play.set && now->pollCondition;
+			const bool polledLeft = play.set && play.set->pollCondition && !Overrides::Passes(*play.set, play.groupId, animData);
+			// Once per change: the engine may play another variant than the one asked for (one it cannot load).
+			if ((!polledNow && !polledLeft) || play.tried)
+				continue;
+			play.set = now;
+			play.tried = true;
+			play.triedGroup = groupId;
+			play.triedSet = now;
+			replays[numReplays++] = groupId;
+		}
+		for (size_t i = 0; i < numReplays; ++i)
+			GameFuncs::PlayAnimGroup(animData, replays[i], 1, -1, -1);
+	}
+
+	// The instructions the jump at Actor::PickAnimations (0x895110) replaces, then the rest of the function.
+	__declspec(naked) void PickAnimationsOriginal()
+	{
+		__asm
+		{
+			push ebp
+			mov ebp, esp
+			sub esp, 0x18C
+			mov eax, 0x895119
+			jmp eax
+		}
+	}
+
+	// Actor::PickAnimations(float walkSpeed, float turnSpeed): the player's on the main thread, other actors' on AI
+	// linear task thread 1 (ProcessLists::DoPickAnims, Actor::UpdateAnimation, HighProcess::Update, ...).
+	void __fastcall PickAnimationsHook(Actor* actor, void*, float walkSpeed, float turnSpeed)
+	{
+		ThisStdCall(reinterpret_cast<UInt32>(&PickAnimationsOriginal), actor, walkSpeed, turnSpeed);
+		Overrides::Poll(actor);
+	}
+}
+
+void Overrides::OnGroupPlayed(AnimData* animData, UInt16 groupId, SavedAnims* set, bool pollable)
+{
+	if (!animData || !animData->actor)
+		return;
+	const auto baseGroupId = static_cast<AnimGroupID>(groupId & 0xFF);
+	if (baseGroupId >= g_animGroupInfos.size())
+		return;
+	const auto section = GetGroupInfo(baseGroupId)->sequenceType;
+	if (section >= std::size(animData->animSequence))
+		return;
+	const auto polled = pollable && HasPolledSets() && IsPolledGroup(groupId);
+	auto* state = polled ? ActorOverrides::Get(animData) : ActorOverrides::Peek(animData);
+	if (!state)
+		return;
+	ActorOverrides::PolledPlay play{ set, groupId, static_cast<UInt8>(section) };
+	if (const auto previous = std::ranges::find(state->polledPlays, play.section, &ActorOverrides::PolledPlay::section);
+		previous != state->polledPlays.end())
+	{
+		// What Poll played last stays tried, so a variant the engine plays instead is not asked for again.
+		play.tried = previous->tried;
+		play.triedGroup = previous->triedGroup;
+		play.triedSet = previous->triedSet;
+		state->polledPlays.erase(previous);
+	}
+	if (!polled)
+		return;
+	const auto firstPerson = animData == PlayerCharacter::GetSingleton()->firstPersonAnimData;
+	const auto hasPolled = [&](UInt16 lookupGroupId)
+	{
+		return lookupGroupId != kInvalidGroupId && HasGroup(firstPerson, lookupGroupId)
+			&& state->HasPolledCandidates(animData->actor, firstPerson, lookupGroupId);
+	};
+	// Poll plays the group as the actor would play it now (GetNearestGroupID), which can be another variant.
+	if (hasPolled(groupId) || (baseGroupId != groupId && hasPolled(baseGroupId))
+		|| [&] { const auto nearest = GetNearestGroupID(animData, baseGroupId); return nearest != groupId && hasPolled(nearest); }())
+		state->polledPlays.push_back(play);
+}
+
+void Overrides::Poll(Actor* actor)
+{
+	if (IsActorInvalid(actor))
+		return;
+	PollAnimation(actor->baseProcess->GetAnimData());
+	if (auto* player = PlayerCharacter::GetSingleton(); actor == player)
+		PollAnimation(player->firstPersonAnimData);
+}
+
 void Overrides::WriteHooks()
 {
 	WriteRelCall(0x493DC0, InitGroupSpeedLookupHook);
 	WriteRelCall(0x571982, VanillaGroupLoaded);
 	WriteRelCall(0x913B88, VanillaGroupLoaded);
 	WriteRelCall(0x913C87, VanillaGroupLoaded);
+	WriteRelJump(0x895110, PickAnimationsHook);
 }

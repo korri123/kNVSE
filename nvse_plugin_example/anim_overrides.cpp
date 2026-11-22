@@ -61,6 +61,8 @@ namespace
 	// One thread compiles at a time (CompileConditionScript caches the scripts by their text).
 	std::mutex s_compileMutex;
 	std::atomic<bool> s_conditionsWaiting = false;
+	// A set with pollCondition was registered (since the game started).
+	std::atomic<bool> s_anyPolled = false;
 
 	// Where the set is tried in its stack, before the registration order: its origin's position in its form's order,
 	// then in the default order.
@@ -327,6 +329,8 @@ bool SavedAnims::MatchesFolderCondition(const Actor* actor) const
 
 size_t Overrides::Register(const Source& source, std::span<const File> files, bool enable)
 {
+	if (source.pollCondition && !source.conditionScript && source.conditionText.empty() && !files.empty())
+		ERROR_LOG_ONCE(std::format("pollCondition is set for {} without a condition, so it does nothing", files.front().path));
 	struct Entry
 	{
 		std::string_view path;
@@ -431,6 +435,8 @@ size_t Overrides::Register(const Source& source, std::span<const File> files, bo
 			set->folderCondition = folderCondition;
 			set->matchBaseGroupId = source.matchBaseGroupId;
 			set->pollCondition = source.pollCondition;
+			if (source.pollCondition)
+				s_anyPolled.store(true, std::memory_order_relaxed);
 			set->conditionScriptText = source.conditionText;
 			if (source.conditionScript)
 				SetCondition(*set, source.conditionScript);
@@ -674,6 +680,11 @@ std::vector<Overrides::Problem> Overrides::GetProblems()
 bool Overrides::HasGroup(bool firstPerson, UInt16 groupId)
 {
 	return s_groups[firstPerson][groupId / 32].load(std::memory_order_relaxed) & 1u << groupId % 32;
+}
+
+bool Overrides::HasPolledSets()
+{
+	return s_anyPolled.load(std::memory_order_relaxed);
 }
 
 UInt32 Overrides::Generation()
