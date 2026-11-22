@@ -448,7 +448,6 @@ void HandleBurstFire()
 			{
 				if (!IsGodMode())
 				{
-					//const auto clipSize = GetWeaponInfoClipSize(actor);
 					if (ammoInfo->count == 0 || actor->IsAnimActionReload())
 					{
 						// reloaded
@@ -528,11 +527,6 @@ void SynchronizedQueue::RunAllAndClear()
 	}
 }
 
-void HandleMisc()
-{
-	OnReloadHandler::Update();
-}
-
 static void CheckAndWarnForFixPack()
 {
 	constexpr auto path = R"(Data\NVSE\Plugins\scripts\ln_nvaofixpack.txt)";
@@ -593,7 +587,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 			WeaponFire::Update();
 			HandleBurstFire();
 			HandleAnimTimes();
-			HandleMisc();
 #if 1 // experimental fixes
 			if (g_pluginSettings.fixAttackISTransition)
 			{

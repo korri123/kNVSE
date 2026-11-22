@@ -12,6 +12,7 @@
 #include "hooks.h"
 #include "main.h"
 #include "SafeWrite.h"
+#include "reload_kinds.h"
 #include "sequence_extradata.h"
 #include "string_view_util.h"
 #include "utility.h"
@@ -121,9 +122,9 @@ namespace
 			if (IsAnimGroupReload(static_cast<AnimGroupID>(groupId)) && (set.hasAmmoSwap || set.hasPartialReload))
 			{
 				isReload = true;
-				const auto lastReload = OnReloadHandler::GetLastReloadForActor(animData->actor);
-				didAmmoSwap = lastReload == ReloadType::AmmoSwap;
-				didPartialReload = lastReload == ReloadType::Partial;
+				const auto kind = ReloadKinds::Get(animData->actor);
+				didAmmoSwap = kind == ReloadKind::AmmoSwap;
+				didPartialReload = kind == ReloadKind::Partial;
 			}
 		}
 

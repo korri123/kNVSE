@@ -7,11 +7,22 @@ class Actor;
 class TESForm;
 class TESObjectWEAP;
 
-// What kNVSE keeps about an actor's reload (AmmoKeys, NPCLoopingReloadFix): kAnimationExtraData::reload on the root of
-// the actor's 3rd person Animation (the player's too, whichever view plays). It goes with the Animation: without one
-// nothing reloads. No locks: an actor's reload runs where its animations update (AI threads for NPCs, Actor::Reload and
-// Actor::HandlePostAnimationActions), and the ammo keys act on the main thread in kMessage_MainGameLoop, before those
-// threads start.
+// What a reload does (ReloadKinds): picks the "_partial" and "_ammo_swap" files of an AnimGroupOverride set
+enum class ReloadKind : UInt8
+{
+	// The clip had no rounds of the ammo it is loaded with
+	Full,
+	// Rounds of that ammo are left in the clip
+	Partial,
+	// The player swapped the weapon's ammo type, which empties the clip
+	AmmoSwap,
+};
+
+// What kNVSE keeps about an actor's reload (AmmoKeys, NPCLoopingReloadFix, ReloadKinds): kAnimationExtraData::reload on
+// the root of the actor's 3rd person Animation (the player's too, whichever view plays). It goes with the Animation:
+// without one nothing reloads. No locks: an actor's reload runs where its animations update (AI threads for NPCs,
+// Actor::Reload and Actor::HandlePostAnimationActions), and the ammo keys act on the main thread in
+// kMessage_MainGameLoop, before those threads start.
 struct ReloadState
 {
 	// The Animation the state belongs to: a node that gets another Animation starts over
@@ -55,6 +66,12 @@ struct ReloadState
 	// Attacking ended the player's looping reload, which loaded the round in the hand: the rest of this round's
 	// animation (on the skeleton of the view) loads nothing more, until it starts again. Compared by address only
 	const BSAnimGroupSequence* loopEndedRound = nullptr;
+
+	// The kind of the last reload Actor::Reload / PlayerCharacter::Reload started with an animation; every round of a
+	// looping reload plays it (ReloadKinds)
+	ReloadKind kind = ReloadKind::Full;
+	// The ammo of the empty clip an ammo swap made, for the Reload it calls next (ReloadKinds)
+	const TESForm* swappedAmmo = nullptr;
 
 	// The actor's state, made if it has none; nullptr without a 3rd person Animation
 	static ReloadState* Get(Actor* actor);

@@ -438,40 +438,12 @@ bool IsAnimGroupReload(UInt8 animGroupId);
 bool IsAnimGroupMovement(AnimGroupID animGroupId);
 bool IsAnimGroupMovement(UInt8 animGroupId);
 
-bool WeaponHasNthMod(Decoding::ContChangesEntry* weaponInfo, TESObjectWEAP* weap, UInt32 mod);
-
 // Returns the KF as a sequence of the Animation: the one it already has under that name, otherwise the KF loaded as an
 // override animation (Overrides::Load).
 BSAnimGroupSequence* FindOrLoadAnim(AnimData* animData, const char* path);
 // Returns the full ID of the anim group a KF is of, from its file name or else its contents. Returns
 // Overrides::kInvalidGroupId if neither identifies it.
 UInt16 GetAnimGroupId(std::string_view path);
-
-int GetWeaponInfoClipSize(Actor* actor);
-
-struct ReloadKey
-{
-	FormID actorId;
-	auto operator<=>(const ReloadKey& other) const = default;
-};
-
-enum class ReloadType
-{
-	NonPartial, Partial, AmmoSwap
-};
-
-struct ReloadHandler
-{
-	bool isLoopingReload = false;
-	ReloadType reloadType = ReloadType::NonPartial;
-};
-
-namespace OnReloadHandler
-{
-	ReloadType GetLastReloadForActor(Actor* actor);
-	void SetDidReload(Actor* actor, ReloadType reloadType = ReloadType::NonPartial);
-	void Update();
-}
 
 void HandleGarbageCollection();
 

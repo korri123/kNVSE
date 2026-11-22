@@ -114,6 +114,7 @@
     <ClCompile Include="movement_transitions.cpp" />
     <ClCompile Include="npc_looping_reload_fix.cpp" />
     <ClCompile Include="pose_blend_fixes.cpp" />
+    <ClCompile Include="reload_kinds.cpp" />
     <ClCompile Include="respect_end_key.cpp" />
     <ClCompile Include="weapon_parent_switch.cpp" />
     <ClCompile Include="gamebryo\NiStream.cpp" />
@@ -236,6 +237,7 @@
     <ClInclude Include="ammo_keys.h" />
     <ClInclude Include="weapon_fire.h" />
     <ClInclude Include="reload_state.h" />
+    <ClInclude Include="reload_kinds.h" />
     <ClInclude Include="anchor.h" />
     <ClInclude Include="bone_evaluation.h" />
     <ClInclude Include="transform_math.h" />
