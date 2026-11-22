@@ -35,7 +35,8 @@ namespace
 	// don't show.
 	bool IsAllowed(const AnimData* animData, const BSAnimGroupSequence* sequence)
 	{
-		if (animData->actor != PlayerCharacter::GetSingleton() || animData == PlayerCharacter::GetSingleton()->firstPersonAnimData || PlayerCharacter::GetSingleton()->IsThirdPerson())
+		auto* player = PlayerCharacter::GetSingleton();
+		if (animData->actor != player || animData == player->firstPersonAnimData || player->IsThirdPerson())
 			return true;
 		const static NiFixedString kKey = "allowFirstPerson";
 		return sequence->m_spTextKeys && sequence->m_spTextKeys->FindFirstByName(kKey);
@@ -574,7 +575,8 @@ namespace
 		const UInt16 groupId = animData->groupIDs[sequenceId];
 		if (sequenceId != kSequence_Movement)
 			return groupId;
-		const auto* thirdPerson = PlayerCharacter::GetSingleton()->baseProcess ? PlayerCharacter::GetSingleton()->baseProcess->GetAnimData() : nullptr;
+		auto* player = PlayerCharacter::GetSingleton();
+		const auto* thirdPerson = player->baseProcess ? player->baseProcess->GetAnimData() : nullptr;
 		if (!thirdPerson || thirdPerson == animData)
 			return groupId;
 		if (MovementTransitions::Of(animData->animSequence[kSequence_Movement]) != TransitionKind::None)

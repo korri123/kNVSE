@@ -769,14 +769,15 @@ void Overrides::UpdatePolled()
 
 void Overrides::UpdatePlayerPreload()
 {
-	if (!FileAnimations::IsLoaded() || !PlayerCharacter::GetSingleton() || !PlayerCharacter::GetSingleton()->baseProcess)
+	auto* player = PlayerCharacter::GetSingleton();
+	if (!FileAnimations::IsLoaded() || !player || !player->baseProcess)
 		return;
-	for (auto* animData : { PlayerCharacter::GetSingleton()->firstPersonAnimData, PlayerCharacter::GetSingleton()->baseProcess->GetAnimData() })
+	for (auto* animData : { player->firstPersonAnimData, player->baseProcess->GetAnimData() })
 	{
-		if (!animData || animData->actor != PlayerCharacter::GetSingleton())
+		if (!animData || animData->actor != player)
 			continue;
 		if (auto* state = ActorOverrides::Get(animData))
-			state->Refresh(PlayerCharacter::GetSingleton(), animData == PlayerCharacter::GetSingleton()->firstPersonAnimData);
+			state->Refresh(player, animData == player->firstPersonAnimData);
 	}
 }
 

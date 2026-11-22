@@ -51,7 +51,8 @@ namespace WeaponFire
 		// The weapon section's sequence on the skeleton whose keys act: the player's view, an NPC's own
 		BSAnimGroupSequence* GetKeySequence(Actor* actor)
 		{
-			auto* animData = actor == PlayerCharacter::GetSingleton() ? PlayerCharacter::GetSingleton()->GetAnimData() : GetAnimation(actor);
+			auto* player = PlayerCharacter::GetSingleton();
+			auto* animData = actor == player ? player->GetAnimData() : GetAnimation(actor);
 			return animData ? animData->animSequence[kSequence_Weapon] : nullptr;
 		}
 
@@ -388,7 +389,8 @@ namespace WeaponFire
 		// The Animation time of the skeleton whose keys act
 		float GetKeyClock(Actor* actor)
 		{
-			auto* animData = actor == PlayerCharacter::GetSingleton() ? PlayerCharacter::GetSingleton()->GetAnimData() : GetAnimation(actor);
+			auto* player = PlayerCharacter::GetSingleton();
+			auto* animData = actor == player ? player->GetAnimData() : GetAnimation(actor);
 			return animData ? animData->timePassed : 0.0f;
 		}
 
@@ -438,7 +440,8 @@ namespace WeaponFire
 				ThisStdCall(g_ejectShellCasing, weapon, ref);
 				return;
 			}
-			auto* animData = actor == PlayerCharacter::GetSingleton() ? PlayerCharacter::GetSingleton()->GetAnimData() : GetAnimation(actor);
+			auto* player = PlayerCharacter::GetSingleton();
+			auto* animData = actor == player ? player->GetAnimData() : GetAnimation(actor);
 			const float mult = animData ? GetAnimMult(animData, static_cast<UInt8>(sequence->animGroup->groupID)) : 1.0f;
 			const float rate = sequence->m_fFrequency * (mult > 0.0f ? mult : 1.0f);
 			if (eject.weapon != weapon)
@@ -578,7 +581,8 @@ namespace WeaponFire
 
 	bool ReleasedPlayerAttack()
 	{
-		auto* state = FireState::Peek(PlayerCharacter::GetSingleton());
+		auto* player = PlayerCharacter::GetSingleton();
+		auto* state = FireState::Peek(player);
 		if (!state)
 			return false;
 		// The attack loop plays to the end of its cycle before the jam
@@ -589,7 +593,7 @@ namespace WeaponFire
 			return state->queuedShots > 0;
 		if (state->openBolt.firing)
 		{
-			QueueShot(PlayerCharacter::GetSingleton());
+			QueueShot(player);
 			return true;
 		}
 		return state->openBolt.owed;

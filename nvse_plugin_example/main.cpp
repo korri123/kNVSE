@@ -182,14 +182,15 @@ namespace
 	bool UpdateRespectEndKey(AnimTime& animTime, const AnimGroupInfo* groupInfo)
 	{
 		auto* anim = animTime.anim.data;
-		const auto* current3rdPersonAnim = PlayerCharacter::GetSingleton()->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
+		auto* player = PlayerCharacter::GetSingleton();
+		const auto* current3rdPersonAnim = player->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
 		auto& respectEndKeyData = animTime.respectEndKeyData;
 		if (current3rdPersonAnim != respectEndKeyData.anim3rdCounterpart && anim->m_eState == kAnimState_Inactive)
 			return false;
 		if (!respectEndKeyData.anim3rdCounterpart)
 		{
 			const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
-			auto* anim3rd = PlayerCharacter::GetSingleton()->baseProcess->GetAnimData()->animSequence[sequenceId];
+			auto* anim3rd = player->baseProcess->GetAnimData()->animSequence[sequenceId];
 			if (!anim3rd || !anim3rd->animGroup || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
 				anim3rd = anim->Get3rdPersonCounterpart();
 			if (!anim3rd || !anim3rd->animGroup)
@@ -197,7 +198,7 @@ namespace
 			respectEndKeyData.anim3rdCounterpart = anim3rd;
 		}
 		// In 3rd person nothing applies the times; RespectEndKey::EndFrame gives the sequence its own times back.
-		if (!PlayerCharacter::GetSingleton()->IsThirdPerson())
+		if (!player->IsThirdPerson())
 		{
 			// A sequence that has ended keeps its times on the 3rd person sequence until that changes, but does not
 			// take them back from another 1st person animation of the group that started since.

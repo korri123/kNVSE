@@ -277,9 +277,10 @@ namespace
 
 	void ApplyAttackTransitionFix(bool toIronSights)
 	{
-		auto* animData3rd = PlayerCharacter::GetSingleton()->baseProcess->GetAnimData();
-		auto* animData1st = PlayerCharacter::GetSingleton()->firstPersonAnimData;
-		auto* animData = PlayerCharacter::GetSingleton()->IsThirdPerson() ? animData3rd : animData1st;
+		auto* player = PlayerCharacter::GetSingleton();
+		auto* animData3rd = player->baseProcess->GetAnimData();
+		auto* animData1st = player->firstPersonAnimData;
+		auto* animData = player->IsThirdPerson() ? animData3rd : animData1st;
 
 		auto* curWeaponAnim = animData->animSequence[kSequence_Weapon];
 
@@ -290,7 +291,7 @@ namespace
 		if (!isValidSource)
 			return;
 
-		auto* highProcess = PlayerCharacter::GetSingleton()->GetHighProcess();
+		auto* highProcess = player->GetHighProcess();
 		if (highProcess->isAiming != toIronSights)
 			return;
 
@@ -302,7 +303,7 @@ namespace
 
 		auto* finalSequence = TransitionAttackWithVariants(animData3rd, animData1st, targetGroupId, toIronSights);
 		const auto animAction = static_cast<Decoding::AnimAction>(highProcess->GetCurrentAnimAction());
-		GameFuncs::Actor_SetAnimActionAndSequence(PlayerCharacter::GetSingleton(), animAction, finalSequence);
+		GameFuncs::Actor_SetAnimActionAndSequence(player, animAction, finalSequence);
 	}
 } // end namespace
 
@@ -365,8 +366,9 @@ namespace
 // the same point.
 void BlendFixes::ApplyWeaponStanceFix()
 {
-	auto* animData3rd = PlayerCharacter::GetSingleton()->baseProcess->GetAnimData();
-	auto* animData1st = PlayerCharacter::GetSingleton()->firstPersonAnimData;
+	auto* player = PlayerCharacter::GetSingleton();
+	auto* animData3rd = player->baseProcess->GetAnimData();
+	auto* animData1st = player->firstPersonAnimData;
 	auto* sourceSeq = animData3rd ? animData3rd->animSequence[kSequence_Weapon] : nullptr;
 	if (!sourceSeq || !sourceSeq->animGroup)
 		return;
@@ -402,9 +404,9 @@ void BlendFixes::ApplyWeaponStanceFix()
 	}
 
 	// The action (attack, equip, reload, ...) ends with its sequence, and the player's is the third person one
-	auto* process = PlayerCharacter::GetSingleton()->baseProcess;
+	auto* process = player->baseProcess;
 	if (process->GetCurrentSequence() == sourceSeq)
-		PlayerCharacter::GetSingleton()->SetAnimAction(static_cast<Decoding::AnimAction>(process->GetCurrentAnimAction()), targetSeq);
+		player->SetAnimAction(static_cast<Decoding::AnimAction>(process->GetCurrentAnimAction()), targetSeq);
 }
 
 namespace
@@ -584,13 +586,14 @@ void BlendFixes::ApplyHooks()
 
 void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim)
 {
-	if (animData->actor != PlayerCharacter::GetSingleton()
+	auto* player = PlayerCharacter::GetSingleton();
+	if (animData->actor != player
 		|| anim->m_eCycleType == NiControllerSequence::LOOP
 		|| !IsPlayersOtherAnimData(animData)
 		|| anim->m_fLastScaledTime >= anim->m_fEndKeyTime
 		|| !HasRespectEndKey(anim))
 		return;
-	const auto* otherAnimData = PlayerCharacter::GetSingleton()->GetAnimData(!PlayerCharacter::GetSingleton()->IsThirdPerson());
+	const auto* otherAnimData = player->GetAnimData(!player->IsThirdPerson());
 	const auto* anim3rd = otherAnimData ? otherAnimData->animSequence[kSequence_Weapon] : nullptr;
 	if (anim3rd && anim3rd->m_fEndKeyTime == anim->m_fEndKeyTime)
 		return;

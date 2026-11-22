@@ -92,10 +92,11 @@ namespace NPCLoopingReloadFix
 		UInt32 g_loadRoundEquip = 0x88C650;
 		void __fastcall LoadRoundHook(Actor* actor, void*, TESForm* ammoForm, SInt32 rounds, ExtraDataList* xData, UInt32 applyEnchantment, UInt32 noUnequip, UInt32 noMessage)
 		{
-			if (actor == PlayerCharacter::GetSingleton() || rounds <= t_ammoCarried)
+			auto* player = PlayerCharacter::GetSingleton();
+			if (actor == player || rounds <= t_ammoCarried)
 				ThisStdCall(g_loadRoundEquip, actor, ammoForm, rounds, xData, applyEnchantment, noUnequip, noMessage);
 			auto* ammo = GET_CALLER_VAR(BaseProcess::AmmoInfo*, -0x38);
-			if (actor != PlayerCharacter::GetSingleton() && ammo && rounds <= GET_CALLER_VAR(SInt32, -0x34))
+			if (actor != player && ammo && rounds <= GET_CALLER_VAR(SInt32, -0x34))
 				ammo->count = rounds;
 		}
 

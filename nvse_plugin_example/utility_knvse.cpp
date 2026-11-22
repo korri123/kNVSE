@@ -54,9 +54,10 @@ void DebugPrintOnce(const std::string& str)
 
 bool IsPlayersOtherAnimData(AnimData* animData)
 {
-	if (PlayerCharacter::GetSingleton()->IsThirdPerson() && animData == PlayerCharacter::GetSingleton()->firstPersonAnimData)
+	auto* player = PlayerCharacter::GetSingleton();
+	if (player->IsThirdPerson() && animData == player->firstPersonAnimData)
 		return true;
-	if (!PlayerCharacter::GetSingleton()->IsThirdPerson() && animData == PlayerCharacter::GetSingleton()->baseProcess->GetAnimData())
+	if (!player->IsThirdPerson() && animData == player->baseProcess->GetAnimData())
 		return true;
 	return false;
 }

@@ -216,7 +216,8 @@ namespace
 	{
 		if (!manager)
 			return nullptr;
-		for (auto* animData : { PlayerCharacter::GetSingleton()->GetAnimData(false), PlayerCharacter::GetSingleton()->GetAnimData(true) })
+		auto* player = PlayerCharacter::GetSingleton();
+		for (auto* animData : { player->GetAnimData(false), player->GetAnimData(true) })
 		{
 			if (animData && animData->controllerManager == manager)
 				return animData;
@@ -311,10 +312,11 @@ BSAnimGroupSequence* AimTransitions::Switch(AnimData* animData, BSAnimGroupSeque
 
 void AimTransitions::Update()
 {
-	if (!IsEnabled() || !PlayerCharacter::GetSingleton() || !PlayerCharacter::GetSingleton()->baseProcess)
+	auto* player = PlayerCharacter::GetSingleton();
+	if (!IsEnabled() || !player || !player->baseProcess)
 		return;
-	const bool bAiming = PlayerCharacter::GetSingleton()->GetHighProcess()->isAiming;
-	for (auto* animData : { PlayerCharacter::GetSingleton()->GetAnimData(false), PlayerCharacter::GetSingleton()->GetAnimData(true) })
+	const bool bAiming = player->GetHighProcess()->isAiming;
+	for (auto* animData : { player->GetAnimData(false), player->GetAnimData(true) })
 	{
 		auto* clip = animData ? animData->animSequence[kSequence_Weapon] : nullptr;
 		const Playback playback = GetPlayback(clip);

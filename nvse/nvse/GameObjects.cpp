@@ -185,10 +185,11 @@ bool PlayerCharacter::SetSkeletonPath(const char* newPath)
 
 bool TESObjectREFR::Update3D()
 {
-	if (this == PlayerCharacter::GetSingleton()) {
+	auto* player = PlayerCharacter::GetSingleton();
+	if (this == player) {
 #ifdef _DEBUG
 		TESModel* model = DYNAMIC_CAST(baseForm, TESForm, TESModel);
-		return (PlayerCharacter::GetSingleton())->SetSkeletonPath(model->GetModelPath());
+		return player->SetSkeletonPath(model->GetModelPath());
 #else
 		// Lets try to allow unloading the player3D never the less...
 		SafeWrite8(kPlayerUpdate3Dpatch, kPlayerUpdate3DpatchTo);
@@ -289,13 +290,14 @@ ExtraContainerExtendDataArray	Actor::GetEquippedExtendDataList()
 
 void Actor::RestartAnims()
 {
-	if (this == PlayerCharacter::GetSingleton())
+	auto* player = PlayerCharacter::GetSingleton();
+	if (this == player)
 	{
-		auto* baseProcess = PlayerCharacter::GetSingleton()->baseProcess;
-		auto* animData1st = PlayerCharacter::GetSingleton()->firstPersonAnimData;
+		auto* baseProcess = player->baseProcess;
+		auto* animData1st = player->firstPersonAnimData;
 		auto* animData3rd = baseProcess->animData;
-		auto* bipedAnims1st = PlayerCharacter::GetSingleton()->bipedAnims1st;
-		auto* bipedAnim3rd = PlayerCharacter::GetSingleton()->validBip01Names;
+		auto* bipedAnims1st = player->bipedAnims1st;
+		auto* bipedAnim3rd = player->validBip01Names;
 		auto weaponOut = baseProcess->IsWeaponOut();
 		baseProcess->LoadAnimData(weaponOut, bipedAnim3rd, animData3rd, this);
 		baseProcess->LoadAnimData(weaponOut, bipedAnims1st, animData1st, this);

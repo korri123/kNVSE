@@ -107,8 +107,9 @@ namespace AmmoKeys
 		// The skeleton whose keys act for the actor: the player's view, an NPC's own
 		AnimData* GetKeyAnimData(Actor* actor)
 		{
-			if (actor == PlayerCharacter::GetSingleton())
-				return PlayerCharacter::GetSingleton()->GetAnimData();
+			auto* player = PlayerCharacter::GetSingleton();
+			if (actor == player)
+				return player->GetAnimData();
 			return actor->baseProcess ? actor->baseProcess->GetAnimData() : nullptr;
 		}
 
@@ -175,10 +176,11 @@ namespace AmmoKeys
 		BaseProcess::AmmoInfo* __fastcall ClipEquipHook(BaseProcess::AmmoInfo* clip, void*, TESForm* ammo, SInt32 rounds)
 		{
 			clip = ThisStdCall<BaseProcess::AmmoInfo*>(g_clipConstructor, clip, ammo, rounds);
-			if (GET_CALLER_VAR(Actor*, -0x80) != PlayerCharacter::GetSingleton() || !clip)
+			auto* player = PlayerCharacter::GetSingleton();
+			if (GET_CALLER_VAR(Actor*, -0x80) != player || !clip)
 				return clip;
-			auto* state = ReloadState::Peek(PlayerCharacter::GetSingleton());
-			if (!state || !IsCurrent(PlayerCharacter::GetSingleton(), state->fill) || state->fill.filled >= 0 || ammo != state->fill.ammo)
+			auto* state = ReloadState::Peek(player);
+			if (!state || !IsCurrent(player, state->fill) || state->fill.filled >= 0 || ammo != state->fill.ammo)
 				return clip;
 			state->fill.filled = clip->count;
 			if (state->fill.held)
@@ -311,7 +313,8 @@ namespace AmmoKeys
 		UInt32 g_hudRoundsGetter = 0x726070;
 		SInt32 __fastcall HUDRoundsHook(BaseProcess::AmmoInfo* clip)
 		{
-			if (const auto* state = ReloadState::Peek(PlayerCharacter::GetSingleton()); state && IsHolding(PlayerCharacter::GetSingleton(), *state))
+			auto* player = PlayerCharacter::GetSingleton();
+			if (const auto* state = ReloadState::Peek(player); state && IsHolding(player, *state))
 				return static_cast<SInt32>(clip->count);
 			return ThisStdCall<SInt32>(g_hudRoundsGetter, clip);
 		}
@@ -394,7 +397,8 @@ namespace AmmoKeys
 
 	void Reset()
 	{
-		if (auto* state = PlayerCharacter::GetSingleton() ? ReloadState::Peek(PlayerCharacter::GetSingleton()) : nullptr)
+		auto* player = PlayerCharacter::GetSingleton();
+		if (auto* state = player ? ReloadState::Peek(player) : nullptr)
 			*state = ReloadState{ .animData = state->animData };
 	}
 

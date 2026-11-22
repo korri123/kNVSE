@@ -59,14 +59,15 @@ namespace KnvseMenu
 				sections.clear();
 				candidates.clear();
 				views.clear();
-				if (!PlayerCharacter::GetSingleton() || !PlayerCharacter::GetSingleton()->parentCell || !PlayerCharacter::GetSingleton()->baseProcess)
+				auto* player = PlayerCharacter::GetSingleton();
+				if (!player || !player->parentCell || !player->baseProcess)
 				{
 					left.push_back({ .text = "Load a game first", .dim = true });
 					return;
 				}
 				Overrides::ForEachSet([&](const Overrides::SetView& view) { views.emplace(view.set, view); });
 				const std::pair<AnimData*, const char*> skeletons[] = {
-					{ PlayerCharacter::GetSingleton()->baseProcess->GetAnimData(), "3rd" }, { PlayerCharacter::GetSingleton()->firstPersonAnimData, "1st" }
+					{ player->baseProcess->GetAnimData(), "3rd" }, { player->firstPersonAnimData, "1st" }
 				};
 				static constexpr const char* kSections[] = { "idle", "movement", "left arm", "left hand", "weapon", "weapon up", "weapon down", "special idle" };
 				for (const auto& [animData, pov] : skeletons)
@@ -217,7 +218,8 @@ namespace KnvseMenu
 
 			bool Press(int button, Side side, int row, int& selectedRow) override
 			{
-				if (button != 3 || !PlayerCharacter::GetSingleton() || !PlayerCharacter::GetSingleton()->baseProcess)
+				auto* player = PlayerCharacter::GetSingleton();
+				if (button != 3 || !player || !player->baseProcess)
 					return false;
 				ReloadOverrideFiles();
 				return true;
