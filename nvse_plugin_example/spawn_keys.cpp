@@ -307,6 +307,9 @@ void SpawnKeys::OnSequenceJoin(NiControllerSequence& sequence)
 
 void SpawnKeys::OnTextKeysChanged(const NiControllerSequence& sequence)
 {
+    // Scripts may call SetAnimTextKeys before the player exists (JIP's script runner at DeferredInit)
+    if (!g_thePlayer)
+        return;
     for (auto* animData : { g_thePlayer->firstPersonAnimData, g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr })
     {
         auto* manager = animData ? animData->controllerManager : nullptr;
