@@ -66,7 +66,7 @@ namespace
     {
         // Fire's actor (thiscall, first stack argument). NPCs with a target aim at it, and their bones may be blended
         // on another thread while they fire.
-        if (GET_CALLER_VAR(TESObjectREFR*, 0x8) != g_thePlayer)
+        if (GET_CALLER_VAR(TESObjectREFR*, 0x8) != PlayerCharacter::GetSingleton())
             return &node->m_kWorld;
         thread_local NiTransform kAimed;
         if (!GetComputedWorldRotate(node, kAimed.m_Rotate))

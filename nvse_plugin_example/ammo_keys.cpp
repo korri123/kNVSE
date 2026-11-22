@@ -107,8 +107,8 @@ namespace AmmoKeys
 		// The skeleton whose keys act for the actor: the player's view, an NPC's own
 		AnimData* GetKeyAnimData(Actor* actor)
 		{
-			if (actor == g_thePlayer)
-				return g_thePlayer->GetAnimData();
+			if (actor == PlayerCharacter::GetSingleton())
+				return PlayerCharacter::GetSingleton()->GetAnimData();
 			return actor->baseProcess ? actor->baseProcess->GetAnimData() : nullptr;
 		}
 
@@ -175,10 +175,10 @@ namespace AmmoKeys
 		BaseProcess::AmmoInfo* __fastcall ClipEquipHook(BaseProcess::AmmoInfo* clip, void*, TESForm* ammo, SInt32 rounds)
 		{
 			clip = ThisStdCall<BaseProcess::AmmoInfo*>(g_clipConstructor, clip, ammo, rounds);
-			if (GET_CALLER_VAR(Actor*, -0x80) != g_thePlayer || !clip)
+			if (GET_CALLER_VAR(Actor*, -0x80) != PlayerCharacter::GetSingleton() || !clip)
 				return clip;
-			auto* state = ReloadState::Peek(g_thePlayer);
-			if (!state || !IsCurrent(g_thePlayer, state->fill) || state->fill.filled >= 0 || ammo != state->fill.ammo)
+			auto* state = ReloadState::Peek(PlayerCharacter::GetSingleton());
+			if (!state || !IsCurrent(PlayerCharacter::GetSingleton(), state->fill) || state->fill.filled >= 0 || ammo != state->fill.ammo)
 				return clip;
 			state->fill.filled = clip->count;
 			if (state->fill.held)
@@ -202,7 +202,7 @@ namespace AmmoKeys
 			const SInt32 before = clip->count;
 			const SInt32 filled = rounds;
 			ThisStdCall(0x6ECD40, clip, NPCLoopingReloadFix::OnClipFill(actor, weapon, reloadType, hasClipMod, *clip, rounds)); // BSTasklet::SetData
-			if (actor == g_thePlayer || !weapon || reloadType == 0)
+			if (actor == PlayerCharacter::GetSingleton() || !weapon || reloadType == 0)
 				return;
 			const bool holdable = !weapon->HasLoopingReloadAnim(hasClipMod);
 			if (StartFill(actor, clip->ammo, weapon, hasClipMod, before, filled, holdable))
@@ -234,7 +234,7 @@ namespace AmmoKeys
 		{
 			const auto rounds = ThisStdCall<SInt32>(g_useAmmoRoundsGetter, ammo);
 			auto* actor = GET_CALLER_VAR(Actor*, -0x1C);
-			if (rounds == 0 && actor != g_thePlayer)
+			if (rounds == 0 && actor != PlayerCharacter::GetSingleton())
 			{
 				if (const auto* state = ReloadState::Peek(actor); state && (state->loopTarget > 0 || IsHolding(actor, *state)))
 					*static_cast<UInt32*>(_AddressOfReturnAddress()) = 0x8A8DBF;
@@ -311,7 +311,7 @@ namespace AmmoKeys
 		UInt32 g_hudRoundsGetter = 0x726070;
 		SInt32 __fastcall HUDRoundsHook(BaseProcess::AmmoInfo* clip)
 		{
-			if (const auto* state = ReloadState::Peek(g_thePlayer); state && IsHolding(g_thePlayer, *state))
+			if (const auto* state = ReloadState::Peek(PlayerCharacter::GetSingleton()); state && IsHolding(PlayerCharacter::GetSingleton(), *state))
 				return static_cast<SInt32>(clip->count);
 			return ThisStdCall<SInt32>(g_hudRoundsGetter, clip);
 		}
@@ -331,7 +331,7 @@ namespace AmmoKeys
 	bool OnSequenceStart(AnimData* animData, BSAnimGroupSequence* sequence)
 	{
 		auto* actor = animData->actor;
-		if (!actor || !sequence->animGroup || (actor == g_thePlayer && IsPlayersOtherAnimData(animData)))
+		if (!actor || !sequence->animGroup || (actor == PlayerCharacter::GetSingleton() && IsPlayersOtherAnimData(animData)))
 			return false;
 		if (GetSequenceType(sequence->animGroup->GetBaseGroupID()) != kSequence_Weapon)
 			return true;
@@ -394,7 +394,7 @@ namespace AmmoKeys
 
 	void Reset()
 	{
-		if (auto* state = g_thePlayer ? ReloadState::Peek(g_thePlayer) : nullptr)
+		if (auto* state = PlayerCharacter::GetSingleton() ? ReloadState::Peek(PlayerCharacter::GetSingleton()) : nullptr)
 			*state = ReloadState{ .animData = state->animData };
 	}
 

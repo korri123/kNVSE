@@ -130,7 +130,7 @@ BlendFixes::Result BlendFixes::ApplyAimBlendFix(AnimData* animData, BSAnimGroupS
 	if (!srcAnim || !srcAnim->animGroup || srcAnim == destAnim)
 		return RESUME;
 
-	if (animData != g_thePlayer->firstPersonAnimData && sequenceId != kSequence_Weapon)
+	if (animData != PlayerCharacter::GetSingleton()->firstPersonAnimData && sequenceId != kSequence_Weapon)
 	{
 		// fix variant bs
 		const auto* baseProcess = animData->actor->baseProcess;
@@ -173,7 +173,7 @@ namespace
 			{
 				if (auto sound = Sounds::FromTextKey(animData, key.m_kText.CStr()))
 				{
-					const auto is3D = animData != g_thePlayer->firstPersonAnimData;
+					const auto is3D = animData != PlayerCharacter::GetSingleton()->firstPersonAnimData;
 					sound->Play(animData->actor, is3D);
 				}
 			}
@@ -207,7 +207,7 @@ namespace
 			return false;
 
 		const auto sequenceType = targetSeq->animGroup->GetGroupInfo()->sequenceType;
-		const bool isThirdPersonWeapon = animData != g_thePlayer->firstPersonAnimData && sequenceType >= kSequence_Weapon
+		const bool isThirdPersonWeapon = animData != PlayerCharacter::GetSingleton()->firstPersonAnimData && sequenceType >= kSequence_Weapon
 			&& sequenceType <= kSequence_WeaponDown;
 		// The up/down variants are weighted by the aim pitch
 		if (isThirdPersonWeapon)
@@ -277,9 +277,9 @@ namespace
 
 	void ApplyAttackTransitionFix(bool toIronSights)
 	{
-		auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
-		auto* animData1st = g_thePlayer->firstPersonAnimData;
-		auto* animData = g_thePlayer->IsThirdPerson() ? animData3rd : animData1st;
+		auto* animData3rd = PlayerCharacter::GetSingleton()->baseProcess->GetAnimData();
+		auto* animData1st = PlayerCharacter::GetSingleton()->firstPersonAnimData;
+		auto* animData = PlayerCharacter::GetSingleton()->IsThirdPerson() ? animData3rd : animData1st;
 
 		auto* curWeaponAnim = animData->animSequence[kSequence_Weapon];
 
@@ -290,7 +290,7 @@ namespace
 		if (!isValidSource)
 			return;
 
-		auto* highProcess = g_thePlayer->GetHighProcess();
+		auto* highProcess = PlayerCharacter::GetSingleton()->GetHighProcess();
 		if (highProcess->isAiming != toIronSights)
 			return;
 
@@ -302,7 +302,7 @@ namespace
 
 		auto* finalSequence = TransitionAttackWithVariants(animData3rd, animData1st, targetGroupId, toIronSights);
 		const auto animAction = static_cast<Decoding::AnimAction>(highProcess->GetCurrentAnimAction());
-		GameFuncs::Actor_SetAnimActionAndSequence(g_thePlayer, animAction, finalSequence);
+		GameFuncs::Actor_SetAnimActionAndSequence(PlayerCharacter::GetSingleton(), animAction, finalSequence);
 	}
 } // end namespace
 
@@ -365,8 +365,8 @@ namespace
 // the same point.
 void BlendFixes::ApplyWeaponStanceFix()
 {
-	auto* animData3rd = g_thePlayer->baseProcess->GetAnimData();
-	auto* animData1st = g_thePlayer->firstPersonAnimData;
+	auto* animData3rd = PlayerCharacter::GetSingleton()->baseProcess->GetAnimData();
+	auto* animData1st = PlayerCharacter::GetSingleton()->firstPersonAnimData;
 	auto* sourceSeq = animData3rd ? animData3rd->animSequence[kSequence_Weapon] : nullptr;
 	if (!sourceSeq || !sourceSeq->animGroup)
 		return;
@@ -402,9 +402,9 @@ void BlendFixes::ApplyWeaponStanceFix()
 	}
 
 	// The action (attack, equip, reload, ...) ends with its sequence, and the player's is the third person one
-	auto* process = g_thePlayer->baseProcess;
+	auto* process = PlayerCharacter::GetSingleton()->baseProcess;
 	if (process->GetCurrentSequence() == sourceSeq)
-		g_thePlayer->SetAnimAction(static_cast<Decoding::AnimAction>(process->GetCurrentAnimAction()), targetSeq);
+		PlayerCharacter::GetSingleton()->SetAnimAction(static_cast<Decoding::AnimAction>(process->GetCurrentAnimAction()), targetSeq);
 }
 
 namespace
@@ -584,13 +584,13 @@ void BlendFixes::ApplyHooks()
 
 void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSequence* anim)
 {
-	if (animData->actor != g_thePlayer
+	if (animData->actor != PlayerCharacter::GetSingleton()
 		|| anim->m_eCycleType == NiControllerSequence::LOOP
 		|| !IsPlayersOtherAnimData(animData)
 		|| anim->m_fLastScaledTime >= anim->m_fEndKeyTime
 		|| !HasRespectEndKey(anim))
 		return;
-	const auto* otherAnimData = g_thePlayer->GetAnimData(!g_thePlayer->IsThirdPerson());
+	const auto* otherAnimData = PlayerCharacter::GetSingleton()->GetAnimData(!PlayerCharacter::GetSingleton()->IsThirdPerson());
 	const auto* anim3rd = otherAnimData ? otherAnimData->animSequence[kSequence_Weapon] : nullptr;
 	if (anim3rd && anim3rd->m_fEndKeyTime == anim->m_fEndKeyTime)
 		return;
@@ -600,7 +600,7 @@ void BlendFixes::FixPrematureFirstPersonEnd(AnimData* animData, BSAnimGroupSeque
 
 void BlendFixes::ApplyMissingUpDownAnims(AnimData* animData)
 {
-	if (animData == g_thePlayer->firstPersonAnimData)
+	if (animData == PlayerCharacter::GetSingleton()->firstPersonAnimData)
 		return;
 	auto* baseProcess = animData->actor->baseProcess;
 	if (!baseProcess)
@@ -619,7 +619,7 @@ void BlendFixes::ApplyMissingUpDownAnims(AnimData* animData)
 void BlendFixes::AddMissingMTIdleInterps(const AnimData* animData, BSAnimGroupSequence* anim)
 {
 	static bool s_doOnce = false;
-	if (s_doOnce || !anim || animData != g_thePlayer->firstPersonAnimData)
+	if (s_doOnce || !anim || animData != PlayerCharacter::GetSingleton()->firstPersonAnimData)
 		return;
 	s_doOnce = true;
 

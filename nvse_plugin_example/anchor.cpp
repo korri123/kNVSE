@@ -234,7 +234,7 @@ void Anchors::Update(AnimData* animData, Actor* actor)
     if (!animationData || !animationData->wantsRestPose || animationData->restPose)
         return;
     // The skeleton files the game loads: PlayerCharacter::Load3D, TESObjectREFR::InitAnimation
-    const bool firstPerson = animData == g_thePlayer->firstPersonAnimData;
+    const bool firstPerson = animData == PlayerCharacter::GetSingleton()->firstPersonAnimData;
     animationData->restPose = GetRestPoseOfFile(firstPerson ? kFirstPersonSkeleton->data.str : actor->GetModel());
 }
 

@@ -49,11 +49,11 @@ namespace
 
 bool SkeletonNodes::IsPlayerSkeleton(const NiObjectNET* root)
 {
-    if (!g_thePlayer || !root)
+    if (!PlayerCharacter::GetSingleton() || !root)
         return false;
     const AnimData* skeletons[] = {
-        g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr,
-        g_thePlayer->firstPersonAnimData,
+        PlayerCharacter::GetSingleton()->baseProcess ? PlayerCharacter::GetSingleton()->baseProcess->GetAnimData() : nullptr,
+        PlayerCharacter::GetSingleton()->firstPersonAnimData,
     };
     return std::ranges::any_of(skeletons, [&](const AnimData* animData) { return animData && animData->nSceneRoot == root; });
 }

@@ -39,12 +39,12 @@ std::span<AnimGroupInfo> g_animGroupInfos = { reinterpret_cast<AnimGroupInfo*>(0
 
 AnimData* GetAnimDataForPov(UInt32 playerPov, Actor* actor)
 {
-	if (actor == g_thePlayer && playerPov)
+	if (actor == PlayerCharacter::GetSingleton() && playerPov)
 	{
 		if (playerPov == 1)
-			return g_thePlayer->baseProcess->GetAnimData();
+			return PlayerCharacter::GetSingleton()->baseProcess->GetAnimData();
 		if (playerPov == 2)
-			return g_thePlayer->firstPersonAnimData;
+			return PlayerCharacter::GetSingleton()->firstPersonAnimData;
 		return nullptr;
 	}
 	return actor->GetAnimation();
@@ -162,7 +162,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, A
 	{
 		if (keys->NeedsTracking(isAttack))
 			track();
-		if (keys->Has(kRespectEndKey) && animData == g_thePlayer->firstPersonAnimData && anim->animGroup)
+		if (keys->Has(kRespectEndKey) && animData == PlayerCharacter::GetSingleton()->firstPersonAnimData && anim->animGroup)
 		{
 			auto& entry = track();
 			// Reset so that it is looked up again: the 3rd person sequence of this play.
@@ -172,11 +172,11 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, A
 		const auto baseGroupID = anim->animGroup ? anim->animGroup->GetBaseGroupID() : kAnimGroup_Invalid;
 		// DecreaseAttackTimer reads it for the player only, and another actor's sequence would replace the player's.
 		if (keys->Has(kInterruptLoop) && (baseGroupID == kAnimGroup_AttackLoop || baseGroupID == kAnimGroup_AttackLoopIS)
-			&& actor == g_thePlayer)
+			&& actor == PlayerCharacter::GetSingleton())
 		{
 			// IS allowed so that anims can finish after releasing LMB (handled in hook)
-			if (animData == g_thePlayer->firstPersonAnimData)
-				g_thePlayer->baseProcess->GetAnimData()->groupIDs[kSequence_Weapon] = kAnimGroup_AttackLoopIS;
+			if (animData == PlayerCharacter::GetSingleton()->firstPersonAnimData)
+				PlayerCharacter::GetSingleton()->baseProcess->GetAnimData()->groupIDs[kSequence_Weapon] = kAnimGroup_AttackLoopIS;
 			g_lastLoopSequence = anim;
 			g_startedAnimation = true;
 		}
@@ -187,7 +187,7 @@ AnimTime* HandleExtraOperations(AnimData* animData, BSAnimGroupSequence* anim, A
 		if (keys->Has(kSoundPath))
 		{
 			auto& entry = track();
-			const auto is3D = animData != g_thePlayer->firstPersonAnimData;
+			const auto is3D = animData != PlayerCharacter::GetSingleton()->firstPersonAnimData;
 			entry.sounds.clear();
 			for (const auto& path : keys->soundPaths)
 				entry.sounds.emplace_back(path, is3D);
@@ -539,7 +539,7 @@ bool Cmd_SetActorAnimationPath_Execute(COMMAND_ARGS)
 		}
 	}
 	else if (firstPerson) // first person means it can only be the player
-		actor = g_thePlayer;
+		actor = PlayerCharacter::GetSingleton();
 
 	LogScript(scriptObj, actor, "SetActorAnimationPath");
 	
@@ -572,7 +572,7 @@ static void QueueScriptAnimOperation(Actor* actor, double* result, Function&& ca
 {
 	const auto currentThreadId = GetCurrentThreadId();
 
-	const auto isPlayerOnMainThread = actor == g_thePlayer && currentThreadId == OSGlobals::GetSingleton()->mainThreadID;
+	const auto isPlayerOnMainThread = actor == PlayerCharacter::GetSingleton() && currentThreadId == OSGlobals::GetSingleton()->mainThreadID;
 	if (isPlayerOnMainThread || !AILinearTaskManager::ShouldQueue3DTask())
 	{
 		*result = callback();
@@ -590,15 +590,15 @@ AnimData* GetAnimData(Actor* actor, int firstPerson)
 	switch (firstPerson)
 	{
 	case -1:
-		if (actor != g_thePlayer)
+		if (actor != PlayerCharacter::GetSingleton())
 			return actor->GetAnimation();
-		return !g_thePlayer->IsThirdPerson() ? g_thePlayer->firstPersonAnimData : g_thePlayer->baseProcess->GetAnimData();
+		return !PlayerCharacter::GetSingleton()->IsThirdPerson() ? PlayerCharacter::GetSingleton()->firstPersonAnimData : PlayerCharacter::GetSingleton()->baseProcess->GetAnimData();
 	case 0:
 		return actor->baseProcess->GetAnimData();
 	case 1:
 	default:
-		if (actor == g_thePlayer)
-			return g_thePlayer->firstPersonAnimData;
+		if (actor == PlayerCharacter::GetSingleton())
+			return PlayerCharacter::GetSingleton()->firstPersonAnimData;
 		return actor->GetAnimation();
 	}
 }
@@ -664,7 +664,7 @@ void ReloadOverrideFiles()
 {
 	// The player's animations restart if one of them was an override.
 	bool refresh = false;
-	for (auto* animData : { g_thePlayer->firstPersonAnimData, g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr })
+	for (auto* animData : { PlayerCharacter::GetSingleton()->firstPersonAnimData, PlayerCharacter::GetSingleton()->baseProcess ? PlayerCharacter::GetSingleton()->baseProcess->GetAnimData() : nullptr })
 	{
 		if (const auto* state = animData ? ActorOverrides::Peek(animData) : nullptr)
 		{
@@ -687,7 +687,7 @@ void ReloadOverrideFiles()
 	Overrides::CompileConditions();
 
 	if (refresh)
-		g_thePlayer->RestartAnims();
+		PlayerCharacter::GetSingleton()->RestartAnims();
 }
 
 // Registers the override files again and re-reads every KF from disk when it next plays (for animators: files changed
@@ -722,7 +722,7 @@ bool Cmd_PlayGroupAlt_Execute(COMMAND_ARGS)
 
 bool Cmd_kNVSETest_Execute(COMMAND_ARGS)
 {
-	auto* animData = g_thePlayer->baseProcess->GetAnimData();
+	auto* animData = PlayerCharacter::GetSingleton()->baseProcess->GetAnimData();
 	auto* anim = FindOrLoadAnim(animData, "characters\\_male\\sneak1hpattack8.kf");
 	auto controlledBlocks = anim->GetControlledBlocks();
 	auto idTagArray = anim->GetIDTags();
@@ -850,16 +850,16 @@ BSAnimGroupSequence* FindActiveAnimationByPath(AnimData* animData, const char* p
 BSAnimGroupSequence* FindActiveAnimationForActor(Actor* actor, const char* path, POVSwitchState pov = POVSwitchState::NotSet)
 {
 	AnimData* animData = nullptr;
-	if ((actor == g_thePlayer && g_thePlayer->IsFirstPerson() && pov == POVSwitchState::NotSet) || (pov == POVSwitchState::POV1st && actor == g_thePlayer))
-		animData = g_thePlayer->firstPersonAnimData;
+	if ((actor == PlayerCharacter::GetSingleton() && PlayerCharacter::GetSingleton()->IsFirstPerson() && pov == POVSwitchState::NotSet) || (pov == POVSwitchState::POV1st && actor == PlayerCharacter::GetSingleton()))
+		animData = PlayerCharacter::GetSingleton()->firstPersonAnimData;
 	else if (actor->baseProcess)
 		animData = actor->baseProcess->GetAnimData();
 	if (!animData)
 		return nullptr;
 	auto* anim = FindActiveAnimationByPath(animData, path);
-	if (!anim && actor == g_thePlayer)
+	if (!anim && actor == PlayerCharacter::GetSingleton())
 	{
-		auto* otherAnimData = g_thePlayer->IsFirstPerson() ? g_thePlayer->baseProcess->GetAnimData() : g_thePlayer->firstPersonAnimData;
+		auto* otherAnimData = PlayerCharacter::GetSingleton()->IsFirstPerson() ? PlayerCharacter::GetSingleton()->baseProcess->GetAnimData() : PlayerCharacter::GetSingleton()->firstPersonAnimData;
 		anim = FindActiveAnimationByPath(otherAnimData, path);
 	}
 	return anim;
@@ -916,7 +916,7 @@ BSAnimGroupSequence* FindOrLoadAnim(Actor* actor, const char* path, bool firstPe
 {
 	if (!actor->baseProcess)
 		return nullptr;
-	auto* animData = firstPerson && actor == g_thePlayer ? g_thePlayer->firstPersonAnimData : actor->baseProcess->GetAnimData();
+	auto* animData = firstPerson && actor == PlayerCharacter::GetSingleton() ? PlayerCharacter::GetSingleton()->firstPersonAnimData : actor->baseProcess->GetAnimData();
 	if (!animData)
 		return nullptr;
 	return FindOrLoadAnim(animData, path);
@@ -926,8 +926,8 @@ AnimData* GetAnimDataForAnim(TESObjectREFR* thisObj, BSAnimGroupSequence* anim)
 {
 	if (!thisObj)
 		return nullptr;
-	if (thisObj == g_thePlayer && anim->m_pkOwner == g_thePlayer->firstPersonAnimData->controllerManager)
-		return g_thePlayer->firstPersonAnimData;
+	if (thisObj == PlayerCharacter::GetSingleton() && anim->m_pkOwner == PlayerCharacter::GetSingleton()->firstPersonAnimData->controllerManager)
+		return PlayerCharacter::GetSingleton()->firstPersonAnimData;
 	if (const auto* actor = DYNAMIC_CAST(thisObj, TESForm, Actor); actor && actor->baseProcess)
 		return actor->baseProcess->GetAnimData();
 	return nullptr;
@@ -993,9 +993,9 @@ float GetDefaultBlendTime(const BSAnimGroupSequence* destSequence, const BSAnimG
 
 bool IsPlayerInFirstPerson(Actor* actor)
 {
-	if (actor != g_thePlayer)
+	if (actor != PlayerCharacter::GetSingleton())
 		return false;
-	return !g_thePlayer->IsThirdPerson();
+	return !PlayerCharacter::GetSingleton()->IsThirdPerson();
 }
 
 UInt16 GetNearestGroupID(AnimData* animData, AnimGroupID animGroupId)
@@ -1277,8 +1277,8 @@ void CreateCommands(NVSECommandBuilder& builder)
 		if (!anim)
 			return true;
 		AnimData* animData;
-		if (actor == g_thePlayer && anim->m_pkOwner == g_thePlayer->firstPersonAnimData->controllerManager)
-			animData = g_thePlayer->firstPersonAnimData;
+		if (actor == PlayerCharacter::GetSingleton() && anim->m_pkOwner == PlayerCharacter::GetSingleton()->firstPersonAnimData->controllerManager)
+			animData = PlayerCharacter::GetSingleton()->firstPersonAnimData;
 		else
 			animData = actor->baseProcess->GetAnimData();
 
@@ -1823,9 +1823,9 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* animData = actor->baseProcess->GetAnimData();
 		if (animData->controllerManager != anim->m_pkOwner)
 		{
-			if (actor != g_thePlayer || anim->m_pkOwner != g_thePlayer->firstPersonAnimData->controllerManager)
+			if (actor != PlayerCharacter::GetSingleton() || anim->m_pkOwner != PlayerCharacter::GetSingleton()->firstPersonAnimData->controllerManager)
 				return true;
-			animData = g_thePlayer->firstPersonAnimData;
+			animData = PlayerCharacter::GetSingleton()->firstPersonAnimData;
 		}
 		if (const auto* state = ActorOverrides::Peek(animData))
 			*result = ra::find(state->queued, anim, [](const ActorOverrides::Queued& queued) { return queued.sequence.data; }) != state->queued.end();
@@ -1950,7 +1950,7 @@ void CreateCommands(NVSECommandBuilder& builder)
 		auto* actor = DYNAMIC_CAST(thisObj, TESObjectREFR, Actor);
 		if (!actor)
 			return true;
-		const auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : actor->GetAnimation();
+		const auto* animData = actor == PlayerCharacter::GetSingleton() ? PlayerCharacter::GetSingleton()->GetAnimData() : actor->GetAnimation();
 		if (!animData)
 			return true;
 		if (groupId >= g_animGroupInfos.size())

@@ -43,13 +43,6 @@ ScriptEventList* TESObjectREFR::GetEventList() const
 	return 0;
 }
 
-PlayerCharacter* g_thePlayer = nullptr;
-
-PlayerCharacter* PlayerCharacter::GetSingleton()
-{
-	return *(PlayerCharacter **)0x011DEA3C;
-}
-
 QuestObjectiveTargets* PlayerCharacter::GetCurrentQuestObjectiveTargets()
 {
 	return (QuestObjectiveTargets *)ThisStdCall(s_PlayerCharacter_GetCurrentQuestTargets, this);
@@ -77,7 +70,7 @@ AnimData* PlayerCharacter::GetAnimData(bool bFirstPerson) const
 
 AnimData* PlayerCharacter::GetAnimData() const
 {
-	const auto isFirstPerson = !g_thePlayer->IsThirdPerson();
+	const auto isFirstPerson = !PlayerCharacter::GetSingleton()->IsThirdPerson();
 	return GetAnimData(isFirstPerson);
 }
 
@@ -122,7 +115,7 @@ bool TESObjectREFR::Update3D_v1c()
 	UInt8 kPlayerUpdate3DpatchFrom = 0x0B6;
 	UInt8 kPlayerUpdate3DpatchTo = 0x0EB;
 
-	if (this == g_thePlayer) {
+	if (this == PlayerCharacter::GetSingleton()) {
 		// Lets try to allow unloading the player3D never the less...
 		SafeWrite8(kPlayerUpdate3Dpatch, kPlayerUpdate3DpatchTo);
 	}
@@ -192,10 +185,10 @@ bool PlayerCharacter::SetSkeletonPath(const char* newPath)
 
 bool TESObjectREFR::Update3D()
 {
-	if (this == g_thePlayer) {
+	if (this == PlayerCharacter::GetSingleton()) {
 #ifdef _DEBUG
 		TESModel* model = DYNAMIC_CAST(baseForm, TESForm, TESModel);
-		return (g_thePlayer)->SetSkeletonPath(model->GetModelPath());
+		return (PlayerCharacter::GetSingleton())->SetSkeletonPath(model->GetModelPath());
 #else
 		// Lets try to allow unloading the player3D never the less...
 		SafeWrite8(kPlayerUpdate3Dpatch, kPlayerUpdate3DpatchTo);
@@ -296,13 +289,13 @@ ExtraContainerExtendDataArray	Actor::GetEquippedExtendDataList()
 
 void Actor::RestartAnims()
 {
-	if (this == g_thePlayer)
+	if (this == PlayerCharacter::GetSingleton())
 	{
-		auto* baseProcess = g_thePlayer->baseProcess;
-		auto* animData1st = g_thePlayer->firstPersonAnimData;
+		auto* baseProcess = PlayerCharacter::GetSingleton()->baseProcess;
+		auto* animData1st = PlayerCharacter::GetSingleton()->firstPersonAnimData;
 		auto* animData3rd = baseProcess->animData;
-		auto* bipedAnims1st = g_thePlayer->bipedAnims1st;
-		auto* bipedAnim3rd = g_thePlayer->validBip01Names;
+		auto* bipedAnims1st = PlayerCharacter::GetSingleton()->bipedAnims1st;
+		auto* bipedAnim3rd = PlayerCharacter::GetSingleton()->validBip01Names;
 		auto weaponOut = baseProcess->IsWeaponOut();
 		baseProcess->LoadAnimData(weaponOut, bipedAnim3rd, animData3rd, this);
 		baseProcess->LoadAnimData(weaponOut, bipedAnims1st, animData1st, this);

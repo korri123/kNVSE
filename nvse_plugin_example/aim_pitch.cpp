@@ -109,7 +109,7 @@ float AimPitch::Shares::Get(std::string_view bone) const
 
 void AimPitch::Update(AnimData* animData, Actor* actor)
 {
-    if (!g_pluginSettings.blendSmoothing || !animData || !actor || animData == g_thePlayer->firstPersonAnimData)
+    if (!g_pluginSettings.blendSmoothing || !animData || !actor || animData == PlayerCharacter::GetSingleton()->firstPersonAnimData)
         return;
     auto* manager = animData->controllerManager;
     auto* root = manager ? manager->m_pkTarget : nullptr;

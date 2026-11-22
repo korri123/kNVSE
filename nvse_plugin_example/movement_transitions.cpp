@@ -35,7 +35,7 @@ namespace
 	// don't show.
 	bool IsAllowed(const AnimData* animData, const BSAnimGroupSequence* sequence)
 	{
-		if (animData->actor != g_thePlayer || animData == g_thePlayer->firstPersonAnimData || g_thePlayer->IsThirdPerson())
+		if (animData->actor != PlayerCharacter::GetSingleton() || animData == PlayerCharacter::GetSingleton()->firstPersonAnimData || PlayerCharacter::GetSingleton()->IsThirdPerson())
 			return true;
 		const static NiFixedString kKey = "allowFirstPerson";
 		return sequence->m_spTextKeys && sequence->m_spTextKeys->FindFirstByName(kKey);
@@ -174,7 +174,7 @@ namespace
 	bool PlayStop(AnimData* animData)
 	{
 		auto* current = animData->animSequence[kSequence_Movement];
-		if (animData->actor != g_thePlayer || !IsGait(current) || animData->noBlend120)
+		if (animData->actor != PlayerCharacter::GetSingleton() || !IsGait(current) || animData->noBlend120)
 			return false;
 		const auto currentTransition = MovementTransitions::Of(current);
 		// Already stopping (the GetState hook keeps it), or released while the start animation was still blending in
@@ -507,7 +507,7 @@ namespace
 	NiControllerSequence::AnimState __fastcall PickedGroupStateHook(BSAnimGroupSequence* sequence)
 	{
 		auto* animData = GET_CALLER_VAR(AnimData*, -0x4);
-		const bool bArrivals = IsEnabled() && animData->actor != g_thePlayer && GET_CALLER_VAR(UInt32, -0x1C) == kSequence_Movement &&
+		const bool bArrivals = IsEnabled() && animData->actor != PlayerCharacter::GetSingleton() && GET_CALLER_VAR(UInt32, -0x1C) == kSequence_Movement &&
 			sequence == animData->animSequence[kSequence_Movement];
 		if (MovementTransitions::Of(sequence) == TransitionKind::Stop)
 			return bArrivals && KeepArrival(animData, sequence) ? sequence->m_eState : NiControllerSequence::INACTIVE;
@@ -521,7 +521,7 @@ namespace
 	bool __fastcall WarpArrivalHook(AnimData* animData, void*, NiPoint3* delta, Actor* actor, bool bRotation, bool bNoHeight)
 	{
 		const bool bResult = animData->GetDelta(delta, actor, bRotation, bNoHeight);
-		if (!bResult || !IsEnabled() || actor == g_thePlayer)
+		if (!bResult || !IsEnabled() || actor == PlayerCharacter::GetSingleton())
 			return bResult;
 		const auto* stop = animData->animSequence[kSequence_Movement];
 		if (MovementTransitions::Of(stop) != TransitionKind::Stop)
@@ -574,7 +574,7 @@ namespace
 		const UInt16 groupId = animData->groupIDs[sequenceId];
 		if (sequenceId != kSequence_Movement)
 			return groupId;
-		const auto* thirdPerson = g_thePlayer->baseProcess ? g_thePlayer->baseProcess->GetAnimData() : nullptr;
+		const auto* thirdPerson = PlayerCharacter::GetSingleton()->baseProcess ? PlayerCharacter::GetSingleton()->baseProcess->GetAnimData() : nullptr;
 		if (!thirdPerson || thirdPerson == animData)
 			return groupId;
 		if (MovementTransitions::Of(animData->animSequence[kSequence_Movement]) != TransitionKind::None)

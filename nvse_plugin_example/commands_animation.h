@@ -99,7 +99,7 @@ struct Sounds
 		const auto line = GetTextAfterColon(key);
 		if (line.empty())
 			return std::nullopt;
-		const auto is3D = animData != g_thePlayer->firstPersonAnimData;
+		const auto is3D = animData != PlayerCharacter::GetSingleton()->firstPersonAnimData;
 		auto result = Sounds(line, is3D);
 		if (result.failed)
 			return std::nullopt;
@@ -167,7 +167,7 @@ struct AnimTime
 	RespectEndKeyData respectEndKeyData;
 
 	explicit AnimTime(Actor* actor, AnimData* animData, BSAnimGroupSequence* anim)
-		: actorId(actor->refID), animData(animData), anim(anim), firstPerson(animData == g_thePlayer->firstPersonAnimData)
+		: actorId(actor->refID), animData(animData), anim(anim), firstPerson(animData == PlayerCharacter::GetSingleton()->firstPersonAnimData)
 	{
 	}
 

@@ -320,7 +320,7 @@ bool SavedAnims::MatchesFolderCondition(const Actor* actor) const
 	case FolderCondition::Mod2: return actor->HasWeaponWithMod(kWeaponMod_Flag2);
 	case FolderCondition::Mod3: return actor->HasWeaponWithMod(kWeaponMod_Flag3);
 	case FolderCondition::Hurt: return actor->HasCrippledLegs();
-	case FolderCondition::Human: return actor == g_thePlayer || IS_ID(actor->baseForm, TESNPC);
+	case FolderCondition::Human: return actor == PlayerCharacter::GetSingleton() || IS_ID(actor->baseForm, TESNPC);
 	default: return true;
 	}
 }

@@ -197,7 +197,7 @@ bool HasRespectEndKey(BSAnimGroupSequence* anim)
 
 void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSequence* anim)
 {
-	if (!g_pluginSettings.fixWrongAKeyInRespectEndKeyAnim || animData != g_thePlayer->firstPersonAnimData || !anim->animGroup || HasNoFixTextKey(anim))
+	if (!g_pluginSettings.fixWrongAKeyInRespectEndKeyAnim || animData != PlayerCharacter::GetSingleton()->firstPersonAnimData || !anim->animGroup || HasNoFixTextKey(anim))
 		return;
 	auto fullGroupId = anim->animGroup->groupID;
 	if (anim->animGroup->IsAttackIS())
@@ -218,7 +218,7 @@ void AnimFixes::FixWrongAKeyInRespectEndKey(AnimData* animData, BSAnimGroupSeque
 	if (nextAttack == kAnimGroup_Invalid || nextAttack == groupId)
 		return;
 	// check if this is intentional by looking up the 3rd person version of this anim and checking if it also has it
-	const auto* anim3rd = GetAnimByGroupID(g_thePlayer->baseProcess->animData, groupId);
+	const auto* anim3rd = GetAnimByGroupID(PlayerCharacter::GetSingleton()->baseProcess->animData, groupId);
 	if (anim3rd && anim3rd->m_spTextKeys->FindFirstByName(nextAttackKey->m_kText))
 		return;
 	const auto aChar = GetACharForAnimGroup(groupId);

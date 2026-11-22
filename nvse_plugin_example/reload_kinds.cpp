@@ -41,7 +41,7 @@ namespace ReloadKinds
 
 			static SInt32 __fastcall Hook(void* inventoryChanges, void*, TESForm* ammo)
 			{
-				OnReload(g_thePlayer, ammo, GET_CALLER_VAR(UInt32, 0xC));
+				OnReload(PlayerCharacter::GetSingleton(), ammo, GET_CALLER_VAR(UInt32, 0xC));
 				return ThisStdCall<SInt32>(objectCount, inventoryChanges, ammo);
 			}
 		};
@@ -65,7 +65,7 @@ namespace ReloadKinds
 			static void __fastcall Hook(BaseProcess::AmmoInfo* clip, void*, SInt32 rounds)
 			{
 				ThisStdCall(setRounds, clip, rounds);
-				if (auto* state = ReloadState::Get(g_thePlayer))
+				if (auto* state = ReloadState::Get(PlayerCharacter::GetSingleton()))
 					state->swappedAmmo = clip->ammo;
 			}
 		};

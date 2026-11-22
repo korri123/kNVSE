@@ -30,7 +30,7 @@ namespace NPCLoopingReloadFix
 		// start anim. Otherwise nothing plays and the clip is filled at once.
 		bool PlaysLoopingReload(Actor* actor, const TESObjectWEAP* weapon, bool hasClipMod)
 		{
-			if (actor == g_thePlayer || !weapon || !weapon->HasLoopingReloadAnim(hasClipMod))
+			if (actor == PlayerCharacter::GetSingleton() || !weapon || !weapon->HasLoopingReloadAnim(hasClipMod))
 				return false;
 			if (!g_modReloadAnimsFixed && !ThisStdCall<bool>(0x4938C0, weapon)) // TESObjectWEAP::IsReloadLoop
 				return false;
@@ -56,7 +56,7 @@ namespace NPCLoopingReloadFix
 		void __fastcall ReloadNowActionHook(Actor* actor, void*, SInt32 action, BSAnimGroupSequence* sequence)
 		{
 			const auto group = GET_CALLER_VAR(UInt32, GroupOffset);
-			if (actor != g_thePlayer && group >= kAnimGroup_ReloadWStart && group <= kAnimGroup_ReloadZStart)
+			if (actor != PlayerCharacter::GetSingleton() && group >= kAnimGroup_ReloadWStart && group <= kAnimGroup_ReloadZStart)
 				action = Decoding::kAnimAction_ReloadLoop;
 			ThisStdCall(0x8A73E0, actor, action, sequence); // Actor::SetAnimAction
 		}
@@ -71,7 +71,7 @@ namespace NPCLoopingReloadFix
 			const auto carried = ThisStdCall<SInt32>(0x4C8F30, inventoryChanges, ammoForm); // InventoryChanges::GetObjectCount
 			t_ammoCarried = carried;
 			auto* actor = GET_CALLER_VAR(Actor*, -0xA0);
-			if (actor == g_thePlayer)
+			if (actor == PlayerCharacter::GetSingleton())
 				return carried;
 			auto* state = ReloadState::Peek(actor);
 			if (!state || !state->loopTarget)
@@ -92,10 +92,10 @@ namespace NPCLoopingReloadFix
 		UInt32 g_loadRoundEquip = 0x88C650;
 		void __fastcall LoadRoundHook(Actor* actor, void*, TESForm* ammoForm, SInt32 rounds, ExtraDataList* xData, UInt32 applyEnchantment, UInt32 noUnequip, UInt32 noMessage)
 		{
-			if (actor == g_thePlayer || rounds <= t_ammoCarried)
+			if (actor == PlayerCharacter::GetSingleton() || rounds <= t_ammoCarried)
 				ThisStdCall(g_loadRoundEquip, actor, ammoForm, rounds, xData, applyEnchantment, noUnequip, noMessage);
 			auto* ammo = GET_CALLER_VAR(BaseProcess::AmmoInfo*, -0x38);
-			if (actor != g_thePlayer && ammo && rounds <= GET_CALLER_VAR(SInt32, -0x34))
+			if (actor != PlayerCharacter::GetSingleton() && ammo && rounds <= GET_CALLER_VAR(SInt32, -0x34))
 				ammo->count = rounds;
 		}
 
@@ -106,7 +106,7 @@ namespace NPCLoopingReloadFix
 		{
 			auto* actor = GET_CALLER_VAR(Actor*, -0xA0);
 			auto* round = animData->GetCurrentSequence(kSequence_Weapon);
-			if (actor != g_thePlayer && round && round->animGroup)
+			if (actor != PlayerCharacter::GetSingleton() && round && round->animGroup)
 			{
 				const auto roundGroup = round->animGroup->GetBaseGroupID();
 				if (roundGroup >= kAnimGroup_ReloadW && roundGroup <= kAnimGroup_ReloadZ)

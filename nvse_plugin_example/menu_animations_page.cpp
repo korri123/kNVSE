@@ -190,7 +190,7 @@ namespace KnvseMenu
 
 		bool ReloadFiles()
 		{
-			if (!g_thePlayer || !g_thePlayer->baseProcess)
+			if (!PlayerCharacter::GetSingleton() || !PlayerCharacter::GetSingleton()->baseProcess)
 				return false;
 			ReloadOverrideFiles();
 			return true;
@@ -202,8 +202,8 @@ namespace KnvseMenu
 				return;
 			OverridePrefs::Save();
 			// the animations playing now come from the sets as they were
-			if (g_thePlayer && g_thePlayer->parentCell && g_thePlayer->baseProcess)
-				g_thePlayer->RestartAnims();
+			if (PlayerCharacter::GetSingleton() && PlayerCharacter::GetSingleton()->parentCell && PlayerCharacter::GetSingleton()->baseProcess)
+				PlayerCharacter::GetSingleton()->RestartAnims();
 		}
 
 		// What the registry has, by form (what sets are registered for) and by origin, made again after it changed

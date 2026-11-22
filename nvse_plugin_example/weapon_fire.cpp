@@ -51,7 +51,7 @@ namespace WeaponFire
 		// The weapon section's sequence on the skeleton whose keys act: the player's view, an NPC's own
 		BSAnimGroupSequence* GetKeySequence(Actor* actor)
 		{
-			auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : GetAnimation(actor);
+			auto* animData = actor == PlayerCharacter::GetSingleton() ? PlayerCharacter::GetSingleton()->GetAnimData() : GetAnimation(actor);
 			return animData ? animData->animSequence[kSequence_Weapon] : nullptr;
 		}
 
@@ -141,7 +141,7 @@ namespace WeaponFire
 		// timer runs out at once while attack is held; ReleasedPlayerAttack queues it when attack was released).
 		bool FireHeldShot(Actor* actor, FireState& state)
 		{
-			if (actor != g_thePlayer)
+			if (actor != PlayerCharacter::GetSingleton())
 			{
 				state.openBolt = {};
 				QueueShot(actor);
@@ -202,7 +202,7 @@ namespace WeaponFire
 			}
 			if (!weapon->IsAutomatic())
 				return false;
-			if (actor != g_thePlayer)
+			if (actor != PlayerCharacter::GetSingleton())
 				burstStart = GetClock(actor) - state.lastShotTime > kBurstGapIntervals * GetShotInterval(actor, weapon);
 			if (!burstStart)
 				return false;
@@ -271,7 +271,7 @@ namespace WeaponFire
 			if (state.openBolt.sequence || state.jam.attack)
 				return true;
 			const auto* clip = actor->baseProcess->GetAmmoInfo();
-			if (actor != g_thePlayer || !clip || clip->count <= 0)
+			if (actor != PlayerCharacter::GetSingleton() || !clip || clip->count <= 0)
 			{
 				state.queuedShots = 0;
 				return false;
@@ -317,7 +317,7 @@ namespace WeaponFire
 				return;
 			ThisStdCall(0x8B28C0, actor, group, animData); // Actor::StartWeaponGroup
 			actor->SetAnimAction(Decoding::kAnimAction_Reload, animData->animSequence[kSequence_Weapon]);
-			if (actor == g_thePlayer)
+			if (actor == PlayerCharacter::GetSingleton())
 				actor->StartAnimOn1stPerson(fullGroup, Actor::kActionFlag_ImmediateStart);
 			// The burst ends: no more shots, and the next attack is the first of a burst again (rolls a jam; the game
 			// clears this when attack is released during an attack group, not during the jam)
@@ -388,7 +388,7 @@ namespace WeaponFire
 		// The Animation time of the skeleton whose keys act
 		float GetKeyClock(Actor* actor)
 		{
-			auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : GetAnimation(actor);
+			auto* animData = actor == PlayerCharacter::GetSingleton() ? PlayerCharacter::GetSingleton()->GetAnimData() : GetAnimation(actor);
 			return animData ? animData->timePassed : 0.0f;
 		}
 
@@ -438,7 +438,7 @@ namespace WeaponFire
 				ThisStdCall(g_ejectShellCasing, weapon, ref);
 				return;
 			}
-			auto* animData = actor == g_thePlayer ? g_thePlayer->GetAnimData() : GetAnimation(actor);
+			auto* animData = actor == PlayerCharacter::GetSingleton() ? PlayerCharacter::GetSingleton()->GetAnimData() : GetAnimation(actor);
 			const float mult = animData ? GetAnimMult(animData, static_cast<UInt8>(sequence->animGroup->groupID)) : 1.0f;
 			const float rate = sequence->m_fFrequency * (mult > 0.0f ? mult : 1.0f);
 			if (eject.weapon != weapon)
@@ -578,7 +578,7 @@ namespace WeaponFire
 
 	bool ReleasedPlayerAttack()
 	{
-		auto* state = FireState::Peek(g_thePlayer);
+		auto* state = FireState::Peek(PlayerCharacter::GetSingleton());
 		if (!state)
 			return false;
 		// The attack loop plays to the end of its cycle before the jam
@@ -589,7 +589,7 @@ namespace WeaponFire
 			return state->queuedShots > 0;
 		if (state->openBolt.firing)
 		{
-			QueueShot(g_thePlayer);
+			QueueShot(PlayerCharacter::GetSingleton());
 			return true;
 		}
 		return state->openBolt.owed;

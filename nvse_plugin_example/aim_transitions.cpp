@@ -98,7 +98,7 @@ namespace
 		animData->sequenceState1[kSequence_Weapon] = 0;
 		// Third person: the sequence the engine weights by the aim pitch with its up and down variants
 		// (MiddleHighProcess::UpdateAimSequences; AimPitch holds those at 0 for an aim transition)
-		if (animData != g_thePlayer->firstPersonAnimData)
+		if (animData != PlayerCharacter::GetSingleton()->firstPersonAnimData)
 		{
 			if (auto* process = animData->actor->baseProcess; IS_TYPE(process, HighProcess))
 				process->weaponSequence[0] = sequence;
@@ -216,7 +216,7 @@ namespace
 	{
 		if (!manager)
 			return nullptr;
-		for (auto* animData : { g_thePlayer->GetAnimData(false), g_thePlayer->GetAnimData(true) })
+		for (auto* animData : { PlayerCharacter::GetSingleton()->GetAnimData(false), PlayerCharacter::GetSingleton()->GetAnimData(true) })
 		{
 			if (animData && animData->controllerManager == manager)
 				return animData;
@@ -252,7 +252,7 @@ namespace
 		const NiControllerSequence* shown = sequence;
 		if (GetPlayerAnimData(sequence->m_pkOwner))
 		{
-			const auto* view = g_thePlayer->GetAnimData();
+			const auto* view = PlayerCharacter::GetSingleton()->GetAnimData();
 			shown = view ? view->animSequence[kSequence_Weapon] : nullptr;
 		}
 		if (AimTransitions::HoldsFire(shown))
@@ -278,7 +278,7 @@ bool AimTransitions::HoldsFire(const NiControllerSequence* sequence)
 
 BSAnimGroupSequence* AimTransitions::Switch(AnimData* animData, BSAnimGroupSequence* to)
 {
-	if (!IsEnabled() || animData->actor != g_thePlayer || !to || !to->animGroup)
+	if (!IsEnabled() || animData->actor != PlayerCharacter::GetSingleton() || !to || !to->animGroup)
 		return nullptr;
 	const auto toBaseGroupId = to->animGroup->GetBaseGroupID();
 	if (toBaseGroupId != kAnimGroup_Aim && toBaseGroupId != kAnimGroup_AimIS)
@@ -311,10 +311,10 @@ BSAnimGroupSequence* AimTransitions::Switch(AnimData* animData, BSAnimGroupSeque
 
 void AimTransitions::Update()
 {
-	if (!IsEnabled() || !g_thePlayer || !g_thePlayer->baseProcess)
+	if (!IsEnabled() || !PlayerCharacter::GetSingleton() || !PlayerCharacter::GetSingleton()->baseProcess)
 		return;
-	const bool bAiming = g_thePlayer->GetHighProcess()->isAiming;
-	for (auto* animData : { g_thePlayer->GetAnimData(false), g_thePlayer->GetAnimData(true) })
+	const bool bAiming = PlayerCharacter::GetSingleton()->GetHighProcess()->isAiming;
+	for (auto* animData : { PlayerCharacter::GetSingleton()->GetAnimData(false), PlayerCharacter::GetSingleton()->GetAnimData(true) })
 	{
 		auto* clip = animData ? animData->animSequence[kSequence_Weapon] : nullptr;
 		const Playback playback = GetPlayback(clip);
@@ -340,7 +340,7 @@ void AimTransitions::Update()
 // that one runs forward.
 void AimTransitions::RunClock(AnimData* animData, const NiControllerSequence* sequence, float fStep)
 {
-	if (!IsEnabled() || animData->actor != g_thePlayer || sequence != animData->animSequence[kSequence_Weapon] || !sequence->m_pkOwner)
+	if (!IsEnabled() || animData->actor != PlayerCharacter::GetSingleton() || sequence != animData->animSequence[kSequence_Weapon] || !sequence->m_pkOwner)
 		return;
 	// Includes clips that are fading out
 	for (auto* active : sequence->m_pkOwner->m_kActiveSequences)

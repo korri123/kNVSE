@@ -1020,7 +1020,8 @@ public:
 	bool IsPlayerSwimming() { return (GetMovementFlags()  >> 11) & 1; }
 	UInt32 GetRockItAmmoCount() const { return ThisStdCall<UInt32>(0x969040, this); }
 
-	static PlayerCharacter*	GetSingleton();
+	// The engine's pointer, set when the game creates the player (before any plugin's kMessage_DeferredInit)
+	static PlayerCharacter* GetSingleton() { return *reinterpret_cast<PlayerCharacter**>(0x011DEA3C); }
 	bool SetSkeletonPath(const char* newPath);
 	bool SetSkeletonPath_v1c(const char* newPath);	// Less worse version as used by some modders
 	static void UpdateHead(void);
@@ -1033,8 +1034,6 @@ public:
 	NiNode* GetNode(bool bFirstPerson) const;
 };
 STATIC_ASSERT(sizeof(PlayerCharacter) == 0xE50);
-
-extern PlayerCharacter* g_thePlayer;
 
 STATIC_ASSERT(offsetof(PlayerCharacter, ragDollController) == 0x0AC);
 STATIC_ASSERT(offsetof(PlayerCharacter, questObjectiveList) == 0x6BC);

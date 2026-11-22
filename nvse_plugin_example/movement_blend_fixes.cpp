@@ -20,7 +20,7 @@ void SetAnimDataState(AnimData* animData, BSAnimGroupSequence* pkSequence)
 
 void FixJumpLoopMovementSpeed(AnimData* animData, BSAnimGroupSequence* pkSequence)
 {
-	if (pkSequence->animGroup->GetBaseGroupID() == kAnimGroup_JumpLoop && animData != g_thePlayer->firstPersonAnimData)
+	if (pkSequence->animGroup->GetBaseGroupID() == kAnimGroup_JumpLoop && animData != PlayerCharacter::GetSingleton()->firstPersonAnimData)
 	{
 		auto* forwardAnim = GetAnimByGroupID(animData, kAnimGroup_Forward);
 		if (forwardAnim && forwardAnim->animGroup)

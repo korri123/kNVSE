@@ -93,7 +93,7 @@ void AdditiveManager::InitAdditiveSequence(AnimData* animData, NiControllerSeque
         .referenceTimePoint = timePoint,
         .ignorePriorities = ignorePriorities,
         .controllerManager = animData->controllerManager,
-        .firstPerson = animData == g_thePlayer->firstPersonAnimData
+        .firstPerson = animData == PlayerCharacter::GetSingleton()->firstPersonAnimData
     };
 
     auto* sequenceExtraData = SequenceExtraDatas::GetOrCreate(additiveSequence);

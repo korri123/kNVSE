@@ -171,9 +171,9 @@ BSAnimGroupSequence* __fastcall HandleAnimationChange(AnimData* animData, void*,
 
 void Apply3rdPersonRespectEndKeyEaseInFix(AnimData* animData, BSAnimGroupSequence* anim3rd)
 {
-	if (animData != g_thePlayer->baseProcess->animData || g_thePlayer->IsThirdPerson() || !anim3rd || !anim3rd->animGroup)
+	if (animData != PlayerCharacter::GetSingleton()->baseProcess->animData || PlayerCharacter::GetSingleton()->IsThirdPerson() || !anim3rd || !anim3rd->animGroup)
 		return;
-	auto* anim1st = GetAnimByGroupID(g_thePlayer->firstPersonAnimData, anim3rd->animGroup->GetBaseGroupID());
+	auto* anim1st = GetAnimByGroupID(PlayerCharacter::GetSingleton()->firstPersonAnimData, anim3rd->animGroup->GetBaseGroupID());
 	if (!anim1st || !anim1st->animGroup || !anim1st->m_spTextKeys)
 		return;
 	NiTextKeyExtraData* textKeys = anim1st->m_spTextKeys;
@@ -192,9 +192,9 @@ void DecreaseAttackTimer()
 	// Attack was released before the Hit key of an open bolt attack loop: it runs on until its shot
 	if (WeaponFire::ReleasedPlayerAttack())
 		return;
-	auto* baseProcess = g_thePlayer->baseProcess;
-	const bool isFirstPerson = !g_thePlayer->IsThirdPerson();
-	const auto* animData = g_thePlayer->GetAnimData(isFirstPerson);
+	auto* baseProcess = PlayerCharacter::GetSingleton()->baseProcess;
+	const bool isFirstPerson = !PlayerCharacter::GetSingleton()->IsThirdPerson();
+	const auto* animData = PlayerCharacter::GetSingleton()->GetAnimData(isFirstPerson);
 	if (!g_lastLoopSequence || g_lastLoopSequence->m_pkOwner != animData->controllerManager)
 		return baseProcess->ResetAttackLoopTimer(false);
 	if (g_startedAnimation)
@@ -204,7 +204,7 @@ void DecreaseAttackTimer()
 		g_startedAnimation = false;
 	}
 	const auto oldTime = baseProcess->time1D4;
-	baseProcess->DecreaseAttackLoopShootTime(g_thePlayer);
+	baseProcess->DecreaseAttackLoopShootTime(PlayerCharacter::GetSingleton());
 	if (baseProcess->time1D4 >= oldTime)
 	{
 		baseProcess->time1D4 = 0;
@@ -253,7 +253,7 @@ void __fastcall ReloadLoopNextRoundHook(AnimData* animData, void*, UInt16 groupI
 {
 	auto* actor = GET_CALLER_VAR(Actor*, -0xA0);
 	const auto* recorded = animData->GetCurrentSequence(kSequence_Weapon);
-	const auto isPlayer = actor == g_thePlayer;
+	const auto isPlayer = actor == PlayerCharacter::GetSingleton();
 	if (isPlayer)
 		g_globals.isInLoopingReloadPlayAnim = true;
 	animData->PlayGroup(groupId, flags, queuedState, sequenceId);
@@ -297,7 +297,7 @@ namespace ModReloadAnimFix
 	// InventoryMenu::DoClick, when reloading after the player picked ammo.
 	bool __fastcall IsReloadLoopPlayerHook(const TESObjectWEAP* weapon)
 	{
-		return IsLoopingReload(weapon, HasClipMod(g_thePlayer->baseProcess->GetWeaponInfo()));
+		return IsLoopingReload(weapon, HasClipMod(PlayerCharacter::GetSingleton()->baseProcess->GetWeaponInfo()));
 	}
 
 	// Actor::HandlePostAnimationActions after a round of a looping reload; the engine passes no clip mod there.
@@ -383,10 +383,10 @@ bool LookupCustomAnim(FullAnimGroupID groupId, AnimSequenceBase** base, AnimData
 			return true;
 		}
 	}
-	if (animData->actor == g_thePlayer && animData != g_thePlayer->firstPersonAnimData && groupId != GetActorRealAnimGroup(g_thePlayer, groupId))
+	if (animData->actor == PlayerCharacter::GetSingleton() && animData != PlayerCharacter::GetSingleton()->firstPersonAnimData && groupId != GetActorRealAnimGroup(PlayerCharacter::GetSingleton(), groupId))
 	{
 		// hack to allow pollCondition to work correctly in first person when groupid is decayed
-		Overrides::Find(groupId, g_thePlayer->firstPersonAnimData);
+		Overrides::Find(groupId, PlayerCharacter::GetSingleton()->firstPersonAnimData);
 	}
 	return false;
 }
@@ -528,10 +528,10 @@ namespace LoopingReloadPauseFix
 			return defaultCondition();
 		if (!Has(anim->m_kName.Str()))
 		{
-			if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
+			if (IsPlayersOtherAnimData(animData) && !PlayerCharacter::GetSingleton()->IsThirdPerson())
 			{
 				const auto seqType = GetSequenceType(anim->animGroup->GetBaseGroupID());
-				auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
+				auto* cur1stPersonAnim = PlayerCharacter::GetSingleton()->firstPersonAnimData->animSequence[seqType];
 				if (cur1stPersonAnim && Has(cur1stPersonAnim->m_kName.Str()))
 					return newCondition();
 			}
@@ -558,10 +558,10 @@ namespace LoopingReloadPauseFix
 			dontEndSequence();
 			return;
 		}
-		if (IsPlayersOtherAnimData(animData) && !g_thePlayer->IsThirdPerson())
+		if (IsPlayersOtherAnimData(animData) && !PlayerCharacter::GetSingleton()->IsThirdPerson())
 		{
 			const auto seqType = anim->animGroup->GetSequenceType();
-			auto* cur1stPersonAnim = g_thePlayer->firstPersonAnimData->animSequence[seqType];
+			auto* cur1stPersonAnim = PlayerCharacter::GetSingleton()->firstPersonAnimData->animSequence[seqType];
 			if (cur1stPersonAnim && Has(cur1stPersonAnim->m_kName.Str()))
 			{
 				dontEndSequence();
@@ -579,9 +579,9 @@ bool IsReadyForAnim()
 	{
 		// tweaks hooks here
 		const auto addr = *reinterpret_cast<UInt32*>(0x9420E4 + 1);
-		return ThisStdCall<bool>(addr, g_thePlayer->baseProcess);
+		return ThisStdCall<bool>(addr, PlayerCharacter::GetSingleton()->baseProcess);
 	}
-	return g_thePlayer->baseProcess->IsReadyForAnim();
+	return PlayerCharacter::GetSingleton()->baseProcess->IsReadyForAnim();
 }
 
 namespace AllowAttackKey
@@ -598,10 +598,10 @@ namespace AllowAttackKey
 	bool HasAllowAttackKeyPassed()
 	{
 		
-		const auto isFirstPerson = !g_thePlayer->IsThirdPerson();
+		const auto isFirstPerson = !PlayerCharacter::GetSingleton()->IsThirdPerson();
 		const auto iter = ra::find_if(g_timeTrackedAnims, [&](const auto& p)
 		{
-			return p.second->allowAttack && p.second->actorId == g_thePlayer->refID && p.second->firstPerson == isFirstPerson;
+			return p.second->allowAttack && p.second->actorId == PlayerCharacter::GetSingleton()->refID && p.second->firstPerson == isFirstPerson;
 		});
 
 		if (iter == g_timeTrackedAnims.end())
@@ -618,12 +618,12 @@ namespace AllowAttackKey
 
 	bool HasInterruptLoopPassed()
 	{
-		const auto* animData = g_thePlayer->GetAnimData();
+		const auto* animData = PlayerCharacter::GetSingleton()->GetAnimData();
 		const auto* attackSequence = animData->animSequence[kSequence_Weapon];
 		if (!attackSequence || !attackSequence->m_spTextKeys->FindFirstByName("interruptLoop")
 			|| attackSequence->m_eState != NiControllerSequence::ANIMATING)
 			return false;
-		const auto weaponInfo = g_thePlayer->baseProcess->GetWeaponInfo();
+		const auto weaponInfo = PlayerCharacter::GetSingleton()->baseProcess->GetWeaponInfo();
 		if (!weaponInfo || !weaponInfo->weapon || !weaponInfo->weapon->IsAutomatic())
 			return false;
 		const auto attackSpeed = weaponInfo->GetShotTime();
@@ -632,7 +632,7 @@ namespace AllowAttackKey
 
 	bool __fastcall AllowAttackHook(Decoding::HighProcess* process)
 	{
-		if (process == g_thePlayer->baseProcess)
+		if (process == PlayerCharacter::GetSingleton()->baseProcess)
 		{
 			if (HasAllowAttackKeyPassed())
 				return true;
@@ -690,11 +690,11 @@ namespace AllowAttackKey
 	bool HasAmmoToFire(Actor* actor, TESObjectWEAP* weapon)
 	{
 		const auto isJumpAt = [](UInt32 address) { return *reinterpret_cast<UInt8*>(address) == 0xE9; };
-		const auto isPlayer = actor == g_thePlayer;
+		const auto isPlayer = actor == PlayerCharacter::GetSingleton();
 		const auto* ammoInfo = actor->baseProcess->GetAmmoInfo();
 		bool outOfAmmo = false;
 		if (weapon->ammo.IsRockItLauncher())
-			outOfAmmo = !isPlayer || !g_thePlayer->GetRockItAmmoCount();
+			outOfAmmo = !isPlayer || !PlayerCharacter::GetSingleton()->GetRockItAmmoCount();
 		else if (weapon->GetEquippedAmmo(actor))
 			outOfAmmo = !ammoInfo || ammoInfo->count < weapon->ammoUse;
 		const auto clipSizeMatters = isJumpAt(0x893C13) && isPlayer
@@ -711,16 +711,16 @@ namespace AllowAttackKey
 		auto* process = actor->baseProcess;
 		if (!process)
 			return false;
-		const auto isPlayer = actor == g_thePlayer;
+		const auto isPlayer = actor == PlayerCharacter::GetSingleton();
 
 		// PlayerCharacter::Update only reads the attack control when these checks pass (0x941E64-0x9420F7).
 		if (isPlayer)
 		{
 			if (Interface::IsInMenuMode())
 				return false;
-			if (g_thePlayer->disabledControlFlags & PlayerCharacter::kControlFlag_Fight)
+			if (PlayerCharacter::GetSingleton()->disabledControlFlags & PlayerCharacter::kControlFlag_Fight)
 				return false;
-			if (g_thePlayer->grabType == PlayerCharacter::kGrabType_InventoryDrop || g_thePlayer->grabType == PlayerCharacter::kGrabType_Telekinesis)
+			if (PlayerCharacter::GetSingleton()->grabType == PlayerCharacter::kGrabType_InventoryDrop || PlayerCharacter::GetSingleton()->grabType == PlayerCharacter::kGrabType_Telekinesis)
 				return false;
 			if (actor->actorMover && actor->actorMover->GetMovementFlags() & kMoveFlag_Swimming)
 				return false;
@@ -741,7 +741,7 @@ namespace AllowAttackKey
 			return false;
 		if (!AllowAttackHook(reinterpret_cast<Decoding::HighProcess*>(process)))
 			return false;
-		auto* animData = isPlayer ? g_thePlayer->GetAnimData() : process->GetAnimData();
+		auto* animData = isPlayer ? PlayerCharacter::GetSingleton()->GetAnimData() : process->GetAnimData();
 		if (!animData)
 			return false;
 		auto* sequence = animData->GetCurrentSequence(kSequence_Weapon);
@@ -1041,8 +1041,8 @@ void ApplyHooks()
 		{
 			return seq->offset + animData->timePassed;
 		};
-		if (const auto* anim1st = animData == g_thePlayer->baseProcess->animData ? RespectEndKey::TimesSource(anim) : nullptr)
-			return toAnimTime(g_thePlayer->firstPersonAnimData, anim1st);
+		if (const auto* anim1st = animData == PlayerCharacter::GetSingleton()->baseProcess->animData ? RespectEndKey::TimesSource(anim) : nullptr)
+			return toAnimTime(PlayerCharacter::GetSingleton()->firstPersonAnimData, anim1st);
 		return toAnimTime(animData, anim);
 	}));
 #endif
@@ -1147,8 +1147,8 @@ void ApplyHooks()
 	{
 		const static auto shouldApplyAttackLoopToAim = []
 		{
-			const auto* animData = g_thePlayer->GetAnimData();
-			const auto* baseProcess = g_thePlayer->baseProcess;
+			const auto* animData = PlayerCharacter::GetSingleton()->GetAnimData();
+			const auto* baseProcess = PlayerCharacter::GetSingleton()->baseProcess;
 			const auto* attackSequence = animData->animSequence[kSequence_Weapon];
 			const auto* ammoInfo = baseProcess->GetAmmoInfo();
 			const auto hasInterrupt = [&]  { return attackSequence && attackSequence->m_spTextKeys->FindFirstByName("interruptLoop"); };
@@ -1162,7 +1162,7 @@ void ApplyHooks()
 		{
 			ThisStdCall(0x8BB650, player, isAiming, a2, a3);
 
-			auto* animData = g_thePlayer->GetAnimData();
+			auto* animData = PlayerCharacter::GetSingleton()->GetAnimData();
 
 			if (!shouldApplyAttackLoopToAim())
 				return;
@@ -1178,7 +1178,7 @@ void ApplyHooks()
 		{
 			ThisStdCall(0x8BB650, player, isAiming, a2, a3);
 
-			auto* animData = g_thePlayer->GetAnimData();
+			auto* animData = PlayerCharacter::GetSingleton()->GetAnimData();
 
 			if (!shouldApplyAttackLoopToAim())
 				return;
@@ -1196,9 +1196,9 @@ void ApplyHooks()
 		WriteRelCall(0x949720, INLINE_HOOK(UInt32, __fastcall, AnimData* animData3rd, void*, eAnimSequence sequenceId)
 		{
 			const auto defaultResult = animData3rd->sequenceState1[sequenceId];
-			if (animData3rd->actor != g_thePlayer)
+			if (animData3rd->actor != PlayerCharacter::GetSingleton())
 				return defaultResult;
-			const auto* animData = g_thePlayer->GetAnimData();
+			const auto* animData = PlayerCharacter::GetSingleton()->GetAnimData();
 			const auto* weaponInfo = animData->actor->baseProcess->GetWeaponInfo();
 			const auto* attackSequence = animData->animSequence[kSequence_Weapon];
 			if (!attackSequence || !attackSequence->m_spTextKeys->FindFirstByName("interruptLoop")
@@ -1566,7 +1566,7 @@ void WriteDelayedHooks()
 		{
 			defaultExec(PASS_COMMAND_ARGS);
 			// The round is loaded by the queued equip after the next round starts, unless keys loaded it already
-			if (g_globals.isInLoopingReloadPlayAnim && g_globals.isInConditionFunction && AmmoKeys::EngineLoadsRound(g_thePlayer))
+			if (g_globals.isInLoopingReloadPlayAnim && g_globals.isInConditionFunction && AmmoKeys::EngineLoadsRound(PlayerCharacter::GetSingleton()))
 				*result = *result + 1;
 			return true;
 		};

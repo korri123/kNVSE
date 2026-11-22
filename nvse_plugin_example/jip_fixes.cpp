@@ -88,7 +88,7 @@ namespace
     // [ebp-0x28]). AnimGroupID is a UInt8, so casting a full group ID drops the weapon type and sneak bits.
     void SetAnimGroupEventHook(const AnimData* animData, AnimGroupID animGroupId)
     {
-        if (!hJIP || !IsAnimGroupEventLoaded() || animData == g_thePlayer->firstPersonAnimData)
+        if (!hJIP || !IsAnimGroupEventLoaded() || animData == PlayerCharacter::GetSingleton()->firstPersonAnimData)
             return;
         struct EventCallbackScripts
         {

@@ -410,7 +410,7 @@ void ActorOverrides::Refresh(Actor* actor, bool firstPerson)
 	// first draw, aim, shot and reload do not each read a file on the main thread. Other actors load KFs on first play,
 	// since they share most of them and hold few weapons for long. The new batch is queued before the old one is
 	// dropped, so files in both stay loaded.
-	if (actor == g_thePlayer)
+	if (actor == PlayerCharacter::GetSingleton())
 	{
 		std::vector<const char*> paths;
 		if (identity.weapon)
@@ -575,7 +575,7 @@ SavedAnims* Overrides::Find(UInt16 groupId, AnimData* animData, TransitionKind t
 		FileAnimations::WaitUntilLoaded();
 	if (!animData || !animData->actor || !animData->actor->baseProcess)
 		return nullptr;
-	const auto firstPerson = animData == g_thePlayer->firstPersonAnimData;
+	const auto firstPerson = animData == PlayerCharacter::GetSingleton()->firstPersonAnimData;
 	if (!HasGroup(firstPerson, groupId))
 		return nullptr;
 
@@ -626,7 +626,7 @@ std::vector<Overrides::Candidate> Overrides::Explain(UInt16 groupId, AnimData* a
 		return explained;
 	auto* actor = animData->actor;
 	std::vector<SavedAnims*> candidates;
-	CollectCandidates(GetIdentity(actor), animData == g_thePlayer->firstPersonAnimData, groupId, candidates);
+	CollectCandidates(GetIdentity(actor), animData == PlayerCharacter::GetSingleton()->firstPersonAnimData, groupId, candidates);
 	const auto idleFileStem = GetPlayingIdleFileStem(animData, groupId);
 	for (auto* set : candidates)
 		explained.push_back({ set, Judge(*set, actor, groupId, transition, idleFileStem, nullptr) });
@@ -769,14 +769,14 @@ void Overrides::UpdatePolled()
 
 void Overrides::UpdatePlayerPreload()
 {
-	if (!FileAnimations::IsLoaded() || !g_thePlayer || !g_thePlayer->baseProcess)
+	if (!FileAnimations::IsLoaded() || !PlayerCharacter::GetSingleton() || !PlayerCharacter::GetSingleton()->baseProcess)
 		return;
-	for (auto* animData : { g_thePlayer->firstPersonAnimData, g_thePlayer->baseProcess->GetAnimData() })
+	for (auto* animData : { PlayerCharacter::GetSingleton()->firstPersonAnimData, PlayerCharacter::GetSingleton()->baseProcess->GetAnimData() })
 	{
-		if (!animData || animData->actor != g_thePlayer)
+		if (!animData || animData->actor != PlayerCharacter::GetSingleton())
 			continue;
 		if (auto* state = ActorOverrides::Get(animData))
-			state->Refresh(g_thePlayer, animData == g_thePlayer->firstPersonAnimData);
+			state->Refresh(PlayerCharacter::GetSingleton(), animData == PlayerCharacter::GetSingleton()->firstPersonAnimData);
 	}
 }
 

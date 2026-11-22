@@ -182,14 +182,14 @@ namespace
 	bool UpdateRespectEndKey(AnimTime& animTime, const AnimGroupInfo* groupInfo)
 	{
 		auto* anim = animTime.anim.data;
-		const auto* current3rdPersonAnim = g_thePlayer->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
+		const auto* current3rdPersonAnim = PlayerCharacter::GetSingleton()->Get3rdPersonAnimData()->animSequence[groupInfo->sequenceType];
 		auto& respectEndKeyData = animTime.respectEndKeyData;
 		if (current3rdPersonAnim != respectEndKeyData.anim3rdCounterpart && anim->m_eState == kAnimState_Inactive)
 			return false;
 		if (!respectEndKeyData.anim3rdCounterpart)
 		{
 			const auto sequenceId = anim->animGroup->GetGroupInfo()->sequenceType;
-			auto* anim3rd = g_thePlayer->baseProcess->GetAnimData()->animSequence[sequenceId];
+			auto* anim3rd = PlayerCharacter::GetSingleton()->baseProcess->GetAnimData()->animSequence[sequenceId];
 			if (!anim3rd || !anim3rd->animGroup || (anim3rd->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
 				anim3rd = anim->Get3rdPersonCounterpart();
 			if (!anim3rd || !anim3rd->animGroup)
@@ -197,7 +197,7 @@ namespace
 			respectEndKeyData.anim3rdCounterpart = anim3rd;
 		}
 		// In 3rd person nothing applies the times; RespectEndKey::EndFrame gives the sequence its own times back.
-		if (!g_thePlayer->IsThirdPerson())
+		if (!PlayerCharacter::GetSingleton()->IsThirdPerson())
 		{
 			// A sequence that has ended keeps its times on the 3rd person sequence until that changes, but does not
 			// take them back from another 1st person animation of the group that started since.
@@ -218,7 +218,7 @@ namespace
 		animTime.soundKeys.Update(time, [&](UInt32 index)
 		{
 			if (index < animTime.sounds.size() && !animTime.sounds[index].failed && !IsPlayersOtherAnimData(animData))
-				animTime.sounds[index].Play(actor, animData != g_thePlayer->firstPersonAnimData);
+				animTime.sounds[index].Play(actor, animData != PlayerCharacter::GetSingleton()->firstPersonAnimData);
 		});
 		const auto runScriptLine = [&](Script* script) { ThisStdCall<bool>(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, true); };
 		if (animTime.useLegacyTime) // prevent getting stuck in b42 interact
@@ -442,7 +442,6 @@ void MessageHandler(NVSEMessagingInterface::Message* msg)
 		g_isThreadCacheEnabled = true;
 		Console_Print("kNVSE version %d", VERSION_MAJOR);
 		WriteDelayedHooks();
-		g_thePlayer = *reinterpret_cast<PlayerCharacter**>(0x011DEA3C);
 		FileAnimations::StartLoading();
 		CheckAndWarnForFixPack();
 	}
@@ -578,7 +577,7 @@ bool NVSEPlugin_Load(const NVSEInterface* nvse)
 	REG_CMD(kNVSETest);
 	if (false)
 	{
-		//g_thePlayer->baseProcess->GetWeaponBone();
+		//PlayerCharacter::GetSingleton()->baseProcess->GetWeaponBone();
 	}
 #endif
 	

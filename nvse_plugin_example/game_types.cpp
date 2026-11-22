@@ -131,7 +131,7 @@ NiControllerSequence::InterpArrayItem* NiControllerSequence::GetControlledBlock(
 
 BSAnimGroupSequence* BSAnimGroupSequence::Get3rdPersonCounterpart() const
 {
-	auto* animData = g_thePlayer->baseProcess->GetAnimData();
+	auto* animData = PlayerCharacter::GetSingleton()->baseProcess->GetAnimData();
 	return GetAnimByFullGroupID(animData, this->animGroup->groupID);
 }
 
@@ -606,7 +606,7 @@ bool AnimGroup::FallbacksTo(AnimData* animData, FullAnimGroupID sourceGroupId, F
 	const bool isWeaponSequence = sequenceType >= kSequence_Weapon && sequenceType <= kSequence_WeaponDown;
 
 	// Check for player-specific weapon animations
-	if (animData == g_thePlayer->firstPersonAnimData &&
+	if (animData == PlayerCharacter::GetSingleton()->firstPersonAnimData &&
 		(sourceGroupId & 0x7000) != 0 &&
 		(isWeaponSequence && FallbacksTo(animData, sourceGroupId & ~0xF000, destGroupId)))
 		return true;
