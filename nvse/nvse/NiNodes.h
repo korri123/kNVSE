@@ -3096,12 +3096,16 @@ public:
 		return nullptr;
 	}
 
-	// Returns the node that kItem's blend interpolator animates: its slot in the multi-target controller, else the palette entry.
+	// Returns the node that kItem's blend interpolator animates: its slot in the multi-target controller while that is the
+	// scene's, else the palette entry.
 	NiAVObject* GetTarget(const NiControllerSequence::InterpArrayItem& kItem, const NiControllerSequence::IDTag& idTag);
 
 	NiDefaultAVObjectPalette* GetObjectPalette() const;
 	
 	NiMultiTargetTransformController* GetMultiTargetTransformController() const;
+
+	// Whether controller is on the palette scene's controller list (ReloadTargets takes the old multi-target one off it).
+	bool IsSceneController(const NiTimeController* controller) const;
 
 	// Returns the manager whose scene object is an ancestor of object (the nearest one that is its palette's scene), or null.
 	static NiControllerManager* FindForObject(const NiAVObject* object);

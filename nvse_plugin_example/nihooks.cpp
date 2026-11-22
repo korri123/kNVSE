@@ -1952,6 +1952,11 @@ NiAVObject* NiControllerManager::GetTarget(const NiControllerSequence::InterpArr
 {
     NiInterpController* controller = kItem.m_spInterpCtlr;
     auto* multiTarget = NI_DYNAMIC_CAST(NiMultiTargetTransformController, controller);
+    // Animation::ReloadTargets takes the controller off the scene root before it deactivates every sequence and binds
+    // them to a new one. Its targets are raw pointers, so nodes freed since it was made (a model JIP's AttachModel
+    // removed) dangle there. Only the scene root's controllers write their targets.
+    if (multiTarget && !IsSceneController(multiTarget))
+        multiTarget = nullptr;
     if (multiTarget && kItem.m_pkBlendInterp)
     {
         // The controller writes blend interpolator i into target i. The palette only maps names: it can hold another
@@ -2006,6 +2011,18 @@ NiMultiTargetTransformController* NiControllerManager::GetMultiTargetTransformCo
         }
     }
     return nullptr;
+}
+
+bool NiControllerManager::IsSceneController(const NiTimeController* controller) const
+{
+    if (!m_spObjectPalette || !m_spObjectPalette->m_pkScene)
+        return false;
+    for (auto* sceneController = m_spObjectPalette->m_pkScene->m_controller; sceneController; sceneController = sceneController->m_spNext)
+    {
+        if (sceneController == controller)
+            return true;
+    }
+    return false;
 }
 
 NiControllerManager* NiControllerManager::FindForObject(const NiAVObject* object)
