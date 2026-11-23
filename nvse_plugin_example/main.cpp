@@ -34,6 +34,7 @@
 #include "respect_end_key.h"
 #include "spawn_keys.h"
 #include "debug_tools.h"
+#include "text_keys.h"
 #include "gamebryo/NiStream.h"
 #include "burst_fire.h"
 #include "weapon_fire.h"
@@ -210,18 +211,47 @@ namespace
 		return true;
 	}
 
+	// The player's skeletons play a group together, each from its own KF, and the keys of both used to act: a 3rd
+	// person reload that loads rounds at its own key times (Dri's Chinese Pistol, MrShersh's LoadRounds.gek) loaded them
+	// in 1st person a second before the 1st person KF's key. Script keys of the skeleton not in view are left out where
+	// the view's sequence of the group has keys of the same kind, so KFs made for one view keep working in the other.
+	bool HasViewsOwnKeys(const AnimTime& animTime, TextKeys::Table::Flag kind)
+	{
+		const auto* anim = animTime.anim.data;
+		if (!IsPlayersOtherAnimData(animTime.animData) || !anim->animGroup)
+			return false;
+		const auto* groupInfo = GetGroupInfo(static_cast<AnimGroupID>(anim->animGroup->groupID));
+		if (!groupInfo)
+			return false;
+		auto* player = PlayerCharacter::GetSingleton();
+		const auto* viewAnim = player->GetAnimData(!player->IsThirdPerson())->animSequence[groupInfo->sequenceType];
+		if (!viewAnim || !viewAnim->animGroup || (viewAnim->animGroup->groupID & 0xFF) != (anim->animGroup->groupID & 0xFF))
+			return false;
+		const auto* keys = TextKeys::Find(*viewAnim);
+		return keys && keys->Has(kind);
+	}
+
 	// Acts on the keys of the play that the time has passed
 	void FireTimedKeys(AnimTime& animTime, Actor* actor, float time)
 	{
+		using enum TextKeys::Table::Flag;
 		auto* animData = animTime.animData;
 		auto* anim = animTime.anim.data;
-		animTime.scriptCalls.Update(time, [&](Script* script) { g_script->CallFunction(script, actor, nullptr, nullptr, 0); });
+		animTime.scriptCalls.Update(time, [&](Script* script)
+		{
+			if (!HasViewsOwnKeys(animTime, kScriptCall))
+				g_script->CallFunction(script, actor, nullptr, nullptr, 0);
+		});
 		animTime.soundKeys.Update(time, [&](UInt32 index)
 		{
 			if (index < animTime.sounds.size() && !animTime.sounds[index].failed && !IsPlayersOtherAnimData(animData))
 				animTime.sounds[index].Play(actor, animData != PlayerCharacter::GetSingleton()->firstPersonAnimData);
 		});
-		const auto runScriptLine = [&](Script* script) { ThisStdCall<bool>(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, true); };
+		const auto runScriptLine = [&](Script* script)
+		{
+			if (!HasViewsOwnKeys(animTime, kScriptLine))
+				ThisStdCall<bool>(0x5AC1E0, script, actor, actor->GetEventList(), nullptr, true);
+		};
 		if (animTime.useLegacyTime) // prevent getting stuck in b42 interact
 			animTime.scriptLines.UpdateLegacy(time, runScriptLine);
 		else
